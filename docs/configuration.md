@@ -102,6 +102,6 @@
 
 ## 修改字段时的注意
 
-- `APIConfig` / `AnalysisConfig` 是 dataclass，加新字段后旧 `config.json` 仍可加载（`_filter_fields` 过滤未知字段）
+- `APIConfig` / `AnalysisConfig` 是 dataclass，加新字段后旧 `config.json` 仍可加载（`_coerce_fields` 过滤未知字段并清洗类型）
 - 前端 `AppConfigDto` 必须同步补类型，否则 TypeScript 编译失败
 - 涉及 KV cache 命中的字段（`thinking_mode`、`prompt_version`）变化会让远端缓存失效

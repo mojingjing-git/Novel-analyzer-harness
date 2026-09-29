@@ -1,6 +1,6 @@
 # Novel Analyzer
 
-Novel Analyzer 是一个本地运行的长篇中文小说分析工具。它读取 txt 文件，按章节切分，调用 OpenAI 兼容 API 分析每一章，生成全书总结、伏笔账本、角色卡、时间线、关系图和 Excel 等结果。需要自备 API Key。当前主要在 Windows 上验证，也可以前后端分离运行。
+Novel Analyzer 是一个本地运行的长篇中文小说分析工具。它读取 txt / docx 文件，按章节切分，调用 OpenAI 兼容 API 分析每一章，生成全书总结、伏笔账本、角色卡、时间线、关系图和 Excel 等结果。需要自备 API Key。当前主要在 Windows 上验证，也可以前后端分离运行。
 
 技术栈：FastAPI + Vue 3 + pywebview，兼容任何 OpenAI 兼容 API（M2.7 / DeepSeek / 智谱 / 火山 / 硅基流动 / LM Studio / Ollama）。
 
@@ -10,7 +10,7 @@ Novel Analyzer 是一个本地运行的长篇中文小说分析工具。它读�
 
 ## 功能
 
-- 切分 txt：识别常见章节和卷格式，清理广告，输出 blocks/
+- 切分 txt / docx：识别常见章节和卷格式，清理广告，输出 blocks/
 - 逐章分析：提取事件、人物变化、伏笔、地点等信息
 - 全书总结：生成最终报告、伏笔审计、写作风格分析
 - 可视化：时间线、角色关系图、地点地图、角色卡
@@ -56,7 +56,7 @@ API Key 也支持环境变量 `LLM_API_KEY` / `MINIMAX_API_KEY` 注入，优先�
 run_desktop.bat
 ```
 
-pywebview 自动找空闲端口、起 uvicorn、轮询健康检查、打开 1600×900 原生窗口。中文 / 网络盘路径的 WebView2 限制通过"本地运行时副本 + `NOVEL_ROOT` 指回共享盘"解决。
+pywebview 自动找空闲端口、起 uvicorn、轮询健康检查、打开 1600×900 原生窗口。`run_desktop.bat` 用 `pythonw` 静默启动，无控制台 / tail 窗口；运行日志在应用内日志面板查看，文件日志完整落盘。中文 / 网络盘路径的 WebView2 限制通过"本地运行时副本 + `NOVEL_ROOT` 指回共享盘"解决。
 
 开发模式（前后端热重载）：
 
@@ -69,7 +69,7 @@ cd frontend && npm run dev                                 # 前端 http://local
 
 5 步流程：
 
-1. 切分页：导入 txt，自动识别章节和卷，清理广告，批量切分到 workspace/《书名》/blocks/
+1. 切分页：导入 txt 或 docx，自动识别章节和卷，清理广告，批量切分到 workspace/《书名》/blocks/
 2. 分析队列页：扫描工作区入队，开始分析（实时进度 / 日志 / token 统计）
 3. 最终总结页：选书，跑 4 阶段总结（卷摘要、伏笔调和、风格分析、最终报告），看报告、审计、伏笔账本
 4. 可视化页：时间线、关系图、地图、角色卡
@@ -112,7 +112,7 @@ Web UI 顶部 5 个 Tab 对应上面的 5 步流程。所有操作也可以通�
    - `workspace/` 目录（含 README.md 欢迎页）
    - `config.json`（模板来自 `config.example.json`，已嵌入 exe）
 4. 应用启动后会自动跳到**设置页**，填入 API Key 即可使用
-5. 把你的 `.txt` 小说文件放到 `workspace/<书名>/` 下面
+5. 把你的 `.txt` 或 `.docx` 小说文件放到 `workspace/<书名>/` 下面
 6. 主界面选书 → 启动分析 → 等几小时 → 看伏笔账本 + 最终报告
 
 **Win10 用户首次启动**：可能提示"未检测到 WebView2 Runtime"。到 [Microsoft Edge WebView2](https://developer.microsoft.com/microsoft-edge/webview2/) 下载「Evergreen Standalone Installer」（约 100MB），安装一次后即可。Win11 预装 WebView2，无需额外操作。
@@ -150,7 +150,7 @@ Web UI 顶部 5 个 Tab 对应上面的 5 步流程。所有操作也可以通�
 ## 开发
 
 ```bash
-python -m pytest        # 约 443 用例（以 pytest --collect-only 实时输出为准）
+python -m pytest        # 默认收集 backend/tests + tests（以 pytest --collect-only 实时输出为准）
 ```
 
 测试覆盖：LLM 重试链、JSON 容错、模型序列化、队列状态机、总结 checkpoint 断点续跑、知识库快照隔离、伏笔去重等。

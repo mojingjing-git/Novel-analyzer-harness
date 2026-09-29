@@ -28,7 +28,7 @@
 │   │   └── viz_service.py        # 可视化数据聚合
 │   ├── config/                   # constants.py / settings.py（dataclass）/ presets.py
 │   ├── models/                   # AnalysisResult / KnowledgeBase 数据模型
-│   ├── utils/                    # json_utils / text_utils / aggregate_utils / excel_export / character_card_generator
+│   ├── utils/                    # json_utils / text_utils / aggregate_utils / excel_export / character_card_generator / docx_extract
 │   └── tests/
 ├── frontend/
 │   ├── src/
@@ -46,7 +46,7 @@
 
 ```mermaid
 flowchart LR
-  TXT[".txt"] --> Split["splitter_service<br>15 章+5 卷正则"]
+  TXT[".txt / .docx"] --> Split["splitter_service<br>15 章+5 卷正则"]
   Split --> Blocks["blocks/*.txt"]
   Blocks --> Pipeline["pipeline.run<br>三阶段"]
   Pipeline --> MS["MemoryState<br>全内存 IO"]
@@ -264,7 +264,7 @@ CORS 已放行 `localhost:5173`。
 
 ### 新配置字段
 
-`APIConfig` / `AnalysisConfig` dataclass 加字段即自动读写（`_filter_fields` 保证旧 `config.json` 兼容），前端 `AppConfigDto` 同步补类型。
+`APIConfig` / `AnalysisConfig` dataclass 加字段即自动读写（`_coerce_fields` 过滤未知字段并做类型清洗，保证旧 `config.json` 兼容），前端 `AppConfigDto` 同步补类型。
 
 ### Prompt 调整注意
 
