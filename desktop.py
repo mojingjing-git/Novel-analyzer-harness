@@ -33,6 +33,12 @@ from pathlib import Path
 # 重配为 UTF-8 + errors='replace'，确保任何 print 都不会中断进程。
 import io as _io
 try:
+    # pythonw 下 sys.stdout/stderr 是 None。先补成合法文件对象（devnull），
+    # 后续 TextIOWrapper / _StderrTee / __getattr__ 代理才不会拿到 None。
+    if sys.stdout is None:
+        sys.stdout = open(os.devnull, "w", encoding="utf-8")
+    if sys.stderr is None:
+        sys.stderr = open(os.devnull, "w", encoding="utf-8")
     if hasattr(sys.stdout, "buffer"):
         sys.stdout = _io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
     if hasattr(sys.stderr, "buffer"):
@@ -296,36 +302,17 @@ def _confirm_exit(window) -> bool:
 
 def _start_server(port: int):
     import uvicorn
-    # 压低访问日志：仅输出应用本身的 logger（LLM 调用、token、流程等），隐藏高频 GET 请求
-    log_config = {
-        "version": 1,
-        "disable_existing_loggers": False,
-        "formatters": {
-            "default": {
-                "format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-                "datefmt": "%Y-%m-%d %H:%M:%S",
-            },
-        },
-        "handlers": {
-            "default": {
-                "formatter": "default",
-                "class": "logging.StreamHandler",
-                "stream": "ext://sys.stderr",
-            },
-        },
-        "loggers": {
-            # uvicorn 本身的访问日志设为 WARNING，避免 GET 请求刷屏
-            "uvicorn.access": {"handlers": ["default"], "level": "WARNING", "propagate": False},
-            "uvicorn.error": {"handlers": ["default"], "level": "INFO", "propagate": False},
-            "uvicorn": {"handlers": ["default"], "level": "INFO", "propagate": False},
-        },
-        "root": {"handlers": ["default"], "level": "INFO"},
-    }
+    # pythonw / PyInstaller 无控制台时，uvicorn 默认 log_config 会访问
+    # sys.stdout.isatty() 导致崩溃；log_config=None 让 uvicorn 走 root logger，
+    # 输出由 backend/app.py 挂的 analyzer.log RotatingFileHandler 落盘。
+    # 仅把 uvicorn.access 的高频 GET 请求日志压到 WARNING（对齐旧 log_config），
+    # uvicorn.error 保留 INFO 并 propagate 到 root logger 落盘。
+    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     uvicorn.run(
         "backend.app:app",
         host="127.0.0.1",
         port=port,
-        log_config=log_config,
+        log_config=None,
         app_dir=str(PROJECT_ROOT),
     )
 
@@ -348,17 +335,19 @@ class Api:
 
     def pick_files(self):
         """
-        打开系统文件对话框选择 txt 小说，返回文件路径列表。
+        打开系统文件对话框选择 txt / docx 小说，返回文件路径列表。
         （Windows WebView2 的 <input type=file> 不给 File 对象注入 path 属性，
         必须走后端 create_file_dialog 才能拿到真实本地路径。）
         """
         import webview
 
         window = webview.windows[0]
+        # file_types 必须是「并列字符串」，写成嵌套元组会失效
+        # （pywebview 要求每个元素都是 str）。
         return window.create_file_dialog(
             webview.FileDialog.OPEN,
             allow_multiple=True,
-            file_types=("TXT 文件 (*.txt)",),
+            file_types=("TXT 文件 (*.txt)", "Word 文档 (*.docx)"),
         )
 
     def minimize(self):
@@ -514,6 +503,16 @@ def main():
                 pass
     else:
         logger.error("无法获取单实例锁（反复抢锁失败），退出")
+        try:
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(
+                0,
+                f"无法获取单实例锁（反复抢锁失败）。\n\n请检查 {LOCK_FILE} 是否可删除。",
+                "启动失败",
+                0x10
+            )
+        except Exception:
+            pass
         sys.exit(1)
     try:
         os.write(_lock_fd, json.dumps(
@@ -543,6 +542,17 @@ def main():
     except Exception as e:
         logger.error(f"生成 session token 失败: {e}")
         try:
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(
+                0,
+                f"生成 session token 失败，桌面模式无法安全启动。\n\n{e}\n\n"
+                f"请检查 {PROJECT_ROOT} 是否可写。",
+                "启动失败",
+                0x10
+            )
+        except Exception:
+            pass
+        try:
             LOCK_FILE.unlink()
         except OSError:
             pass
@@ -556,6 +566,18 @@ def main():
     if not _wait_for_server(port):
         logger.error("后端启动超时")
         try:
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(
+                0,
+                "后端服务启动超时。\n\n请查看日志文件：\n"
+                f"{Path(os.environ.get('LOCALAPPDATA', '')) / 'NovelAnalyzer' / 'run.log'}\n"
+                f"{PROJECT_ROOT / 'analyzer.log'}",
+                "启动失败",
+                0x10
+            )
+        except Exception:
+            pass
+        try:
             LOCK_FILE.unlink()
         except OSError:
             pass
@@ -566,7 +588,21 @@ def main():
     try:
         import webview
     except ImportError:
-        logger.error("pywebview 未安装，请运行: pip install pywebview")
+        _msg = "pywebview 未安装，桌面模式无法启动。\n\n请运行:\npip install pywebview\n\n详细日志见 analyzer.log / run.log"
+        logger.error(_msg.replace("\n\n", " ").replace("\n", " "))
+        try:
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(0, _msg, "依赖缺失", 0x10)
+        except Exception:
+            pass
+        try:
+            LOCK_FILE.unlink()
+        except OSError:
+            pass
+        try:
+            SESSION_TOKEN_FILE.unlink(missing_ok=True)
+        except Exception:
+            pass
         sys.exit(1)
 
     window = webview.create_window(
@@ -653,7 +689,7 @@ def main():
             # 关键：WinForms 背景擦除会用不透明 BackColor 盖住 DWM Mica——
             # 把窗体刷子设为 alpha≈0（近透明），擦除等于不画，Mica 才能透出。
             # （alpha=1 而非 0：避开 Color.Transparent 的父背景特殊分支）
-            from System.Drawing import Color  # noqa: clr 此时已由 pywebview 平台模块加载
+            from System.Drawing import Color  # clr 此时已由 pywebview 平台模块加载
             native.BackColor = Color.FromArgb(1, 0, 0, 0)
             window.evaluate_js("document.documentElement.classList.add('mica-on')")
             logger.info("Win11 背景：Mica 已启用")

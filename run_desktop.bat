@@ -1,39 +1,42 @@
 @echo off
 setlocal EnableExtensions
+setlocal EnableDelayedExpansion
 chcp 65001 >nul
 echo === Novel Analyzer Desktop Mode ===
 echo.
 
 rem Enter project root (supports Chinese paths and network drives)
 pushd "%~dp0"
-set "SHARE_ROOT=%CD%"
+set "SHARE_ROOT=!CD!"
 
 rem ---- Diagnostic log: all step outputs go to disk for post-mortem ----
 set "RUN_LOG=%LOCALAPPDATA%\NovelAnalyzer\run.log"
 if not exist "%LOCALAPPDATA%\NovelAnalyzer" mkdir "%LOCALAPPDATA%\NovelAnalyzer"
 echo [%date% %time%] === run_desktop start (root=%SHARE_ROOT%) === >> "%RUN_LOG%"
 
-rem ---- Locate Python: prefer project .venv, fall back to PATH (2026-08-22) ----
+rem ---- Locate Pythonw: prefer project .venv, fall back to PATH ----
 rem Reason: previously `where python` returned the WindowsApps Python (bare install)
 rem which is missing json_repair/json5/websockets, breaking the JSON parse chain.
 rem The project .venv\Scripts\python.exe has all deps; prefer it for full robustness.
 rem Fallback to PATH only when .venv is missing.
+rem v0.2.0 silent launch: use pythonw.exe so no console window appears.
 rem Note (2026-08-22): cmd's `rem` parser is buggy under chcp 65001 (UTF-8 codepage) when
 rem the comment line contains Chinese + halfwidth parens -- it tries to execute the
 rem comment as a command. Keep `rem` lines in ASCII to avoid spurious errors.
-set "PYTHON="
-if exist "%SHARE_ROOT%\.venv\Scripts\python.exe" (
-  set "PYTHON=%SHARE_ROOT%\.venv\Scripts\python.exe"
+if exist "%SHARE_ROOT%\.venv\Scripts\pythonw.exe" (
+  set "PYTHON_W=%SHARE_ROOT%\.venv\Scripts\pythonw.exe"
 ) else (
-  for /f "delims=" %%P in ('where python 2^>nul') do set "PYTHON=%%P"
-  if not defined PYTHON (
-    for /f "delims=" %%P in ('py -3 -c "import sys; print(sys.executable)" 2^>nul') do set "PYTHON=%%P"
+  for /f "delims=" %%P in ('where pythonw 2^>nul') do set "PYTHON_W=%%P"
+  if not defined PYTHON_W (
+    for /f "delims=" %%P in ('py -3 -c "import sys; print(sys.executable)" 2^>nul') do (
+      for %%D in ("%%~dpP") do set "PYTHON_W=%%~dpDpythonw.exe"
+    )
   )
 )
-echo [%date% %time%] Using python: %PYTHON% >> "%RUN_LOG%"
-if not defined PYTHON (
-  echo [%date% %time%] ERROR: 未找到 python >> "%RUN_LOG%"
-  echo [ERROR] 未找到 python，请安装 Python 3.11+ 并加入 PATH（或安装 py 启动器）。
+echo [%date% %time%] Using pythonw: %PYTHON_W% >> "%RUN_LOG%"
+if not defined PYTHON_W (
+  echo [%date% %time%] ERROR: pythonw not found >> "%RUN_LOG%"
+  echo [ERROR] 未找到 pythonw，请安装 Python 3.11+ 并加入 PATH（或安装 py 启动器）。
   popd
   pause
   exit /b 1
@@ -58,35 +61,15 @@ copy /Y desktop.py "%LOCAL_APP%\desktop.py" >> "%RUN_LOG%"
 copy /Y config.json "%LOCAL_APP%\config.json" >> "%RUN_LOG%"
 
 rem ---- Launch from local copy; data/logs via NOVEL_ROOT point back to share ----
-echo [%date% %time%] === launching: %PYTHON% "%LOCAL_APP%\desktop.py"  (NOVEL_ROOT=%SHARE_ROOT%) === >> "%RUN_LOG%"
+echo [%date% %time%] === launching: %PYTHON_W% "%LOCAL_APP%\desktop.py"  (NOVEL_ROOT=%SHARE_ROOT%) === >> "%RUN_LOG%"
 set "NOVEL_ROOT=%SHARE_ROOT%"
 
-rem ---- Open a separate window showing the complete log in real-time ----
-rem Reason: without this, all python output is redirected to %RUN_LOG% (which can
-rem grow to 30+ MB during long analyses) and the original cmd window sits idle
-rem showing only echo + pause. User can't see what's happening without manually
-rem opening the log file. This PowerShell tail window streams run.log live with
-rem the last 50 lines pre-loaded, so startup and analysis are both visible.
-rem Note: do this BEFORE launching desktop.py so the tail window catches the
-rem launching echo and any early python errors.
-rem Closing the GUI: when desktop.py exits we taskkill this window by its title
-rem (set via `start "NovelAnalyzer 运行日志" ...` above) so the user only has to
-rem dismiss one remaining cmd window. PowerShell -NoExit does not change the
-rem host title, so the `start` title persists for the lifetime of the tail
-rem process and the filter is an exact match.
+rem ---- Silent launch: pythonw runs detached, no console/tail window ----
+rem GUI owns all runtime logging (WebSocket log panel) and file logs keep landing
+rem in run.log / analyzer.log / crash.log for post-mortem. If desktop.py fails
+rem before the GUI comes up, its error paths raise a native MessageBox.
 if not exist "%RUN_LOG%" type nul > "%RUN_LOG%"
-start "NovelAnalyzer 运行日志" powershell -NoExit -ExecutionPolicy Bypass -Command "Get-Content -Path '%RUN_LOG%' -Wait -Encoding UTF8 -Tail 50"
-
-pushd "%LOCAL_APP%"
-%PYTHON% desktop.py >> "%RUN_LOG%" 2>&1
-set RUN_ERR=%ERRORLEVEL%
-popd
-echo [%date% %time%] === python desktop.py exited with code %RUN_ERR% === >> "%RUN_LOG%"
-
-rem ---- Close the tail window we opened above ----
-rem /T also kills any child powershell job; /F forces immediate termination.
-rem The cmd window itself stays open so the user can read the exit code at pause.
-taskkill /FI "WINDOWTITLE eq NovelAnalyzer 运行日志" /T /F 2>nul
+start "" "%PYTHON_W%" "%LOCAL_APP%\desktop.py"
 
 popd
-pause
+exit /b 0
