@@ -464,6 +464,7 @@ class AnalysisPipeline:
                 await self._emit({
                     "chapter": block_id, "status": PipelineStatus.START,
                     "progress": completed_count, "total": total,
+                    "range": ch_range, "block_size": len(block_chs or [block_id]),
                     "message": f"开始分析{ch_range}..."
                 })
                 try:
@@ -712,6 +713,7 @@ class AnalysisPipeline:
             await self._emit({
                 "chapter": block_id, "status": PipelineStatus.START,
                 "progress": progress_count, "total": total,
+                "range": ch_range, "block_size": len(block_chs or [block_id]),
                 "message": f"{prefix}开始分析{ch_range}..."
             })
 
@@ -735,6 +737,7 @@ class AnalysisPipeline:
             await self._emit({
                 "chapter": block_id, "status": PipelineStatus.FAILED,
                 "progress": completed_count, "total": total,
+                "range": ch_range, "block_size": len(block_chs or [block_id]),
                 "retries": 0, "failed_tokens": 0,
                 "message": f"{prefix}{ch_range}分析异常",
             })
@@ -767,6 +770,7 @@ class AnalysisPipeline:
                 "chapter": block_id, "status": PipelineStatus.DONE,
                 "result": result_dict,
                 "progress": completed_count, "total": total, "elapsed": elapsed,
+                "range": ch_range, "block_size": len(block_chs or [block_id]),
                 "tokens": ch_tokens[0] + ch_tokens[1],
                 "input_tokens": ch_tokens[0], "output_tokens": ch_tokens[1],
                 "retries": retry_info.get("retries", 0),
@@ -783,12 +787,14 @@ class AnalysisPipeline:
                 await self._emit({
                     "chapter": block_id, "status": PipelineStatus.SKIPPED,
                     "progress": completed_count, "total": total,
+                    "range": ch_range, "block_size": len(block_chs or [block_id]),
                     "message": f"{prefix}{ch_range} 内容审核拦截，已跳过"
                 })
                 return False, completed_count
             await self._emit({
                 "chapter": block_id, "status": PipelineStatus.FAILED,
                 "progress": completed_count, "total": total,
+                "range": ch_range, "block_size": len(block_chs or [block_id]),
                 "retries": retry_info.get("retries", 0),
                 "failed_tokens": retry_info.get("failed_tokens", 0),
                 "message": f"{prefix}{ch_range}分析失败"
@@ -914,7 +920,7 @@ class AnalysisPipeline:
         # 5. 程序侧硬截断 + 归档
         # 5a. paradigm_layers 截断
         pl = new_json.get("paradigm_layers", [])
-        if len(pl) > 5:  # ROLLING_MAX_PARADIGMS
+        if len(pl) > 5:  # 范式层上限
             new_json["paradigm_layers"] = pl[-5:]
 
         # 5b. recent_momentum 归档检测
@@ -960,7 +966,7 @@ class AnalysisPipeline:
             new_json["global_milestones"] = new_milestones
 
         # 5e. 硬截断 active_causal_chains
-        max_chains = 5  # ROLLING_MAX_CAUSAL_CHAINS
+        max_chains = 5  # 因果链条目上限
         if len(new_json.get("active_causal_chains", [])) > max_chains:
             new_json["active_causal_chains"] = new_json["active_causal_chains"][-max_chains:]
 

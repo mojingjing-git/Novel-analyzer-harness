@@ -130,9 +130,10 @@ def make_pipeline_callbacks(hub, item, stats, seen_characters):
 
         # H17: block_start 转发（带章范围文本 message 复用现有"开始分析第X-Y章..."）
         if status == PipelineStatus.START:
+            range_text = payload.get("range") or message
             await hub.publish(block_start_event(
                 chapter=payload.get("chapter", 0),  # block_id（块起始章号）
-                range_text=message,
+                range_text=range_text,
                 progress=payload.get("progress", 0),
                 total=payload.get("total", 0),
                 ts=time.time(),
@@ -141,10 +142,11 @@ def make_pipeline_callbacks(hub, item, stats, seen_characters):
         # skipped（内容审核拦截）也必须转发：否则前端已登记的 start 车道
         # 收不到 done，activeBlocks 永久泄漏（车道堆叠修复）
         if status in (PipelineStatus.DONE, PipelineStatus.FAILED, PipelineStatus.SKIPPED):
+            range_text = payload.get("range") or message
             await hub.publish(block_done_event(
                 chapter=payload.get("chapter", 0),
                 ok=status == PipelineStatus.DONE,
-                range_text=message,  # H17: 失败/完成 message 含章范围
+                range_text=range_text,
                 elapsed=payload.get("elapsed"),
                 tokens=payload.get("tokens"),
             ))

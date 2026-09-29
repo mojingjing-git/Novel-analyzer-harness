@@ -19,7 +19,8 @@ export interface WSProgressPayload {
 
 export interface WSBlockStartPayload {
   chapter: number   // block_id（块起始章号）
-  range: string
+  range: string     // 后端保证为 chN-chM 结构化格式；message 仅供日志
+  message?: string  // 旧后端无结构化 range 时的兜底
   progress: number
   total: number
   ts: number        // 服务端 epoch 秒
@@ -28,7 +29,8 @@ export interface WSBlockStartPayload {
 export interface WSBlockDonePayload {
   chapter: number
   ok: boolean
-  range: string
+  range: string     // 后端保证为 chN-chM 结构化格式；message 仅供日志
+  message?: string  // 旧后端无结构化 range 时的兜底
   elapsed?: number | null
   tokens?: number | number[] | null  // 续跑补发路径为 (0,0) 元组 → JSON 数组
 }

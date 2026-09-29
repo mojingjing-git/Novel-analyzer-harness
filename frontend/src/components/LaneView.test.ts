@@ -1,6 +1,6 @@
 /** H17 (2026-08-26) LaneView 车道组件测试 */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { mount, VueWrapper } from '@vue/test-utils'
+import { mount } from '@vue/test-utils'
 import LaneView from './LaneView.vue'
 
 describe('LaneView 车道组件', () => {

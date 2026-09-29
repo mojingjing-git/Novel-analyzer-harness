@@ -2,6 +2,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   gcActiveBlocks,
+  normalizeRange,
   reconcileActiveBlocks,
   SYNTHETIC_LANE_ID_BASE,
   type ActiveBlockEntry,
@@ -22,6 +23,30 @@ function tokensOf(entries: Array<[number, number]>): Map<number, TokenInfo> {
   const now = Date.now()
   return new Map(entries.map(([id, age]) => [id, { outputTokens: 0, lastTokenAt: now - age }]))
 }
+
+describe('normalizeRange', () => {
+  it('保留规范短格式', () => {
+    expect(normalizeRange('ch1381-ch1384')).toBe('ch1381-ch1384')
+  })
+
+  it('剥掉开始前缀和省略号', () => {
+    expect(normalizeRange('开始分析ch1429-ch1432...')).toBe('ch1429-ch1432')
+  })
+
+  it('剥掉补跑前缀', () => {
+    expect(normalizeRange('[补跑] 开始分析ch9-ch10...')).toBe('ch9-ch10')
+  })
+
+  it('剥掉完成、失败、异常尾巴', () => {
+    expect(normalizeRange('ch9-ch10分析完成')).toBe('ch9-ch10')
+    expect(normalizeRange('ch9-ch10分析失败')).toBe('ch9-ch10')
+    expect(normalizeRange('ch9-ch10分析异常')).toBe('ch9-ch10')
+  })
+
+  it('剥掉内容审核拦截尾巴', () => {
+    expect(normalizeRange('ch9-ch10 内容审核拦截，已跳过')).toBe('ch9-ch10')
+  })
+})
 
 describe('gcActiveBlocks', () => {
   const WARN = 480 // 秒
@@ -120,5 +145,26 @@ describe('reconcileActiveBlocks', () => {
     const inflight: InflightBlock[] = [{ chapter: 200, range: '开始分析ch200...', started_at: serverTs }]
     const next = reconcileActiveBlocks(active, inflight, now)
     expect(next).toBe(active)
+  })
+
+  it('分析块超过并发上限时按最早开始优先截断', () => {
+    const synthetic = SYNTHETIC_LANE_ID_BASE + 1
+    // 600 是宽限期内 WS 记账异常；200/300/400 来自并发池，按最早开始保留
+    const active = new Map<number, ActiveBlockEntry>([
+      [300, { range: 'ch300', startedAt: now - 30 * 1000 }],
+      [200, { range: 'ch200', startedAt: now - 60 * 1000 }],
+      [400, { range: 'ch400', startedAt: now - 10 * 1000 }],
+      [600, { range: 'ch600', startedAt: now - 5 * 1000 }],
+      [synthetic, { range: 'summary', startedAt: now - 5 * 1000 }],
+    ])
+    const inflight = inflightOf([[200, 60], [300, 30], [400, 10]])
+    const next = reconcileActiveBlocks(active, inflight, now, 15000, 3)
+    expect([...next.keys()].sort((a, b) => a - b)).toEqual([200, 300, 400, synthetic])
+  })
+
+  it('未超过并发上限时不截断', () => {
+    const active = activeOf([])
+    const next = reconcileActiveBlocks(active, inflightOf([[200, 60], [300, 30]]), now, 15000, 4)
+    expect(next.size).toBe(2)
   })
 })

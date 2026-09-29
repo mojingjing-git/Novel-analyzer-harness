@@ -30,6 +30,22 @@ export interface TokenInfo {
 }
 
 /**
+ * 防御旧后端 / 直接调 API 时混入的人类可读日志文案。
+ * 正常路径后端已发结构化 range，本函数仅做无副作用兜底。
+ */
+export function normalizeRange(raw: string): string {
+  const text = String(raw ?? '').trim()
+  if (!text) return ''
+  return text
+    .replace(/^\[(?:补跑|重试)\]\s*/, '')
+    .replace(/^开始分析\s*/, '')
+    .replace(/\.\.\.\s*$/, '')
+    .replace(/分析(?:完成|失败|异常)$/, '')
+    .replace(/\s*内容审核拦截，已跳过$/, '')
+    .trim()
+}
+
+/**
  * GC 僵尸活跃车道。返回 kept（保留的 Map，可能为原引用）与 gcIds（被回收的 id）。
  *
  * 回收条件（跳过 ≥900000 的总结合成车道，它们的存活由 summaryLanes 自己管理）：
@@ -75,6 +91,7 @@ export function reconcileActiveBlocks(
   inflight: InflightBlock[],
   nowMs: number,
   graceMs: number = 15000,
+  concurrency?: number,
 ): Map<number, ActiveBlockEntry> {
   const next = new Map<number, ActiveBlockEntry>()
   for (const b of inflight) {
@@ -86,6 +103,16 @@ export function reconcileActiveBlocks(
   for (const [id, info] of active) {
     if (id >= SYNTHETIC_LANE_ID_BASE || nowMs - info.startedAt < graceMs) {
       next.set(id, info)
+    }
+  }
+  // 防御最后一层：即便对账源或宽限期逻辑异常，分析车道也不能显示超过并发池
+  const analysisEntries = [...next.entries()]
+    .filter(([id]) => id < SYNTHETIC_LANE_ID_BASE)
+    .sort((a, b) => a[1].startedAt - b[1].startedAt)
+  if (concurrency && concurrency > 0 && analysisEntries.length > concurrency) {
+    const keepIds = new Set(analysisEntries.slice(0, concurrency).map(([id]) => id))
+    for (const [id] of analysisEntries) {
+      if (!keepIds.has(id)) next.delete(id)
     }
   }
   // 无变化判断：键集合一致且 range/startedAt 全等

@@ -133,3 +133,65 @@ async def test_with_progress_exception_emits_failed_with_correct_chapter():
     assert 7 in state._failed_chapters
     # 在途登记已清空
     assert pipeline._inflight_blocks == {}
+
+
+async def test_start_event_has_structured_range():
+    """start 事件必须带与 inflight_blocks 同源的 chN-chM，避免前端解析日志文案"""
+    pipeline = make_pipeline()
+    state = make_state()
+    fp = MagicMock()
+    fp.read_block.return_value = "内容"
+
+    async def fake_analyze_chapter(block_id, content, kb, block_size=1, book_id=""):
+        return AnalysisResult(chapter_number=block_id), (10, 20), {"retries": 0, "failed_tokens": 0}
+
+    pipeline._analyzer = MagicMock()
+    pipeline._analyzer.analyze_chapter = fake_analyze_chapter
+    pipeline.file_processor = fp
+    pipeline.state = state
+    pipeline._block_map = {5: [5, 8]}
+    emitted = []
+
+    async def on_progress(payload):
+        emitted.append(payload)
+
+    pipeline._on_progress = on_progress
+    await pipeline.analyze_block_with_progress(
+        block_id=5, block_chs=[5, 8], block_size=2, total=10, label="",
+        progress_count=2, completed_count=2, emit_start=True,
+    )
+
+    start = next(p for p in emitted if p.get("status") == "start")
+    assert start["range"] == "ch5-ch8"
+    assert start["block_size"] == 2
+
+
+async def test_done_event_has_structured_range():
+    """done/skipped/failed 事件同样带结构化 range，保持车道占位文案统一"""
+    pipeline = make_pipeline()
+    state = make_state()
+    fp = MagicMock()
+    fp.read_block.return_value = "内容"
+
+    async def fake_analyze_chapter(block_id, content, kb, block_size=1, book_id=""):
+        return AnalysisResult(chapter_number=block_id), (10, 20), {"retries": 0, "failed_tokens": 0}
+
+    pipeline._analyzer = MagicMock()
+    pipeline._analyzer.analyze_chapter = fake_analyze_chapter
+    pipeline.file_processor = fp
+    pipeline.state = state
+    pipeline._block_map = {9: [9, 10]}
+    emitted = []
+
+    async def on_progress(payload):
+        emitted.append(payload)
+
+    pipeline._on_progress = on_progress
+    await pipeline.analyze_block_with_progress(
+        block_id=9, block_chs=[9, 10], block_size=2, total=10, label="补跑",
+        progress_count=2, completed_count=2, emit_start=True,
+    )
+
+    done = next(p for p in emitted if p.get("status") == "done")
+    assert done["range"] == "ch9-ch10"
+    assert done["block_size"] == 2

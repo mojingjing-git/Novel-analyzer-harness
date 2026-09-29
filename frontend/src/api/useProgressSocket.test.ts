@@ -55,7 +55,6 @@ describe('useProgressSocket', () => {
   })
 
   it('非 ping 消息分发给订阅者，ping 被静默丢弃', async () => {
-    const m = mCurrent!
     const seen: string[] = []
     await inComponent(m2 => m2.useProgressSocket(msg => seen.push(msg.type)))
     FakeWebSocket.instances[0].open()
@@ -65,7 +64,6 @@ describe('useProgressSocket', () => {
   })
 
   it('订阅者抛异常不影响其他订阅者', async () => {
-    const m = mCurrent!
     const seen: string[] = []
     await inComponent(m2 => {
       m2.useProgressSocket(() => { throw new Error('炸了') })
