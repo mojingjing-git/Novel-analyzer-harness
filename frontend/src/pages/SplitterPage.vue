@@ -1,14 +1,13 @@
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue'
 import { api, type SplitterPreview } from '../api/client'
+import {
+  baseName, splitterStatusText, appendFileUnique, rollbackProcessing,
+  groupChaptersByVolume, type SplitterFileItem,
+} from '../utils/splitterView'
 
-interface FileItem {
-  file_path: string
-  book_name: string
-  status: 'pending' | 'processing' | 'done' | 'error'
-  chapters: number
-  error: string
-}
+type FileItem = SplitterFileItem
+const statusText = splitterStatusText
 type BatchResult = {
   total: number
   success: number
@@ -34,17 +33,11 @@ const previewTitle = ref('')
 const batchResult = ref<BatchResult | null>(null)
 const errorMsg = ref('')
 
-function baseName(p: string): string {
-  const s = p.replace(/\\/g, '/').split('/').pop() || p
-  return s.replace(/\.txt$/i, '')
-}
-function statusText(s: FileItem['status']): string {
-  return { pending: '待处理', processing: '处理中', done: '完成', error: '失败' }[s]
-}
+// baseName / statusText / 去重追加 / F-2 回滚 / 卷分组：纯函数本体在 utils/splitterView.ts（可独立 vitest）
 
 function addFileByPath(p: string) {
-  if (files.value.some((f) => f.file_path === p)) return
-  files.value.push({ file_path: p, book_name: baseName(p), status: 'pending', chapters: 0, error: '' })
+  const r = appendFileUnique(files.value, p)
+  if (r.added) files.value = r.items
 }
 
 // 文件选择：桌面窗口（pywebview）走后端 create_file_dialog 拿真实本地路径
@@ -149,31 +142,18 @@ async function doBatch() {
     }
   } catch (e) {
     errorMsg.value = (e as Error).message
-    // 整体失败（网络断/后端崩溃）：所有行恢复"待处理"，否则永久显示"处理中"卡死 UI（F-2）
-    files.value.forEach((f) => {
-      if (f.status === 'processing') {
-        f.status = 'pending'
-      }
-    })
+    // 整体失败（网络断/后端崩溃）：所有行恢复"待处理"，否则永久显示"处理中"卡死 UI
+    // （F-2，回滚逻辑在 utils/splitterView.rollbackProcessing）
+    files.value = rollbackProcessing(files.value)
   } finally {
     busy.value = false
   }
 }
 
-// 按卷分组展示
+// 按卷分组展示（分组逻辑在 utils/splitterView.groupChaptersByVolume）
 const groupedChapters = computed(() => {
   if (!preview.value) return []
-  const groups: { volume: string; items: SplitterPreview['chapters'] }[] = []
-  let cur: { volume: string; items: SplitterPreview['chapters'] } | null = null
-  for (const ch of preview.value.chapters) {
-    const vol = ch.volume || ''
-    if (!cur || cur.volume !== vol) {
-      cur = { volume: vol, items: [] }
-      groups.push(cur)
-    }
-    cur.items.push(ch)
-  }
-  return groups
+  return groupChaptersByVolume(preview.value.chapters)
 })
 </script>
 
@@ -194,7 +174,7 @@ const groupedChapters = computed(() => {
         <div class="flex gap-2">
           <button @click="triggerAddFiles" class="glass-button">+ 添加文件（可多选）</button>
           <button @click="clearFiles" :disabled="!files.length" class="glass-button">清空</button>
-          <input ref="fileInput" type="file" accept=".txt" multiple style="display:none" @change="onFilesPicked" />
+          <input ref="fileInput" type="file" accept=".txt,.docx" multiple style="display:none" @change="onFilesPicked" />
         </div>
       </div>
 
@@ -302,7 +282,7 @@ const groupedChapters = computed(() => {
           v-for="r in batchResult.results"
           :key="r.file"
           class="text-xs flex justify-between gap-3"
-          :style="{ color: r.ok ? 'var(--text-secondary)' : 'var(--win-danger)' }"
+          :style="{ color: r.ok ? 'var(--win-text-secondary)' : 'var(--win-danger)' }"
         >
           <span class="truncate" :title="r.file">{{ r.book || baseName(r.file) }}</span>
           <span class="shrink-0">{{ r.ok ? r.total_chapters + ' 章' : '失败: ' + r.error }}</span>

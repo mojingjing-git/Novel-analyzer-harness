@@ -1,29 +1,18 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import BookSelector from '../components/BookSelector.vue'
 import LogConsole, { type LogEntry } from '../components/LogConsole.vue'
 import { api, type SummaryStatus } from '../api/client'
 import { renderMarkdown } from '../utils/markdown'
+import {
+  SUMMARY_PHASES, phaseLabelOf, phaseIndexOf, stepClassOf, overallPctOf,
+  batchPctOf, elapsedTextOf, summaryTokenTextOf, showProgressOf,
+  dictToJsonString, jsonStringToDict,
+} from '../utils/summaryProgress'
 import { useLogStore } from '../composables/useLogStore'
 
-// 总结进度的 4 个阶段（对齐旧版日志「最终总结」部分的粒度）
-const SUMMARY_PHASES = [
-  { key: 'batch', label: '分卷分析 + 伏笔调和', weight: 0.7 },
-  { key: 'recheck', label: '全书伏笔复检', weight: 0.12 },
-  { key: 'style', label: '写作风格分析', weight: 0.08 },
-  { key: 'report', label: '生成全书脉络报告', weight: 0.1 },
-]
-const PHASE_LABELS: Record<string, string> = {
-  starting: '准备中...',
-  batch: '分卷分析 + 伏笔调和',
-  recheck: '全书伏笔复检',
-  style: '写作风格分析',
-  report: '生成全书脉络报告',
-  complete: '完成',
-  stopped: '已停止',
-  failed: '失败',
-  idle: '空闲',
-}
+// 进度计算本体（4 阶段加权等）抽到 utils/summaryProgress.ts，可独立 vitest；
+// SUMMARY_PHASES 同时供模板渲染步骤条
 
 // ===== 共享书目 =====
 const bookId = ref('')
@@ -122,7 +111,7 @@ async function persistSummaryParams() {
   }
 }
 
-// 思考控制选项（JSON 字符串 ↔ dict，按参数名区分，不按厂商模型命名）
+// 思考控制选项（JSON 字符串 ↔ dict 的转换在 utils/summaryProgress，按参数名区分，不按厂商模型命名）
 const THINKING_OPTIONS = [
   { value: '{}', label: '自动（跟随全局设置）' },
   { value: '{"thinking":{"type":"disabled"}}', label: 'thinking: disabled' },
@@ -130,17 +119,12 @@ const THINKING_OPTIONS = [
   { value: '{"enable_thinking":false}', label: 'enable_thinking: false' },
 ]
 
-function dictToJsonString(v: Record<string, unknown> | undefined): string {
-  if (!v || Object.keys(v).length === 0) return '{}'
-  return JSON.stringify(v)
-}
-function jsonStringToDict(s: string): Record<string, unknown> {
-  try { return s === '{}' ? {} : JSON.parse(s) } catch { return {} }
-}
-
 async function loadSummaryParams() {
   try {
     const cfg = await api.getSettings()
+    // 门闩在赋值期间必须保持关闭：watcher 的 flush 发生在下一个微任务，
+    // 若在赋值后同步置位 paramsLoaded，watcher 会把「初始回填」误判为用户改动，
+    // 服务端值 ≠ 默认值时挂载即触发一次多余的 PUT
     batchSize.value = cfg.analysis.summary_batch_size ?? 30
     concurrency.value = cfg.analysis.summary_concurrency ?? 2
     summaryModel.value = cfg.api.summary_model ?? ''
@@ -149,6 +133,7 @@ async function loadSummaryParams() {
     if (summaryModel.value && !modelOptions.value.includes(summaryModel.value)) {
       modelOptions.value.push(summaryModel.value)
     }
+    await nextTick()  // 等本轮 watcher flush 跑完（此时门闩仍关 → 全部短路）
   } catch (e) { console.error('读取总结参数失败:', e) }
   paramsLoaded = true
 }
@@ -181,79 +166,23 @@ watch(summaryStatus, (s) => {
 const reportHtml = computed(() => renderMarkdown(report.value))
 
 // ===== 进度条（细化：4 阶段步骤 + 批次子进度 + 整体百分比 + 耗时）=====
-const phaseLabel = computed(() => PHASE_LABELS[summaryStatus.value?.phase || 'idle'] || '准备中')
+const phaseLabel = computed(() => phaseLabelOf(summaryStatus.value?.phase))
 
-const phaseIndex = computed(() => {
-  const p = summaryStatus.value?.phase
-  if (!p || p === 'idle' || p === 'starting') return -1
-  if (p === 'complete') return SUMMARY_PHASES.length // 全部完成
-  const i = SUMMARY_PHASES.findIndex((x) => x.key === p)
-  if (i >= 0) return i
-  return -1 // failed / stopped：无法精确判断停在哪步，交给 banner 提示
-})
+const phaseIndex = computed(() => phaseIndexOf(summaryStatus.value?.phase))
 
 function stepClass(i: number): string {
-  if (phaseIndex.value > i) return 'done'
-  if (phaseIndex.value === i) return 'active'
-  return 'pending'
+  return stepClassOf(phaseIndex.value, i)
 }
 
-const overallPct = computed(() => {
-  const s = summaryStatus.value
-  if (!s) return 0
-  if (s.phase === 'complete') return 100
-  // 失败/停止：用已完成的卷进度近似（保住已取得的进度感）
-  if ((s.phase === 'failed' || s.phase === 'stopped') && s.total_batches > 0) {
-    return Math.round(SUMMARY_PHASES[0].weight * 100 * (s.batches_done / s.total_batches))
-  }
-  const i = SUMMARY_PHASES.findIndex((x) => x.key === s.phase)
-  if (i < 0) return 0
-  let pct = 0
-  for (let k = 0; k < i; k++) pct += SUMMARY_PHASES[k].weight * 100
-  if (s.phase === 'batch' && s.total_batches > 0) {
-    pct += SUMMARY_PHASES[i].weight * 100 * (s.batches_done / s.total_batches)
-  } else {
-    pct += SUMMARY_PHASES[i].weight * 50 // 非批次阶段进行中，计该阶段权重的一半
-  }
-  return Math.min(100, Math.round(pct))
-})
+const overallPct = computed(() => overallPctOf(summaryStatus.value))
 
-const batchPct = computed(() => {
-  const s = summaryStatus.value
-  if (!s || !s.total_batches) return 0
-  return Math.round((s.batches_done / s.total_batches) * 100)
-})
+const batchPct = computed(() => batchPctOf(summaryStatus.value))
 
-const elapsedText = computed(() => {
-  const s = summaryStatus.value
-  if (!s || !s.started_at) return ''
-  const end = s.finished_at || Date.now() / 1000
-  const secs = Math.max(0, Math.round(end - s.started_at))
-  if (secs < 60) return `${secs}秒`
-  return `${Math.floor(secs / 60)}分${secs % 60}秒`
-})
+const elapsedText = computed(() => elapsedTextOf(summaryStatus.value, Date.now() / 1000))
 
-const SUMMARY_TOKEN_LABELS: Record<string, string> = {
-  summary: '分卷摘要', reconciliation: '伏笔调和', recheck: '全书复检', style: '风格分析', final: '最终报告',
-}
-const summaryTokenText = computed(() => {
-  const stats = summaryStatus.value?.token_stats
-  if (!stats) return ''
-  const parts = Object.entries(SUMMARY_TOKEN_LABELS)
-    .map(([k, label]) => {
-      const v = stats[k]
-      return v && (v.input_tokens || v.output_tokens) ? `${label} 入${v.input_tokens} 出${v.output_tokens}` : ''
-    })
-    .filter(Boolean)
-  return parts.length ? `本次总结 token：${parts.join(' · ')}` : ''
-})
+const summaryTokenText = computed(() => summaryTokenTextOf(summaryStatus.value))
 
-const showProgress = computed(() => {
-  const s = summaryStatus.value
-  if (!s) return false
-  if (s.running) return true
-  return ['complete', 'failed', 'stopped'].includes(s.phase)
-})
+const showProgress = computed(() => showProgressOf(summaryStatus.value))
 
 const summaryError = ref('')
 async function startSummary() {

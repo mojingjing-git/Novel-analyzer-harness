@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import Icon from '../components/Icon.vue'
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import LogConsole from '../components/LogConsole.vue'
 import ChapterDetailPanel from '../components/ChapterDetailPanel.vue'
 import BookSelector from '../components/BookSelector.vue'
@@ -10,6 +10,11 @@ import CountUp from '../components/CountUp.vue'
 import RunDashboard, { type DiscoveryItem, type ActiveBlock, type FinishedBlock } from '../components/RunDashboard.vue'
 import { applySummaryProgress } from '../utils/summaryLanes'
 import { gcActiveBlocks, reconcileActiveBlocks } from '../utils/laneRegistry'
+import {
+  applyBlockStart, applyBlockDone, applyTokenDelta, appendDiscovery,
+  aggregateRate as computeAggregateRate, summarizeSession, resolveDeleteIndex,
+  pickRunningBlockSize, fmt, fmtPercent,
+} from '../utils/queueFeed'
 import { api, type AnalysisStatus, type TokenStatsResponse, type SessionTokenStatsResponse } from '../api/client'
 import { useProgressSocket, type ProgressMessage } from '../api/useProgressSocket'
 import { useLogStore } from '../composables/useLogStore'
@@ -34,20 +39,9 @@ const tokenByBlock = ref<Map<number, { outputTokens: number; lastTokenAt: number
 // block_done 时清理对应 blockId 的速率，避免聚合时把已结束 block 的尾速算进去。
 const rateByBlock = ref<Map<number, number>>(new Map())
 const rateHistory = ref<number[]>([])
-const RATE_HISTORY_MAX = 30
-// 已完成块保留上限（防止 Map 无限增长）
-const FINISHED_BLOCKS_MAX = 50
 // H17 P3 V2：活跃 block 聚合速率（tok/s）= sum(活跃 block 的 rateByBlock)
-// 注意：filter + reduce 在 computed 中会随 activeBlocks/rateByBlock 自动重算
-const aggregateRate = computed(() => {
-  let total = 0
-  for (const [blockId, rate] of rateByBlock.value.entries()) {
-    if (activeBlocks.value.has(blockId)) {
-      total += rate
-    }
-  }
-  return total
-})
+// 计算本体抽到 utils/queueFeed.ts（可独立 vitest），此处仅做响应式包装
+const aggregateRate = computed(() => computeAggregateRate(rateByBlock.value, activeBlocks.value))
 // 章节详情共享的书目与章节号（从独立的工具栏提升到此处，便于两个分栏内容框对齐）
 const detailBookId = ref('')
 const detailChapter = ref(0)
@@ -91,80 +85,32 @@ function onMessage(msg: ProgressMessage) {
       }
       break
     case 'block_start': {
-      // H17: 块开始 → 活跃块登记
-      const p = msg.payload
-      const blockId = Number(p.chapter ?? 0)
-      if (blockId > 0) {
-        activeBlocks.value.set(blockId, {
-          range: String(p.range ?? `block ${blockId}`),
-          startedAt: Number(p.ts ?? Date.now() / 1000) * 1000,
-        })
-        // 触发响应式更新（Map 引用未变需重建）
-        activeBlocks.value = new Map(activeBlocks.value)
-      }
+      // H17: 块开始 → 活跃块登记（状态机本体抽到 utils/queueFeed.ts，可独立 vitest）
+      activeBlocks.value = applyBlockStart(activeBlocks.value, msg.payload, Date.now())
       break
     }
     case 'block_done': {
-      // H17: 块完成 → 移出活跃 + 登记 finished（用于车道占位视觉）
-      const p = msg.payload
-      const blockId = Number(p.chapter ?? 0)
-      if (blockId > 0) {
-        activeBlocks.value.delete(blockId)
-        activeBlocks.value = new Map(activeBlocks.value)
-        // H17 P3 V2 修复（2026-08-26）：清理已完成 block 的速率，
-        // 否则 aggregateRate 会把刚结束 block 的尾速算进"当前聚合"
-        rateByBlock.value.delete(blockId)
-        rateByBlock.value = new Map(rateByBlock.value)
-        finishedBlocks.value.set(blockId, {
-          ok: Boolean(p.ok),
-          range: String(p.range ?? `block ${blockId}`),
-        })
-        // 限制大小：超过 FINISHED_BLOCKS_MAX 删最早的
-        if (finishedBlocks.value.size > FINISHED_BLOCKS_MAX) {
-          const firstKey = finishedBlocks.value.keys().next().value
-          if (firstKey !== undefined) finishedBlocks.value.delete(firstKey)
-        }
-        finishedBlocks.value = new Map(finishedBlocks.value)
-      }
+      // H17: 块完成 → 移出活跃 + 清理速率 + 登记 finished（FIFO 上限在 queueFeed 内）
+      const r = applyBlockDone(activeBlocks.value, finishedBlocks.value, rateByBlock.value, msg.payload)
+      activeBlocks.value = r.active
+      finishedBlocks.value = r.finished
+      rateByBlock.value = r.rateByBlock
       scheduleRefresh(refresh)
       break
     }
     case 'discovery': {
-      // H17: 发现流 append-only
-      const p = msg.payload
-      const item: DiscoveryItem = {
-        id: discoveryId++,
-        ts: Date.now(),
-        events: Number(p.events ?? 0),
-        foreshadows: (p.foreshadows as string[]) ?? [],
-        characters: (p.characters as string[]) ?? [],
-        unresolved: (p.unresolved as string[]) ?? [],
-        highlighted: ((p.foreshadows as string[] | undefined)?.length ?? 0) > 0
-                    || ((p.characters as string[] | undefined)?.length ?? 0) > 0,
-      }
-      discoveries.value = [...discoveries.value, item].slice(-200)
+      // H17: 发现流 append-only（200 条上限在 queueFeed 内）
+      const r = appendDiscovery(discoveries.value, msg.payload, discoveryId, Date.now())
+      discoveries.value = r.items
+      discoveryId = r.nextId
       break
     }
     case 'token_delta': {
-      // H17 Phase 3 V2：实时 token 增量 → 块级累计 + 速率 sparkline
-      const p = msg.payload
-      const d = p.delta
-      const blockId = Number(p.unit_idx ?? -1)
-      const outTokens = Number(d.output_tokens ?? 0)
-      const rate = Number(d.rate_tokens_per_sec ?? 0)
-      if (blockId > 0) {
-        const cur = tokenByBlock.value.get(blockId) || { outputTokens: 0, lastTokenAt: 0 }
-        cur.outputTokens = Math.max(cur.outputTokens, outTokens)  // 累计取最大
-        cur.lastTokenAt = Date.now()
-        tokenByBlock.value = new Map(tokenByBlock.value)
-        // H17 P3 V2 修复（2026-08-26）：维护 per-block 最新速率
-        // 注意：rate 可能 < 0 / = 0（停止 / 出错），也照更新以反映"该 block 当前不输出"
-        rateByBlock.value.set(blockId, rate)
-        rateByBlock.value = new Map(rateByBlock.value)
-      }
-      if (rate > 0) {
-        rateHistory.value = [...rateHistory.value, rate].slice(-RATE_HISTORY_MAX)
-      }
+      // H17 Phase 3 V2：实时 token 增量 → 块级累计 + 速率 sparkline（queueFeed.applyTokenDelta）
+      const r = applyTokenDelta(tokenByBlock.value, rateByBlock.value, rateHistory.value, msg.payload, Date.now())
+      tokenByBlock.value = r.tokenByBlock
+      rateByBlock.value = r.rateByBlock
+      rateHistory.value = r.rateHistory
       break
     }
     case 'state_change': scheduleRefresh(refresh); break
@@ -176,7 +122,6 @@ function onMessage(msg: ProgressMessage) {
       // LaneView 就能用同一组件显示最终总结阶段的 LLM 调用。
       // 合成逻辑全部抽到 utils/summaryLanes.ts（可独立 vitest）。
       const p = msg.payload
-      const ptype = String(p.type ?? '')
       const phase = String(p.phase ?? '')
       const phaseLabel: Record<string, string> = {
         batch: '分卷分析+伏笔调和', recheck: '全书伏笔复检',
@@ -210,7 +155,7 @@ function syncLaneRegistry() {
   if (!status.value?.running) return
   const now = Date.now()
   const { kept, gcIds } = gcActiveBlocks(
-    activeBlocks.value, tokenByBlock.value, now, stallWarnSec.value || 480)
+    activeBlocks.value, tokenByBlock.value, now, STALL_WARN_SEC)
   if (gcIds.length > 0) {
     for (const id of gcIds) {
       tokenByBlock.value.delete(id)
@@ -222,7 +167,8 @@ function syncLaneRegistry() {
   }
   const inflight = status.value?.inflight_blocks
   if (inflight) {
-    activeBlocks.value = reconcileActiveBlocks(kept, inflight, Date.now())
+    activeBlocks.value = reconcileActiveBlocks(
+      kept, inflight, Date.now(), 5000, currentConcurrency.value)
   } else if (gcIds.length > 0) {
     activeBlocks.value = kept
   }
@@ -244,36 +190,8 @@ async function refresh() {
 async function refreshTokens() { try { tokens.value = await api.getTokenStats() } catch (e) { console.error(e) } }
 // 本次窗口会话累计（分析+总结，内存态跨书累计；重启清零）
 async function refreshSessionStats() { try { sessionStats.value = await api.getSessionTokenStats() } catch (e) { console.error(e) } }
-function fmt(n: number): string {
-  if (!n) return '0'
-  if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M'
-  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K'
-  return String(n)
-}
-const fmtPercent = (n: number) => n.toFixed(1) + '%'
-// 分类小计加总为总量（分析/总结共用）
-function catTotal(cats: Record<string, { input_tokens: number; output_tokens: number }> | undefined, key: 'input_tokens' | 'output_tokens'): number {
-  if (!cats) return 0
-  return Object.values(cats).reduce((s, c) => s + (c[key] || 0), 0)
-}
-// 本次窗口会话的总量（分析 + 总结；input 不含缓存，cached 为命中部分）
-const sessionTotal = computed(() => {
-  const a = sessionStats.value?.analysis
-  const s = sessionStats.value?.summary
-  const input = (catTotal(a?.categories, 'input_tokens') || 0) + (s?.input_tokens || 0)
-  const output = (catTotal(a?.categories, 'output_tokens') || 0) + (s?.output_tokens || 0)
-  const cached = a?.cached_tokens || 0
-  // 命中率只基于分析侧计算（总结侧未记录缓存命中，混入会低估命中率）
-  const aInput = catTotal(a?.categories, 'input_tokens') || 0
-  const hitRate = aInput + cached > 0 ? (cached / (aInput + cached)) * 100 : 0
-  return {
-    input,
-    output,
-    cached,
-    hitRate,
-    total: input + output + cached,
-  }
-})
+// 本次窗口会话的总量与命中率（命中率只算分析侧）——计算本体在 utils/queueFeed.summarizeSession
+const sessionTotal = computed(() => summarizeSession(sessionStats.value))
 
 async function withBusy(fn: () => Promise<void>, label: string) {
   busy.value = true; error.value = ''
@@ -314,8 +232,8 @@ function confirmDelete() {
   deleteTarget.value = null
   if (!name) return
   withBusy(async () => {
-    // P2：以名称实时解析索引，避免轮询/WS 重排后按旧索引删错书
-    const idx = status.value?.items?.findIndex(i => i.name === name) ?? -1
+    // P2：以名称实时解析索引，避免轮询/WS 重排后按旧索引删错书（解析逻辑在 utils/queueFeed）
+    const idx = resolveDeleteIndex(status.value?.items, name)
     if (idx < 0) { add(`未找到《${name}》，可能已被移除`, 'warn', 'analysis'); return }
     await api.deleteBook(idx)
     add(`已删除《${name}》并移入回收站`, 'warn', 'analysis')
@@ -331,12 +249,8 @@ const statusLabels: Record<string, string> = {
   pending: '等待中', running: '运行中', done: '已完成', failed: '失败', skipped: '已跳过',
 }
 
-const currentBlockSize = computed(() => {
-  if (!status.value?.running || !status.value?.items?.length) return 1
-  // 取正在运行的那一项的 block_size，而非首项（多书混排时首项未必是运行中）
-  const runningItem = status.value.items.find((i) => i.status === 'running') || status.value.items[0]
-  return runningItem?.block_size || 1
-})
+// 进度换算取正在运行那一项的 block_size（多书混排时首项未必是运行中）——逻辑在 utils/queueFeed
+const currentBlockSize = computed(() => pickRunningBlockSize(Boolean(status.value?.running), status.value?.items))
 
 // H17 P3 V2 修复（2026-08-26）：并发块数（不是每块几章！）
 // 修复前 RunDashboard 接收的是 currentBlockSize，导致「并发车道 N/4」实际是 N/每块4章
@@ -352,11 +266,7 @@ function switchTab(tab: 'overview' | 'detail') {
   userSwitchedTab.value = true
 }
 
-// H17 Phase 3 V2：车道卡死预警阈值（来自 config.analysis.stall_warn_sec）
-const stallWarnSec = computed(() => {
-  // status?.config?.analysis?.stall_warn_sec（队列接口如有暴露）否则回退默认 480
-  return 480
-})
+const STALL_WARN_SEC = 480
 
 // 设置项 tooltip 字典：只覆盖"非一眼能看出"的字段；状态/操作按钮/进度文字不加
 const tooltips: Record<string, string> = {
@@ -562,7 +472,7 @@ onUnmounted(() => {
           :token-by-block="tokenByBlock"
           :rate-history="rateHistory"
           :aggregate-rate="aggregateRate"
-          :stall-warn-sec="stallWarnSec"
+          :stall-warn-sec="STALL_WARN_SEC"
           :discoveries="discoveries"
           class="split-detail"
         />

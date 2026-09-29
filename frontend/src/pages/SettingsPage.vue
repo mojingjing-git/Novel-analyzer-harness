@@ -3,6 +3,10 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { api, type AppConfigDto } from '../api/client'
 import LogConsole from '../components/LogConsole.vue'
 import { useLogStore } from '../composables/useLogStore'
+import {
+  pruneEmptyStrings, mapFieldErrors, toggleCategoryIn, CATEGORY_CLEAR_FALLBACK,
+  stringifyThinkingMode, parseThinkingMode,
+} from '../utils/settingsForm'
 
 // 设置项 tooltip 字典：key 与模板中 :title 表达式一一对应
 // 字面太直白的字段（如"并发数""块大小""Checkpoint"）不列，避免噪音
@@ -39,8 +43,6 @@ const tooltips: Record<string, string> = {
   rolling_early_chapters: '开篇多少章内不做滚动总结（让 KB 自然增长）',
   rolling_max_milestones: '滚动总结中里程碑条数上限；超出 FIFO 淘汰',
   rolling_max_momentum: '势头条目上限；超出触发归档压缩为里程碑',
-  rolling_momentum_window: '势头归档的章节窗口（与触发计数共同决定何时压成里程碑）',
-  rolling_archive_trigger_count: '势头达到此条数即触发归档',
   checkpoint_interval: '每处理多少块做一次 checkpoint 落盘；0=关闭',
   auto_archive: '分析完成后自动把工作区搬到「分析结果/」归档目录',
   auto_summary: '队列全部完成后自动启动最终总结',
@@ -64,10 +66,9 @@ const keptSet = computed(() => new Set(config.value?.analysis.foreshadow_kept_ca
 
 function toggleCategory(name: string) {
   if (!config.value) return
-  const list = config.value.analysis.foreshadow_kept_categories ?? []
-  const set = new Set(list)
-  if (set.has(name)) set.delete(name); else set.add(name)
-  config.value.analysis.foreshadow_kept_categories = Array.from(set)
+  // 增删逻辑在 utils/settingsForm.toggleCategoryIn（可独立 vitest）
+  config.value.analysis.foreshadow_kept_categories = toggleCategoryIn(
+    config.value.analysis.foreshadow_kept_categories, name)
 }
 
 function selectAllCategories() {
@@ -78,7 +79,7 @@ function selectAllCategories() {
 function clearAllCategories() {
   if (!config.value) return
   // 保留"其他"作为兜底
-  config.value.analysis.foreshadow_kept_categories = ['其他']
+  config.value.analysis.foreshadow_kept_categories = [...CATEGORY_CLEAR_FALLBACK]
 }
 
 async function loadCategoryDefs() {
@@ -176,15 +177,7 @@ async function save() {
   try {
     // P2：数值输入清空后 v-model.number 保留 ''；后端虽能兜底回落默认，
     // 但静默改值不可预期——提交前剪除空字符串字段，语义即“恢复该项默认”
-    const pruneEmptyStrings = (obj: Record<string, unknown>) => {
-      for (const k of Object.keys(obj)) {
-        const v = obj[k]
-        if (v === '') { delete obj[k]; continue }
-        if (v && typeof v === 'object' && !Array.isArray(v)) {
-          pruneEmptyStrings(v as Record<string, unknown>)
-        }
-      }
-    }
+    // （剪除逻辑在 utils/settingsForm.pruneEmptyStrings，可独立 vitest）
     pruneEmptyStrings(config.value as unknown as Record<string, unknown>)
     await api.putSettings(config.value)
     saved.value = true
@@ -192,13 +185,9 @@ async function save() {
   } catch (e) {
     const err = e as Error & { status?: number; detail?: unknown }
     if (err.status === 422 && Array.isArray(err.detail)) {
-      const msgs: string[] = []
-      for (const item of err.detail as Array<{ loc?: (string | number)[]; msg?: string }>) {
-        const leaf = item.loc && item.loc.length ? String(item.loc[item.loc.length - 1]) : '?'
-        const m = item.msg || '校验未通过'
-        fieldErrors.value[leaf] = m
-        msgs.push(`${leaf}: ${m}`)
-      }
+      // 422 映射逻辑在 utils/settingsForm.mapFieldErrors（loc 末元素 → 红框字段）
+      const { fieldErrors: fe, msgs } = mapFieldErrors(err.detail)
+      fieldErrors.value = fe
       saveError.value = '保存失败（参数校验未通过）：\n' + msgs.join('\n')
     } else {
       saveError.value = '保存失败: ' + err.message
@@ -231,14 +220,13 @@ const thinkingModes = [
 
 function getThinkingMode(): string {
   if (!config.value) return '{}'
-  const tm = config.value.api.thinking_mode
-  if (!tm || Object.keys(tm).length === 0) return '{}'
-  return JSON.stringify(tm)
+  return stringifyThinkingMode(config.value.api.thinking_mode)
 }
 
 function setThinkingMode(val: string) {
   if (!config.value) return
-  try { config.value.api.thinking_mode = val === '{}' ? {} : JSON.parse(val) } catch {}
+  const parsed = parseThinkingMode(val)
+  if (parsed) config.value.api.thinking_mode = parsed  // 坏 JSON 保持原值（parseThinkingMode 返回 null）
 }
 
 // 自动探测禁用思考参数（发微请求实测当前端点认哪个参数）
@@ -511,8 +499,6 @@ onMounted(load)
         <div class="flex items-center gap-2"><label class="text-sm flex-1" style="color: var(--win-text-secondary)" v-tooltip="tooltips.rolling_early_chapters">触发章数:</label><input v-model.number="config.analysis.rolling_early_chapters" type="number" class="glass-input" style="width: 110px" /></div>
         <div class="flex items-center gap-2"><label class="text-sm flex-1" style="color: var(--win-text-secondary)" v-tooltip="tooltips.rolling_max_milestones">里程碑上限:</label><input v-model.number="config.analysis.rolling_max_milestones" type="number" class="glass-input" style="width: 110px" /></div>
         <div class="flex items-center gap-2"><label class="text-sm flex-1" style="color: var(--win-text-secondary)" v-tooltip="tooltips.rolling_max_momentum">势头上限:</label><input v-model.number="config.analysis.rolling_max_momentum" type="number" class="glass-input" style="width: 110px" /></div>
-        <div class="flex items-center gap-2"><label class="text-sm flex-1" style="color: var(--win-text-secondary)" v-tooltip="tooltips.rolling_momentum_window">归档跨度:</label><input v-model.number="config.analysis.rolling_momentum_window" type="number" class="glass-input" style="width: 110px" /></div>
-        <div class="flex items-center gap-2"><label class="text-sm flex-1" style="color: var(--win-text-secondary)" v-tooltip="tooltips.rolling_archive_trigger_count">归档触发:</label><input v-model.number="config.analysis.rolling_archive_trigger_count" type="number" class="glass-input" style="width: 110px" /></div>
         <div class="flex items-center gap-2"><label class="text-sm flex-1" style="color: var(--win-text-secondary)" v-tooltip="tooltips.checkpoint_interval">Checkpoint:</label><input v-model.number="config.analysis.checkpoint_interval" type="number" min="0" max="100" class="glass-input" style="width: 110px" /></div>
       </div>
       <label class="flex items-center gap-2 text-sm cursor-pointer" v-tooltip="tooltips.auto_archive">
