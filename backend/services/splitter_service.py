@@ -64,7 +64,7 @@
    - 实测 Moby-Dick 切出 139 章（基线 270 → 修复后 139），残留可控
 
 3. **裸罗马短篇正则要求全大写**：
-   - 当前正则：`^[IVXLCDM]+\.\s+[A-Z][A-Z\s,'\u2019\-:]{2,80}$`
+   - 当前正则：`^[IVXLCDM]+\\.\\s+[A-Z][A-Z\\s,'\\u2019\\-:]{2,80}$`
    - 小写标题（如 "i. a scandal in bohemia"）**不识别**
    - 解决：调用方预处理（Title Case）后再喂入
 
@@ -87,6 +87,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 from backend.utils.text_utils import detect_and_decode
+from backend.utils.docx_extract import extract_docx_text
 from backend.config.constants import ENCODING_CANDIDATES
 
 logger = logging.getLogger(__name__)
@@ -194,16 +195,6 @@ VOLUME_PATTERNS: List[tuple] = [
     ("英文卷全", r"^[Bb]ook\s+(?:the\s+)?(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|[IVXLCDM]+)[\.\s]?(?:--|\s|$)?"),
 ]
 
-# 兼容旧代码的单一默认正则（作为「自定义」模式兜底）
-DEFAULT_CHAPTER_PATTERN = (
-    r"^(?:第[零一二三四五六七八九十百千万0-9]+[章回节]|"
-    r"第[0-9]+[章回节]|[0-9]+[、\.]|[0-9]+\.[0-9]+|"
-    r"卷[零一二三四五六七八九十百千万0-9]+|"
-    r"[零一二三四五六七八九十百千万0-9]+[卷]|"
-    r"第[零一二三四五六七八九十百千万0-9]+[部分]|"
-    r"第[0-9]+[部分]|[0-9]+[集幕])[^\n]*"
-)
-
 # 常见广告 / 水印行（清理开关开启时剔除）
 # 分强弱两级：强标记几乎不可能出现在正文，命中即删；
 # 弱标记（微信/下载/月票等）在正文中高频出现，需配合"短行无标点"才删（见 _is_ad_line）
@@ -270,12 +261,28 @@ class SplitOptions:
 # 256KB 采样边界切到 2-byte 字符尾字节时，gbk 解码失败，splitter 路径
 # 抛 "无法使用任何编码读取文件"。与 file_processor.py 行为对齐后，splitter
 # 与 file_processor 选编码结果一致。
-def _detect_and_read(file_path: Path) -> str:
-    content = detect_and_decode(file_path, ENCODING_CANDIDATES)
+def _normalize_content(content: str) -> str:
+    """统一的后处理：剥 BOM + 换行归一。TXT / DOCX 两条路径共用，确保形态严格一致。"""
     if content.startswith("\ufeff"):
         content = content[1:]
-    content = content.replace("\r\n", "\n").replace("\r", "\n")
-    return content
+    return content.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _detect_and_read(file_path: Path) -> str:
+    """读取源文件并归一化为「一行一个语义单元」的纯文本。
+
+    这是全链路唯一的文本入口（调用方仅 preview_split / save_split 两处）。
+    15 条章正则全部带 `^` 行首锚点并配套 `len(s) <= 80` 整行闸门，其成立前提
+    是「一行一个语义单元」——TXT 天然满足，DOCX 需要显式重建，故在此唯一入口
+    做格式分派，下游切章逻辑零改动。
+    """
+    suffix = file_path.suffix.lower()
+    if suffix == ".docx":
+        logger.info(f"检测到 DOCX 输入，走 Word 正文抽取: {file_path.name}")
+        content = extract_docx_text(file_path)
+    else:
+        content = detect_and_decode(file_path, ENCODING_CANDIDATES)
+    return _normalize_content(content)
 
 
 # ---------------------------------------------------------------------------
@@ -805,7 +812,6 @@ def split_text(
     raw_blocks: List[Dict[str, Any]] = []
     current_volume: Optional[str] = None
     current_volume_index = 0
-    preamble_lines: List[str] = []
 
     for idx, raw in enumerate(lines):
         s = raw.strip()
