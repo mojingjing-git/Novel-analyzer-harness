@@ -2,6 +2,83 @@
 
 ---
 
+## [Unreleased] - 2026-09-30
+
+### 前端测试深度加强（84 → 225 用例）+ coverage 基建
+
+- **问题**：前端 84 例集中在 utils 纯函数层，12 个页面只有 TimelinePage 有测试；
+  QueuePage 的 onMessage 状态机、F-4 按回调分键防抖、P2 按名称删书，SummaryPage 的
+  版本号串行化 PUT，SettingsPage 的 422 红框映射，StylePage 的 F-3 标志，
+  ChapterDetailPanel 的 requestSeq 守卫等有修复史的高风险逻辑全部零自动化护栏，
+  误删即静默回归
+- **页面/组件覆盖**：页面 1/12 → 7/12（新增 Queue/Summary/Settings/Style/Splitter/Workspace），
+  组件 3/13 → 10/13（新增 BookSelector 真实组件、ProgressBar、ConfirmDialog、LogConsole、
+  ChapterValue、Icon、ChapterDetailPanel）；useLocale + router 冒烟补齐
+- **纯函数抽取**（沿用 laneRegistry/summaryLanes 先例，行为零变化）：
+  - `utils/queueFeed.ts`：block_start/done 车道生命周期（done 清速率、finished FIFO 50）、
+    token_delta 累计取最大、发现流 200 条上限、会话汇总（命中率只算分析侧）、按名称解析删除索引
+  - `utils/summaryProgress.ts`：4 阶段加权总百分比（0.7/0.12/0.08/0.1）、失败按卷进度近似
+  - `utils/settingsForm.ts`：空串剪除（递归跳过数组）、422 detail 按 loc 末元素映射红框
+  - `utils/splitterView.ts`：F-2 整体失败回滚 processing→pending、卷分组
+  - `utils/workspaceView.ts`：fmtSize 阶梯 / fmtTime
+- **顺手修 1 个真 bug**：SummaryPage `paramsLoaded` 门闩微任务时序缺陷——
+  门闩在赋值后同步置位，但 Vue watcher flush 在下一个微任务，服务端总结参数
+  ≠ 前端默认值时（如 batch_size=99）挂载即触发一次多余 PUT（GET+PUT 全量回写）；
+  修复为置位前 `await nextTick()`，门闩测试锁定
+- **基建**：`@vitest/coverage-v8@^4.1.11` dev 依赖 + `npm run test:coverage` 脚本 +
+  vitest.config.ts coverage 段；基线：全仓 60.4% stmts / 55.2% branch，
+  utils 层 98.5%（funcs 100%），未测页面（CharacterCard/Graph/Map/Stats/PromptPreview）已列明
+- **测试**：+141 例（含 queueFeed 20 例、SummaryPage 版本号串行化/门闩/防 api_key 重置、
+  SettingsPage 422/预设覆盖语义、SplitterPage pywebview 双通道/F-2 回滚、
+  WorkspacePage 确认流、ChapterDetailPanel 切书竞态/60s 空闲回退等）
+- **回归**：vitest 225 passed / `vue-tsc -b` 0 错 / `vite build` 通过；后端零改动
+
+---
+
+## [Unreleased] - 2026-09-28
+
+### 桌面模式无控制台启动（根治 taskkill 误杀）
+
+- **问题**：`run_desktop.bat` 启动一个 tail PowerShell 日志窗口 + cmd 窗口，GUI 退出后
+  `taskkill /FI "WINDOWTITLE eq NovelAnalyzer 运行日志" /T /F` 按窗口标题强杀进程树，
+  在多项目开发机上存在误杀其他软件 cmd 窗口的风险；tail 窗口本身也已被 GUI 内
+  WebSocket 日志面板取代，信息冗余
+- **改动**：
+  - `run_desktop.bat` 改用 `pythonw.exe`（venv 优先）通过 `start ""` 异步启动
+    `desktop.py`，无控制台窗口、无 tail 窗口、无 taskkill；bat 自身立即 `exit /b 0`
+  - `desktop.py` 顶部对 pythonw 下 `sys.stdout/stderr is None` 显式补 `os.devnull`，
+    保证后续 `TextIOWrapper` / `_StderrTee` / `__getattr__` 代理不拿到 None
+  - `_start_server` 删除内联 `log_config`（引用 `sys.stderr`），改 `log_config=None`，
+    与 `backend/main.py` 一致；`uvicorn.error` propagate 到 root logger 由
+    analyzer.log file handler 落盘（实测确认），仅把 `uvicorn.access` 压到 WARNING
+  - 关键失败路径补原生 MessageBox：后端启动超时 / pywebview 缺失 / 单实例锁失败 /
+    session token 失败，避免"双击没反应"
+- **测试**：`backend/tests/test_desktop_pythonw.py` 锁定 None→devnull 处理与
+  `log_config=None` 契约，防止回归
+- **兼容**：`run_dev.bat` 开发模式不变（仍开两个 cmd 窗口）；exe 用户不走 bat，无影响
+
+---
+
+### 切章器支持 DOCX 输入
+
+- **新增** `backend/utils/docx_extract.py`：`.docx` → 纯文本，**零第三方依赖**（`zipfile` + `xml.etree` 标准库）
+- **入口归一化**：`splitter_service._detect_and_read` 是全链路唯一文本入口，按后缀分派即可支持双格式，**下游切章逻辑零改动**，`requirements.txt` 无需加依赖
+- **核心洞察**：15 条章正则全带 `^` 锚点并配套 `len(s) <= 80` 整行闸门，其成立前提是「一行一个语义单元」。TXT 天然满足，DOCX 无换行符需显式重建 —— 本次改动本质是重建前提，而非重写规则
+- **实现要点**：`<w:br/>` → `\n`；Heading/Title 样式段落强制独占一行；**递归 `iter('w:p')` 覆盖表格内正文**；异常四分诊（ZIP magic / `BadZipFile` / **`RuntimeError`=加密** / 空正文）统一转 `ValueError`
+- **宿主与前端**：`desktop.py` 文件对话框增加 `.docx` 过滤器；`SplitterPage.vue` 的 `baseName()` 与 `<input accept>` 同步支持
+- **测试**：`backend/tests/test_splitter_docx.py` 17 用例（TXT/DOCX 等价性 + `detected_pattern` 一致性 + 表格正文 + tab/br + 5 类异常 + 长书自动检测稳定性）
+- **plan 已过独立复审**：v1 被挑出 3 阻塞 + 2 重要项并全部修订，详见 `docs/PLAN-docx-input-2026-09-28.md` §10
+- **实现后再复审挑出 2 项阻塞并已修**：见下方「复审后修正」
+
+#### 复审后修正（同日）
+
+- **修 1（行为偏差）**：标题段落前后补空行的做法会让 DOCX 与 TXT 行结构不等价 —— 多出的空行被 `split_text` 保留进 `blocks/NNNN.txt`，而 `style_analyzer` 按「第 offset 个汉字」定位采样窗口（`style_analyzer.py:283`），偏移推后会让风格采样错位。改为**一个 `<w:p>` 输出一行、不注入空行**。已加 `test_blocks_content_matches_txt` 直接比对落盘正文
+- **修 2（测试太弱）**：表格场景原断言只查「正文里有字」，实际单章时自动检测 `scores >= 5` 闸门过不了会静默回落单章且 `detected_pattern` 退化。改为 ≥6 章并要求 pattern 正确
+- **顺带**：删除被证伪的 `enable_short_line_heuristic`，缩进回到 2 空格，行尾符还原为各文件 HEAD 约定，测试扩到 20 例
+- **已知限制**：不支持加密 / 受 DRM 的 DOCX（显式报错）；不抽表格以外的结构（页眉页脚 / 批注 / 文本框）；不支持 EPUB / 旧 `.doc` / PDF
+
+---
+
 ## [Unreleased] - 2026-09-10
 
 ### PR-1：API Key 日志泄露修复（D 方案鉴权）

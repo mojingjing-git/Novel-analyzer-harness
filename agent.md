@@ -14,7 +14,7 @@
 - **后端**：FastAPI（异步），Python 3.11+
 - **桌面壳**：pywebview + WebView2（Windows）
 - **LLM 兼容**：任何 OpenAI 兼容 API（8+ 厂商预设），以及 Anthropic 协议
-- **测试**：约 443 个测试用例，57 个测试文件（2026-09-10 累计，含 PR-1 redact +14、session_token +4）
+- **测试**：后端约 463 个测试用例 / 58 个测试文件（2026-09-28 累计，含 PR-1 redact +14、session_token +4、DOCX 输入 +20）；前端 225 个用例 / 31 个测试文件 + vitest coverage（`npm run test:coverage`，2026-09-30）
 
 ---
 
@@ -44,7 +44,7 @@
 │   │   ├── analysis_stats.py     # 分析会话统计累加（AnalysisStats：token 五件套/每章记录/重试成本/冻结耗时）
 │   │   ├── pipeline_events.py    # WS 事件翻译层（pipeline 回调工厂 + discovery 提取 + ETA 格式化）
 │   │   ├── final_summary.py      # 最终总结执行器（4阶段 + 断点续跑）
-│   │   ├── splitter_service.py   # 小说切章服务（i18n：15 章 + 5 卷正则，支持 PG/古典/裸 Roman 风格）
+│   │   ├── splitter_service.py   # 小说切章服务（i18n：15 章 + 5 卷正则，支持 PG/古典/裸 Roman 风格；2026-09-28 起在 `_detect_and_read` 单一入口支持 txt/docx 双格式）
 │   │   ├── workspace_service.py  # 工作区/归档管理
 │   │   ├── book_service.py       # 书名目录映射
 │   │   ├── summary_service.py    # 总结任务生命周期
@@ -76,16 +76,15 @@
 │   │   ├── foreshadow_ledger.py  # 伏笔账本（状态机）
 │   │   ├── aggregate_utils.py    # 聚合工具（11种 JSON 输出）
 │   │   ├── character_card_generator.py  # 角色卡片生成器
-│   │   ├── character_graph.py    # 角色关系图（pyvis+networkx）
 │   │   ├── excel_export.py       # Excel 导出（11个 sheet）
 │   │   ├── export_utils.py       # Markdown 导出
-│   │   └── text_utils.py         # 编码检测、文本去重、伏笔去重
-│   ├── workers/                  # 后台任务
-│   └── tests/                    # pytest（约 443 用例，57 文件）
+│   │   ├── text_utils.py         # 编码检测、文本去重、伏笔去重
+│   │   └── docx_extract.py       # DOCX 正文抽取（zipfile+ElementTree 纯标准库，重建"一行一个语义单元"）
+│   └── tests/                    # pytest 默认收集 backend/tests；顶层 tests/ 随项目配置同步收集
 ├── frontend/                     # Vue 3 前端
 │   ├── src/
 │   │   ├── api/
-│   │   │   ├── client.ts         # 60 个 API 方法 + TypeScript DTO
+│   │   │   ├── client.ts         # 55 个 API 方法 + TypeScript DTO
 │   │   │   └── useProgressSocket.ts  # 单例 WebSocket + pub/sub
 │   │   ├── components/
 │   │   │   ├── AppLayout.vue     # 根布局（标题栏 + 侧边栏 + pywebview 窗口控制）
@@ -115,7 +114,12 @@
 │   │   ├── utils/
 │   │   │   ├── markdown.ts       # 零依赖 Markdown→HTML 渲染器
 │   │   │   ├── summaryLanes.ts   # 总结阶段→LaneView 合成块（id ≥ 900000）纯函数
-│   │   │   └── laneRegistry.ts   # 车道注册表自愈：GC + inflight 对账纯函数
+│   │   │   ├── laneRegistry.ts   # 车道注册表自愈：GC + inflight 对账纯函数
+│   │   │   ├── queueFeed.ts      # QueuePage WS 状态机纯函数（block_start/done/token_delta/discovery + 会话汇总）
+│   │   │   ├── summaryProgress.ts # 总结 4 阶段加权进度/阶段序号/思考参数 JSON 纯函数
+│   │   │   ├── settingsForm.ts   # 空串剪除 / 422 字段映射 / 分类勾选 / 思考模式 JSON 纯函数
+│   │   │   ├── splitterView.ts   # 切分页：baseName / 去重追加 / F-2 回滚 / 卷分组纯函数
+│   │   │   └── workspaceView.ts  # fmtSize 阶梯 / fmtTime 格式化纯函数
 │   │   ├── router.ts             # 12 条路由（AppLayout 包裹）
 │   │   ├── App.vue
 │   │   ├── main.ts
@@ -148,7 +152,7 @@
 | openpyxl | Excel 导出（懒加载） |
 | networkx + pyvis | 角色关系图（可选依赖） |
 | json5 / json_repair | JSON 容错解析 |
-| pytest | 约 443 个测试用例（57 个文件，2026-09-10 累计） |
+| pytest | 默认收集 `backend/tests/` + 顶层 `tests/`；数量以 `pytest --collect-only -q` 为准 |
 
 ### 前端
 | 组件 | 版本/说明 |
@@ -168,6 +172,7 @@
 
 ```
 .txt 文件
+  → _detect_and_read（单一文本入口：txt 走编码检测，docx 走 Word 正文抽取）
   → splitter_service（切章，15种章格式 + 5种卷格式正则，PG 头截断 + TOC 去重）
   → blocks/*.txt
   → pipeline（三阶段分析）
@@ -187,7 +192,6 @@
   → final_summary_report.md
   → aggregate_utils → aggregated/*.json（11种）
   → style_analyzer → style.md
-  → character_graph → graph.html
   → excel_export → *.xlsx
   → 归一化（独立路径，仅服务地图；详见 §5.2 location_normalizer 与 §10.13）
       → Phase 0a-batches（locations 并发）
@@ -397,7 +401,7 @@ self._flushed_chapters: Set[int]           # 已落盘的章号集合
 
 ### 5.2 服务层（backend/services/）
 
-#### queue_service.py（406行，2026-08-31 拆分后编排层）
+#### queue_service.py（361行，2026-08-31 拆分后编排层）
 - **AnalysisService**（单例）：
   - `_run_queue()`：逐本运行 `AnalysisPipeline`（经 `make_pipeline_callbacks` 挂事件翻译层）
   - 双向互斥：分析运行中禁总结，总结运行中禁分析
@@ -405,7 +409,6 @@ self._flushed_chapters: Set[int]           # 已落盘的章号集合
   - 自动归档：分析完成后 `shutil.move` 到 `分析结果/`（`_archive_item` 含 P5d 路径更新修复）
   - 每本书分析完成后 token 消耗落盘 `output/token_stats.json`（做差逻辑在 AnalysisStats.book_consumption）
 - **status() 暴露 `inflight_blocks`**：pipeline 信号量窗口内的真实在途块（≤ concurrency 零丢失），前端车道对账源；`getattr` 兜底 `__new__` 构造的单测实例
-- `_record_chapter_stat` 仅剩测试拦截垫片用途（生产路径经 pipeline_events → AnalysisStats.record_chapter）
 
 #### queue_manager.py（408行）
 - **QueueItem**：队列任务（持久化经 `_store_path`/`_load_path` 相对 PROJECT_ROOT 路径化，搬迁/换盘不失效）
@@ -492,15 +495,9 @@ self._flushed_chapters: Set[int]           # 已落盘的章号集合
 - **去重机制**：角色名归一化（剥离角色后缀）、哈希去重、模糊主题去重
 - **主文件原子写**：主聚合文件 novel_analysis_aggregated.json 经 `safe_save_json()` 原子落盘（唯一 tmp 名 + replace）；其余子聚合适用一次性生成场景，仍为直写
 
-#### character_card_generator.py（721行）
-- **职责**：生成角色详细档案卡片
-- **输出格式**：text / HTML / Markdown
-- **安全**：HTML 输出通过 `_esc()` 转义防 XSS
-
-#### character_graph.py（360行）
-- **职责**：生成 Dyson Sphere 风格角色关系图（独立 HTML）
-- **可选依赖**：networkx（图算法）+ pyvis（HTML 生成）
-- **算法**：连通分量检测 → 颜色映射 → spring layout → 自定义 HTML patching
+#### character_card_generator.py（198行）
+- **职责**：生成角色索引与角色详情数据，供角色卡 API/前端消费
+- **入口**：`get_character_summaries()` / `get_card_data()`
 
 #### excel_export.py（292行）
 - **职责**：聚合结果导出 Excel（11 个 sheet）
@@ -511,6 +508,18 @@ self._flushed_chapters: Set[int]           # 已落盘的章号集合
 - **编码检测**：BOM/NUL 预检 + 候选编码采样罚分择优（U+FFFD×8 / 控制字符×4 / PUA×3 除以样本长度，取最低罚分；Big5 繁体书不再坠入 gb18030 乱码，`detect_and_decode` 与 `detect_encoding` 两入口共用同一选择器）
 - **文本去重**：归一化相等 + 子串包含 + SequenceMatcher 相似度
 - **伏笔去重**：关键词倒排索引 + 序列相似度（PERF-2 优化）
+
+#### docx_extract.py（2026-09-28 新增）
+- **职责**：`.docx` → 纯文本，为切章器重建「一行一个语义单元」的输入形态。**零第三方依赖**（`zipfile` + `xml.etree` 标准库）
+- **为什么必须存在**：15 条章正则全带 `^` 行首锚点并配套 `len(s) <= 80` 整行闸门（`splitter_service.py:822`）。TXT 天然满足该前提；DOCX 里没有换行符，标题若与正文并进同一超长行会被闸门判负 → **整章被静默吞掉**。本模块的唯一任务是让下游以为自己还在吃 txt
+- **关键设计**：
+  - `<w:br/>` → `\n`、` <w:tab/>` → 空格
+  - Heading/Title 样式段落前后补空行强制独占一行；样式名用正则 `^heading\s*\d*$|^title$` 覆盖 Heading 1/2/3...（不能只比对字面量）
+  - **递归 `body.iter('w:p')`** 而非取直接子节点 —— 网页转制 DOCX 常把整章正文塞进单单元格表格
+- **异常分诊**（全部转 `ValueError`，否则 `routes_splitter.py` 的 `except Exception` 会吞成 500）：ZIP magic 预检 → `BadZipFile` → **`RuntimeError`（加密 docx 抛的是这个，不是 BadZipFile）** → 空正文
+- **⚠️ 不要在 heading 前后注入空行**：曾实现过"标题前后补空行强制独占一行"，被复审证明有害 —— 逐段落输出时标题本就独占一行，补空行会让 DOCX 与 TXT 行结构不等价，多出的空行会进 `blocks/NNNN.txt` 并把 `style_analyzer` 按第 N 个汉字定位的采样窗口（`style_analyzer.py:283`）推后。**该行为已删除**，回归测试见 `test_no_extra_blank_lines_around_heading`
+- **`_is_heading` 的真实作用域**：仅当「标题 + 正文」共存于**同一个 `<w:p>`**（中间只有 `<w:br/>`）时才需要劈成两行，防止标题被折进超长行遭 `len(s) <= 80` 闸门判负。其余情况下它是无害的空转
+- **`enable_short_line_heuristic` 已删除**：plan §D2 证明该启发（≤30 字无句末标点即断行）会污染 `lines[:800]` 采样窗口，属被证伪方案，不留开关
 
 ### 5.4 API 层（backend/api/）
 
@@ -668,7 +677,7 @@ rolling_structured       # 结构化滚动总结（paradigm_layers/milestones/mo
 AppConfig:
   api: APIConfig          # base_url, model, api_key, provider, max_tokens, timeouts, retries, thinking, json_mode
   analysis: AnalysisConfig  # concurrency, block_size, arc lengths, foreshadow params, rolling summary params, foreshadow_recheck_batch_size（默认 40）
-  gui: GUIConfig          # theme, font_size, window_width/height
+  gui: GUIConfig          # language（i18n 接口预留）
   working_directory: str
   knowledge_file: str
 
@@ -1153,6 +1162,33 @@ mypy backend/
 - **隐私保护**：Copyright 用 GitHub username（`mojingjing-git`），不暴露真名
 - **状态**：仓库仍 private；等用户"再优化优化"后转 public（届时 LICENSE 已在位）
 - **未做**：完整 NOTICE 文件、CONTRIBUTING.md（公开项目时再补）
+
+---
+
+### 10.28 2026-09-28 切章器支持 DOCX 输入
+- **改动**：新增 `backend/utils/docx_extract.py`（纯标准库）+ `splitter_service._detect_and_read` 按后缀分派 + `desktop.py` / `SplitterPage.vue` 两处文件过滤器
+- **原因**：用户的小说源文件大量是 Word 格式，原先只能手动另存为 txt
+- **策略——入口归一化**：`_detect_and_read` 是全链路唯一文本入口（仅 preview_split / save_split 两个调用方），在此做格式分派即可让下游切章逻辑**零改动**；`requirements.txt` 无需加依赖
+- **核心洞察**：15 条章正则全带 `^` 锚点 + `len(s) <= 80` 整行闸门，其成立前提是「一行一个语义单元」。TXT 天然满足，DOCX 无换行符必须显式重建 —— 本改动本质是**重建前提**而非重写规则
+- **plan 已独立复审**：plan v1 派 agent 复审挑出 3 阻塞 + 2 重要项并全部修订（`docs/PLAN-docx-input-2026-09-28.md` §10）：
+  - A 验收原要求 `word_count` 相等 → 实为 `len(body)` 字符数，DOCX 补空行必然漂升 → **移除该断言**，改断言 `detected_pattern` 一致
+  - D2 原拟的「≤30 字短行启发」被证伪：会污染 `lines[:800]` 采样窗口稀释标题密度，可能选错正则 → **默认关闭**
+  - 加密 docx 抛 `RuntimeError` 而非 `BadZipFile` → 补显式分支，否则被吞成 500
+- **知识（后续已修）**：当时根目录 `tests/` 因 `pytest.ini` 的 `testpaths = backend/tests` 未参与默认收集；2026-09-29 清理批次已把 `testpaths` 扩为 `backend/tests tests`
+- **未做**：EPUB（复杂度显著更高：opf:spine 排序 + 单 xhtml 多章 + DRM 三类问题）
+- **实现后复审挑出的 2 个阻塞项（已修）**：① 标题前后补空行导致 `blocks` 正文比 TXT 多 2-3 空行（会推后 style_analyzer 采样偏移）→ 改为「一个 `<w:p>` 一行、不补空行」；② 表格场景 Case 3 断言太弱只测「文本里有」→ 改为 ≥6 章并要求 `detected_pattern` 正确。**教训**：四元组等价性断言测不到正文漂移，必须比对落盘 `blocks` 内容
+- **回归**：463 passed（443 → +20 新增，0 破坏）/ 前端 vitest 77 passed / `vue-tsc` + `vite build` 通过
+
+### 10.29 2026-09-30 前端测试深度加强（84 → 225 用例）+ coverage 基建
+
+- **改动**：前端 vitest 84 → 225 用例（31 个测试文件），页面覆盖 1/12 → 7/12（新增 Queue/Summary/Settings/Style/Splitter/Workspace 六页测试），组件覆盖 3/13 → 10/13（新增 BookSelector/ProgressBar/ConfirmDialog/LogConsole/ChapterValue/Icon/ChapterDetailPanel）
+- **纯函数抽取**（沿用 laneRegistry/summaryLanes 先例，逻辑原样搬移、props/事件/API 不动）：`utils/queueFeed.ts`（QueuePage onMessage 状态机）、`utils/summaryProgress.ts`（4 阶段加权进度）、`utils/settingsForm.ts`（pruneEmptyStrings/422 映射/思考模式 JSON）、`utils/splitterView.ts`（F-2 回滚/卷分组）、`utils/workspaceView.ts`；抽取层 coverage 全 100%
+- **基建**：devDependencies 加 `@vitest/coverage-v8@^4.1.11` + script `test:coverage` + vitest.config.ts coverage 段（v8/text+html，排除 *.test.ts）
+- **顺手修 1 个真 bug**：SummaryPage `paramsLoaded` 门闩时序缺陷——门闩在赋值后同步置位，但 Vue watcher flush 在下一个微任务，服务端值 ≠ 默认值时挂载即触发一次多余 PUT；修复 = 置位前 `await nextTick()`（本轮 watcher flush 跑完再开门）
+- **测试写作教训**（复用既定范式）：mock 调用计数跨用例污染 → beforeEach `vi.clearAllMocks()` + 日志单例 `useLogStore().clear()`；`emitted()` 从未 emit 返回 undefined 不可直接改 length；`emitted('update:chapter')` 基线用 `(wrapper.emitted(x) ?? []).length`；文案断言注意「双重书名号」既有 UX（QueuePage/WorkspacePage 弹窗）
+- **coverage 基线（2026-09-30）**：全仓 60.4% stmts / 55.2% branch / 44.8% funcs；utils 层 98.5%（funcs 100%）、components 76%、pages 51.7%（未测的 CharacterCard/Graph/Map/Stats/PromptPreview 拖低，ECharts 三页优先级最低）
+- **回归**：前端 vitest 225 passed / `vue-tsc -b` 0 错 / `vite build` 通过；后端无改动
+- **未做**：CharacterCardPage/GraphPage/MapPage/StatsPage/PromptPreviewPage/AppLayout/useRipple/vTooltip 测试（低频或 DOM 重、收益低）；markdown.ts 既有 15 例维持
 
 ---
 
