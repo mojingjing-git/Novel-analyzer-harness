@@ -27,6 +27,7 @@ __pycache__/
 # 前端
 node_modules/
 frontend/dist/
+frontend/coverage/
 frontend/.tmp_verify/
 *.tsbuildinfo
 frontend/vite.config.js
