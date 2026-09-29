@@ -114,41 +114,6 @@ def detect_encoding(file_path: Path, encoding_priority: List[str]) -> str:
     return enc
 
 
-def truncate_text(text: str, max_length: int, suffix: str = "...") -> str:
-    """
-    截断文本到指定长度
-
-    Args:
-        text: 原始文本
-        max_length: 最大长度
-        suffix: 截断后缀
-
-    Returns:
-        截断后的文本
-    """
-    if len(text) <= max_length:
-        return text
-    if max_length <= len(suffix):
-        return suffix[:max_length]
-    return text[:max_length - len(suffix)] + suffix
-
-
-def clean_text(text: str) -> str:
-    """
-    清理文本（去除多余空白）
-
-    Args:
-        text: 原始文本
-
-    Returns:
-        清理后的文本
-    """
-    import re
-    # 合并多个空白字符
-    text = re.sub(r'\s+', ' ', text)
-    # 去除首尾空白
-    return text.strip()
-
 import difflib as _difflib
 import re as _re
 
@@ -375,8 +340,6 @@ def deduplicate_foreshadows(
 # 之前 substring 规则只识别后缀（"宁安县城" 中 extra="城" 从尾部切），
 # 无法识别前缀修饰（"新大唐公司" 中 shorter="大唐公司" 在中间，extra="司" 也从尾部切）。
 # 改为：两端都剥掉已知修饰符后比核心。前缀/后缀对称处理。
-import re as _re
-
 _PREFIX_MODS = (
     "新", "老", "旧", "原",         # 短前缀
     "原址", "旧址",                    # 复合前缀

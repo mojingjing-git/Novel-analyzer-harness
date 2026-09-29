@@ -8,8 +8,7 @@ import asyncio
 import logging
 import time
 from dataclasses import replace
-from pathlib import Path
-from typing import Optional, Dict, Any, Callable
+from typing import Optional, Dict, Any
 
 from ..config.settings import AppConfig
 from ..progress_hub import get_hub

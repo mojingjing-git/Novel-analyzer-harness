@@ -48,8 +48,6 @@ def make_test_config():
             rolling_early_chapters=5,
             rolling_max_milestones=20,
             rolling_max_momentum=20,
-            rolling_momentum_window=5,
-            rolling_archive_trigger_count=10,
             checkpoint_interval=10,
             auto_archive=False,
             max_compressed_arcs=15,

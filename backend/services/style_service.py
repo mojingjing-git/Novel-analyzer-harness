@@ -5,7 +5,6 @@
 
 import asyncio
 import logging
-from pathlib import Path
 from typing import Optional
 
 from ..progress_hub import get_hub

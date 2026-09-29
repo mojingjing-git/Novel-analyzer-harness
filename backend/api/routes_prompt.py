@@ -3,7 +3,6 @@ Prompt 预览路由
 POST /api/prompt/preview — 构建指定章节的 LLM prompt 并返回内容与统计
 """
 import logging
-from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel

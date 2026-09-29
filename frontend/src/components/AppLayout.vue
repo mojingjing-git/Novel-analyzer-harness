@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue'
-import { useRoute, RouterView } from 'vue-router'
+import { RouterView } from 'vue-router'
 import Icon from './Icon.vue'
 
-const route = useRoute()
 const isDark = ref(false)
 // 导航折叠：展开 280px / 收起 48px（只显示图标）
 const collapsed = ref(false)

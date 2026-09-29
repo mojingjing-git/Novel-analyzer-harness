@@ -3,10 +3,9 @@
 管理伏笔的生命周期：新增、回收、休眠判定
 """
 
-import json
 import logging
 from pathlib import Path
-from typing import List, Dict, Optional, Any, Tuple
+from typing import List, Dict, Optional
 from dataclasses import dataclass, field, asdict, fields
 from datetime import datetime
 

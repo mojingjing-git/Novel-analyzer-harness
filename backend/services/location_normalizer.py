@@ -3,14 +3,11 @@
 
 Phase 0 在最终总结之前跑：
 - 0a-batches: 并发 LLM 归一化 locations
-- 0a-consol: 1 次 LLM 合并跨 batch 同地点
 - 0b-batches: 并发 LLM 结构化 spatial_relationships
 - 0b-dedupe: 机械去重同 (from, to) 对
 """
-import json
 import logging
 from collections import Counter
-from difflib import SequenceMatcher as _SM
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Callable
 
@@ -406,7 +403,6 @@ class LocationNormalizer:
 
     流程：
     - _run_phase_0a_batches: 切片 locations → 并发 LLM → 校验
-    - _run_phase_0a_consolidate: 1+ 次 LLM 合并跨 batch 同地点
     - _run_phase_0b_batches: 切片 spatial + canonical 白名单 → 并发 LLM
     - _run_phase_0b_dedupe: 机械去重同 (from, to)
     - 持久化到 output/{_LOCATIONS_NORMALIZED_FILENAME, _SPATIAL_NORMALIZED_FILENAME}

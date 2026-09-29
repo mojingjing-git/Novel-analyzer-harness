@@ -123,9 +123,6 @@ class ProgressHub:
                 except Exception:
                     pass  # 驱逐兜底失败不阻塞发布方
 
-    def publish_threadsafe(self, loop: asyncio.AbstractEventLoop, message: Dict[str, Any]) -> None:
-        """供非事件循环线程调用（如同步代码通过 to_thread 运行时回推进度）"""
-        asyncio.run_coroutine_threadsafe(self.publish(message), loop)
 
     # ---- 便捷方法 ----
     async def log(self, text: str, level: str = "info", category: str = "") -> None:

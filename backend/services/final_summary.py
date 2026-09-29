@@ -929,7 +929,6 @@ class FinalSummaryRunner:
             logger.info(f"中 importance 截断: {len(mid_items)} -> {max_mid}")
         truncated.extend(other_items)
 
-        self._next_foreshadow_id = len(truncated) + 1
         logger.info(
             f"伏笔总表构建完成：{len(all_clues)} 条原始 -> {len(categorized)} 条过滤 -> "
             f"{len(truncated)} 条入总表（高 {high_kept}/{len(high_items)}, "
@@ -967,11 +966,6 @@ class FinalSummaryRunner:
 
         return "\n".join(lines) + "\n"
 
-    def _allocate_foreshadow_id(self) -> str:
-        """分配一个新的伏笔 id（顺序递增，不与总表重复）"""
-        fid = f"fs_{self._next_foreshadow_id:03d}"
-        self._next_foreshadow_id += 1
-        return fid
 
     def _build_active_foreshadows_block(self, ch_start: int, ch_end: int, foreshadow_catalog: list = None) -> str:
         """构建【当前伏笔清单】文本块，使用伏笔总表的原始 clue"""

@@ -24,7 +24,7 @@ import threading
 import time
 from pathlib import Path
 
-# 与 test_splitter_english_baseline.py 一致：顶层 tests/ 不在 pytest testpaths 里
+# 与 test_splitter_english_baseline.py 一致：显式注入项目根路径，便于单独运行
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest

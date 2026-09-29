@@ -12,7 +12,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from backend.services.book_service import get_output_dir, list_books
+from backend.services.book_service import get_output_dir
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +27,6 @@ class AggregateRequest(BaseModel):
 @router.post("/run")
 async def run_aggregate(req: AggregateRequest) -> dict:
     """执行聚合"""
-    from ..utils.aggregate_utils import aggregate_novel_analysis
-
     output_dir = get_output_dir(req.book_id)
     if output_dir is None or not output_dir.exists():
         raise HTTPException(status_code=404, detail=f"书目不存在或无输出: {req.book_id}")

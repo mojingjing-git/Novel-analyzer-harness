@@ -11,10 +11,9 @@ import platform
 import re
 import shutil
 import subprocess
-import time
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional
 
 from .queue_service import get_service
 

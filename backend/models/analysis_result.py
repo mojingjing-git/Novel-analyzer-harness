@@ -141,12 +141,6 @@ class AnalysisResult:
                 result.append(str(item))
         return result
 
-    @staticmethod
-    def _safe_dict(value) -> dict:
-        """防御性转换为字典，处理LLM可能输出的列表等异常类型"""
-        if isinstance(value, dict):
-            return {str(k): str(v) for k, v in value.items()}
-        return {}
 
     @classmethod
     def from_dict(cls, data: dict) -> 'AnalysisResult':

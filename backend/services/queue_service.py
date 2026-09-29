@@ -92,12 +92,6 @@ class AnalysisService:
                     cached_tokens = self.stats.total_cached_tokens
         return self.stats.session_snapshot(running=self.is_running, cached_tokens=cached_tokens)
 
-    def _record_chapter_stat(self, payload: dict) -> None:
-        """记录每章统计（委托 stats.record_chapter）。
-
-        生产路径已迁移：pipeline_events 回调直接调 stats.record_chapter；
-        此垫片仅剩测试拦截点用途。"""
-        self.stats.record_chapter(payload)
 
     @property
     def workspace_path(self) -> Path:

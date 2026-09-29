@@ -7,7 +7,7 @@
  * 新伏笔/新人物紫色高亮（#534AB7）
  */
 
-import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, nextTick, watch } from 'vue'
 
 interface DiscoveryItem {
   id: number
@@ -31,7 +31,6 @@ const props = withDefaults(defineProps<{
 
 const listEl = ref<HTMLElement | null>(null)
 const paused = ref(false)
-let nextId = 1
 
 // 渲染条目用 items prop，不在本组件自维护；这里只做截断 + 渲染
 const displayItems = computed<DiscoveryItem[]>(() => {

@@ -16,7 +16,7 @@ const styleContent = ref('')
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
 // 全局日志存储（跨页面持久化）
-const { logs: storeLogs, add, clear } = useLogStore()
+const { logs: storeLogs, add } = useLogStore()
 const logs = computed(() => storeLogs.value)
 
 // 获取连接状态（WS 是单例，这里只是订阅）
@@ -132,7 +132,7 @@ onUnmounted(() => {
       <LogConsole :logs="logs" />
     </div>
     <div v-if="styleContent" class="glass-card p-4">
-      <h3 class="font-medium pb-2 mb-3" style="border-bottom: 1px solid var(--win-stroke); color: var(--text-primary)">风格分析结果 (style.md)</h3>
+      <h3 class="font-medium pb-2 mb-3" style="border-bottom: 1px solid var(--win-stroke); color: var(--win-text-primary)">风格分析结果 (style.md)</h3>
       <pre class="text-sm whitespace-pre-wrap max-h-96 overflow-y-auto" style="color: var(--win-text-primary)">{{ styleContent }}</pre>
     </div>
   </div>

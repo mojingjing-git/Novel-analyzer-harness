@@ -6,14 +6,13 @@ LLM客户端封装（asyncio 版）
  退避 min(2^(retry+1), 60)、认证失败即停、验证失败注入格式修正 hint、failed_tokens 累加）
 """
 
-import time
 import json
 import re
 import asyncio
 import inspect
 import logging
 import threading
-from typing import Tuple, Optional, List, Callable, Awaitable
+from typing import AsyncIterator, Tuple, Optional, List, Callable, Awaitable
 from openai import AsyncOpenAI, APITimeoutError, APIError, AuthenticationError
 import anthropic
 from anthropic import AsyncAnthropic
@@ -655,7 +654,7 @@ class LLMClient:
         H16 (2026-08-26) 关键设计：
         - 同步/异步 validator 双兼容（_call_validate_response 包裹）
         - stop 语义：每 attempt 顶部检查 _stop_requested；chunk 循环内 chat_stream 自身也检查
-        - 累计值：accumulated_output_tokens + started_at，on_progress 传累计值
+        - 累计值：on_progress 传 accumulated_output_tokens
         - 空响应按失败处理（moderation 嗅探）
         - partial content 保留：流式中断时 final_content 留作 9 级 JSON 容错链尝试
         """
@@ -666,7 +665,6 @@ class LLMClient:
         messages_length = len(str(messages))
         last_consumed_tokens: Tuple[int, int] = (0, 0)
         accumulated_output_tokens = 0  # P0-4 累计值
-        started_at = time.monotonic()
         final_content = ""  # 保留 partial content
         final_reasoning = ""
         last_usage: Optional[StreamChunk] = None

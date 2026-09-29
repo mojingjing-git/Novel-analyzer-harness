@@ -66,10 +66,10 @@ def test_from_dict_coerces_bool_strings():
 
 
 def test_from_dict_drops_garbage_numeric():
-    cfg = AppConfig.from_dict({"api": {"max_tokens": "abc"}, "gui": {"window_width": "宽"}})
+    cfg = AppConfig.from_dict({"api": {"max_tokens": "abc"}, "analysis": {"checkpoint_interval": "宽"}})
     from backend.config.constants import MAX_OUTPUT_TOKENS
     assert cfg.api.max_tokens == MAX_OUTPUT_TOKENS      # 回落默认
-    assert cfg.gui.window_width == 1600                  # 回落默认
+    assert cfg.analysis.checkpoint_interval == 5        # 回落默认
 
 
 def test_load_survives_string_max_tokens_on_disk(tmp_path):

@@ -2,7 +2,6 @@
 JSON聚合工具
 将所有章节的分析JSON结果汇总到单一文件中，支持多种聚合模式
 """
-
 import json
 import re
 import logging
@@ -839,46 +838,3 @@ def aggregate_novel_analysis(
         include_raw=include_raw,
         should_stop=should_stop
     )
-
-
-def print_statistics(input_dir: str = "workspace/output"):
-    """
-    便捷函数：打印聚合统计信息
-
-    Args:
-        input_dir: 章节JSON文件所在目录
-    """
-    output_dir = Path(input_dir)
-    
-    aggregator = JSONAggregator(output_dir)
-    stats = aggregator.get_statistics()
-
-    print("\n" + "=" * 80)
-    print("小说分析统计")
-    print("=" * 80)
-    print(f"总章节数: {stats.get('total_chapters', 0)}")
-
-    if 'chapter_range' in stats:
-        print(f"章节范围: 第{stats['chapter_range']['start']}章 - 第{stats['chapter_range']['end']}章")
-
-    print(f"核心事件总数: {stats.get('total_core_events', 0)}")
-    print(f"人物弧光总数: {stats.get('total_character_arcs', 0)}")
-    print(f"伏笔总数: {stats.get('total_foreshadowing', 0)}")
-    print(f"逻辑漏洞总数: {stats.get('total_plot_holes', 0)}")
-    print(f"出场角色数: {stats.get('unique_characters', 0)}")
-    
-    print(f"世界观元素数: {stats.get('world_building_elements', 0)}")
-    print(f"长期弧光数: {stats.get('long_term_arcs_count', 0)}")
-    print(f"未解决问题数: {stats.get('unresolved_questions_count', 0)}")
-    print(f"新线索数: {stats.get('new_leads_count', 0)}")
-
-    if stats.get('characters_list'):
-        print(f"\n角色列表:")
-        for char in stats['characters_list']:
-            print(f"  - {char}")
-
-    print(f"\n平均每章:")
-    print(f"  核心事件: {stats.get('average_events_per_chapter', 0)}")
-    print(f"  人物弧光: {stats.get('average_arcs_per_chapter', 0)}")
-    print(f"  伏笔: {stats.get('average_foreshadowing_per_chapter', 0)}")
-    print("=" * 80)

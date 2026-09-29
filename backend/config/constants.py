@@ -40,9 +40,7 @@ ROLLING_FILE_NAME = "rolling_summary.json"  # rolling 持久化文件名
 # 结构化滚动总结参数
 ROLLING_EARLY_CHAPTERS = 100          # 首次生成结构化 JSON 的触发章数
 ROLLING_MAX_MILESTONES = 20           # 全局里程碑上限（FIFO淘汰最旧的）
-ROLLING_MAX_PARADIGMS = 5             # 范式层上限
 ROLLING_MAX_MOMENTUM = 15             # 近期势头条目上限
-ROLLING_MAX_CAUSAL_CHAINS = 5         # 因果链条目上限
 ROLLING_MOMENTUM_WINDOW = 50          # 近期势头跨越多少章后触发归档
 ROLLING_ARCHIVE_TRIGGER_COUNT = 10    # 条目数辅助触发归档（防单批爆满）
 
@@ -62,8 +60,6 @@ TEMPERATURE_MAX_RETRIES = 3        # 温度退火阶段最大重试次数
 BACKOFF_MAX_RETRIES = 1            # 指数退避阶段默认重试次数
 
 # 路径配置
-WORK_DIR_NAME = "workspace"
-BLOCKS_DIR_NAME = "blocks"
 OUTPUT_DIR_NAME = "output"
 
 # 伏笔分类表 schema 版本号
@@ -159,7 +155,6 @@ DEFAULT_MAX_FORESHADOW_CATALOG_MID = 200
 # 主线为 prompt 源头约束（LLM 直接输出 50 类），此映射仅作为旧书数据的被动兜底。
 FORESHADOW_TYPE_MAP_FILE = "foreshadow_type_map.json"
 
-CACHE_DIR_NAME = "cache"
 CONFIG_FILE_NAME = "config.json"
 KNOWLEDGE_FILE_NAME = "knowledge.json"
 
@@ -179,19 +174,6 @@ MAX_WORLD_BUILDING = 200        # world_building 最大条目
 MAX_VERIFIED_FACTS = 200        # verified_facts 最大条目
 MAX_LONG_TERM_ARCS = 200        # long_term_arcs 最大条目
 MAX_THEMATIC_ELEMENTS = 100     # thematic_elements 最大条目
-MAX_THEMATIC_PER_CHAPTER = 5  # prompt中限制每章主题元素数
-
-# 伏笔老化阈值：存活超过此章数的伏笔在 prompt 中标记为“长期未回收”
-STALE_FORESHADOWING_THRESHOLD = 10
-
-
-# GUI配置
-DEFAULT_WINDOW_WIDTH = 1600
-DEFAULT_WINDOW_HEIGHT = 900
-DEFAULT_FONT_FAMILY = "Microsoft YaHei"
-DEFAULT_FONT_SIZE = 12
-DEFAULT_THEME = "light"  # light / dark
-
 # i18n 接口预留（2026-09-02 L2）：仅作为 future i18n 的接口字段
 # 当前不影响任何 UI 行为；未来 i18n 启用时此字段驱动 vue-i18n locale 选择
 DEFAULT_LANGUAGE = "zh-CN"

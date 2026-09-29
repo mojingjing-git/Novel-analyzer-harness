@@ -11,7 +11,7 @@ import threading
 from pathlib import Path
 from typing import List, Dict, Optional
 
-from ..utils.text_utils import detect_and_decode, detect_encoding
+from ..utils.text_utils import detect_encoding
 from ..config.constants import ENCODING_CANDIDATES
 
 logger = logging.getLogger(__name__)
@@ -112,11 +112,6 @@ class FileProcessor:
             logger.error(f"读取第{chapter_num}章失败: {e}")
             return None
 
-    def get_total_chapters(self) -> int:
-        """获取总章节数"""
-        if not self._file_list:
-            self.scan_chapters()
-        return len(self._file_list)
 
     def read_block(self, chapters: List[int]) -> Optional[str]:
         """

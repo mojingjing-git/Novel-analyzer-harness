@@ -8,7 +8,7 @@ import { useI18n } from 'vue-i18n'
  * 未来 i18n 启用时，只需在此处加 `await api.putSettings({...gui.language: locale.value})`。
  */
 export function useLocale() {
-  const { locale, availableLocales } = useI18n()
+  const { locale } = useI18n()
 
   const supportedLocales = ['zh-CN', 'en'] as const
   type SupportedLocale = typeof supportedLocales[number]

@@ -18,12 +18,6 @@
   --color-text-primary: var(--win-text-primary);
   --color-text-secondary: var(--win-text-secondary);
   --color-text-tertiary: var(--win-text-disabled);
-
-  /* 兼容旧类名：rounded-ios-md → Win11 控件圆角 */
-  --radius-ios-md: var(--win-radius-control);
-  --radius-glass-md: var(--win-radius-control);
-  --radius-glass-lg: var(--win-radius-container);
-  --radius-glass-xl: var(--win-radius-container);
 }
 
 /* ============================================================
@@ -142,37 +136,6 @@ html.dark {
     radial-gradient(at 92% 6%, rgba(255, 255, 255, 0.03), transparent 44%),
     radial-gradient(at 55% 112%, rgba(255, 255, 255, 0.04), transparent 52%),
     radial-gradient(at 70% 40%, rgba(255, 255, 255, 0.02), transparent 55%);
-}
-
-/* ============================================================
-   1.3 旧变量 → 新变量兼容映射（过渡层，逐步替换后可删除）
-   ============================================================ */
-
-:root {
-  --bg-base: var(--win-bg-base);
-  --bg-aurora: transparent;
-  --bg-page: var(--win-bg-base);
-  --glass-clear: var(--win-layer);
-  --glass-frost: var(--win-layer);
-  --glass-fill-subtle: var(--win-control-alt);
-  --glass-fill-strong: var(--win-layer);
-  --glass-rim-color: var(--win-stroke);
-  --glass-border-subtle: var(--win-stroke);
-  --glass-border-strong: var(--win-stroke-strong);
-  --glass-shadow: var(--win-shadow-card);
-  --glass-shadow-hover: var(--win-shadow-card);
-  --glass-inner: none;
-  --text-primary: var(--win-text-primary);
-  --text-secondary: var(--win-text-secondary);
-  --text-tertiary: var(--win-text-disabled);
-  --divider: var(--win-stroke);
-  --radius-glass-md: var(--win-radius-control);
-  --radius-glass-lg: var(--win-radius-container);
-  --radius-glass-xl: var(--win-radius-container);
-  --radius-ios-md: var(--win-radius-control);
-  --ease-fluid: var(--win-ease);
-  --ease-spring: var(--win-ease);
-  --viz-edge: var(--win-stroke-strong);
 }
 
 /* ============================================================
@@ -339,23 +302,6 @@ html.mica-on .titlebar {
 .glass-subtle {
   background: var(--win-control-alt);
   border-radius: var(--win-radius-container);
-}
-
-/* 透明层（无模糊） */
-.glass-clear {
-  background: rgba(255, 255, 255, 0.6);
-  border: 1px solid var(--win-stroke);
-}
-html.dark .glass-clear {
-  background: rgba(50, 50, 50, 0.6);
-}
-
-/* 通用玻璃别名（兼容） */
-.glass {
-  background: var(--win-layer);
-  border: 1px solid var(--win-stroke);
-  border-radius: var(--win-radius-container);
-  box-shadow: var(--win-shadow-card);
 }
 
 /* ============================================================
@@ -915,16 +861,6 @@ html.dark .glass-clear {
     transition-duration: 0.01ms !important;
   }
 }
-
-/* ============================================================
-   兼容保留类（旧组件过渡）
-   ============================================================ */
-
-.theme-card     { background: var(--win-layer); border-color: var(--win-stroke); }
-.theme-sidebar  { background: var(--win-layer); border-color: var(--win-stroke); }
-.theme-text     { color: var(--win-text-primary); }
-.theme-text-secondary { color: var(--win-text-secondary); }
-.theme-input    { background: var(--win-control-alt); border-color: var(--win-stroke); color: var(--win-text-primary); }
 
 /* ============================================================
    Markdown 渲染（Win11 排版）

@@ -61,8 +61,6 @@
     "rolling_early_chapters": 100,
     "rolling_max_milestones": 20,
     "rolling_max_momentum": 15,
-    "rolling_momentum_window": 50,
-    "rolling_archive_trigger_count": 10,
     "checkpoint_interval": 5,
     "auto_archive": true,
     "auto_summary": true,
@@ -70,7 +68,6 @@
     "summary_batch_size": 35,
     "foreshadow_recheck_batch_size": 80,
     "skip_moderation_blocked": true,
-    "stall_warn_sec": 480,
     "max_compressed_arcs": 50,
     "max_recent_summaries": 5,
     "max_pacing_tracker": 100,
@@ -81,12 +78,6 @@
     "max_thematic_elements": 100
   },
   "gui": {
-    "window_width": 1600,
-    "window_height": 900,
-    "font_family": "Microsoft YaHei",
-    "font_size": 12,
-    "quit_on_close": true,
-    "theme": "light",
     "language": "zh-CN"
   },
   "working_directory": null,

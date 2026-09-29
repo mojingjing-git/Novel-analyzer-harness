@@ -31,7 +31,6 @@ from backend.api import (
     routes_location_normalization,
     ws,
 )
-from backend.ws_events import WSState
 from backend.progress_hub import get_hub, install_log_forwarder
 from backend.core.llm_failure_logger import redact
 
@@ -248,17 +247,6 @@ def create_app() -> FastAPI:
             "missing": dep_health["missing"],
             "critical_missing": dep_health["critical_missing"],
         }
-
-    @app.post("/api/demo/publish")
-    async def demo_publish():
-        """M0 回环验证：同步发布一串演示进度消息，WS 客户端应能收到"""
-        hub = get_hub()
-        await hub.state_change(WSState.RUNNING, "demo 开始")
-        for i in range(1, 6):
-            await hub.log(f"demo 日志第 {i} 条")
-            await hub.progress(i, 5, eta=f"{5 - i} 秒")
-        await hub.state_change(WSState.DONE, "demo 结束")
-        return {"ok": True, "published": 12}
 
     # 发布模式：托管前端构建产物（必须放在最后，避免吞掉 /api 路由）
     if FRONTEND_DIST.exists():

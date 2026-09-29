@@ -3,9 +3,8 @@
 """
 import asyncio
 import sys
-import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
@@ -165,7 +164,7 @@ def test_queue_persistence():
     print("✅ test_queue_persistence passed")
 
 
-def test_record_chapter_stat_accumulates():
+def test_stats_record_chapter_accumulates():
     """每章统计含重试成本字段，且总量累加"""
     from backend.services.queue_service import AnalysisService
     from backend.services.analysis_stats import AnalysisStats
@@ -175,12 +174,12 @@ def test_record_chapter_stat_accumulates():
     svc._pipeline = None
     svc._stop_requested = False
 
-    svc._record_chapter_stat({
+    svc.stats.record_chapter({
         "chapter": 1, "elapsed": 1.0,
         "input_tokens": 10, "output_tokens": 20,
         "retries": 1, "failed_tokens": 30,
     })
-    svc._record_chapter_stat({
+    svc.stats.record_chapter({
         "chapter": 2, "elapsed": 2.0,
         "input_tokens": 5, "output_tokens": 5,
         "retries": 0, "failed_tokens": 0,
@@ -194,7 +193,7 @@ def test_record_chapter_stat_accumulates():
     assert stats["chapter_stats"][0]["input_tokens"] == 10
 
 
-def test_record_chapter_stat_failed_payload():
+def test_stats_record_chapter_failed_payload():
     """失败块的 retries/failed_tokens 同样计入总量与每章记录（失败成本不可归零）"""
     from backend.services.queue_service import AnalysisService
     from backend.services.analysis_stats import AnalysisStats
@@ -205,7 +204,7 @@ def test_record_chapter_stat_failed_payload():
     svc._stop_requested = False
 
     # 失败 payload 只有 chapter/status/retries/failed_tokens（无 elapsed/input/output）
-    svc._record_chapter_stat({
+    svc.stats.record_chapter({
         "chapter": 3, "status": "failed",
         "retries": 4, "failed_tokens": 200,
     })
@@ -328,8 +327,6 @@ async def test_on_progress_block_start_publishes():
         # 用 object.__new__ 构造 AnalysisService 避免 __init__ 副作用
         svc = object.__new__(AnalysisService)
         svc._seen_characters = set()
-        # 直接重写 _record_chapter_stat 避免依赖 _chapter_stats
-        svc._record_chapter_stat = lambda payload: None
 
         # 复刻 on_progress 闭包（不直接调 _run_one_item，那是 200 行嵌套）
         async def on_progress_like(payload):
@@ -339,7 +336,7 @@ async def test_on_progress_block_start_publishes():
                     "type": "block_start",
                     "payload": {
                         "chapter": payload.get("chapter", 0),
-                        "range": payload.get("message", ""),
+                        "range": payload.get("range") or payload.get("message", ""),
                         "progress": payload.get("progress", 0),
                         "total": payload.get("total", 0),
                     },
@@ -361,6 +358,16 @@ async def test_on_progress_block_start_publishes():
         assert msg["payload"]["chapter"] == 5
         assert "5-8" in msg["payload"]["range"]
         assert msg["payload"]["progress"] == 5
+
+        # 结构化 range 优先于人类可读 message，前端车道统一显示 chN-chM
+        await on_progress_like({
+            "status": "start", "chapter": 9, "progress": 5, "total": 100,
+            "message": "开始分析ch9-ch10...", "range": "ch9-ch10",
+        })
+        msg_raw = await asyncio.wait_for(test_queue.get(), timeout=2.0)
+        msg = msg_raw if isinstance(msg_raw, dict) else json.loads(msg_raw)
+        assert msg["type"] == "block_start"
+        assert msg["payload"]["range"] == "ch9-ch10"
     finally:
         await hub.unsubscribe(test_queue)
 
@@ -448,8 +455,8 @@ def test_status_exposes_concurrency_and_block_size():
 
 
 if __name__ == "__main__":
-    test_record_chapter_stat_accumulates()
-    test_record_chapter_stat_failed_payload()
+    test_stats_record_chapter_accumulates()
+    test_stats_record_chapter_failed_payload()
     test_token_stats_elapsed_frozen_after_run()
     test_queue_item_roundtrip()
     test_queue_manager_add_remove()

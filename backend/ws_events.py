@@ -22,7 +22,6 @@ class WSType(StrEnum):
     STATE_CHANGE = "state_change"
     SUMMARY_PROGRESS = "summary_progress"
     LOCATION_NORMALIZATION_PROGRESS = "location_normalization_progress"
-    PING = "ping"
 
 
 class WSState(StrEnum):

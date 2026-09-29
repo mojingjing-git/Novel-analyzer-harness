@@ -15,7 +15,7 @@ v2 (2026-09-02) Phase 1 baseline
 import sys
 from pathlib import Path
 
-# 顶层 tests/ 不在 pytest testpaths 里，必须显式加 backend/ 父目录到 sys.path
+# 顶层 tests/ 与 backend/tests 共用项目根路径；显式注入便于单独运行本文件
 # 与 backend/tests/test_splitter_mixed_formats.py 同样的做法
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 

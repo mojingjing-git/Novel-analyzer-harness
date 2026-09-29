@@ -8,7 +8,6 @@ POST /api/splitter/infer_name  — 从文件名推断书名
 import asyncio
 import logging
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel

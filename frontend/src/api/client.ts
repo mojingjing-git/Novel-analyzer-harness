@@ -130,8 +130,6 @@ export interface AppConfigDto {
     rolling_early_chapters: number
     rolling_max_milestones: number
     rolling_max_momentum: number
-    rolling_momentum_window: number
-    rolling_archive_trigger_count: number
     checkpoint_interval: number
     auto_archive: boolean
     auto_summary: boolean
@@ -151,13 +149,7 @@ export interface AppConfigDto {
     volume_compress_group: number
   }
   gui: {
-    window_width: number
-    window_height: number
-    font_family: string
-    font_size: number
-    quit_on_close: boolean
-    theme: string
-    language?: string  // 新增（2026-09-02 L2 接口预留）
+    language?: string  // i18n 接口预留（2026-09-02 L2）
   }
   working_directory: string | null
   knowledge_file: string
@@ -341,11 +333,6 @@ export const api = {
   getBookTokenStats: (book_id: string) => request<{ book_id: string; analysis?: Record<string, unknown>; summary?: Record<string, unknown> }>(`/api/books/${seg(book_id)}/token_stats`),
 
   // 队列
-  getQueue: () => request<AnalysisStatus>('/api/queue'),
-  putQueue: (items: QueueItemDto[]) =>
-    request<AnalysisStatus>('/api/queue', { method: 'PUT', body: JSON.stringify({ items }) }),
-  scanQueue: (base_dir: string) =>
-    request<AnalysisStatus>('/api/queue/scan', { method: 'POST', body: JSON.stringify({ base_dir }) }),
   scanWorkspace: () => request<{ added: number }>('/api/queue/scan_workspace', { method: 'POST' }),
   removeQueueItem: (index: number) =>
     request<AnalysisStatus>('/api/queue/remove', { method: 'POST', body: JSON.stringify({ index }) }),
@@ -361,13 +348,11 @@ export const api = {
 
   // 书目
   listBooks: () => request<BookInfo[]>('/api/books'),
-  getBookResults: (book_id: string) => request<{ book_id: string; data: Record<string, unknown> }>(`/api/books/${seg(book_id)}/results`),
   getChapterResult: (book_id: string, chapter: number) =>
     request<{ book_id: string; chapter: number; data: Record<string, unknown> }>(`/api/books/${seg(book_id)}/chapter/${seg(chapter)}`),
   getLatestChapter: (book_id: string) =>
     request<{ book_id: string; latest: number }>(`/api/books/${seg(book_id)}/latest_chapter`),
   getBookReport: (book_id: string) => request<{ book_id: string; report: string }>(`/api/books/${seg(book_id)}/report`),
-  getBookLedger: (book_id: string) => request<{ book_id: string; ledger: Record<string, unknown> }>(`/api/books/${seg(book_id)}/ledger`),
   getBookCharacters: (book_id: string) =>
     request<{ book_id: string; characters: unknown[] }>(`/api/books/${seg(book_id)}/characters`),
   getCharacterCard: (book_id: string, name: string) =>
@@ -410,8 +395,6 @@ export const api = {
   // 切分
   previewSplit: (body: Record<string, unknown>) =>
     request<SplitterPreview>('/api/splitter/preview', { method: 'POST', body: JSON.stringify(body) }),
-  saveSplit: (body: Record<string, unknown>) =>
-    request<{ ok: boolean; book_name: string; total_chapters: number }>('/api/splitter/save', { method: 'POST', body: JSON.stringify(body) }),
   inferBookName: (file_path: string) =>
     request<{ book_name: string }>('/api/splitter/infer_name', { method: 'POST', body: JSON.stringify({ file_path }) }),
   batchSplit: (body: {

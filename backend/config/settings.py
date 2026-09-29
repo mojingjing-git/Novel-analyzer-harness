@@ -38,13 +38,11 @@ from .constants import (
     DEFAULT_CHECKPOINT_INTERVAL,
     ROLLING_EARLY_CHAPTERS,
     ROLLING_MAX_MILESTONES, ROLLING_MAX_MOMENTUM,
-    ROLLING_MOMENTUM_WINDOW, ROLLING_ARCHIVE_TRIGGER_COUNT,
     MAX_COMPRESSED_ARCS, MAX_RECENT_SUMMARIES,
     MAX_PACING_TRACKER, MAX_FORESIGHT_NETWORK,
     MAX_WORLD_BUILDING, MAX_VERIFIED_FACTS,
     MAX_LONG_TERM_ARCS, MAX_THEMATIC_ELEMENTS,
-    FORESHADOW_CATEGORY_DEFS, FORESHADOW_CATEGORY_FALLBACK,
-    FORESHADOW_CATEGORY_SCHEMA_VERSION,
+    FORESHADOW_CATEGORY_DEFS,
     DEFAULT_FORESHADOW_MIN_IMPORTANCE,
     DEFAULT_FORESHADOW_MIN_CONFIDENCE,
     DEFAULT_MAX_FORESHADOW_CATALOG_HIGH,
@@ -53,14 +51,8 @@ from .constants import (
 )
 
 
-def _filter_fields(cls, data: dict) -> dict:
-    """过滤掉 dataclass 不认识的字段，防止旧配置含未知字段时崩溃"""
-    valid = {f.name for f in dataclasses.fields(cls)}
-    return {k: v for k, v in data.items() if k in valid}
-
-
 def _coerce_fields(cls, data: dict) -> dict:
-    """按 dataclass 字段声明类型清洗并强转配置值（含未知字段过滤，超集替代 _filter_fields）。
+    """按 dataclass 字段声明类型清洗并强转配置值（含未知字段过滤）。
 
     P1 修复（2026-08-24 审计）：PUT /api/settings 曾以裸 dict 直透 dataclass 构造，
     字符串数值入库后 load() 的数值比较抛 TypeError 且位于 try 外，服务初始化失败
@@ -178,8 +170,6 @@ class AnalysisConfig:
     rolling_early_chapters: int = ROLLING_EARLY_CHAPTERS
     rolling_max_milestones: int = ROLLING_MAX_MILESTONES
     rolling_max_momentum: int = ROLLING_MAX_MOMENTUM
-    rolling_momentum_window: int = ROLLING_MOMENTUM_WINDOW
-    rolling_archive_trigger_count: int = ROLLING_ARCHIVE_TRIGGER_COUNT
     checkpoint_interval: int = DEFAULT_CHECKPOINT_INTERVAL  # 每 N 批自动落盘，0=只在结束时落盘
     auto_archive: bool = False  # 队列分析完成后自动归档整个小说目录到 分析结果/
     # 队列完成后自动总结（2026-08-02 spec）
@@ -189,10 +179,6 @@ class AnalysisConfig:
     foreshadow_recheck_batch_size: int = DEFAULT_FORESHADOW_RECHECK_BATCH_SIZE  # 全书伏笔复检批大小；调大减少调用次数（省 cache 命中价前缀），单批过大可能稀释注意力
     # 内容审核拦截处理：识别为审核拦截的章节重试1次后跳过并标记（不进失败集、不补跑）
     skip_moderation_blocked: bool = True
-    # H17 Phase 3 (2026-08-26)：车道卡死预警阈值（秒）
-    # 车道上跑超过此秒数无进展（无 token_delta）→ lane 变红 + ⚠
-    # 默认 480s（M3 思考模型 5-6 分钟正常生成；再上调）
-    stall_warn_sec: int = 480
     # 知识库限制
     max_compressed_arcs: int = MAX_COMPRESSED_ARCS
     max_recent_summaries: int = MAX_RECENT_SUMMARIES
@@ -206,13 +192,7 @@ class AnalysisConfig:
 
 @dataclass
 class GUIConfig:
-    """GUI配置（Web 版保留兼容旧 config.json，字段沿用）"""
-    window_width: int = 1600
-    window_height: int = 900
-    font_family: str = "Microsoft YaHei"
-    font_size: int = 12
-    quit_on_close: bool = True
-    theme: str = "light"
+    """GUI配置（当前仅保留 i18n 预留字段）"""
     language: str = DEFAULT_LANGUAGE
 
 

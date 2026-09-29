@@ -6,7 +6,7 @@ Excel导出工具
 import json
 import logging
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -213,59 +213,6 @@ def export_aggregated_to_excel(aggregated_dir: Path, output_path: Path = None) -
     return output_path
 
 
-def export_characters_to_excel(character_data: Dict, output_path: Path) -> Path:
-    """
-    将角色卡数据导出为Excel
-
-    Args:
-        character_data: 角色数据字典 {name: {first_appearance, chapters, total_events, ...}}
-        output_path: 输出Excel路径
-
-    Returns:
-        生成的Excel文件路径
-    """
-    from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment
-
-    wb = Workbook()
-    ws = wb.create_sheet("角色总览")
-
-    header_font = Font(bold=True, color="FFFFFF")
-    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
-    headers = ["角色名称", "首次出现", "出场章节数", "参与事件数", "出场范围", "事件摘要"]
-    for col, h in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=col, value=h)
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.alignment = Alignment(horizontal="center", vertical="center")
-
-    row = 2
-    for name, info in sorted(character_data.items(), key=lambda x: -x[1].get("total_events", 0)):
-        chapters = info.get("chapters", [])
-        events = info.get("events", [])
-        event_summary = "; ".join(
-            f"ch{e.get('chapter','?')}:{str(e.get('event',''))[:50]}"
-            for e in (events or [])[:10]
-        )
-        ws.cell(row=row, column=1, value=_safe_cell_value(name))
-        ws.cell(row=row, column=2, value=str(info.get("first_appearance", "")))
-        ws.cell(row=row, column=3, value=len(chapters))
-        ws.cell(row=row, column=4, value=info.get("total_events", 0))
-        ws.cell(row=row, column=5, value=_format_chapter_range(chapters))
-        ws.cell(row=row, column=6, value=_safe_cell_value(event_summary))
-        row += 1
-
-    for col in ws.columns:
-        max_len = 0
-        for cell in col:
-            if cell.value:
-                max_len = max(max_len, min(len(str(cell.value)), 70))
-        ws.column_dimensions[col[0].column_letter].width = max_len + 2
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    wb.save(output_path)
-    logger.info(f"角色Excel已导出: {output_path}")
-    return output_path
 
 
 def _format_chapter_range(chapters: List[int]) -> str:

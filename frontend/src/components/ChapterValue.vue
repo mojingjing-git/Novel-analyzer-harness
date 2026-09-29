@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 递归渲染章节分析结果（白底卡片内的结构化内容）
-const props = withDefaults(
+withDefaults(
   defineProps<{ value: unknown; depth?: number }>(),
   { depth: 0 }
 )
