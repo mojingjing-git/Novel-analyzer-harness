@@ -147,6 +147,34 @@ describe('SettingsPage 思考模式自动探测', () => {
   })
 })
 
+describe('SettingsPage 思考模式状态提示（2026-09-30，G1：不点探测也可见）', () => {
+  it('`{}` → 显示"跟随端点默认可能开启"警示', async () => {
+    const wrapper = await mountPage()  // mkCfg thinking_mode = {}
+    expect(wrapper.text()).toContain('跟随端点默认')
+    expect(wrapper.text()).toContain('建议点「自动探测」')
+  })
+
+  it('显式禁用语法 → 显示 ✓ 正反馈 + Anthropic caveat；警示消失', async () => {
+    mockedApi.getSettings.mockResolvedValue({
+      ...mkCfg(),
+      api: { ...mkCfg().api, thinking_mode: { enable_thinking: false } },
+    } as AppConfigDto)
+    const wrapper = await mountPage()
+    expect(wrapper.text()).toContain('已显式禁用思考链')
+    expect(wrapper.text()).toContain('Anthropic')
+    expect(wrapper.text()).not.toContain('建议点「自动探测」')
+  })
+
+  it('探测动态选项的嵌套禁用写法 → 同样识别为 ✓（inferThinkingState 五语法）', async () => {
+    mockedApi.getSettings.mockResolvedValue({
+      ...mkCfg(),
+      api: { ...mkCfg().api, thinking_mode: { chat_template_kwargs: { enable_thinking: false } } },
+    } as AppConfigDto)
+    const wrapper = await mountPage()
+    expect(wrapper.text()).toContain('已显式禁用思考链')
+  })
+})
+
 describe('SettingsPage API 预设覆盖语义', () => {
   it('预设只在自带 api_key 时覆盖密钥；base_url/model 恒覆盖', async () => {
     const wrapper = await mountPage()

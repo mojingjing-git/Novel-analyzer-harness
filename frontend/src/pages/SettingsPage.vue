@@ -6,6 +6,8 @@ import { useLogStore } from '../composables/useLogStore'
 import {
   pruneEmptyStrings, mapFieldErrors, toggleCategoryIn, CATEGORY_CLEAR_FALLBACK,
   stringifyThinkingMode, parseThinkingMode,
+  inferThinkingState, makeThinkingPresets, THINKING_ANTHROPIC_CAVEAT,
+  type ThinkingState,
 } from '../utils/settingsForm'
 
 // 设置项 tooltip 字典：key 与模板中 :title 表达式一一对应
@@ -211,12 +213,12 @@ const jsonModes = [
 // 运行日志（完整，含调试信息）—— 与全局日志存储共享同一单例
 const { logs: storeLogs, clear: clearLogs } = useLogStore()
 
-const thinkingModes = [
-  { value: '{}', label: '自动（默认）' },
-  { value: '{"thinking":{"type":"disabled"}}', label: 'thinking: disabled' },
-  { value: '{"reasoning_effort":"none"}', label: 'reasoning_effort: none' },
-  { value: '{"enable_thinking":false}', label: 'enable_thinking: false' },
-]
+// 预设 value/技术标签来自 settingsForm 单一来源；首项 label 按页传入——
+// 本页的 `{}` = 直接跟随端点默认（SummaryPage 的 `{}` 是回退全局，语义不同）
+const thinkingModes = makeThinkingPresets('自动（跟随端点默认）')
+
+// 状态提示（不点探测也可见）：`{}` = 可能开启思考链 ⚠，显式禁用 = ✓（M3 事故教训 10.18）
+const thinkingState = computed<ThinkingState>(() => inferThinkingState(config.value?.api.thinking_mode))
 
 function getThinkingMode(): string {
   if (!config.value) return '{}'
@@ -389,6 +391,13 @@ onMounted(load)
         <button @click="runProbeThinking" :disabled="probeBusy || !config?.api.model" class="glass-button btn-sm" title="对当前端点发几次微请求，实测哪个禁用思考参数有效，命中后自动填入上方下拉">
           {{ probeBusy ? '探测中...' : '自动探测' }}
         </button>
+      </div>
+      <!-- 状态提示：不点探测也可见（M3 事故 10.18——`{}` 是跟随端点默认，部分端点默认开 thinking） -->
+      <div v-if="thinkingState === 'default'" class="ml-32 text-xs glass-tinted-red px-2 py-1 rounded" style="color: var(--win-warning)">
+        ⚠ 跟随端点默认：部分模型（M3/GLM 等）的 chat/completions 端点默认开启思考链，大 prompt 可能长时间无响应——建议点「自动探测」
+      </div>
+      <div v-else-if="thinkingState === 'disabled'" class="ml-32 text-xs glass-tinted-green px-2 py-1 rounded">
+        ✓ 已显式禁用思考链<span class="ml-1" style="color: var(--win-text-secondary)">（{{ THINKING_ANTHROPIC_CAVEAT }}）</span>
       </div>
       <div v-if="probeResult" class="ml-32 space-y-2 text-xs">
         <p v-if="probeResult.note" :class="probeResult.best || !probeResult.default_thinks ? 'glass-tinted-green px-2 py-1 rounded' : 'glass-tinted-red px-2 py-1 rounded'">

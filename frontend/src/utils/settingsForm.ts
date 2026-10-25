@@ -62,3 +62,51 @@ export function parseThinkingMode(val: string): Record<string, unknown> | null {
   if (val === '{}') return {}
   try { return JSON.parse(val) } catch { return null }
 }
+
+// ============ 思考模式状态推断（2026-09-30，M3 事故教训 agent.md 10.18）============
+
+export type ThinkingState = 'disabled' | 'default' | 'custom'
+
+/**
+ * 从 thinking_mode dict 推断当前状态（SettingsPage / SummaryPage 下拉旁的状态提示）。
+ *
+ * 覆盖五种禁用语法：三种顶层预设 + 探测动态选项可能写入的两种嵌套写法
+ * （chat_template_kwargs.enable_thinking / reasoning.effort，llm_probe 候选）——
+ * 漏判会把"探测实测有效"的配置显示成 custom，G1 的禁用正反馈就落空了。
+ *
+ * `{}` 的语义按调用方区分：主模型 = 跟随端点默认（llm_client 不注入 extra_body），
+ * 总结 = 回退全局 thinking_mode（final_summary.py 的 `or` 回退链）——"default"
+ * 是否危险由调用方文案表达，本函数只管状态。
+ */
+export function inferThinkingState(tm: Record<string, unknown> | null | undefined): ThinkingState {
+  if (!tm || Object.keys(tm).length === 0) return 'default'
+  const isObj = (v: unknown): v is Record<string, unknown> =>
+    !!v && typeof v === 'object' && !Array.isArray(v)
+  const thinking = tm.thinking
+  if (isObj(thinking) && thinking.type === 'disabled') return 'disabled'
+  if (tm.enable_thinking === false) return 'disabled'
+  if (tm.reasoning_effort === 'none') return 'disabled'
+  const ctk = tm.chat_template_kwargs
+  if (isObj(ctk) && ctk.enable_thinking === false) return 'disabled'
+  const reasoning = tm.reasoning
+  if (isObj(reasoning) && reasoning.effort === 'none') return 'disabled'
+  return 'custom'
+}
+
+/**
+ * 两页共享的思考模式预设：value + 技术标签单一来源。
+ * 首项 label 必须按页传入——`{}` 在主模型侧（跟随端点默认）与总结侧
+ * （跟随全局设置）语义不同，标签统一会误导（SettingsPage 自己就是全局）。
+ */
+export function makeThinkingPresets(autoLabel: string): { value: string; label: string }[] {
+  return [
+    { value: '{}', label: autoLabel },
+    { value: '{"thinking":{"type":"disabled"}}', label: 'thinking: disabled' },
+    { value: '{"reasoning_effort":"none"}', label: 'reasoning_effort: none' },
+    { value: '{"enable_thinking":false}', label: 'enable_thinking: false' },
+  ]
+}
+
+/** Anthropic 协议 caveat：llm_client 对 Anthropic 载荷只放行 thinking 键，
+ * 其余禁用语法被静默丢弃、实际靠端点默认（Anthropic 原生默认关） */
+export const THINKING_ANTHROPIC_CAVEAT = 'Anthropic 协议下仅 thinking 键生效，其余禁用语法会被静默忽略'

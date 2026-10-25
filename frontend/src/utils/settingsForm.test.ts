@@ -5,6 +5,7 @@ import { describe, it, expect } from 'vitest'
 import {
   pruneEmptyStrings, mapFieldErrors, toggleCategoryIn,
   CATEGORY_CLEAR_FALLBACK, stringifyThinkingMode, parseThinkingMode,
+  inferThinkingState, makeThinkingPresets, THINKING_ANTHROPIC_CAVEAT,
 } from './settingsForm'
 
 describe('settingsForm.pruneEmptyStrings（P2：v-model.number 清空残留）', () => {
@@ -77,5 +78,57 @@ describe('settingsForm 思考模式 JSON 转换', () => {
     expect(parseThinkingMode('{}')).toEqual({})
     expect(parseThinkingMode('{"enable_thinking":false}')).toEqual({ enable_thinking: false })
     expect(parseThinkingMode('broken')).toBeNull()
+  })
+})
+
+describe('settingsForm.inferThinkingState（思考模式状态提示，M3 教训 10.18）', () => {
+  it('`{}` / 缺失 → default（是否危险由调用方文案区分）', () => {
+    expect(inferThinkingState(undefined)).toBe('default')
+    expect(inferThinkingState(null)).toBe('default')
+    expect(inferThinkingState({})).toBe('default')
+  })
+
+  it('三种顶层禁用语法 → disabled', () => {
+    expect(inferThinkingState({ thinking: { type: 'disabled' } })).toBe('disabled')
+    expect(inferThinkingState({ enable_thinking: false })).toBe('disabled')
+    expect(inferThinkingState({ reasoning_effort: 'none' })).toBe('disabled')
+  })
+
+  it('探测动态选项的两种嵌套禁用写法 → disabled（漏判会把实测有效配置显示成 custom）', () => {
+    expect(inferThinkingState({ chat_template_kwargs: { enable_thinking: false } })).toBe('disabled')
+    expect(inferThinkingState({ reasoning: { effort: 'none' } })).toBe('disabled')
+    // 组合候选：thinking:disabled + reasoning_split 也是禁用
+    expect(inferThinkingState({ thinking: { type: 'disabled' }, reasoning: { effort: 'low' } })).toBe('disabled')
+  })
+
+  it('显式启用 / 未知自定义 → custom（不做语义判断）', () => {
+    expect(inferThinkingState({ thinking: { type: 'enabled', budget_tokens: 1024 } })).toBe('custom')
+    expect(inferThinkingState({ some_vendor_key: 'x' })).toBe('custom')
+  })
+
+  it('防御：嵌套字段类型漂移不崩（LLM 输出可能是标量）', () => {
+    expect(inferThinkingState({ thinking: 'disabled' })).toBe('custom')
+    expect(inferThinkingState({ chat_template_kwargs: 'enable_thinking' })).toBe('custom')
+    expect(inferThinkingState({ reasoning: null })).toBe('custom')
+  })
+})
+
+describe('settingsForm.makeThinkingPresets（两页共享 value，首项 label 按页传入）', () => {
+  it('value 集合与技术标签固定；首项 label 来自调用方（主模型/总结语义不同不能统一）', () => {
+    const main = makeThinkingPresets('自动（跟随端点默认）')
+    const summary = makeThinkingPresets('自动（跟随全局设置）')
+    expect(main.map((o) => o.value)).toEqual([
+      '{}',
+      '{"thinking":{"type":"disabled"}}',
+      '{"reasoning_effort":"none"}',
+      '{"enable_thinking":false}',
+    ])
+    expect(main.slice(1)).toEqual(summary.slice(1))
+    expect(main[0]).toEqual({ value: '{}', label: '自动（跟随端点默认）' })
+    expect(summary[0]).toEqual({ value: '{}', label: '自动（跟随全局设置）' })
+  })
+
+  it('Anthropic caveat 常量存在（禁用文案附加行）', () => {
+    expect(THINKING_ANTHROPIC_CAVEAT).toContain('Anthropic')
   })
 })

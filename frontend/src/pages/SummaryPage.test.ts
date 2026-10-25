@@ -19,6 +19,7 @@ vi.mock('../api/client', async () => ({
     getAggregateFile: vi.fn(),
     exportAggregateExcel: vi.fn(),
     getBooks: vi.fn(async () => ({ books: [] })),
+    probeThinking: vi.fn(),
   },
 }))
 // stub 成可控发射器（真实组件会自请求书目列表）
@@ -68,6 +69,7 @@ beforeEach(() => {
   mockedApi.putSettings.mockReset()
   mockedApi.summaryStatus.mockReset()
   mockedApi.getBookReport.mockReset()
+  mockedApi.probeThinking.mockReset()
   mockedApi.getSettings.mockResolvedValue(mkCfg())
   mockedApi.putSettings.mockResolvedValue({ ok: true })
   mockedApi.summaryStatus.mockResolvedValue(null as unknown as Awaited<ReturnType<typeof api.summaryStatus>>)
@@ -132,6 +134,72 @@ describe('SummaryPage 总结参数持久化', () => {
     expect((inputs[2].element as HTMLInputElement).value).toBe('99')
     expect((inputs[3].element as HTMLInputElement).value).toBe('7')
     expect(mockedApi.putSettings).not.toHaveBeenCalled()
+  })
+})
+
+describe('SummaryPage 思考模式探测（2026-09-30，G2：总结模型独立探测）', () => {
+  function probeSelect(wrapper: ReturnType<typeof mount>) {
+    // select 顺序：BookSelector stub / 总结模型 / 思考模式
+    return wrapper.findAll('select')[2]
+  }
+
+  it('探测带 model=summary_model，命中自动写入下拉并触发 PUT 回写', async () => {
+    mockedApi.probeThinking.mockResolvedValue({
+      results: [],
+      best: { thinking_mode: { chat_template_kwargs: { enable_thinking: false } }, param: 'chat_template_kwargs' },
+      default_thinks: true,
+      default_detection_breakdown: { think_tags: true },
+      note: 'mock',
+    } as Awaited<ReturnType<typeof api.probeThinking>>)
+    const wrapper = await mountPage()
+    // 选总结模型（modelOptions 来自 getModels mock：m-a）
+    const modelSelect = wrapper.findAll('select')[1]
+    modelSelect.setValue('m-a')
+    await settle()
+    const btn = wrapper.findAll('button').find((b) => b.text().includes('自动探测'))
+    await btn!.trigger('click')
+    await settle()
+    // body 携带 model（对总结模型独立探测）
+    expect(mockedApi.probeThinking).toHaveBeenCalledWith(
+      expect.objectContaining({ model: 'm-a', base_url: 'https://x' }),
+    )
+    // 命中自动写入下拉（动态选项 + 值回写）
+    const sel = probeSelect(wrapper)
+    const hit = '{"chat_template_kwargs":{"enable_thinking":false}}'
+    expect((sel.element as HTMLSelectElement).value).toBe(hit)
+    expect(sel.text()).toContain('探测命中')
+    // 防抖后 PUT 带命中值（全量替换语义下 summary_thinking_mode 必须落库）
+    await vi.advanceTimersByTimeAsync(700)
+    const last = mockedApi.putSettings.mock.calls[mockedApi.putSettings.mock.calls.length - 1][0]
+    expect(last.api!.summary_thinking_mode).toEqual({ chat_template_kwargs: { enable_thinking: false } })
+  })
+
+  it('总结模型为空时探测按钮禁用（D4 防呆）', async () => {
+    const wrapper = await mountPage()
+    const btn = wrapper.findAll('button').find((b) => b.text().includes('自动探测'))
+    expect(btn!.attributes('disabled')).toBeDefined()
+  })
+
+  it('探测失败显示 probeError，不静默', async () => {
+    mockedApi.probeThinking.mockRejectedValue(new Error('502 bad gateway'))
+    const wrapper = await mountPage()
+    wrapper.findAll('select')[1].setValue('m-a')
+    await settle()
+    const btn = wrapper.findAll('button').find((b) => b.text().includes('自动探测'))
+    await btn!.trigger('click')
+    await settle()
+    expect(wrapper.text()).toContain('探测失败: 502 bad gateway')
+  })
+
+  it('`{}` + 全局已禁用 → 状态提示不误报为开启（D4 两级组合）', async () => {
+    mockedApi.getSettings.mockResolvedValue({
+      ...mkCfg(),
+      api: { ...mkCfg().api, thinking_mode: { thinking: { type: 'disabled' } } },
+    } as AppConfigDto)
+    const wrapper = await mountPage()
+    await settle()
+    expect(wrapper.text()).toContain('✓ 已显式禁用')
+    expect(wrapper.text()).not.toContain('⚠ 跟随全局设置')
   })
 })
 

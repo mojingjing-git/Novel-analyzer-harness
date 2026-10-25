@@ -9,6 +9,10 @@ import {
   batchPctOf, elapsedTextOf, summaryTokenTextOf, showProgressOf,
   dictToJsonString, jsonStringToDict,
 } from '../utils/summaryProgress'
+import {
+  inferThinkingState, makeThinkingPresets, THINKING_ANTHROPIC_CAVEAT,
+  type ThinkingState,
+} from '../utils/settingsForm'
 import { useLogStore } from '../composables/useLogStore'
 
 // 进度计算本体（4 阶段加权等）抽到 utils/summaryProgress.ts，可独立 vitest；
@@ -112,12 +116,56 @@ async function persistSummaryParams() {
 }
 
 // 思考控制选项（JSON 字符串 ↔ dict 的转换在 utils/summaryProgress，按参数名区分，不按厂商模型命名）
-const THINKING_OPTIONS = [
-  { value: '{}', label: '自动（跟随全局设置）' },
-  { value: '{"thinking":{"type":"disabled"}}', label: 'thinking: disabled' },
-  { value: '{"reasoning_effort":"none"}', label: 'reasoning_effort: none' },
-  { value: '{"enable_thinking":false}', label: 'enable_thinking: false' },
-]
+// 预设 value/技术标签与 SettingsPage 同源（settingsForm.makeThinkingPresets）；
+// 首项 label 必须按页传入：总结侧 `{}` 经 final_summary 的 `or` 链回退全局 thinking_mode，
+// 与主模型侧"直接跟随端点默认"语义不同
+const THINKING_OPTIONS = makeThinkingPresets('自动（跟随全局设置）')
+
+// 状态提示（不点探测也可见）：总结 `{}` 的实际效果取决于全局值，
+// 两级组合显示防误报——全局已显式禁用时不再报"可能开启"（M3 事故教训 10.18）
+const globalThinking = ref<Record<string, unknown> | undefined>(undefined)
+const summaryThinkingState = computed<ThinkingState>(() =>
+  inferThinkingState(jsonStringToDict(summaryThinking.value)))
+const globalThinkingState = computed<ThinkingState>(() => inferThinkingState(globalThinking.value))
+const globalThinkingLabel = computed(() => {
+  if (globalThinkingState.value === 'disabled') return '✓ 已显式禁用'
+  if (globalThinkingState.value === 'default') return '⚠ 跟随端点默认（可能开启思考链）'
+  return '已自定义'
+})
+
+// 自动探测禁用思考参数（发微请求实测当前端点认哪个参数；对 summary_model 独立探测）
+const probeBusy = ref(false)
+const probeError = ref('')
+const dynamicThinkingOptions = ref<{ value: string; label: string }[]>([])
+
+async function runProbeThinking() {
+  probeBusy.value = true
+  probeError.value = ''
+  const body: { base_url?: string; api_key?: string; provider?: string; model?: string } = {}
+  // 照 SettingsPage 模式按 trim 条件包含；model 用总结专用模型（复用同一 base_url/api_key）
+  const cfg = await api.getSettings().catch(() => null)
+  if (cfg?.api.base_url?.trim()) body.base_url = cfg.api.base_url.trim()
+  if (cfg?.api.api_key?.trim()) body.api_key = cfg.api.api_key.trim()
+  if (cfg?.api.provider) body.provider = cfg.api.provider
+  if (summaryModel.value.trim()) body.model = summaryModel.value.trim()
+  try {
+    const res = await api.probeThinking(body)
+    dynamicThinkingOptions.value = []
+    if (res.best?.thinking_mode) {
+      const s = JSON.stringify(res.best.thinking_mode)
+      if (!THINKING_OPTIONS.some((o) => o.value === s)) {
+        dynamicThinkingOptions.value = [{ value: s, label: `探测命中: ${res.best.param || s}` }]
+      }
+      // 命中自动写入（与 SettingsPage 一致）；summaryThinking 是字符串 ref，经 dict 转换回写
+      summaryThinking.value = dictToJsonString(res.best.thinking_mode)
+      if (paramsLoaded) schedulePersist()
+    }
+  } catch (e) {
+    probeError.value = '探测失败: ' + (e as Error).message
+  } finally {
+    probeBusy.value = false
+  }
+}
 
 async function loadSummaryParams() {
   try {
@@ -129,6 +177,7 @@ async function loadSummaryParams() {
     concurrency.value = cfg.analysis.summary_concurrency ?? 2
     summaryModel.value = cfg.api.summary_model ?? ''
     summaryThinking.value = dictToJsonString(cfg.api.summary_thinking_mode)
+    globalThinking.value = cfg.api.thinking_mode  // 供 `{}` 两级组合状态提示判定实际效果
     // 当前模型不在列表时补一项（支持列表接口没返回的自定义模型）
     if (summaryModel.value && !modelOptions.value.includes(summaryModel.value)) {
       modelOptions.value.push(summaryModel.value)
@@ -260,10 +309,27 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
         <div class="flex items-center gap-2">
           <label class="text-sm shrink-0" style="color: var(--win-text-secondary)" title="总结专用思考控制，空=跟随全局；M3/mimo/GLM 用 thinking 参数，DeepSeek/Qwen 用 enable_thinking（M2.x 关不掉思考）">思考模式:</label>
           <select v-model="summaryThinking" class="glass-input flex-1">
-            <option v-for="o in THINKING_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
+            <option v-for="o in [...THINKING_OPTIONS, ...dynamicThinkingOptions]" :key="o.value" :value="o.value">{{ o.label }}</option>
           </select>
+          <button @click="runProbeThinking" :disabled="probeBusy || !summaryModel.trim()" class="glass-button btn-sm" title="对总结专用模型发几次微请求，实测哪个禁用思考参数有效，命中后自动填入上方下拉（复用全局 base_url/api_key）">
+            {{ probeBusy ? '探测中...' : '自动探测' }}
+          </button>
         </div>
       </div>
+      <!-- 状态提示：`{}` 两级组合显示（总结 `{}` 回退全局——风险措辞仅当全局也是"默认"时出现） -->
+      <div v-if="summaryThinkingState === 'default'" class="text-xs px-2 py-1 rounded" :class="globalThinkingState === 'default' ? 'glass-tinted-red' : 'glass-tinted-green'">
+        <span v-if="globalThinkingState === 'default'" style="color: var(--win-warning)">
+          ⚠ 跟随全局设置（当前全局：{{ globalThinkingLabel }}）——总结模型直接暴露在端点默认行为下
+        </span>
+        <span v-else>跟随全局设置（当前全局：{{ globalThinkingLabel }}）</span>
+      </div>
+      <div v-else-if="summaryThinkingState === 'disabled'" class="text-xs glass-tinted-green px-2 py-1 rounded">
+        ✓ 已显式禁用思考链<span class="ml-1" style="color: var(--win-text-secondary)">（{{ THINKING_ANTHROPIC_CAVEAT }}）</span>
+      </div>
+      <div v-else-if="dynamicThinkingOptions.length" class="text-xs glass-tinted-green px-2 py-1 rounded">
+        ✓ 探测命中并已应用：{{ dynamicThinkingOptions[0]?.label }}
+      </div>
+      <p v-if="probeError" class="glass-tinted-red px-3 py-2 rounded text-sm">{{ probeError }}</p>
       <p v-if="paramSaveError" class="glass-tinted-red px-3 py-2 rounded text-sm">{{ paramSaveError }}</p>
 
       <div class="flex gap-2">
