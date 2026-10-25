@@ -2,6 +2,48 @@
 
 ---
 
+## [Unreleased] - 2026-10-15（第三批清理，Step0–R5 完成、Step6 暂停）
+
+### 测试隔离基建（Step0）
+
+- **问题**：pytest 与真实运行时共用 cwd/`NOVEL_ROOT`——`NOVEL_ROOT`/`LOG_FILE`/`CONFIG_FILE`/`QUEUE_STATE_FILE` 均在 import 时按 cwd 求值，跑测试可污染真实 `config.json` / `queue_state.json` / 日志 / `workspace/`；首轮"写后移除 handler"方案曾向真实 `api_failures.log` 写入 14KB（已逐字节还原）
+- **改动**：新增根目录 `conftest.py` + `pytest_isolation.py`——在任何 `backend.*` import 前**写前隔离**：cwd 切会话临时根、`NOVEL_ROOT` 指向它、写合成 `config.json`、剥 `LLM_API_KEY`/`MINIMAX_API_KEY`/`NOVEL_ANALYZER_SESSION_TOKEN`、按 `pytest.ini` testpaths 建占位目录（pytest 按 cwd 解析 testpaths）；autouse fixture 逐用例断言隔离完整 + 重置单例/书目缓存
+- **守卫**：`backend/tests/test_runtime_isolation.py`（进程内契约 + 独立子进程回归 + 正向对照——真实泄漏必被抓）；`test_archive_path_update.py` 补齐队列/书目还原并断言落盘目标在隔离根
+- **验证**：全量运行后五个真实文件 SHA256 与基线一致；隔离原语独立成模块（根与 `tests/` 各有 conftest，`import conftest` 会随收集范围解析到不同模块）
+
+### 死代码与协议修正（Step1）
+
+- 删 `CharacterCardGenerator.long_context_insights` 无消费者读链（损坏的 `long_context_insights_aggregated.json` 会让有效角色详情 404）；写端与 Excel 消费者保留
+- 恢复 `WSType.PING = "ping"` 常量（`ws.py` 心跳仍在发、前端仍识别，之前常量被误删却宣称类型全集）；注明「心跳是唯一不带 payload 的消息」例外，线上 JSON 不变
+- 修 agent.md 两处失实：`networkx + pyvis` 标为历史依赖（无消费者）；测试示例 `test_pipeline.py`（不存在）→ `test_pipeline_inflight.py`
+- 新测试：`test_character_card_generator.py` 16 例（真实生成器 + 真实路由）、`test_pipeline_callbacks_factory.py` 10 例（替换测试内复制闭包，改测真实 `make_pipeline_callbacks`）、`test_ws_protocol_ping.py` 5 例（以真实 `ws_progress` 为入口的运行时契约，变异检查全部被杀）
+
+### 流式 Token 进度回调收敛（Step2）
+
+- **问题**：`analyzer.py` / `final_summary.py::_make_on_progress` / `style_analyzer.py` 三处手写闭包的过滤/耗时/速率/广播主体相同，差异仅 context/session_id/unit_idx 来源
+- **改动**：新增 `backend/core/stream_progress.py::make_stream_progress_callback`，三调用点接线；`_make_on_progress` 保留为薄适配器（总结回调仍在并发槽之后创建，源码顺序断言 + 变异检查锁定）
+- **契约**：计时独立 `time.monotonic()` 不跨调用共享、累计值由 LLMClient 维护不二次累加、只广播 content/usage（reasoning/error 过滤）、`await broadcast_token_delta` 与节流入口不变；新增 `test_stream_progress.py` 21 例（含真实入口 + 真实重试链贯通用例）
+
+### JSON 解析现状矩阵（Step3）
+
+- **结论**：四处入口（analyzer 校验链 / `_parse_llm_dict` / `extract_foreshadow_json` / style）两两不等价（parse-first 与 extract-first 顺序相反、空 dict 行为分歧、summary 多 schema 转换）——**不强行抽取**，保留调用方重复
+- 现状矩阵固化为 `test_json_parse_boundaries.py` 134 例（全部走真实入口；含 mock 生命周期防护用例）；全部 mock 改 `monkeypatch` 作用域管理（R3 曾发现直接赋值泄露污染后续用例）
+- 唯一生产变动：删 `extract_foreshadow_json` 中不可达的 `isinstance(data, list)` 分支（`safe_parse_json` 只返回 dict/None）
+
+### 名称规则与生命周期审计（Step4/Step5）
+
+- 角色名后缀单一来源：`aggregate_utils.CHAR_NAME_SUFFIXES`（内容与顺序逐字节保留），`viz_service` 删重复字面量列表；聚合先 strip / 图谱后 strip 的边界差异保留并锁定
+- 书名规则审计结论**不合并**：`infer_book_name` 与 `_clean_book_name` 21 样本 10 结果不同（文件名推断 vs 展示名清洗职责不同）；新增 `test_char_name_suffix_source.py` 20 例 + `test_book_name_rules.py` 98 例
+- 生命周期审计结论**不建基类**：`SummaryService` 与 `LocationNormalizationService` 仅 4 小片段相同，其余全分歧；新增 `test_service_lifecycle_matrix.py` 26 例矩阵（重复 start/stop、互斥、token 只累计一次、三态等）
+
+### 未做（Step6 暂停）
+
+- `models/knowledge.py` 已确认缺陷：`_legacy_text` marker 在「旧层字段 → `from_dict` → `to_dict` → 再 `from_dict`」两轮往返后 `rolling_structured` 变 `{}`（旧滚动摘要静默丢失）——修复须先写失败回归，等范围讨论后单独授权
+- 伏笔 batch 字段仍在写入；删字段/升 schema 需另立版本化迁移方案
+- 全程未提交期间分步补丁存 `docs/patches/`（step0-r0 … step5-r5），plan/REPORT 见 `docs/PLAN-cleanup-batch-3-2026-10-14.md` / `docs/REPORT-cleanup-batch-3-2026-10-14.md`
+
+---
+
 ## [Unreleased] - 2026-09-30
 
 ### 前端测试深度加强（84 → 225 用例）+ coverage 基建
@@ -32,6 +74,55 @@
   SettingsPage 422/预设覆盖语义、SplitterPage pywebview 双通道/F-2 回滚、
   WorkspacePage 确认流、ChapterDetailPanel 切书竞态/60s 空闲回退等）
 - **回归**：vitest 225 passed / `vue-tsc -b` 0 错 / `vite build` 通过；后端零改动
+
+---
+
+### PR-1 收尾：前端 X-Session-Token 注入（修桌面端 403 折中）
+
+- **问题**：PR-1 的已知折中——`GET /api/analysis/logs` 受 session token 保护，
+  但前端从不发送 header，桌面端 webview 调它必 403；且唯一消费点是
+  QueuePage 的 `<a href>` 顶层导航（不走 fetch），即使注入 header 也修不到
+- **改动**：
+  - `desktop.py` Api 类加 `get_session_token()`：经 pywebview js_api 把 token
+    传给前端（信任域前提：webview 只加载本地 dist 不渲染远程内容）
+  - 新增 `frontend/src/api/sessionToken.ts`：token 模块级单例，模块加载 +
+    `pywebviewready` 事件双路径就绪；仅存内存，不进 localStorage / 日志
+  - `client.ts` `request()` 统一附加 header（合并顺序：Content-Type →
+    调用方 headers → token 不可覆盖）；新增 `downloadLogs()`（独立 fetch +
+    blob 下载，显式绕开 request() 对"200+非 JSON"的抛错契约）
+  - QueuePage 下载按钮 `<a href>` → `<button @click>`，tooltip 同步
+- **测试**：client.test.ts +5 / sessionToken.test.ts 5 例（含与 desktop.py
+  方法名的契约一致性源码断言）/ test_desktop_pythonw.py +1（源码级，
+  不 import desktop.py——顶层副作用会污染 pytest 进程）
+- **e2e**：设 env 后无 header 403 / 正确 header 200 / 错 token 403 实测通过
+- **plan**：`docs/PLAN-session-token-header-2026-09-29.md`（已过独立复审并
+  按其 2 阻塞 + 5 重要项修订，见 §7）
+
+---
+
+### 思考模式状态提示 + 总结模型独立探测
+
+- **问题**：M3 事故（agent.md 10.18）的"未来加固①"只完成一半——不点探测
+  看不到 `{}` = "跟随端点默认（可能开启 thinking）"的风险；总结模型
+  （summary_model）完全没有探测能力，而重型总结恰恰最容易撞思考链超时
+- **改动**：
+  - `settingsForm.ts` 新增 `inferThinkingState()`：覆盖五种禁用语法
+    （3 顶层预设 + 探测动态选项的 2 种嵌套写法），三态判定供两页共享；
+    `makeThinkingPresets()` 预设单一来源（value + 技术标签共享，首项 label
+    按页传入——主模型 `{}` = 跟随端点默认，总结 `{}` = 回退全局，语义不同）
+  - SettingsPage / SummaryPage 下拉旁新增常驻状态提示：`{}` → ⚠ 风险文案；
+    显式禁用 → ✓ + Anthropic caveat（llm_client 对 Anthropic 只放行 thinking 键）
+  - SummaryPage 的 `{}` 用两级组合显示：全局已禁用时显示中性"跟随全局
+    （当前全局：✓ 已显式禁用）"，不再误报为开启
+  - `routes_settings.py` `ModelPreviewRequest` 加可选 `model`：探测端点支持
+    对总结模型独立探测（不传时行为与旧版逐字节等价）；SummaryPage 加
+    「自动探测」按钮，命中自动填入下拉并触发持久化
+- **测试**：settingsForm.test.ts +9（含嵌套写法与类型漂移防御）/
+  SummaryPage.test.ts +4（含 mock 补 probeThinking——10.29 新增的组件测试
+  工厂原本缺该方法）/ SettingsPage.test.ts +3 / test_settings_probe_route.py
+  2 例（model 透传 + 空值回退）
+- **plan**：`docs/PLAN-thinking-mode-status-probe-2026-09-29.md`（已过独立
+  复审并按其 3 阻塞 + 3 重要项修订，见 §7）
 
 ---
 
@@ -76,6 +167,31 @@
 - **修 2（测试太弱）**：表格场景原断言只查「正文里有字」，实际单章时自动检测 `scores >= 5` 闸门过不了会静默回落单章且 `detected_pattern` 退化。改为 ≥6 章并要求 pattern 正确
 - **顺带**：删除被证伪的 `enable_short_line_heuristic`，缩进回到 2 空格，行尾符还原为各文件 HEAD 约定，测试扩到 20 例
 - **已知限制**：不支持加密 / 受 DRM 的 DOCX（显式报错）；不抽表格以外的结构（页眉页脚 / 批注 / 文本框）；不支持 EPUB / 旧 `.doc` / PDF
+
+---
+
+### 车道显示一致性 + 车道计数准确性修复
+
+- **问题 1**：同一时刻车道面板混两种文案——WS `block_start` 发人类可读日志格式
+  `开始分析ch1429-ch1432...`，REST `inflight_blocks` 对账发规范格式 `ch1381-ch1384`，
+  15s 宽限期过后被对账覆盖，多车道并发时同屏可见两种格式
+- **问题 2**：面板车道数可能超过并发池上限——WS 增量记账在 `block_done` 丢失
+  （队满驱逐/断线）时虚高，且总结合成车道（≥900000）不占分析并发池
+- **改动**：
+  - 后端 `pipeline._emit` 六处 START/DONE/FAILED/SKIPPED 事件统一补结构化
+    `range` + `block_size` 字段；`pipeline_events` 转发时 `range` 优先、message 兜底
+    （`message` 保留原格式供日志控制台，向后兼容）
+  - 前端 `laneRegistry.ts` 新增 `normalizeRange()`（剥前缀/尾巴的防御性纯函数）+
+    `reconcileActiveBlocks` 增加 `concurrency` 参数：分析块超限时按 startedAt
+    最早优先截断（防御最后一层）；QueuePage 对账 grace 15s → 5s
+  - `QueuePage.onMessage` 的 block_start/done 改读 `p.range`
+- **测试**：`test_pipeline_inflight.py` structured_range 两例 + `test_queue_service.py`
+  range 优先用例 + `laneRegistry.test.ts` 11 → 18 例（normalizeRange 5 + 超限截断 2）
+- **目验**（2026-09-30 真实队列）：活跃车道全程单一 `chN-chM` 格式，头部计数恒
+  ≤ 并发值，失败块（MiniMax 1027 审核拦截 × 7 块 3 轮补跑）车道即时释放、跑完
+  清零无僵尸；续跑补发 DONE 的 `block N` finished 占位为有意限速设计的已知兜底
+- **plan**：`docs/PLAN-lane-display-concurrency-2026-09-28.md`（已归档 done，
+  对账与目验明细见 `docs/PLAN-lane-display-closeout-2026-09-29.md`）
 
 ---
 

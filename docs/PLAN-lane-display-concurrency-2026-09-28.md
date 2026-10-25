@@ -1,6 +1,6 @@
 ---
 doc_type: plan
-status: draft
+status: done
 ---
 
 # 运行概览车道显示一致性 + 车道计数准确性修复计划
@@ -181,3 +181,25 @@ range: String(p.range ?? '')   // 后端保证有；旧后端回落 message → 
 - 不改 `inflight_blocks` 的登记时机（LLM 调用窗口是正确的粒度）
 - 不改 `_fmt_range()` 的输出格式（`chN-chM` 是唯一规范格式）
 - 不做 WS 重连后事件重放（已有 5s REST 轮询对账兜底，收益不值得复杂度）
+
+---
+
+## 7. 实施结果（2026-09-30 归档）
+
+> **约定声明**：本仓库 docs/ 下 PLAN 此前无完成态先例，自本文件起 `status: done` 即完成态。
+
+全部 Phase 1-3 任务落地（commit `b901795`，2026-09-28）；对账明细见
+`PLAN-lane-display-closeout-2026-09-29.md` §0。
+
+**回归**：
+- 后端 pytest 全绿（2026-09-29 实跑，含 `test_pipeline_inflight.py:138,169`
+  structured_range 两例 + `test_queue_service.py:362-370` range 优先用例）
+- 前端 vitest 全绿（执行日 84 例；2026-09-30 另一工作会话已扩至 225 例，见 agent.md 10.29）
+- `npm run build` 通过，dist 于 09-30 00:10 重建（bundle 实测含 normalizeRange 字面量）
+
+**目验**（2026-09-30，uvicorn :8123 + 真实队列跑《带着仓库到大明》尾部补跑）：
+- 活跃车道全程单一 `chN-chM` 格式（`ch1089-ch1092` / `ch1461-ch1464`），无 `开始分析...` 长文案混入
+- 头部计数 2/8 → 1/8，恒 ≤ concurrency；REST `inflight_blocks` 与 UI 一致
+- 失败块（7 块 MiniMax 1027 内容审核拦截，3 轮补跑）车道即时释放，跑完 `0 / 8 运行中`，无僵尸
+- **已知伪影（非 bug）**：续跑补发的 DONE 不带 range（pipeline.py:337 有意限速），
+  finished 槽位兜底显示 `block N`——目验中如期出现，与设计一致

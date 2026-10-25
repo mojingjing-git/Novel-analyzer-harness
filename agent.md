@@ -14,7 +14,7 @@
 - **后端**：FastAPI（异步），Python 3.11+
 - **桌面壳**：pywebview + WebView2（Windows）
 - **LLM 兼容**：任何 OpenAI 兼容 API（8+ 厂商预设），以及 Anthropic 协议
-- **测试**：后端约 463 个测试用例 / 58 个测试文件（2026-09-28 累计，含 PR-1 redact +14、session_token +4、DOCX 输入 +20）；前端 225 个用例 / 31 个测试文件 + vitest coverage（`npm run test:coverage`，2026-09-30）
+- **测试**：后端约 827 个用例 / 73 个测试文件（2026-10-15 累计，含第三批清理 Step0-R5 新增 10 个测试文件与测试隔离基建；数量以 `pytest --collect-only -q` 实时为准）；前端 249 个用例 / 32 个测试文件 + vitest coverage（`npm run test:coverage`，2026-09-30）
 
 ---
 
@@ -32,6 +32,7 @@
 │   │   ├── llm_probe.py          # 禁用思考参数探测（probe_thinking_params 多模式检测）
 │   │   ├── llm_failure_logger.py # API 失败日志记录器（FailureLogger 单例，RotatingFileHandler）
 │   │   ├── llm_stream.py         # 流式数据结构（StreamChunk/StreamResult）+ 双协议事件/响应解析
+│   │   ├── stream_progress.py    # 流式 Token 进度回调工厂（make_stream_progress_callback，章节/总结/风格三路径共用，2026-10-15 抽取）
 │   │   ├── analyzer.py           # 单章分析引擎
 │   │   ├── prompt_builder.py     # Prompt 构建器（9路上下文注入）
 │   │   ├── knowledge_base.py     # 知识库管理器（增量合并、缓存、快照隔离）
@@ -84,7 +85,8 @@
 ├── frontend/                     # Vue 3 前端
 │   ├── src/
 │   │   ├── api/
-│   │   │   ├── client.ts         # 55 个 API 方法 + TypeScript DTO
+│   │   │   ├── client.ts         # 56 个 API 方法 + TypeScript DTO + 统一 X-Session-Token 注入
+│   │   │   ├── sessionToken.ts   # 会话 token 单例（pywebview js_api 获取，PR-1 收尾）
 │   │   │   └── useProgressSocket.ts  # 单例 WebSocket + pub/sub
 │   │   ├── components/
 │   │   │   ├── AppLayout.vue     # 根布局（标题栏 + 侧边栏 + pywebview 窗口控制）
@@ -114,7 +116,7 @@
 │   │   ├── utils/
 │   │   │   ├── markdown.ts       # 零依赖 Markdown→HTML 渲染器
 │   │   │   ├── summaryLanes.ts   # 总结阶段→LaneView 合成块（id ≥ 900000）纯函数
-│   │   │   ├── laneRegistry.ts   # 车道注册表自愈：GC + inflight 对账纯函数
+│   │   │   ├── laneRegistry.ts   # 车道注册表自愈：GC + inflight 对账 + normalizeRange 归一 + 超并发截断（纯函数）
 │   │   │   ├── queueFeed.ts      # QueuePage WS 状态机纯函数（block_start/done/token_delta/discovery + 会话汇总）
 │   │   │   ├── summaryProgress.ts # 总结 4 阶段加权进度/阶段序号/思考参数 JSON 纯函数
 │   │   │   ├── settingsForm.ts   # 空串剪除 / 422 字段映射 / 分类勾选 / 思考模式 JSON 纯函数
@@ -150,7 +152,7 @@
 | Anthropic SDK | `AsyncAnthropic` 支持 Claude 系列 |
 | pywebview | 桌面 WebView2 壳 |
 | openpyxl | Excel 导出（懒加载） |
-| networkx + pyvis | 角色关系图（可选依赖） |
+| ~~networkx + pyvis~~ | **历史依赖、当前无消费者**（2026-10-14 核实：backend 无 import，`requirements.txt` 未列；关系图由 `viz_service.graph_data` 自行聚合，前端 ECharts 渲染）。保留此行仅作历史记录，不要当当前依赖安装 |
 | json5 / json_repair | JSON 容错解析 |
 | pytest | 默认收集 `backend/tests/` + 顶层 `tests/`；数量以 `pytest --collect-only -q` 为准 |
 
@@ -623,7 +625,7 @@ discovery_event/state_change_event/token_delta_event）。前端镜像：
 ### 6.6 前端关键模式
 
 - **双更新策略**：WebSocket 实时推送 + 5s REST 轮询降级
-- **车道注册表自愈**：WS block_start/done 增量记账（有损通道，丢 done = 僵尸车道）+ 每 5s 用 `inflight_blocks`（信号量真实在途）对账纠偏 + GC 超窗回收；对账只替换 id<900000 分析块，保总结合成车道；实现抽在 `utils/laneRegistry.ts` 纯函数
+- **车道注册表自愈**：WS block_start/done 增量记账（有损通道，丢 done = 僵尸车道）+ 每 5s 用 `inflight_blocks`（信号量真实在途）对账纠偏 + GC 超窗回收；对账只替换 id<900000 分析块，保总结合成车道；分析块超 concurrency 时按 startedAt 最早优先截断（防最后一层）；`normalizeRange()` 把人类文案兜底剥成 `chN-chM`（后端事件已带结构化 range，正常路径不触发）；实现抽在 `utils/laneRegistry.ts` 纯函数
 - **防抖刷新**：高频 WS 事件（block_done/token_stats）500ms 防抖
 - **请求序列守卫**：单调递增计数器防止旧异步响应覆盖新数据
 - **空闲自动回退**：ChapterDetailPanel 60s 无操作自动回到最新章节
@@ -701,9 +703,12 @@ python -m uvicorn backend.app:app --reload --port 8088
 
 # 运行测试
 python -m pytest
+# （测试全程运行在 cwd/NOVEL_ROOT 双隔离的会话临时根：根目录 conftest.py + pytest_isolation.py
+#   在任何 backend.* import 前生效，真实 config.json/queue_state.json/日志/workspace 零写入；
+#   守卫见 backend/tests/test_runtime_isolation.py。不要在测试里依赖真实工作区数据。）
 
 # 运行指定测试
-python -m pytest backend/tests/test_pipeline.py -v
+python -m pytest backend/tests/test_pipeline_inflight.py -v
 ```
 
 ### 前端
@@ -1189,6 +1194,39 @@ mypy backend/
 - **coverage 基线（2026-09-30）**：全仓 60.4% stmts / 55.2% branch / 44.8% funcs；utils 层 98.5%（funcs 100%）、components 76%、pages 51.7%（未测的 CharacterCard/Graph/Map/Stats/PromptPreview 拖低，ECharts 三页优先级最低）
 - **回归**：前端 vitest 225 passed / `vue-tsc -b` 0 错 / `vite build` 通过；后端无改动
 - **未做**：CharacterCardPage/GraphPage/MapPage/StatsPage/PromptPreviewPage/AppLayout/useRipple/vTooltip 测试（低频或 DOM 重、收益低）；markdown.ts 既有 15 例维持
+
+### 10.30 车道显示一致性 + 计数准确性修复（归档）
+
+- **改动**：`b901795` WS 事件结构化 + 前端车道文案归一与超并发截断（明细见 CHANGELOG [Unreleased] 同名条目与 `docs/PLAN-lane-display-concurrency-2026-09-28.md` §7）
+- **原因**：车道面板混两种文案（WS 人类可读格式 vs REST 对账规范格式）+ 计数可超并发池上限（WS 增量记账丢 done 虚高）
+- **目验**（2026-09-30 真实队列跑大明尾部补跑）：活跃车道全程 `chN-chM` 单一格式、计数恒 ≤ 并发值、审核拦截失败块车道即时释放跑完清零；**已知伪影**：续跑补发 DONE 不带 range（pipeline.py:337 有意限速）→ finished 槽位 `block N` 兜底占位，非 bug
+- **回归**：pytest / vitest / build 全绿；plan 已翻 done（本仓库 PLAN 首个 done 态，约定自本文件起确立）
+
+### 10.31 PR-1 收尾：前端 X-Session-Token 注入（修桌面端 403 折中）
+
+- **改动**：`desktop.py` Api 类加 `get_session_token()`（js_api 返回 `NOVEL_ANALYZER_SESSION_TOKEN`，未设返回空串）；新增 `frontend/src/api/sessionToken.ts`（token 模块级单例 + pywebviewready 双路径就绪）；`client.ts` request() 统一附加 header（合并顺序：Content-Type → 调用方 headers → token）+ 新增 `downloadLogs()`；`QueuePage.vue` 下载按钮 `<a href>` → `<button @click>`
+- **原因**：PR-1 已知折中——日志下载是 `<a href>` 顶层导航（不走 fetch），且 request() 对 200+非 JSON 显式抛错而该端点返回 text/plain，桌面端调受保护端点必 403。下载改走独立 fetch + blob，token 不复用 request() 的 JSON 契约
+- **关键事实**：受保护端点仍仅 `GET /api/analysis/logs` 一个；信任域前提 = webview 只加载本地 dist 不渲染远程内容
+- **测试**：client.test.ts +5（header 附加/null 不附/POST 共存/downloadLogs 200·403）+ sessionToken.test.ts 5 例（init 双路径 + js_api 异常静默 + **与 desktop.py 方法名契约一致性源码断言**）+ test_desktop_pythonw.py +1（源码级，不 import desktop.py——顶层副作用会污染 pytest 进程）
+- **e2e**：env 设 token 后 no header 403 / 正确 header 200 / 错 token 403 实测通过
+- **回归**：pytest 8 例相关全过；vitest 相关 14 例全过
+
+### 10.32 思考模式状态提示 + 总结模型独立探测（plan 2026-09-29 之三）
+
+- **改动**：`settingsForm.ts` 加 `inferThinkingState()`（五禁用语法三态判定）+ `makeThinkingPresets()`（两页预设单一来源，首项 label 按页传入——主模型 `{}` = 跟随端点默认、总结 `{}` = 回退全局，语义不同）；SettingsPage/SummaryPage 下拉旁常驻状态提示（`{}` ⚠ / 显式禁用 ✓ + Anthropic caveat）；SummaryPage `{}` 两级组合显示（全局已禁用不误报）；`routes_settings.py` `ModelPreviewRequest` 加可选 `model`（probe 端点支持总结模型独立探测，空值回退主模型逐字节等价）；SummaryPage 加「自动探测」按钮（命中自动填入 + 触发持久化）
+- **原因**：M3 事故（10.18）未来加固①只完成一半——`{}` 的"默认可能开启"风险不点探测不可见；总结模型无探测而重型总结最易撞思考链超时
+- **测试**：settingsForm.test.ts +9 / SummaryPage.test.ts +4（mock 补 probeThinking，10.29 组件测试工厂原本缺该方法）/ SettingsPage.test.ts +3 / test_settings_probe_route.py 2 例（新建，路由层参数透传，与 test_anthropic_provider 的函数级测试分层）
+- **回归**：后端 486 collected 全过 / 前端 vitest 249 passed / `vue-tsc -b` + `vite build` 通过
+- **plan**：`docs/PLAN-thinking-mode-status-probe-2026-09-29.md`（已过独立复审，3 阻塞 + 3 重要项全部修订后实施，见 §7）
+
+### 10.33 第三批清理：重复逻辑收敛与旧数据兼容审计（Step0–R5，Step6 暂停）
+
+- **改动**：Step0 测试隔离基建（根目录 `conftest.py` + `pytest_isolation.py`：任何 `backend.*` import 前 cwd/`NOVEL_ROOT` 切会话临时根 + 合成 config + 剥密钥环境变量 + 单例重置；守卫 `test_runtime_isolation.py` 含子进程回归与正向对照）；Step1 删 `CharacterCardGenerator.long_context_insights` 无消费者读链、恢复 `WSType.PING`（心跳唯一不带 payload）、修本文件两处失实（networkx/pyvis 历史依赖 + `test_pipeline.py`→`test_pipeline_inflight.py`）；Step2 三条生产路径的流式 Token 进度回调收敛为 `backend/core/stream_progress.py::make_stream_progress_callback`（计时/过滤/速率/await 契约逐字段等价）；Step3 JSON 解析现状矩阵固化为 `test_json_parse_boundaries.py`（134 例，四处入口两两不等价故**不抽取**，仅删 `extract_foreshadow_json` 不可达 list 分支）；Step4 角色名后缀单一来源（`aggregate_utils.CHAR_NAME_SUFFIXES`，viz 引用；书名两条规则审计后保留各自职责）；Step5 生命周期审计结论保留重复（`test_service_lifecycle_matrix.py` 26 例矩阵）
+- **原因**：消除已证实无用依赖与重复实现；每步均过独立主审多轮复审（返修史见 `docs/REPORT-cleanup-batch-3-2026-10-14.md`）
+- **测试隔离关键事实**：第一轮隔离方案（写后移除 handler）曾向真实 `api_failures.log` 写入 14KB 后逐字节还原；现行方案为 import 前 cwd 隔离，五真实文件 SHA256 全程不变
+- **未做**：Step6（旧 schema 兼容）用户要求先讨论——已确认缺陷：`models/knowledge.py` 的 `_legacy_text` marker 在「旧层字段 → from_dict → to_dict → 再 from_dict」两轮往返后 `rolling_structured` 变 `{}`（旧滚动摘要静默丢失），修复须先写失败回归；伏笔 batch 字段仍在写入，删除/迁移另立方案
+- **回归**：各步定向集与全量数字见 REPORT（口径不一，以各步实际命令为准）；当前默认收集 **827** 用例（2026-10-25 实测）；前端 249 passed / vue-tsc 通过（清理未触前端）；Ruff F401/F811/F841/F821/F822/F823 全过；每步独立 patch 存 `docs/patches/`
+- **plan**：`docs/PLAN-cleanup-batch-3-2026-10-14.md`（Step6/R6 未授权，不自动回访）
 
 ---
 
