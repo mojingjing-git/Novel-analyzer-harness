@@ -8,14 +8,13 @@
 """
 
 import logging
-import time
 from typing import Optional, Tuple
 
 from ..config.settings import AppConfig
 from ..models.analysis_result import AnalysisResult
 from ..models.knowledge import KnowledgeBase
 from .llm_client import LLMClient
-from .llm_stream import StreamChunk
+from .stream_progress import make_stream_progress_callback
 from .prompt_builder import PromptBuilder
 from ..progress_hub import get_hub
 from ..utils.json_utils import extract_json_from_text, safe_parse_json
@@ -150,22 +149,12 @@ class NovelAnalyzer:
             # H16 Phase 3 (2026-08-26)：改用 chat_auto() 按 streaming_enabled 自动选流式/非流式；
             # 流式模式下 on_progress 回调 broadcast token_delta 给前端。
             hub = get_hub()
-            block_started_at = time.monotonic()
-
-            async def on_progress(chunk: "StreamChunk") -> None:
-                if chunk.type in ("content", "usage"):
-                    elapsed = time.monotonic() - block_started_at
-                    rate = (chunk.estimated_total_tokens or 0) / max(elapsed, 0.1)
-                    await hub.broadcast_token_delta(
-                        context="analysis",
-                        session_id=book_id or "unknown",
-                        unit_idx=chapter_number,
-                        delta={
-                            "output_tokens": chunk.estimated_total_tokens or 0,
-                            "rate_tokens_per_sec": rate,
-                            "elapsed_sec": elapsed,
-                        },
-                    )
+            on_progress = make_stream_progress_callback(
+                hub=hub,
+                context="analysis",
+                session_id=book_id or "unknown",
+                unit_idx=chapter_number,
+            )
 
             success, response, error, token_counts, call_stats = await self.llm_client.chat_auto(
                 messages,

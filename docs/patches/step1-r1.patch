@@ -1,0 +1,1085 @@
+# Step1 (1A/1B/1C) patch (2026-10-14, R1 third round: approved) - cleanup-batch-3
+# Scope: character card dead read-chain, production callback factory tests, WSType.PING.
+# Does NOT include Step0 files (pytest_isolation.py / conftest.py / test_runtime_isolation.py).
+# agent.md is EXCLUDED (other sessions dirty changes) -> see step1-r1-agent-md.patch
+
+# ---- new: backend/tests/test_character_card_generator.py (1A) ----
+diff --git a/backend/tests/test_character_card_generator.py b/backend/tests/test_character_card_generator.py
+new file mode 100644
+index 0000000..a33975e
+--- /dev/null
++++ b/backend/tests/test_character_card_generator.py
+@@ -0,0 +1,317 @@
++"""Step1-1A：角色卡生成器回归（第三批清理，2026-10-14）
++
++背景：``CharacterCardGenerator.long_context_insights`` 只有初始化/赋值、没有输出消费者，
++但读取 ``long_context_insights_aggregated.json`` 失败会走 ``load_aggregated_data`` 的
++``except`` 分支返回 False —— 于是合法 ``character_tracking`` 的索引变空、有效角色详情
++抛 KeyError（路由 404）。Step1-1A 删除该状态与读链。
++
++本文件用**真实生成器**与**真实路由入口**验证：
++
++- 正常索引排序 / 详情字段；
++- 洞察文件缺失 / 损坏 / 为空数组时，不影响索引与详情（这是修复的核心契约）；
++- 空目录 / 不存在角色的既有异常契约（``KeyError`` → 路由 404）；
++- arcs / events 等**真正的数据依赖**仍然按原契约要求字段，缺字段仍抛异常
++  （不因删除洞察读取而把真实数据错误一起吞掉）。
++
++全部使用 tmp 目录合成聚合文件，不读真实 workspace。
++"""
++
++from __future__ import annotations
++
++import json
++import sys
++from pathlib import Path
++
++import pytest
++from fastapi import FastAPI
++from fastapi.testclient import TestClient
++
++sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
++
++from backend.utils.character_card_generator import CharacterCardGenerator  # noqa: E402
++
++
++TRACKING = {
++    "林动": {
++        "first_appearance": 1,
++        "total_events": 7,
++        "chapters": [1, 2, 5],
++        "events": [{"chapter": 1, "event": "古碑现世"}],
++        "state_history": {"1": "懵懂", "2": "坚定"},
++    },
++    "萧炎": {
++        "first_appearance": 2,
++        "total_events": 3,
++        "chapters": [2],
++        "events": [],
++        "state_history": {},
++    },
++}
++
++ARCS = {
++    "chapter_2": [
++        {
++            "name": "林动",
++            "surface_action": "进入古碑",
++            "inner_motivation": "变强",
++            "change_delta": "获得传承",
++            "driver": "复仇",
++        }
++    ]
++}
++
++# 注意：`_analyze_relationships` 只把全角逗号（U+FF0C）归一为分隔符后再按半角逗号切分；
++# 顿号（U+3001）**不**在支持的切分字符内（既有行为，本步不改）。fixture 用真实数据形态，
++# 并在下方用一条用例锁定这一现状契约。
++EVENTS = {
++    "chapter_2": [
++        {
++            "characters": "林动，萧炎",
++            "event": "古碑争锋",
++            "function": "立敌",
++        }
++    ]
++}
++
++
++def _write(base: Path, name: str, payload) -> None:
++    (base / name).write_text(
++        json.dumps(payload, ensure_ascii=False), encoding="utf-8"
++    )
++
++
++@pytest.fixture
++def book_output(tmp_path):
++    """构造 output/ 目录（含 tracking/arcs/events 三个聚合文件）"""
++    out = tmp_path / "output"
++    out.mkdir()
++    _write(out, "character_tracking_aggregated.json", TRACKING)
++    _write(out, "character_arcs_aggregated.json", ARCS)
++    _write(out, "core_events_aggregated.json", EVENTS)
++    return out
++
++
++# ---------------------------------------------------------------------------
++# 状态与读链已删除
++# ---------------------------------------------------------------------------
++
++def test_no_long_context_insights_state(book_output):
++    """生成器不再持有 long_context_insights 状态，也不再读该聚合文件"""
++    gen = CharacterCardGenerator(book_output)
++    assert not hasattr(gen, "long_context_insights"), "无用状态未删除"
++
++    _write(book_output, "long_context_insights_aggregated.json", {"pacing": []})
++    assert gen.load_aggregated_data() is True
++    assert not hasattr(gen, "long_context_insights"), "加载后不应重建该状态"
++
++
++def test_insights_file_opened_after_removal(book_output, monkeypatch):
++    """读链删除后，不再打开 long_context_insights_aggregated.json"""
++    opened: list[str] = []
++    real_open = open
++
++    def spy_open(file, *args, **kwargs):
++        opened.append(str(file))
++        return real_open(file, *args, **kwargs)
++
++    monkeypatch.setattr("builtins.open", spy_open)
++    gen = CharacterCardGenerator(book_output)
++    gen.load_aggregated_data()
++
++    assert not any("long_context_insights" in path for path in opened), (
++        f"仍打开了洞察文件: {opened}"
++    )
++
++
++# ---------------------------------------------------------------------------
++# 正常数据契约（洞察文件各种形态都不影响）
++# ---------------------------------------------------------------------------
++
++@pytest.mark.parametrize(
++    "insights",
++    [
++        pytest.param(None, id="missing"),
++        pytest.param("{ 这不是 JSON", id="corrupted"),
++        pytest.param([], id="empty_list"),
++        pytest.param({}, id="empty_dict"),
++        pytest.param({"pacing": [{"chapter": 1}]}, id="valid"),
++    ],
++)
++def test_summaries_and_card_survive_insights_states(book_output, insights):
++    """洞察文件缺失/损坏/为空/正常，索引与详情都必须照常工作"""
++    if insights is not None:
++        (book_output / "long_context_insights_aggregated.json").write_text(
++            json.dumps(insights, ensure_ascii=False)
++            if not isinstance(insights, str)
++            else insights,
++            encoding="utf-8",
++        )
++
++    gen = CharacterCardGenerator(book_output)
++    summaries = gen.get_character_summaries()
++
++    assert [item["name"] for item in summaries] == ["林动", "萧炎"], (
++        f"索引应按 total_events 降序且完整: {summaries}"
++    )
++    assert summaries[0]["first_appearance"] == 1
++    assert summaries[0]["total_events"] == 7
++    assert summaries[0]["chapters_count"] == 3
++
++    card = gen.get_card_data("林动")
++    assert card["name"] == "林动"
++    assert card["total_events"] == 7
++    assert card["chapters"] == [1, 2, 5]
++    assert card["arcs"] == [
++        {
++            "chapter": 2,
++            "surface_action": "进入古碑",
++            "inner_motivation": "变强",
++            "change_delta": "获得传承",
++            "driver": "复仇",
++        }
++    ]
++    assert card["events"] == [{"chapter": 1, "event": "古碑现世"}]
++    assert card["states"] == {1: "懵懂", 2: "坚定"}
++    assert card["relationships"]["萧炎"]["event_count"] == 1
++
++
++# ---------------------------------------------------------------------------
++# 空目录 / 不存在角色：既有异常契约
++# ---------------------------------------------------------------------------
++
++def test_empty_dir_summaries_returns_empty(tmp_path):
++    """空目录：索引返回空列表（不抛异常）"""
++    gen = CharacterCardGenerator(tmp_path / "nothing")
++    assert gen.get_character_summaries() == []
++
++
++def test_empty_dir_card_raises_keyerror(tmp_path):
++    """空目录：详情抛 KeyError（路由转 404）"""
++    gen = CharacterCardGenerator(tmp_path / "nothing")
++    with pytest.raises(KeyError):
++        gen.get_card_data("任何人")
++
++
++def test_unknown_character_raises_keyerror(book_output):
++    """不存在的角色：详情抛 KeyError（路由转 404）"""
++    gen = CharacterCardGenerator(book_output)
++    with pytest.raises(KeyError):
++        gen.get_card_data("不存在的人")
++
++
++# ---------------------------------------------------------------------------
++# 真正的数据依赖：缺字段仍必须抛异常（不能被"全吞异常"掩盖）
++# ---------------------------------------------------------------------------
++
++def test_arcs_missing_required_field_still_raises(book_output):
++    """arcs 缺少必需字段（driver）仍抛 KeyError —— 真实数据错误不得被吞掉"""
++    _write(
++        book_output,
++        "character_arcs_aggregated.json",
++        {"chapter_2": [{"name": "林动", "surface_action": "x",
++                        "inner_motivation": "y", "change_delta": "z"}]},
++    )
++    gen = CharacterCardGenerator(book_output)
++    with pytest.raises(KeyError):
++        gen.get_card_data("林动")
++
++
++def test_tracking_corrupted_raises_keyerror(book_output):
++    """tracking 文件损坏：load 失败 → 详情抛 KeyError（原契约）"""
++    (book_output / "character_tracking_aggregated.json").write_text(
++        "{ 坏了", encoding="utf-8"
++    )
++    gen = CharacterCardGenerator(book_output)
++    with pytest.raises(KeyError):
++        gen.get_card_data("林动")
++
++
++def test_find_aggregated_supports_nested_dir(tmp_path):
++    """聚合文件在 output/aggregated/ 下也能被找到（_find_aggregated 双候选）"""
++    out = tmp_path / "output"
++    nested = out / "aggregated"
++    nested.mkdir(parents=True)
++    _write(nested, "character_tracking_aggregated.json", TRACKING)
++    _write(nested, "character_arcs_aggregated.json", ARCS)
++    _write(nested, "core_events_aggregated.json", EVENTS)
++
++    gen = CharacterCardGenerator(out)
++    assert [item["name"] for item in gen.get_character_summaries()] == ["林动", "萧炎"]
++
++
++# ---------------------------------------------------------------------------
++# 真实路由入口：KeyError → 404，正常 → 200
++# ---------------------------------------------------------------------------
++
++@pytest.fixture
++def client():
++    from backend.api.routes_books import router
++
++    app = FastAPI()
++    app.include_router(router)
++    return TestClient(app)
++
++
++def test_route_card_returns_404_for_unknown_character(client, book_output, monkeypatch):
++    """不存在的角色 → 路由 404（KeyError 契约）"""
++    import backend.api.routes_books as routes_books
++    import backend.utils.aggregate_utils as aggregate_utils
++
++    class _NoopAggregator(aggregate_utils.JSONAggregator):
++        def aggregate_character_tracking(self, output_path=None):
++            return {}
++
++    # 路由在函数体内 import，patch 模块属性才生效
++    monkeypatch.setattr(aggregate_utils, "JSONAggregator", _NoopAggregator)
++    monkeypatch.setattr(
++        routes_books.book_service, "get_output_dir", lambda book_id: book_output
++    )
++
++    resp = client.get("/api/books/测试书/characters/不存在的人")
++    assert resp.status_code == 404, resp.text
++
++
++def test_route_characters_ok_with_corrupted_insights(client, book_output, monkeypatch):
++    """洞察文件损坏时，列表与详情端点仍 200（修复的核心契约）"""
++    import backend.api.routes_books as routes_books
++
++    (book_output / "long_context_insights_aggregated.json").write_text(
++        "{ 坏了", encoding="utf-8"
++    )
++
++    import backend.utils.aggregate_utils as aggregate_utils
++
++    class _NoopAggregator(aggregate_utils.JSONAggregator):
++        def aggregate_character_tracking(self, output_path=None):
++            return {}
++
++    monkeypatch.setattr(aggregate_utils, "JSONAggregator", _NoopAggregator)
++    monkeypatch.setattr(
++        routes_books.book_service, "get_output_dir", lambda book_id: book_output
++    )
++
++    listing = client.get("/api/books/测试书/characters")
++    assert listing.status_code == 200, listing.text
++    names = [item["name"] for item in listing.json()["characters"]]
++    assert names == ["林动", "萧炎"], names
++
++    card = client.get("/api/books/测试书/characters/林动")
++    assert card.status_code == 200, card.text
++    assert card.json()["character"]["name"] == "林动"
++
++
++def test_ideographic_comma_not_a_separator(book_output):
++    """现状契约：顿号（U+3001）不切分人物，整串被当作一个名字
++
++    这是既有行为（本步不修）：`_analyze_relationships` 只归一全角逗号 U+FF0C。
++    锁定现状，避免后续误当作回归。
++    """
++    _write(
++        book_output,
++        "core_events_aggregated.json",
++        {"chapter_2": [{"characters": "林动、萧炎", "event": "争锋", "function": "立敌"}]},
++    )
++    gen = CharacterCardGenerator(book_output)
++    card = gen.get_card_data("林动")
++    # "林动、萧炎" 不等于 "林动"，故不产生任何关系
++    assert card["relationships"] == {}
+
+# ---- new: backend/tests/test_pipeline_callbacks_factory.py (1B) ----
+diff --git a/backend/tests/test_pipeline_callbacks_factory.py b/backend/tests/test_pipeline_callbacks_factory.py
+new file mode 100644
+index 0000000..33ccd28
+--- /dev/null
++++ b/backend/tests/test_pipeline_callbacks_factory.py
+@@ -0,0 +1,284 @@
++"""Step1-1B：生产回调工厂 `make_pipeline_callbacks` 的真实回归（第三批清理，2026-10-14）
++
++背景：原 `backend/tests/test_queue_service.py::test_on_progress_block_start_publishes`
++用的是测试内**复制的** `on_progress_like` 闭包，即使禁用生产 `make_pipeline_callbacks`
++仍然全绿——属无效覆盖。本文件直接调用生产工厂，覆盖：
++
++- 结构化 `range` 优先于 `message`（前端车道统一显示 chN-chM）；
++- DONE / FAILED / SKIPPED 三个终态都转发 `block_done` 并记每章统计（失败同样计入成本）；
++- 只有 DONE 才发 discovery；SKIPPED 的 `ok` 为 False；
++- `on_token_stats` 累加 token 统计并转发 `token_stats`（不二次累计）；
++- 回调名即事件契约：不改字段、不改顺序、不改广播等待方式。
++
++全部使用隔离 `ProgressHub` 实例（不用进程级 singleton），避免跨用例订阅污染。
++"""
++
++from __future__ import annotations
++
++import asyncio
++import sys
++import time
++from pathlib import Path
++
++import pytest
++
++sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
++
++from backend.progress_hub import ProgressHub  # noqa: E402
++from backend.services.analysis_stats import AnalysisStats  # noqa: E402
++from backend.services.pipeline_events import make_pipeline_callbacks  # noqa: E402
++from backend.services.queue_manager import QueueItem  # noqa: E402
++
++
++@pytest.fixture
++def harness():
++    hub = ProgressHub()
++    item = QueueItem(
++        name="测试书", blocks_dir=Path("/x/blocks"), workspace_dir=Path("/x")
++    )
++    item.start_time = time.time()
++    stats = AnalysisStats()
++    seen: set = set()
++    on_progress, on_token_stats = make_pipeline_callbacks(
++        hub=hub, item=item, stats=stats, seen_characters=seen
++    )
++    return hub, item, stats, seen, on_progress, on_token_stats
++
++
++async def _drain(queue, n: int):
++    out = []
++    for _ in range(n):
++        out.append(await asyncio.wait_for(queue.get(), timeout=2.0))
++    return out
++
++
++# ---------------------------------------------------------------------------
++# start：range 优先于 message
++# ---------------------------------------------------------------------------
++
++async def test_start_prefers_structured_range_over_message(harness):
++    """有 range 时用 range；无 range 时回退 message"""
++    hub, _item, _stats, _seen, on_progress, _ = harness
++    received = await hub.subscribe()
++    try:
++        await on_progress({
++            "status": "start", "chapter": 9, "progress": 3, "total": 50,
++            "message": "开始分析第9-10章...", "range": "ch9-ch10",
++        })
++        # 生产顺序（已核实）：log → progress → block_start（带 message 时先发 log）
++        msgs = await _drain(received, 3)
++        assert [m["type"] for m in msgs] == ["log", "progress", "block_start"]
++        assert msgs[-1]["payload"]["range"] == "ch9-ch10"
++
++        await on_progress({
++            "status": "start", "chapter": 11, "progress": 4, "total": 50,
++            "message": "开始分析第11-12章...",
++        })
++        msgs = await _drain(received, 3)
++        assert msgs[-1]["payload"]["range"] == "开始分析第11-12章..."
++    finally:
++        await hub.unsubscribe(received)
++
++
++async def test_start_emits_full_block_start_payload(harness):
++    """block_start payload 字段与顺序：chapter/range/progress/total/ts"""
++    hub, item, _stats, _seen, on_progress, _ = harness
++    received = await hub.subscribe()
++    try:
++        await on_progress({
++            "status": "start", "chapter": 5, "progress": 5, "total": 100,
++            "range": "ch5-ch8",
++        })
++        # 无 message → 不发 log，顺序为 progress → block_start
++        msgs = await _drain(received, 2)
++        assert [m["type"] for m in msgs] == ["progress", "block_start"]
++        payload = msgs[-1]["payload"]
++        assert list(payload.keys()) == ["chapter", "range", "progress", "total", "ts"]
++        assert payload["chapter"] == 5
++        assert payload["range"] == "ch5-ch8"
++        assert payload["progress"] == 5
++        assert payload["total"] == 100
++        assert isinstance(payload["ts"], float)
++        # progress 事件同步写入 item.completed_chapters
++        assert item.completed_chapters == 5
++    finally:
++        await hub.unsubscribe(received)
++
++
++# ---------------------------------------------------------------------------
++# DONE / FAILED / SKIPPED 终态转发
++# ---------------------------------------------------------------------------
++
++@pytest.mark.parametrize(
++    "status, ok_expected, discovery_expected",
++    [
++        ("done", True, True),
++        ("failed", False, False),
++        ("skipped", False, False),
++    ],
++)
++async def test_terminal_statuses_forward_block_done_and_stats(
++    harness, status, ok_expected, discovery_expected
++):
++    """三个终态都发 block_done 且记每章统计；只有 done 发 discovery"""
++    hub, _item, stats, _seen, on_progress, _ = harness
++    received = await hub.subscribe()
++    try:
++        payload_in = {
++            "status": status, "chapter": 12, "range": "ch12-ch13",
++            "elapsed": 2.0, "tokens": (30, 40),
++            "input_tokens": 30, "output_tokens": 40,
++            "retries": 2, "failed_tokens": 100,
++        }
++        if status == "done":
++            payload_in["result"] = {"core_events": [{"characters": "林动、萧炎"}]}
++
++        await on_progress(payload_in)
++
++        # 终态事件顺序（已核实）：block_done [+ discovery]（本例无 message 故无 log）
++        expected = 2 if discovery_expected else 1
++        msgs = await _drain(received, expected)
++        done = msgs[0]
++        assert done["type"] == "block_done"
++        assert done["payload"]["ok"] is ok_expected
++        assert done["payload"]["chapter"] == 12
++        assert done["payload"]["range"] == "ch12-ch13"
++        assert done["payload"]["elapsed"] == 2.0
++        assert done["payload"]["tokens"] == (30, 40)
++        assert ("discovery" in [m["type"] for m in msgs]) is discovery_expected
++
++        # 统计：三个终态都记；失败成本不归零
++        assert len(stats.chapter_stats) == 1
++        assert stats.chapter_stats[0]["status"] == status
++        assert stats.chapter_stats[0]["chapter"] == 12
++        assert stats.total_retries == 2
++        assert stats.total_failed_tokens == 100
++    finally:
++        await hub.unsubscribe(received)
++
++
++async def test_failed_log_uses_error_level(harness):
++    """FAILED 的 log 用 error 级别；DONE/SKIPPED 用 info"""
++    hub, _item, _stats, _seen, on_progress, _ = harness
++    received = await hub.subscribe()
++    try:
++        await on_progress({"status": "failed", "chapter": 1, "message": "炸了"})
++        # 顺序：log(error) → block_done
++        log_msg = await asyncio.wait_for(received.get(), timeout=2.0)
++        assert log_msg["type"] == "log"
++        assert log_msg["payload"]["level"] == "error"
++        done_msg = await asyncio.wait_for(received.get(), timeout=2.0)
++        assert done_msg["type"] == "block_done"
++        assert done_msg["payload"]["ok"] is False
++
++        await on_progress({"status": "skipped", "chapter": 2, "message": "被拦截"})
++        log_msg = await asyncio.wait_for(received.get(), timeout=2.0)
++        assert log_msg["payload"]["level"] == "info"
++        done_msg = await asyncio.wait_for(received.get(), timeout=2.0)
++        assert done_msg["payload"]["ok"] is False
++    finally:
++        await hub.unsubscribe(received)
++
++
++async def test_discovery_dedups_across_blocks(harness):
++    """已见人物不重复进入 discovery（seen_characters 求差）"""
++    hub, _item, _stats, seen, on_progress, _ = harness
++    received = await hub.subscribe()
++    result = {"core_events": [{"characters": "林动、萧炎"}]}
++    try:
++        await on_progress({
++            "status": "done", "chapter": 1, "range": "ch1",
++            "input_tokens": 1, "output_tokens": 1, "result": result,
++        })
++        msgs = await _drain(received, 2)  # block_done → discovery
++        assert msgs[-1]["payload"]["characters"] == ["林动", "萧炎"]
++        assert seen == {"林动", "萧炎"}
++
++        await on_progress({
++            "status": "done", "chapter": 2, "range": "ch2",
++            "input_tokens": 1, "output_tokens": 1, "result": result,
++        })
++        msgs = await _drain(received, 2)
++        assert msgs[-1]["payload"]["characters"] == []
++    finally:
++        await hub.unsubscribe(received)
++
++
++# ---------------------------------------------------------------------------
++# on_token_stats：累加 + 转发，不二次累计
++# ---------------------------------------------------------------------------
++
++async def test_token_stats_accumulates_and_forwards(harness):
++    """on_token_stats 累加到 stats 并原样转发 token_stats 事件"""
++    hub, _item, stats, _seen, _, on_token_stats = harness
++    received = await hub.subscribe()
++    try:
++        await on_token_stats({"category": "chapter", "input_tokens": 100, "output_tokens": 50})
++        await on_token_stats({"category": "chapter", "input_tokens": 20, "output_tokens": 10})
++        await on_token_stats({"category": "rolling", "input_tokens": 5, "output_tokens": 1})
++
++        msgs = await _drain(received, 3)
++        assert all(m["type"] == "token_stats" for m in msgs)
++        assert msgs[0]["payload"]["input_tokens"] == 100  # 原样转发，不累计后再发
++        assert msgs[1]["payload"]["input_tokens"] == 20
++
++        assert stats.token_stats["chapter"] == {"input_tokens": 120, "output_tokens": 60}
++        assert stats.token_stats["rolling"] == {"input_tokens": 5, "output_tokens": 1}
++    finally:
++        await hub.unsubscribe(received)
++
++
++async def test_token_stats_unknown_category_default(harness):
++    """无 category 时归入 unknown（既有行为）"""
++    hub, _item, stats, _seen, _, on_token_stats = harness
++    received = await hub.subscribe()
++    try:
++        await on_token_stats({"input_tokens": 7, "output_tokens": 3})
++        await asyncio.wait_for(received.get(), timeout=2.0)
++        assert stats.token_stats["unknown"] == {"input_tokens": 7, "output_tokens": 3}
++    finally:
++        await hub.unsubscribe(received)
++
++
++# ---------------------------------------------------------------------------
++# 反向验证：禁用生产工厂时，本文件必须失败（证明测的是真实工厂）
++# ---------------------------------------------------------------------------
++
++async def test_callbacks_come_from_production_factory(harness):
++    """回调必须携带工厂的行为特征：无 range 时回退 message 且带 ts 字段
++
++    复制闭包（旧测试那种）不含 ts / 不转发 progress / 不记统计，
++    因此本断言可作为"测的是生产工厂"的哨兵。
++    """
++    hub, item, stats, _seen, on_progress, _ = harness
++    received = await hub.subscribe()
++    try:
++        await on_progress({"status": "start", "chapter": 1, "progress": 1, "total": 2})
++        # 哨兵：无 message 时不发 log；block_start 带 ts；start 不记统计
++        msgs = await _drain(received, 2)
++        assert [m["type"] for m in msgs] == ["progress", "block_start"]
++        assert "ts" in msgs[-1]["payload"]
++        assert item.completed_chapters == 1
++        assert stats.chapter_stats == []  # start 不记统计
++    finally:
++        await hub.unsubscribe(received)
++
++
++async def test_progress_eta_uses_item_start_time(harness):
++    """ETA 由 item.start_time 推算（工厂捕获 item 引用，非复制闭包的固定值）"""
++    hub, item, _stats, _seen, on_progress, _ = harness
++    received = await hub.subscribe()
++    try:
++        # start_time 为 0 → _compute_eta 返回空串（既有契约）
++        item.start_time = 0.0
++        await on_progress({"status": "start", "chapter": 1, "progress": 1, "total": 10})
++        msgs = await _drain(received, 2)
++        assert msgs[0]["payload"]["eta"] == ""
++
++        # 有 start_time 且进度过半 → ETA 非空
++        item.start_time = time.time() - 10.0
++        await on_progress({"status": "start", "chapter": 2, "progress": 5, "total": 10})
++        msgs = await _drain(received, 2)
++        assert msgs[0]["payload"]["eta"] != ""
++    finally:
++        await hub.unsubscribe(received)
+
+# ---- new: backend/tests/test_ws_protocol_ping.py (1C runtime contract) ----
+diff --git a/backend/tests/test_ws_protocol_ping.py b/backend/tests/test_ws_protocol_ping.py
+new file mode 100644
+index 0000000..8ee6ca9
+--- /dev/null
++++ b/backend/tests/test_ws_protocol_ping.py
+@@ -0,0 +1,215 @@
++"""Step1-1C：以真实 `ws_progress` 为被测入口的运行时契约（第三批清理，2026-10-14）
++
++不用源码子串断言或手工拼的 {"type": "ping"} 字典当测试——那样即使生产不再发心跳、
++或在发出前改变形状，测试仍全绿。本文件直接调用 `backend/api/ws.py::ws_progress`：
++
++- FakeWebSocket 记录 `send_json` 实际收到的对象；
++- `_HEARTBEAT_INTERVAL` 压到极小值以确定性触发超时分支（**不等待真实 25 秒**；
++  等待用事件驱动，不做定时轮询）；
++- 断言实际发送的序列化结果严格为 `{"type": "ping"}` 且不含 payload；
++- 断连用例必须**真的走到 WebSocketDisconnect 分支**并让协程自然返回（有可观察标记），
++  再用有限 timeout 等待；`cancel()` 只在等待超时/失败时做资源清理，不作为断连替代；
++- 普通队列广播断言原样透传。
++
++禁用心跳发送或给心跳加 payload 时，本文件必须失败（已用变异检查验证，见报告）。
++"""
++
++from __future__ import annotations
++
++import asyncio
++import json
++import sys
++from pathlib import Path
++
++import pytest
++from fastapi import WebSocketDisconnect
++
++sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
++
++from backend.api import ws as ws_module  # noqa: E402
++from backend.progress_hub import ProgressHub  # noqa: E402
++from backend.ws_events import WSType  # noqa: E402
++
++
++class FakeWebSocket:
++    """记录 send_json 的最小 WebSocket 替身（只实现 ws_progress 用到的部分）"""
++
++    def __init__(self, headers=None):
++        self.headers = headers or {}
++        self.sent: list = []
++        self.accepted = False
++        self.closed: list[int] = []
++        # 每发一条消息就置位，供调用方事件驱动地等待（避免 sleep 轮询）
++        self.sent_event = asyncio.Event()
++
++    async def accept(self):
++        self.accepted = True
++
++    async def send_json(self, message):
++        self.sent.append(message)
++        self.sent_event.set()
++
++    async def close(self, code=1000):
++        self.closed.append(code)
++
++
++class DisconnectingWebSocket(FakeWebSocket):
++    """第一条消息正常记录，第二条直接抛 WebSocketDisconnect
++
++    断连必须真的发生：用 `disconnected` 事件做可观察标记，测试据此断言
++    “断连分支确实被执行”，而不是靠外部 cancel 后碰巧走到 finally。
++    """
++
++    def __init__(self, headers=None):
++        super().__init__(headers)
++        self.disconnected = asyncio.Event()
++
++    async def send_json(self, message):
++        if self.sent:  # 已有记录 → 这条就是第二次发送，断连
++            self.disconnected.set()
++            raise WebSocketDisconnect()
++        await super().send_json(message)
++
++
++@pytest.fixture
++def ws_env(monkeypatch):
++    """隔离 hub；interval 可按需覆盖（广播用例需要心跳晚于业务消息）"""
++
++    def _build(interval: float = 0.01):
++        hub = ProgressHub()
++        monkeypatch.setattr(ws_module, "get_hub", lambda: hub)
++        monkeypatch.setattr(ws_module, "_HEARTBEAT_INTERVAL", interval)
++        return hub
++
++    return _build
++
++
++async def _wait_for(coro_factory, event: asyncio.Event, timeout: float = 2.0):
++    """启动真实 ws_progress，事件驱动地等到 event 置位；返回 (task, socket)。
++
++    只在超时/异常时 cancel 做清理（不吞非预期异常）。
++    """
++    socket = coro_factory()
++    task = asyncio.create_task(ws_module.ws_progress(socket))
++    try:
++        await asyncio.wait_for(event.wait(), timeout=timeout)
++    except BaseException:
++        # 仅失败路径做资源清理：取消后抑制预期 CancelledError
++        task.cancel()
++        try:
++            await task
++        except asyncio.CancelledError:
++            pass
++        raise
++    return task, socket
++
++
++# ---------------------------------------------------------------------------
++# 心跳的运行时契约
++# ---------------------------------------------------------------------------
++
++async def test_idle_connection_sends_ping_without_payload(ws_env):
++    """队列空闲 → 真实 ws_progress 发出严格 {"type": "ping"}，无 payload"""
++    build = ws_env
++    build()
++    socket = FakeWebSocket()
++
++    task, _ = await _wait_for(lambda: socket, socket.sent_event)
++    task.cancel()  # 协程是无限循环，拿到心跳后主动结束
++    with pytest.raises(asyncio.CancelledError):
++        await task
++
++    first = socket.sent[0]
++    assert set(first.keys()) == {"type"}, f"心跳形状改变: {first}"
++    assert first["type"] == "ping"
++    assert "payload" not in first
++    assert json.loads(json.dumps(first)) == {"type": "ping"}
++
++
++async def test_ping_value_matches_protocol_constant(ws_env):
++    """心跳的 type 与 WSType.PING 同源"""
++    build = ws_env
++    build()
++    socket = FakeWebSocket()
++
++    task, _ = await _wait_for(lambda: socket, socket.sent_event)
++    task.cancel()
++    with pytest.raises(asyncio.CancelledError):
++        await task
++
++    assert socket.sent[0]["type"] == WSType.PING
++    assert str(socket.sent[0]["type"]) == "ping"
++
++
++async def test_heartbeat_does_not_alter_queue_broadcast(ws_env):
++    """普通队列广播原样透传：心跳不改动业务消息"""
++    build = ws_env
++    # 心跳间隔远大于业务投递延迟，确保第一条是业务广播
++    hub = build(interval=5.0)
++    socket = FakeWebSocket()
++    business = {"type": "progress", "payload": {"current": 1, "total": 2, "eta": ""}}
++
++    subscribed = asyncio.Event()
++
++    async def feed():
++        # 等 ws_progress 完成 subscribe 后再投递，业务消息才能进它的队列
++        while not hub._queues and not subscribed.is_set():
++            await asyncio.sleep(0)
++        subscribed.set()
++        await hub.publish(business)
++
++    feeder = asyncio.create_task(feed())
++    try:
++        task, _ = await _wait_for(lambda: socket, socket.sent_event, timeout=5.0)
++    finally:
++        feeder.cancel()
++        try:
++            await feeder
++        except asyncio.CancelledError:
++            pass
++    task.cancel()
++    with pytest.raises(asyncio.CancelledError):
++        await task
++
++    assert socket.sent[0] == business, f"业务广播被改动或未透传: {socket.sent}"
++    assert set(socket.sent[0].keys()) == {"type", "payload"}
++
++
++# ---------------------------------------------------------------------------
++# 断连：必须真的走到 WebSocketDisconnect 分支，并等协程自然返回
++# ---------------------------------------------------------------------------
++
++async def test_disconnect_unsubscribes(ws_env):
++    """断连真的发生后，ws_progress 自然返回并 unsubscribe（订阅者不泄漏）"""
++    build = ws_env
++    hub = build()
++    socket = DisconnectingWebSocket()
++
++    # 等断连真的发生（可观察标记），而不是等第一条消息
++    task, sock = await _wait_for(lambda: socket, socket.disconnected, timeout=5.0)
++
++    # 让协程自然走 except WebSocketDisconnect → finally，有限 timeout 内必须结束
++    await asyncio.wait_for(task, timeout=5.0)
++
++    assert sock.disconnected.is_set(), "断连分支未被执行"
++    assert len(sock.sent) == 1, f"断连前只应记录一条消息: {sock.sent}"
++    assert sock.sent[0] == {"type": WSType.PING}
++    assert hub._queues == set(), f"disconnect 后仍残留订阅者: {hub._queues}"
++
++
++async def test_cancel_path_also_unsubscribes(ws_env):
++    """对照组：外部 cancel（非断连）路径同样执行 finally 的 unsubscribe
++
++    与上一条用例区分两条路径，避免只验证 cancel 后的 finally。
++    """
++    build = ws_env
++    hub = build()
++    socket = FakeWebSocket()
++
++    task, _ = await _wait_for(lambda: socket, socket.sent_event)
++    task.cancel()
++    with pytest.raises(asyncio.CancelledError):
++        await task
++
++    assert socket.sent, "未收到任何消息"
++    assert hub._queues == set(), f"cancel 后仍残留订阅者: {hub._queues}"
+
+# ---- tracked: backend/utils/character_card_generator.py (1A) ----
+diff --git a/backend/utils/character_card_generator.py b/backend/utils/character_card_generator.py
+index b40cdc4..9d138ac 100644
+--- a/backend/utils/character_card_generator.py
++++ b/backend/utils/character_card_generator.py
+@@ -8,7 +8,12 @@ from pathlib import Path
+ from typing import Dict, List
+ 
+ class CharacterCardGenerator:
+-    """角色卡生成器"""
++    """角色卡片生成器
++
++    只依赖 character_tracking / character_arcs / core_events 三份聚合文件。
++    `long_context_insights_aggregated.json` 不参与本类加载：它没有输出消费者，
++    而加载失败会连累本可正常工作的索引与角色详情。
++    """
+     
+     def __init__(self, aggregated_dir: Path):
+         """
+@@ -21,7 +26,6 @@ class CharacterCardGenerator:
+         self.character_data = None
+         self.character_arcs = None
+         self.core_events = None
+-        self.long_context_insights = None
+         
+     def _find_aggregated(self, name: str) -> Path | None:
+         """聚合文件可能直接位于 aggregated_dir，也可能在其 ``aggregated`` 子目录中
+@@ -56,12 +60,6 @@ class CharacterCardGenerator:
+                 with open(events_path, 'r', encoding='utf-8') as f:
+                     self.core_events = json.load(f)
+             
+-            # 加载长上下文洞察
+-            insights_path = self._find_aggregated("long_context_insights_aggregated.json")
+-            if insights_path is not None:
+-                with open(insights_path, 'r', encoding='utf-8') as f:
+-                    self.long_context_insights = json.load(f)
+-            
+             return True
+             
+         except Exception as e:
+
+# ---- tracked: backend/tests/test_queue_service.py (1B) ----
+diff --git a/backend/tests/test_queue_service.py b/backend/tests/test_queue_service.py
+index cccf71d..f144cbb 100644
+--- a/backend/tests/test_queue_service.py
++++ b/backend/tests/test_queue_service.py
+@@ -3,6 +3,7 @@
+ """
+ import asyncio
+ import sys
++import time
+ from pathlib import Path
+ from unittest.mock import MagicMock, patch
+ 
+@@ -317,59 +318,81 @@ def test_extract_discovery_empty_or_invalid():
+     assert "萧炎" in disc2["characters"]
+ 
+ 
+-async def test_on_progress_block_start_publishes():
+-    """on_progress 收到 status=start → 发布 block_start 消息"""
+-    from backend.progress_hub import get_hub
+-    hub = get_hub()
+-    # 用真实 hub（开发期 singleton），订阅一个临时队列
+-    test_queue = await hub.subscribe()
++# ---- Step1-1B：生产回调工厂 make_pipeline_callbacks 的真实回归 ----
++# 原 test_on_progress_block_start_publishes 用的是测试内复制闭包（on_progress_like），
++# 即使禁用生产 make_pipeline_callbacks 仍然全绿，属无效测试。本文件改为直接调用
++# 生产工厂，契约断言保持不变（range 优先于 message、DONE/FAILED/SKIPPED 转发与统计）。
++# 详见 backend/tests/test_pipeline_callbacks_factory.py（结构化事件矩阵）。
++
++
++async def test_factory_callbacks_publish_block_start_and_done():
++    """生产工厂：start → block_start（range 优先）；done → block_done + 每章统计"""
++    from backend.progress_hub import ProgressHub
++    from backend.services.analysis_stats import AnalysisStats
++    from backend.services.pipeline_events import make_pipeline_callbacks
++
++    hub = ProgressHub()  # 隔离 hub，不用进程级 singleton
++    received = await hub.subscribe()
++    item = QueueItem(name="测试书", blocks_dir=Path("/x/blocks"), workspace_dir=Path("/x"))
++    item.start_time = time.time()
++    stats = AnalysisStats()
++    seen = set()
++
++    on_progress, _on_token_stats = make_pipeline_callbacks(
++        hub=hub, item=item, stats=stats, seen_characters=seen
++    )
++
+     try:
+-        # 用 object.__new__ 构造 AnalysisService 避免 __init__ 副作用
+-        svc = object.__new__(AnalysisService)
+-        svc._seen_characters = set()
+-
+-        # 复刻 on_progress 闭包（不直接调 _run_one_item，那是 200 行嵌套）
+-        async def on_progress_like(payload):
+-            status = payload.get("status", "")
+-            if status == "start":
+-                await hub.publish({
+-                    "type": "block_start",
+-                    "payload": {
+-                        "chapter": payload.get("chapter", 0),
+-                        "range": payload.get("range") or payload.get("message", ""),
+-                        "progress": payload.get("progress", 0),
+-                        "total": payload.get("total", 0),
+-                    },
+-                })
+-
+-        await on_progress_like({
+-            "status": "start",
+-            "chapter": 5,
++        await on_progress({
++            "status": "start", "chapter": 5,
+             "message": "开始分析第5-8章...",
+-            "progress": 5,
+-            "total": 100,
++            "progress": 5, "total": 100,
+         })
+ 
+-        # 验证收到 block_start
+-        import json
+-        msg_raw = await asyncio.wait_for(test_queue.get(), timeout=2.0)
+-        msg = msg_raw if isinstance(msg_raw, dict) else json.loads(msg_raw)
+-        assert msg["type"] == "block_start"
+-        assert msg["payload"]["chapter"] == 5
+-        assert "5-8" in msg["payload"]["range"]
+-        assert msg["payload"]["progress"] == 5
++        # 生产事件顺序（已核实）：无 message 时不发 log；有 message 时顺序为 log → progress → block_start
++        log_msg = await asyncio.wait_for(received.get(), timeout=2.0)
++        assert log_msg["type"] == "log"
++        progress_msg = await asyncio.wait_for(received.get(), timeout=2.0)
++        assert progress_msg["type"] == "progress"
++        assert progress_msg["payload"]["current"] == 5
++        start_msg = await asyncio.wait_for(received.get(), timeout=2.0)
++        assert start_msg["type"] == "block_start"
++        assert start_msg["payload"]["chapter"] == 5
++        assert "5-8" in start_msg["payload"]["range"]
++        assert start_msg["payload"]["progress"] == 5
++        assert start_msg["payload"]["total"] == 100
+ 
+         # 结构化 range 优先于人类可读 message，前端车道统一显示 chN-chM
+-        await on_progress_like({
++        await on_progress({
+             "status": "start", "chapter": 9, "progress": 5, "total": 100,
+             "message": "开始分析ch9-ch10...", "range": "ch9-ch10",
+         })
+-        msg_raw = await asyncio.wait_for(test_queue.get(), timeout=2.0)
+-        msg = msg_raw if isinstance(msg_raw, dict) else json.loads(msg_raw)
+-        assert msg["type"] == "block_start"
+-        assert msg["payload"]["range"] == "ch9-ch10"
++        await asyncio.wait_for(received.get(), timeout=2.0)   # log
++        await asyncio.wait_for(received.get(), timeout=2.0)   # progress
++        start_msg2 = await asyncio.wait_for(received.get(), timeout=2.0)
++        assert start_msg2["payload"]["range"] == "ch9-ch10"
++
++        # done → block_done + 每章统计（顺序：无 message 时直接 block_done）
++        await on_progress({
++            "status": "done", "chapter": 9, "range": "ch9-ch10",
++            "elapsed": 1.5, "tokens": (10, 20),
++            "input_tokens": 10, "output_tokens": 20,
++            "result": {"core_events": [{"characters": "林动、萧炎"}]},
++        })
++        done_msg = await asyncio.wait_for(received.get(), timeout=2.0)
++        assert done_msg["type"] == "block_done"
++        assert done_msg["payload"]["ok"] is True
++        assert done_msg["payload"]["range"] == "ch9-ch10"
++        discovery_msg = await asyncio.wait_for(received.get(), timeout=2.0)
++        assert discovery_msg["type"] == "discovery"
++        assert discovery_msg["payload"]["characters"] == ["林动", "萧炎"]
++
++        assert len(stats.chapter_stats) == 1
++        assert stats.chapter_stats[0]["chapter"] == 9
++        assert stats.chapter_stats[0]["status"] == "done"
++        assert item.completed_chapters == 5
+     finally:
+-        await hub.unsubscribe(test_queue)
++        await hub.unsubscribe(received)
+ 
+ 
+ def test_start_resets_seen_characters():
+
+# ---- tracked: backend/ws_events.py (1C) ----
+diff --git a/backend/ws_events.py b/backend/ws_events.py
+index eb255ee..cff1525 100644
+--- a/backend/ws_events.py
++++ b/backend/ws_events.py
+@@ -10,7 +10,11 @@ from typing import Any, Dict, List, Optional
+ 
+ 
+ class WSType(StrEnum):
+-    """wire 层消息 type 全集"""
++    """wire 协议消息 type 全集
++
++    例外：``PING`` 是唯一不带 payload 的消息（``{"type": "ping"}``），
++    其余类型均为 ``{"type": <WSType>, "payload": {...}}``。
++    """
+ 
+     LOG = "log"
+     PROGRESS = "progress"
+@@ -22,6 +26,8 @@ class WSType(StrEnum):
+     STATE_CHANGE = "state_change"
+     SUMMARY_PROGRESS = "summary_progress"
+     LOCATION_NORMALIZATION_PROGRESS = "location_normalization_progress"
++    # 心跳：唯一不带 payload 的消息
++    PING = "ping"
+ 
+ 
+ class WSState(StrEnum):
+
+# ---- tracked: backend/api/ws.py (1C) ----
+diff --git a/backend/api/ws.py b/backend/api/ws.py
+index 6505926..2490b05 100644
+--- a/backend/api/ws.py
++++ b/backend/api/ws.py
+@@ -2,7 +2,8 @@
+ WebSocket 进度推送端点
+ 
+ /ws/progress — 客户端连接后持续接收 ProgressHub 广播的进度消息。
+-心跳：服务端每 25 秒发一次 {"type": "ping"}，防止代理/浏览器断连。
++服务端心跳：每 25 秒发一个 {"type": "ping"}（不带 payload），防止代理/防火墙断连。
++前端 useProgressSocket.ts 显式识别并过滤 ping。
+ """
+ 
+ import asyncio
+@@ -11,6 +12,7 @@ import logging
+ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+ 
+ from backend.progress_hub import get_hub
++from backend.ws_events import WSType
+ 
+ logger = logging.getLogger(__name__)
+ 
+@@ -51,7 +53,7 @@ async def ws_progress(websocket: WebSocket):
+             try:
+                 message = await asyncio.wait_for(queue.get(), timeout=_HEARTBEAT_INTERVAL)
+             except asyncio.TimeoutError:
+-                message = {"type": "ping"}
++                message = {"type": WSType.PING}
+             await websocket.send_json(message)
+     except WebSocketDisconnect:
+         pass

@@ -3,6 +3,7 @@
 """
 import asyncio
 import sys
+import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -317,59 +318,81 @@ def test_extract_discovery_empty_or_invalid():
     assert "萧炎" in disc2["characters"]
 
 
-async def test_on_progress_block_start_publishes():
-    """on_progress 收到 status=start → 发布 block_start 消息"""
-    from backend.progress_hub import get_hub
-    hub = get_hub()
-    # 用真实 hub（开发期 singleton），订阅一个临时队列
-    test_queue = await hub.subscribe()
+# ---- Step1-1B：生产回调工厂 make_pipeline_callbacks 的真实回归 ----
+# 原 test_on_progress_block_start_publishes 用的是测试内复制闭包（on_progress_like），
+# 即使禁用生产 make_pipeline_callbacks 仍然全绿，属无效测试。本文件改为直接调用
+# 生产工厂，契约断言保持不变（range 优先于 message、DONE/FAILED/SKIPPED 转发与统计）。
+# 详见 backend/tests/test_pipeline_callbacks_factory.py（结构化事件矩阵）。
+
+
+async def test_factory_callbacks_publish_block_start_and_done():
+    """生产工厂：start → block_start（range 优先）；done → block_done + 每章统计"""
+    from backend.progress_hub import ProgressHub
+    from backend.services.analysis_stats import AnalysisStats
+    from backend.services.pipeline_events import make_pipeline_callbacks
+
+    hub = ProgressHub()  # 隔离 hub，不用进程级 singleton
+    received = await hub.subscribe()
+    item = QueueItem(name="测试书", blocks_dir=Path("/x/blocks"), workspace_dir=Path("/x"))
+    item.start_time = time.time()
+    stats = AnalysisStats()
+    seen = set()
+
+    on_progress, _on_token_stats = make_pipeline_callbacks(
+        hub=hub, item=item, stats=stats, seen_characters=seen
+    )
+
     try:
-        # 用 object.__new__ 构造 AnalysisService 避免 __init__ 副作用
-        svc = object.__new__(AnalysisService)
-        svc._seen_characters = set()
-
-        # 复刻 on_progress 闭包（不直接调 _run_one_item，那是 200 行嵌套）
-        async def on_progress_like(payload):
-            status = payload.get("status", "")
-            if status == "start":
-                await hub.publish({
-                    "type": "block_start",
-                    "payload": {
-                        "chapter": payload.get("chapter", 0),
-                        "range": payload.get("range") or payload.get("message", ""),
-                        "progress": payload.get("progress", 0),
-                        "total": payload.get("total", 0),
-                    },
-                })
-
-        await on_progress_like({
-            "status": "start",
-            "chapter": 5,
+        await on_progress({
+            "status": "start", "chapter": 5,
             "message": "开始分析第5-8章...",
-            "progress": 5,
-            "total": 100,
+            "progress": 5, "total": 100,
         })
 
-        # 验证收到 block_start
-        import json
-        msg_raw = await asyncio.wait_for(test_queue.get(), timeout=2.0)
-        msg = msg_raw if isinstance(msg_raw, dict) else json.loads(msg_raw)
-        assert msg["type"] == "block_start"
-        assert msg["payload"]["chapter"] == 5
-        assert "5-8" in msg["payload"]["range"]
-        assert msg["payload"]["progress"] == 5
+        # 生产事件顺序（已核实）：无 message 时不发 log；有 message 时顺序为 log → progress → block_start
+        log_msg = await asyncio.wait_for(received.get(), timeout=2.0)
+        assert log_msg["type"] == "log"
+        progress_msg = await asyncio.wait_for(received.get(), timeout=2.0)
+        assert progress_msg["type"] == "progress"
+        assert progress_msg["payload"]["current"] == 5
+        start_msg = await asyncio.wait_for(received.get(), timeout=2.0)
+        assert start_msg["type"] == "block_start"
+        assert start_msg["payload"]["chapter"] == 5
+        assert "5-8" in start_msg["payload"]["range"]
+        assert start_msg["payload"]["progress"] == 5
+        assert start_msg["payload"]["total"] == 100
 
         # 结构化 range 优先于人类可读 message，前端车道统一显示 chN-chM
-        await on_progress_like({
+        await on_progress({
             "status": "start", "chapter": 9, "progress": 5, "total": 100,
             "message": "开始分析ch9-ch10...", "range": "ch9-ch10",
         })
-        msg_raw = await asyncio.wait_for(test_queue.get(), timeout=2.0)
-        msg = msg_raw if isinstance(msg_raw, dict) else json.loads(msg_raw)
-        assert msg["type"] == "block_start"
-        assert msg["payload"]["range"] == "ch9-ch10"
+        await asyncio.wait_for(received.get(), timeout=2.0)   # log
+        await asyncio.wait_for(received.get(), timeout=2.0)   # progress
+        start_msg2 = await asyncio.wait_for(received.get(), timeout=2.0)
+        assert start_msg2["payload"]["range"] == "ch9-ch10"
+
+        # done → block_done + 每章统计（顺序：无 message 时直接 block_done）
+        await on_progress({
+            "status": "done", "chapter": 9, "range": "ch9-ch10",
+            "elapsed": 1.5, "tokens": (10, 20),
+            "input_tokens": 10, "output_tokens": 20,
+            "result": {"core_events": [{"characters": "林动、萧炎"}]},
+        })
+        done_msg = await asyncio.wait_for(received.get(), timeout=2.0)
+        assert done_msg["type"] == "block_done"
+        assert done_msg["payload"]["ok"] is True
+        assert done_msg["payload"]["range"] == "ch9-ch10"
+        discovery_msg = await asyncio.wait_for(received.get(), timeout=2.0)
+        assert discovery_msg["type"] == "discovery"
+        assert discovery_msg["payload"]["characters"] == ["林动", "萧炎"]
+
+        assert len(stats.chapter_stats) == 1
+        assert stats.chapter_stats[0]["chapter"] == 9
+        assert stats.chapter_stats[0]["status"] == "done"
+        assert item.completed_chapters == 5
     finally:
-        await hub.unsubscribe(test_queue)
+        await hub.unsubscribe(received)
 
 
 def test_start_resets_seen_characters():

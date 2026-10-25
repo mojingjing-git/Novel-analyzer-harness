@@ -2,7 +2,8 @@
 WebSocket 进度推送端点
 
 /ws/progress — 客户端连接后持续接收 ProgressHub 广播的进度消息。
-心跳：服务端每 25 秒发一次 {"type": "ping"}，防止代理/浏览器断连。
+服务端心跳：每 25 秒发一个 {"type": "ping"}（不带 payload），防止代理/防火墙断连。
+前端 useProgressSocket.ts 显式识别并过滤 ping。
 """
 
 import asyncio
@@ -11,6 +12,7 @@ import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from backend.progress_hub import get_hub
+from backend.ws_events import WSType
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +53,7 @@ async def ws_progress(websocket: WebSocket):
             try:
                 message = await asyncio.wait_for(queue.get(), timeout=_HEARTBEAT_INTERVAL)
             except asyncio.TimeoutError:
-                message = {"type": "ping"}
+                message = {"type": WSType.PING}
             await websocket.send_json(message)
     except WebSocketDisconnect:
         pass

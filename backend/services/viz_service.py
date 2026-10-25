@@ -15,7 +15,7 @@ from backend.config.constants import (
     FORESHADOW_TYPE_MAP_FILE,
 )
 from backend.models.analysis_result import AnalysisResult
-from backend.utils.aggregate_utils import JSONAggregator
+from backend.utils.aggregate_utils import CHAR_NAME_SUFFIXES, JSONAggregator
 
 logger = logging.getLogger(__name__)
 
@@ -99,10 +99,9 @@ def _aggregate_chars_edges(
 
     def normalize_name(name: str) -> str:
         # 去除常见后缀
-        for suffix in ('（主角）', '（配角）', '（已故）', '（重要）', '（次要）',
-                       '（女主）', '（男主）', '（反派）', '（龙套）',
-                       '(主角)', '(配角)', '(已故)', '(重要)', '(次要)',
-                       '(女主)', '(男主)', '(反派)', '(龙套)'):
+        # 后缀列表与聚合侧共用单一来源；此处的 strip 时机与"纯后缀输入"处理
+        # 保持原有差异（aggregate 先 strip 且纯后缀时返回原名），不做顺手统一。
+        for suffix in CHAR_NAME_SUFFIXES:
             if name.endswith(suffix):
                 return name[:-len(suffix)].strip()
         return name.strip()

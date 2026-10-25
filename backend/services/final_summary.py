@@ -412,16 +412,6 @@ def extract_foreshadow_json(response: str) -> Optional[dict]:
         logger.warning(f"伏笔 reconciliation JSON 解析失败，响应前200字: {response[:200]}")
         return None
 
-    # 处理列表类型
-    if isinstance(data, list):
-        for item in data:
-            if isinstance(item, dict):
-                data = item
-                break
-        else:
-            logger.warning(f"伏笔 reconciliation 返回了非对象列表")
-            return None
-
     if not isinstance(data, dict):
         logger.warning(f"伏笔 reconciliation 返回了非字典类型: {type(data).__name__}")
         return None
@@ -712,30 +702,19 @@ class FinalSummaryRunner:
         return extract_foreshadow_json(content)
 
     def _make_on_progress(self, context: str, unit_idx: int):
-        """构造 on_progress 回调：H16 Phase 3 broadcast token_delta 到 ProgressHub"""
+        """薄适配器：共用流式进度工厂，计时仍在拿到并发槽之后创建
+
+        保留本方法是为了不改动四个调用点的调用形态（计时创建位置 = 并发槽之后）。
+        """
         from ..progress_hub import get_hub
-        from ..core.llm_stream import StreamChunk
-        import time as _time
+        from ..core.stream_progress import make_stream_progress_callback
 
-        hub = get_hub()
-        started_at = _time.monotonic()
-        book_id = getattr(self, "book_id", "") or "unknown"
-
-        async def on_progress(chunk: "StreamChunk") -> None:
-            if chunk.type in ("content", "usage"):
-                elapsed = _time.monotonic() - started_at
-                rate = (chunk.estimated_total_tokens or 0) / max(elapsed, 0.1)
-                await hub.broadcast_token_delta(
-                    context=context,
-                    session_id=book_id,
-                    unit_idx=unit_idx,
-                    delta={
-                        "output_tokens": chunk.estimated_total_tokens or 0,
-                        "rate_tokens_per_sec": rate,
-                        "elapsed_sec": elapsed,
-                    },
-                )
-        return on_progress
+        return make_stream_progress_callback(
+            hub=get_hub(),
+            context=context,
+            session_id=getattr(self, "book_id", "") or "unknown",
+            unit_idx=unit_idx,
+        )
 
     def _record_tokens(self, category: str, tokens) -> None:
         """累积并发出分类 token 统计（事件循环内调用，无需缓冲）"""

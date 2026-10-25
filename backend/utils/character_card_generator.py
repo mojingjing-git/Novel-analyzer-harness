@@ -8,7 +8,12 @@ from pathlib import Path
 from typing import Dict, List
 
 class CharacterCardGenerator:
-    """角色卡生成器"""
+    """角色卡片生成器
+
+    只依赖 character_tracking / character_arcs / core_events 三份聚合文件。
+    `long_context_insights_aggregated.json` 不参与本类加载：它没有输出消费者，
+    而加载失败会连累本可正常工作的索引与角色详情。
+    """
     
     def __init__(self, aggregated_dir: Path):
         """
@@ -21,7 +26,6 @@ class CharacterCardGenerator:
         self.character_data = None
         self.character_arcs = None
         self.core_events = None
-        self.long_context_insights = None
         
     def _find_aggregated(self, name: str) -> Path | None:
         """聚合文件可能直接位于 aggregated_dir，也可能在其 ``aggregated`` 子目录中
@@ -55,12 +59,6 @@ class CharacterCardGenerator:
             if events_path is not None:
                 with open(events_path, 'r', encoding='utf-8') as f:
                     self.core_events = json.load(f)
-            
-            # 加载长上下文洞察
-            insights_path = self._find_aggregated("long_context_insights_aggregated.json")
-            if insights_path is not None:
-                with open(insights_path, 'r', encoding='utf-8') as f:
-                    self.long_context_insights = json.load(f)
             
             return True
             

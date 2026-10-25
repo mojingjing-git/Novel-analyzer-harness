@@ -1,0 +1,13 @@
+# Step1-1C docs patch (2026-10-14) - cleanup-batch-3
+# agent.md carries other sessions' dirty changes; this file contains ONLY the Step1
+# edits (stale networkx/pyvis dependency row + nonexistent test_pipeline.py example).
+
+diff --git a/agent.md b/agent.md
+--- a/agent.md
++++ b/agent.md
+@@ -154,1 +154,1 @@
+-| networkx + pyvis | 角色关系图（可选依赖） |
++| ~~networkx + pyvis~~ | **历史依赖、当前无消费者**（2026-10-14 核实：backend 无 import，`requirements.txt` 未列；关系图由 `viz_service.graph_data` 自行聚合，前端 ECharts 渲染）。保留此行仅作历史记录，不要当当前依赖安装 |
+@@ -707,1 +707,1 @@
+-python -m pytest backend/tests/test_pipeline.py -v
++python -m pytest backend/tests/test_pipeline_inflight.py -v

@@ -1,0 +1,36 @@
+ M CHANGELOG.md
+ M agent.md
+ M backend/api/routes_settings.py
+ M backend/api/ws.py
+ M backend/tests/test_archive_path_update.py
+ M backend/tests/test_desktop_pythonw.py
+ M backend/tests/test_queue_service.py
+ M backend/utils/character_card_generator.py
+ M backend/ws_events.py
+ M desktop.py
+ M docs/PLAN-lane-display-closeout-2026-09-29.md
+ M docs/PLAN-lane-display-concurrency-2026-09-28.md
+ M docs/PLAN-session-token-header-2026-09-29.md
+ M docs/PLAN-thinking-mode-status-probe-2026-09-29.md
+ M frontend/src/api/client.test.ts
+ M frontend/src/api/client.ts
+ M frontend/src/pages/QueuePage.vue
+ M frontend/src/pages/SettingsPage.test.ts
+ M frontend/src/pages/SettingsPage.vue
+ M frontend/src/pages/SummaryPage.test.ts
+ M frontend/src/pages/SummaryPage.vue
+ M frontend/src/utils/settingsForm.test.ts
+ M frontend/src/utils/settingsForm.ts
+?? backend/tests/test_character_card_generator.py
+?? backend/tests/test_pipeline_callbacks_factory.py
+?? backend/tests/test_runtime_isolation.py
+?? backend/tests/test_settings_probe_route.py
+?? backend/tests/test_ws_protocol_ping.py
+?? conftest.py
+?? docs/PLAN-cleanup-batch-3-2026-10-14.md
+?? docs/PLAN-provider-error-taxonomy-2026-09-30.md
+?? docs/REPORT-cleanup-batch-3-2026-10-14.md
+?? docs/patches/
+?? frontend/src/api/sessionToken.test.ts
+?? frontend/src/api/sessionToken.ts
+?? pytest_isolation.py

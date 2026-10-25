@@ -10,7 +10,11 @@ from typing import Any, Dict, List, Optional
 
 
 class WSType(StrEnum):
-    """wire 层消息 type 全集"""
+    """wire 协议消息 type 全集
+
+    例外：``PING`` 是唯一不带 payload 的消息（``{"type": "ping"}``），
+    其余类型均为 ``{"type": <WSType>, "payload": {...}}``。
+    """
 
     LOG = "log"
     PROGRESS = "progress"
@@ -22,6 +26,8 @@ class WSType(StrEnum):
     STATE_CHANGE = "state_change"
     SUMMARY_PROGRESS = "summary_progress"
     LOCATION_NORMALIZATION_PROGRESS = "location_normalization_progress"
+    # 心跳：唯一不带 payload 的消息
+    PING = "ping"
 
 
 class WSState(StrEnum):

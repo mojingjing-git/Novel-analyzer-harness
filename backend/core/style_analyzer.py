@@ -344,24 +344,15 @@ async def call_llm_semantic(prompt: str, api_config: dict,
 
     # H16 Phase 3：流式模式 on_progress broadcast token_delta
     from ..progress_hub import get_hub
-    import time as _time
-    hub = get_hub()
-    started_at = _time.monotonic()
+    from .stream_progress import make_stream_progress_callback
 
-    async def on_progress(chunk):
-        if chunk.type in ("content", "usage"):
-            elapsed = _time.monotonic() - started_at
-            rate = (chunk.estimated_total_tokens or 0) / max(elapsed, 0.1)
-            await hub.broadcast_token_delta(
-                context="summary_phase_3",
-                session_id=book_name or "unknown",
-                unit_idx=0,  # 风格提取只调一次，unit_idx 固定 0
-                delta={
-                    "output_tokens": chunk.estimated_total_tokens or 0,
-                    "rate_tokens_per_sec": rate,
-                    "elapsed_sec": elapsed,
-                },
-            )
+    on_progress = make_stream_progress_callback(
+        hub=get_hub(),
+        context="summary_phase_3",
+        session_id=book_name or "unknown",
+        # 风格提取只调用一次，unit_idx 固定 0
+        unit_idx=0,
+    )
 
     success, content, error, tokens, _call_stats = await client.chat_auto(
         messages, max_tokens=20000, on_progress=on_progress,

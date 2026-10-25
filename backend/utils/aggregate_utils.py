@@ -16,7 +16,7 @@ from ..utils.text_utils import is_text_duplicate
 logger = logging.getLogger(__name__)
 
 
-_CHAR_NAME_SUFFIXES = (
+CHAR_NAME_SUFFIXES = (
     '（主角）', '（配角）', '（已故）', '（重要）', '（次要）',
     '（女主）', '（男主）', '（反派）', '（龙套）',
     '(主角)', '(配角)', '(已故)', '(重要)', '(次要)',
@@ -26,7 +26,7 @@ _CHAR_NAME_SUFFIXES = (
 def _normalize_char_name(name: str) -> str:
     """归一化角色名：去除常见括号标注后缀，用于dict key去重"""
     name = name.strip()
-    for suffix in _CHAR_NAME_SUFFIXES:
+    for suffix in CHAR_NAME_SUFFIXES:
         if name.endswith(suffix):
             base = name[:-len(suffix)].strip()
             if base:

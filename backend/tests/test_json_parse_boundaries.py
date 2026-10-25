@@ -1,0 +1,1016 @@
+"""Step3: JSON parse entry-point boundary matrix (third cleanup batch, 2026-10-15)
+
+This file is the deliverable for Step3's "build the current failure/acceptance
+matrix first" requirement. R3 round-1 review rejected the first version for
+copying analyzer's validator closure into the test and for omitting the style
+entry entirely. This version uses only real production entry points.
+
+Coverage is deliberately explicit about what is and is not a runtime matrix:
+
+| entry | evidence |
+|---|---|
+| `analyze_chapter` + its `validate_json_response` | runtime, real closure captured from the real call |
+| `analyze_chapter` retry (failure -> success) | runtime, real `chat_auto` retry chain with mocked `chat_stream` |
+| `call_llm_semantic` | runtime, real call with a mock client |
+| `_parse_llm_dict` | runtime, the production function called directly |
+| `extract_foreshadow_json` | runtime, the production function called directly |
+| pipeline's three rolling sites | READ-ONLY SOURCE AUDIT only, not a runtime matrix |
+
+- `NovelAnalyzer.analyze_chapter` with a mock `LLMClient.chat_auto` that drives
+  the REAL `validate_json_response` closure produced inside `analyze_chapter`,
+  so the Chinese error texts, the accepted field set, `_parse_response`
+  receiving `pre_parsed`, and the retry-call count are all production behavior.
+- `style_analyzer.call_llm_semantic` with a mock client returning different
+  content, covering fenced / prose-wrapped / multi-object / braces-in-string /
+  truncated / bare-array / fenced-array / empty inputs. Its own
+  `json.loads` + first/last-brace strategy is preserved and is deliberately NOT
+  connected to `safe_parse_json`.
+- `location_normalizer._parse_llm_dict` and
+  `final_summary.extract_foreshadow_json` are called directly (they are the
+  production parse functions themselves, not copies).
+
+No source-string assertions and no copied logic.
+
+Facts locked by this matrix (Step3 audit conclusions):
+
+- `safe_parse_json` / `parse_json_robust` return `dict` or `None` only, and
+  NEVER a list. Therefore the `isinstance(data, list)` branch inside
+  `extract_foreshadow_json` is currently unreachable.
+- A bare array `[{"a":1}]` is accepted because `extract_json_from_text` pulls
+  the first object; a fenced array fails. Their truthiness differs, so both
+  are locked separately here. The scope is NOT widened.
+- The two parse-first entries disagree on the empty dict:
+  `_parse_llm_dict` uses `isinstance(..., dict)` and returns `{}`;
+  `extract_foreshadow_json` uses `if not data` and returns `None`.
+- `{} {"a":1}` becomes `{"a": 1}` via the repair chain, while
+  `{"zzz":1} {"a":2}` returns None. Object selection is therefore NOT
+  "first object only"; it depends on which repair step succeeds.
+- The two extract-first entries (analyzer and pipeline) diverge on the empty
+  dict: analyzer tests `is None`, pipeline tests truthiness.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import sys
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+
+from backend.core.analyzer import NovelAnalyzer  # noqa: E402
+from backend.core.style_analyzer import SEMANTIC_FIELDS  # noqa: E402
+from backend.models.knowledge import KnowledgeBase  # noqa: E402
+from backend.services.final_summary import (  # noqa: E402
+    extract_foreshadow_json,
+    validate_reconciliation_json,
+)
+from backend.services.location_normalizer import _parse_llm_dict  # noqa: E402
+from backend.utils.json_utils import (  # noqa: E402
+    parse_json_robust,
+    safe_parse_json,
+)
+
+
+# ---------------------------------------------------------------------------
+# Synthetic inputs covering every shape required by plan section 6
+# ---------------------------------------------------------------------------
+
+VALID_ANALYSIS = (
+    '{"core_events": [{"id": 1, "event": "e"}], '
+    '"cross_block": {"summary": "s"}, "long_context_insights": {}}'
+)
+
+VALID_FJ = ('{"foreshadow_reconciliation": [{"foreshadow_id": "f1"}], '
+            '"new_foreshadows": []}')
+
+# A genuinely valid JSON string containing unescaped { and }
+BRACES_VALID = (
+    '{"note": "has { and } inside", "core_events": [], '
+    '"cross_block": {"summary": "s"}, "long_context_insights": {}}'
+)
+# A JSON string containing an escaped brace sequence
+BRACES_ESCAPED = (
+    '{"note": "escaped \\\\{ and \\\\} here", "core_events": [], '
+    '"cross_block": {"summary": "s"}, "long_context_insights": {}}'
+)
+
+CASES: dict[str, str] = {
+    "plain_dict": VALID_ANALYSIS,
+    "empty_dict": "{}",
+    "bare_array": '[{"a": 1}, {"b": 2}]',
+    "fenced_array": '```json\n[{"a": 1}]\n```',
+    "first_obj_empty_then_second": '{} {"a": 1}',
+    "first_obj_unrelated_then_second": '{"zzz": 1} {"a": 2}',
+    "two_objects": f"{VALID_ANALYSIS} {VALID_ANALYSIS}",
+    "two_different_objects": '{"a": 1} {"b": 2}',
+    "braces_in_string_valid": BRACES_VALID,
+    "braces_escaped": BRACES_ESCAPED,
+    "fenced_with_prose": f'Here you go:\n```json\n{VALID_ANALYSIS}\n```\nDone.',
+    "prose_then_object": f"Sure! {VALID_ANALYSIS}",
+    "truncated": '{"core_events": [{"id": 1, "name": "x"',
+    "missing_quote_key": '{core_events": [], "cross_block": {"summary": "s"}, '
+                         '"long_context_insights": {}}',
+    "single_quoted": "{'core_events': [], 'cross_block': {'summary': 's'}, "
+                     "'long_context_insights': {}}",
+    "trailing_comma": '{"core_events": [], "cross_block": {"summary": "s"}, '
+                      '"long_context_insights": {},}',
+    "fullwidth_punct": '{"core_events": []\uff0c"cross_block": {"summary": "s"}'
+                       '\uff0c"long_context_insights": {}}',
+    "invalid": "not json at all",
+    "empty_string": "",
+    "number": "42",
+    "string_literal": '"hello"',
+}
+
+
+# ---------------------------------------------------------------------------
+# Real-entry harness: run analyze_chapter with a mock LLM and capture the
+# production validate_json_response closure that analyze_chapter built.
+# ---------------------------------------------------------------------------
+
+class _CapturingLLM:
+    """Mock LLM that captures and drives the REAL production validator.
+
+    It mimics what `chat_stream_with_retry` does: call `validate_response` on
+    the content, and on failure return the real error so the retry loop in
+    `chat_auto` sees a failed attempt. The retry implementation itself is NOT
+    copied here; a separate test exercises the real retry chain below.
+    """
+
+    def __init__(self, outcome):
+        self.outcome = outcome
+        self.n = 0
+        self.captured: dict = {}
+
+    async def chat_auto(self, messages, max_tokens=None, validate_response=None,
+                        retry_messages_builder=None, on_progress=None):
+        self.n += 1
+        self.captured["validate_response"] = validate_response
+        self.captured["retry_messages_builder"] = retry_messages_builder
+        self.captured["on_progress"] = on_progress
+        self.captured["messages"] = messages
+        self.captured["attempts"] = self.n
+
+        status, payload = self.outcome[min(self.n - 1, len(self.outcome) - 1)]
+        if validate_response is not None:
+            ok, err = validate_response(payload)
+            self.captured.setdefault("validations", []).append((ok, err))
+            if not ok:
+                return False, "", err, (10, 20), {
+                    "attempts": self.n, "failed_tokens": 5
+                }
+        return True, payload, "", (10, 20), {"attempts": self.n}
+
+
+def _make_analyzer(llm):
+    analyzer = object.__new__(NovelAnalyzer)
+    analyzer._is_stopped = False
+    analyzer.llm_client = llm
+    analyzer.prompt_builder = type("PB", (), {
+        "build_messages": lambda self, c, n, kb: [{"role": "user", "content": c}]
+    })()
+    analyzer.config = type(
+        "C", (), {"api": type("A", (), {"max_tokens": 1000})()}
+    )()
+    return analyzer
+
+
+async def _run_analyzer(llm, chapter_number=7, book_id="b"):
+    analyzer = _make_analyzer(llm)
+    return await analyzer.analyze_chapter(
+        chapter_number=chapter_number,
+        chapter_content="chapter text",
+        knowledge_base=KnowledgeBase(),
+        block_size=1,
+        book_id=book_id,
+    )
+
+
+@pytest.fixture
+def analyzer_cb():
+    """The REAL validate_json_response closure built inside analyze_chapter."""
+    holder: dict = {}
+
+    async def _capture(outcome=("ok", VALID_ANALYSIS)):
+        llm = _CapturingLLM([outcome])
+        await _run_analyzer(llm)
+        holder["llm"] = llm
+        holder["cb"] = llm.captured["validate_response"]
+        return holder["cb"]
+
+    return _capture
+
+
+# ---------------------------------------------------------------------------
+# 1) Helper contract: safe_parse_json / parse_json_robust return dict or None
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("name", list(CASES))
+def test_safe_parse_json_never_returns_list(name):
+    """safe_parse_json returns a dict or None for every input shape."""
+    result = safe_parse_json(CASES[name])
+    assert result is None or isinstance(result, dict), (
+        f"{name}: safe_parse_json returned {type(result).__name__}"
+    )
+
+
+@pytest.mark.parametrize("name", list(CASES))
+def test_parse_json_robust_never_returns_list(name):
+    """parse_json_robust returns a dict or None for every input shape."""
+    data, _detail = parse_json_robust(CASES[name])
+    assert data is None or isinstance(data, dict), (
+        f"{name}: parse_json_robust returned {type(data).__name__}"
+    )
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        '[{"a": 1}]',
+        "[1, 2, 3]",
+        "[[1], [2]]",
+        '[{"a": 1}] trailing',
+        '```json\n[{"a": 1}]\n```',
+        "[]",
+    ],
+)
+def test_arrays_never_become_list(text):
+    """Array shapes are never surfaced as a list by either helper."""
+    assert safe_parse_json(text) is None
+    assert parse_json_robust(text)[0] is None
+
+
+# ---------------------------------------------------------------------------
+# 2) analyzer: REAL validate_json_response obtained from a real analyze_chapter
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_analyzer_entry_yields_real_validator():
+    """analyze_chapter passes its own validate_json_response to chat_auto."""
+    llm = _CapturingLLM([("ok", VALID_ANALYSIS)])
+    result, tokens, retry_info = await _run_analyzer(llm)
+
+    assert result is not None
+    assert llm.captured["validate_response"] is not None
+    assert llm.captured["retry_messages_builder"] is not None
+    assert llm.captured["validations"] == [(True, "")]
+    assert retry_info["retries"] == 0
+    # the real result carries the business fields
+    assert result.chapter_number == 7
+    assert len(result.core_events) == 1
+    assert result.core_events[0].id == 1
+
+
+@pytest.mark.asyncio
+async def test_analyzer_real_validator_error_texts_are_production_chinese():
+    """The production error texts are Chinese, not the test's own strings."""
+    llm = _CapturingLLM([("ok", VALID_ANALYSIS)])
+    await _run_analyzer(llm)
+    cb = llm.captured["validate_response"]
+
+    ok, err = cb("not json at all")
+    assert ok is False
+    assert err == "\u65e0\u6cd5\u4ece\u54cd\u5e94\u4e2d\u63d0\u53d6JSON"
+
+    ok, err = cb('```json\n[{"a": 1}]\n```')
+    assert ok is False
+    assert err == "JSON\u89e3\u6790\u5931\u8d25"
+
+    ok, err = cb("{}")
+    assert ok is False
+    assert "JSON\u7f3a\u5c11\u5fc5\u987b\u5b57\u6bb5" in err
+    assert "core_events" in err
+
+
+@pytest.mark.asyncio
+async def test_analyzer_real_validator_accept_matrix():
+    """Feed the whole matrix into the REAL production validator."""
+    llm = _CapturingLLM([("ok", VALID_ANALYSIS)])
+    await _run_analyzer(llm)
+    cb = llm.captured["validate_response"]
+
+    accepted = {
+        "plain_dict", "fenced_with_prose", "prose_then_object", "two_objects",
+        "braces_in_string_valid", "braces_escaped", "missing_quote_key",
+        "single_quoted", "trailing_comma", "fullwidth_punct",
+    }
+    rejected = {
+        "empty_dict", "bare_array", "fenced_array", "first_obj_empty_then_second",
+        "first_obj_unrelated_then_second", "two_different_objects", "truncated",
+        "invalid", "empty_string", "number", "string_literal",
+    }
+
+    for name, text in CASES.items():
+        ok, err = cb(text)
+        if name in accepted:
+            assert ok is True, f"{name} should be accepted, got {err!r}"
+        else:
+            assert name in rejected, f"{name} is unclassified"
+            assert ok is False, f"{name} should be rejected, got accepted"
+            assert err, f"{name}: rejection must carry a message"
+
+    # every case must be classified exactly once
+    assert accepted | rejected == set(CASES)
+    assert not (accepted & rejected)
+
+
+@pytest.mark.asyncio
+async def test_analyzer_parse_response_receives_pre_parsed_from_cache():
+    """_parse_response is called with the dict the validator cached.
+
+    Proven by spying on `_parse_response` and observing the `pre_parsed`
+    argument equals the validated content, which only happens when the
+    production validator populated `parsed_cache`.
+    """
+    llm = _CapturingLLM([("ok", VALID_ANALYSIS)])
+    analyzer = _make_analyzer(llm)
+
+    seen: list = []
+    real_parse = analyzer._parse_response
+
+    def spy(response, chapter_number, pre_parsed=None):
+        seen.append({"response": response, "pre_parsed": pre_parsed,
+                     "chapter": chapter_number})
+        return real_parse(response, chapter_number, pre_parsed)
+
+    analyzer._parse_response = spy
+
+    result, _tokens, _ri = await analyzer.analyze_chapter(
+        chapter_number=7, chapter_content="x",
+        knowledge_base=KnowledgeBase(), block_size=1, book_id="b",
+    )
+
+    assert result is not None
+    assert len(seen) == 1
+    assert seen[0]["pre_parsed"] is not None, (
+        "pre_parsed must be the cached validated dict"
+    )
+    assert seen[0]["pre_parsed"]["cross_block"]["summary"] == "s"
+    assert seen[0]["response"] == VALID_ANALYSIS
+
+
+@pytest.mark.asyncio
+async def test_analyzer_skips_reparse_when_cache_hit():
+    """On a cache hit, safe_parse_json must not run again inside _parse_response.
+
+    Spied by wrapping the module-level `safe_parse_json` that `analyzer`
+    imported, counting calls, and comparing a cache-hit run against a run where
+    the validator never populated the cache.
+    """
+    import backend.core.analyzer as analyzer_mod
+
+    real_safe = analyzer_mod.safe_parse_json
+    calls: list = []
+
+    def counting(text):
+        calls.append(text)
+        return real_safe(text)
+
+    analyzer_mod.safe_parse_json = counting
+    try:
+        llm = _CapturingLLM([("ok", VALID_ANALYSIS)])
+        analyzer = _make_analyzer(llm)
+        seen: list = []
+        real_parse = analyzer._parse_response
+
+        def spy(response, chapter_number, pre_parsed=None):
+            seen.append(pre_parsed)
+            return real_parse(response, chapter_number, pre_parsed)
+
+        analyzer._parse_response = spy
+        result, _t, _ri = await analyzer.analyze_chapter(
+            chapter_number=7, chapter_content="x",
+            knowledge_base=KnowledgeBase(), block_size=1, book_id="b",
+        )
+    finally:
+        analyzer_mod.safe_parse_json = real_safe
+
+    assert result is not None
+    assert len(seen) == 1
+    assert seen[0] is not None, "cache must be populated"
+    # exactly one safe_parse_json call: the one inside the validator
+    assert len(calls) == 1, (
+        f"expected 1 safe_parse_json call, got {len(calls)}: {calls}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_analyzer_schema_failure_then_success_retry(monkeypatch):
+    """A real JSON/schema-validation failure -> success retry.
+
+    The first stream attempt returns well-formed content that FAILS the
+    production `validate_json_response` (missing required fields) and a usage
+    chunk with no error chunk, so the retry is driven by schema validation
+    rather than by an API error. The second attempt returns valid content.
+
+    Only the low-level `chat_stream` and the backoff `_sleep` are mocked, via
+    `monkeypatch`, so they are restored automatically even on failure. The
+    real `chat_auto` -> `chat_stream_with_retry` -> `_run_stream_attempt` chain
+    and the real validator both run.
+    """
+    import backend.core.llm_client as llm_client_mod
+    from backend.config.settings import APIConfig
+    from backend.core.llm_stream import StreamChunk
+
+    attempts: list[int] = []
+    seen_messages: list[list] = []
+    validation_errors: list[tuple] = []
+
+    async def fake_chat_stream(self, messages, temperature=0.1, max_tokens=None):
+        attempts.append(len(attempts) + 1)
+        seen_messages.append(messages)
+        if len(attempts) == 1:
+            # schema-invalid but otherwise a normal, complete response
+            yield StreamChunk(type="content", text='{"cross_block": {"summary": ""}}')
+            yield StreamChunk(type="usage", usage_prompt_tokens=10,
+                              usage_completion_tokens=20, is_final=True)
+            return
+        yield StreamChunk(type="content", text=VALID_ANALYSIS)
+        yield StreamChunk(type="usage", usage_prompt_tokens=10,
+                          usage_completion_tokens=20, is_final=True)
+
+    monkeypatch.setattr(llm_client_mod.LLMClient, "chat_stream", fake_chat_stream)
+    monkeypatch.setattr(llm_client_mod, "_get_failure_logger",
+                        lambda: _NullLogger())
+
+    cfg = APIConfig(
+        base_url="https://example.invalid", api_key="", model="m",
+        max_tokens=1000, temperature=0.5, temperature_step=0.1,
+        temperature_max_retries=2, backoff_max_retries=1, thinking_mode={},
+        provider="openai", streaming_enabled=True,
+    )
+    client = llm_client_mod.LLMClient(cfg)
+
+    async def fake_sleep(seconds):
+        await asyncio.sleep(0)
+
+    monkeypatch.setattr(client, "_sleep", fake_sleep)
+
+    # capture what the REAL validator returns, without replacing it
+    real_validator_holder: dict = {}
+
+    class _SpyLLM:
+        """Delegates to the real client but records validator outcomes."""
+
+        def __init__(self, inner):
+            self._inner = inner
+
+        async def chat_auto(self, messages, max_tokens=None,
+                            validate_response=None,
+                            retry_messages_builder=None,
+                            on_progress=None):
+            real_validator_holder["validator"] = validate_response
+            real_validator_holder["builder"] = retry_messages_builder
+
+            async def wrapped_validate(response):
+                ok, err = validate_response(response)
+                validation_errors.append((ok, err))
+                return ok, err
+
+            return await self._inner.chat_auto(
+                messages, max_tokens=max_tokens,
+                validate_response=wrapped_validate,
+                retry_messages_builder=retry_messages_builder,
+                on_progress=on_progress,
+            )
+
+    analyzer = _make_analyzer(_SpyLLM(client))
+    result, tokens, retry_info = await analyzer.analyze_chapter(
+        chapter_number=7, chapter_content="x",
+        knowledge_base=KnowledgeBase(), block_size=1, book_id="b",
+    )
+
+    # the real validator ran twice: schema failure then success
+    assert len(validation_errors) == 2, (
+        f"expected 2 validations, got {validation_errors}"
+    )
+    ok1, err1 = validation_errors[0]
+    ok2, err2 = validation_errors[1]
+    assert ok1 is False
+    assert ok2 is True and err2 == ""
+    assert "JSON\u7f3a\u5c11\u5fc5\u987b\u5b57\u6bb5" in err1, err1
+    assert "core_events" in err1, err1
+
+    # two real stream attempts, one retry
+    assert len(attempts) == 2, f"expected 2 stream attempts, got {len(attempts)}"
+    assert retry_info["retries"] == 1
+
+    # the retry message carries the production Chinese hint built by the real
+    # retry_messages_builder (observed through the real messages, not copied)
+    assert len(seen_messages) == 2
+    first_user = seen_messages[0][-1]["content"]
+    second_user = seen_messages[1][-1]["content"]
+    assert second_user != first_user, "retry messages must be rebuilt"
+    assert "\u7cfb\u7edf\u63d0\u793a" in second_user, second_user
+    assert err1 in second_user, "the hint must embed the real validation error"
+    assert second_user.startswith(first_user), "hint must be appended"
+
+    # success, and the parsed_cache carried only the validated payload
+    assert result is not None
+    assert result.core_events[0].id == 1
+    assert result.cross_block.summary == "s"
+
+
+async def _chunk_error():
+    from backend.core.llm_stream import StreamChunk
+    yield StreamChunk(type="error", error="429 Too Many Requests")
+
+
+async def _chunk_content(text):
+    from backend.core.llm_stream import StreamChunk
+    yield StreamChunk(type="content", text=text)
+
+
+async def _chunk_usage():
+    from backend.core.llm_stream import StreamChunk
+    yield StreamChunk(type="usage", usage_prompt_tokens=10,
+                      usage_completion_tokens=20, is_final=True)
+
+
+class _NullLogger:
+    def record_failure(self, **kw):
+        pass
+
+    def get_summary(self):
+        return {"count": 0}
+
+
+# ---------------------------------------------------------------------------
+# 3) style_analyzer.call_llm_semantic (real entry, own json.loads strategy)
+# ---------------------------------------------------------------------------
+
+class _StyleLLM:
+    """Mock client whose chat_auto returns the configured content."""
+
+    def __init__(self, content, success=True):
+        self.content = content
+        self.success = success
+        self.calls: list[dict] = []
+
+    async def chat_auto(self, messages, max_tokens=None, validate_response=None,
+                        retry_messages_builder=None, on_progress=None):
+        self.calls.append({"messages": messages, "on_progress": on_progress})
+        if self.success:
+            return True, self.content, "", (10, 20), {"attempts": 1}
+        return False, "", "boom", (10, 20), {"attempts": 1}
+
+
+def _style_json():
+    return json.dumps({f: "v" for f in SEMANTIC_FIELDS}, ensure_ascii=False)
+
+
+async def _call_style(monkeypatch, content, success=True):
+    """Call the real `call_llm_semantic` with a mock client.
+
+    The client is installed through `monkeypatch`, so it is restored on
+    success, failure and exception alike.
+    """
+    from backend.core import style_analyzer as style_mod
+
+    llm = _StyleLLM(content, success=success)
+    monkeypatch.setattr(style_mod, "LLMClient", lambda *a, **k: llm)
+    return await style_mod.call_llm_semantic(
+        prompt="p",
+        api_config={"base_url": "https://example.invalid", "api_key": "",
+                    "model": "m", "provider": "auto", "timeout": 1},
+        token_sink=None,
+        book_name="book",
+    )
+
+
+STYLE_CASES: dict[str, str] = {
+    "plain": _style_json(),
+    "fenced": f"```json\n{_style_json()}\n```",
+    "fenced_no_lang": f"```\n{_style_json()}\n```",
+    "prose_before_and_after": f"Here:\n{_style_json()}\nThanks!",
+    "two_objects": f"{_style_json()} {_style_json()}",
+    "braces_in_string": json.dumps(
+        {**{f: "v" for f in SEMANTIC_FIELDS}, "note": "has { and } inside"},
+        ensure_ascii=False,
+    ),
+    "truncated": _style_json()[:-5],
+    "trailing_comma": "{" + ", ".join(
+        f'"{f}": "v"' for f in SEMANTIC_FIELDS
+    ) + ",}",
+    "single_quoted": "{" + ", ".join(
+        f"'{f}': 'v'" for f in SEMANTIC_FIELDS
+    ) + "}",
+    "bare_array": f'[{_style_json()}]',
+    "fenced_array": f"```json\n[{_style_json()}]\n```",
+    "empty_object": "{}",
+    "empty_string": "",
+    "invalid": "not json at all",
+    "number": "42",
+}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("name", list(STYLE_CASES))
+async def test_style_entry_real_call_matrix(monkeypatch, name):
+    """call_llm_semantic's real return value / exception for each shape.
+
+    Current behavior includes unhandled TypeErrors for non-dict JSON: the style
+    entry calls `_validate_semantic_result(json.loads(...))` directly, so a list
+    or a number reaches the field loop and raises. These are recorded as-is
+    (Step3 does not change production), not smoothed over.
+    """
+    try:
+        result = await _call_style(monkeypatch, STYLE_CASES[name])
+    except Exception as e:  # noqa: BLE001 - recording current behavior
+        outcome = f"EXC:{type(e).__name__}"
+    else:
+        if result is None:
+            outcome = "None"
+        elif isinstance(result, dict):
+            outcome = "dict"
+        else:
+            outcome = type(result).__name__
+
+    expected = {
+        "plain": "dict", "fenced": "dict", "fenced_no_lang": "dict",
+        "prose_before_and_after": "dict", "braces_in_string": "dict",
+        "two_objects": "None",           # json.loads fails on two objects
+        "truncated": "None",
+        "trailing_comma": "None",
+        "single_quoted": "None",
+        "bare_array": "EXC:TypeError",   # list reaches the field loop
+        "fenced_array": "EXC:TypeError",
+        "empty_object": "dict",          # all fields filled with the default
+        "empty_string": "None",
+        "invalid": "None",
+        "number": "EXC:TypeError",       # int reaches `f not in result`
+    }[name]
+    assert outcome == expected, f"{name}: expected {expected}, got {outcome}"
+
+
+@pytest.mark.asyncio
+async def test_style_entry_fills_missing_fields(monkeypatch):
+    """Missing / non-string fields are filled with the production default."""
+    result = await _call_style(monkeypatch, "{}")
+    assert isinstance(result, dict)
+    for f in SEMANTIC_FIELDS:
+        assert result[f] == "\uff08\u672a\u63d0\u53d6\uff09"
+
+
+@pytest.mark.asyncio
+async def test_style_entry_keeps_values_when_valid(monkeypatch):
+    result = await _call_style(monkeypatch, _style_json())
+    assert isinstance(result, dict)
+    assert all(result[f] == "v" for f in SEMANTIC_FIELDS)
+
+
+@pytest.mark.asyncio
+async def test_style_entry_llm_failure_returns_none(monkeypatch):
+    result = await _call_style(monkeypatch, _style_json(), success=False)
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_style_entry_is_not_connected_to_safe_parse_json(monkeypatch):
+    """The style path must not gain safe_parse_json's repair abilities.
+
+    `trailing_comma` and `single_quoted` are accepted by `safe_parse_json` but
+    rejected by the style entry, proving the two are still separate.
+    """
+    assert safe_parse_json('{"a": 1,}') == {"a": 1}
+    assert safe_parse_json("{'a': 1}") == {"a": 1}
+    assert await _call_style(monkeypatch, '{"signature_expressions": "v",}') is None
+    assert await _call_style(monkeypatch, "{'signature_expressions': 'v'}") is None
+
+
+# ---------------------------------------------------------------------------
+# 4) location_normalizer (production function, called directly)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "name,expected",
+    [
+        ("plain_dict", "dict"),
+        ("empty_dict", "empty_dict"),
+        ("bare_array", "dict"),
+        ("fenced_array", "None"),
+        ("first_obj_empty_then_second", "second"),   # repair takes {"a": 1}
+        ("first_obj_unrelated_then_second", "None"),
+        ("two_objects", "dict"),   # identical objects collapse via repair
+        ("two_different_objects", "None"),
+        ("braces_in_string_valid", "dict"),
+        ("braces_escaped", "dict"),
+        ("fenced_with_prose", "dict"),
+        ("prose_then_object", "dict"),
+        ("truncated", "dict"),
+        ("missing_quote_key", "dict"),
+        ("single_quoted", "dict"),
+        ("trailing_comma", "dict"),
+        ("fullwidth_punct", "dict"),
+        ("invalid", "None"),
+        ("empty_string", "None"),
+        ("number", "None"),
+        ("string_literal", "None"),
+    ],
+)
+def test_location_parse_llm_dict_matrix(name, expected):
+    """location dual-path parse matrix, with exact content where it matters."""
+    result = _parse_llm_dict(CASES[name])
+    if expected == "None":
+        assert result is None, f"{name}: expected None, got {result!r}"
+    elif expected == "empty_dict":
+        assert result == {}, f"{name}: expected empty dict, got {result!r}"
+    elif expected == "second":
+        assert result == {"a": 1}, f"{name}: expected the second object, got {result!r}"
+    else:
+        assert isinstance(result, dict), f"{name}: got {result!r}"
+
+
+def test_location_object_selection_is_repair_dependent():
+    """Precise object selection: repair decides, not "first object only"."""
+    assert _parse_llm_dict('{} {"a": 1}') == {"a": 1}
+    assert _parse_llm_dict('{"zzz": 1} {"a": 2}') is None
+    assert _parse_llm_dict('{"a": 1} {"b": 2}') is None
+
+
+def test_location_empty_dict_is_returned():
+    """An empty dict IS returned by the location entry (isinstance check)."""
+    assert _parse_llm_dict("{}") == {}
+    assert _parse_llm_dict("```json\n{}\n```") == {}
+
+
+# ---------------------------------------------------------------------------
+# 5) final_summary (production function, called directly)
+# ---------------------------------------------------------------------------
+
+VALID_FJ_OLD = (
+    '{"foreshadow_evidence": {"resolved_foreshadows": '
+    '[{"id": "f2", "resolved_chapter": 3, "resolution": "done"}], '
+    '"new_foreshadows": [{"x": 1}]}}'
+)
+
+FORESHADOW_CASES: dict[str, str] = {
+    "valid_new": VALID_FJ,
+    "valid_old": VALID_FJ_OLD,
+    "empty_recon": '{"foreshadow_reconciliation": []}',
+    "no_key": '{"other": 1}',
+    "bad_recon_type": '{"foreshadow_reconciliation": "notalist"}',
+    "fenced_valid_new": f"```json\n{VALID_FJ}\n```",
+    "bare_array_of_valid": f"[{VALID_FJ}]",
+    "fenced_array_of_valid": f"```json\n[{VALID_FJ}]\n```",
+    "array_first_empty_dict": '[{}, {"a": 1}]',
+    "array_all_scalars": "[1, 2, 3]",
+    "first_obj_empty_then_valid": f"{{}} {VALID_FJ}",
+    "first_obj_unrelated_then_valid": f'{{"zzz": 1}} {VALID_FJ}',
+    "two_different_valid": f"{VALID_FJ} {VALID_FJ}",
+    "braces_in_string": (
+        '{"note": "has { and } inside", '
+        '"foreshadow_reconciliation": [], "new_foreshadows": []}'
+    ),
+    "empty_dict": "{}",
+    "fenced_empty_dict": "```json\n{}\n```",
+    "prose_then_empty_dict": "prose then {} then prose",
+    "invalid": "not json at all",
+    "empty_string": "",
+}
+
+
+@pytest.mark.parametrize(
+    "name,expected",
+    [
+        ("valid_new", "ok"),
+        ("valid_old", "ok"),
+        ("empty_recon", "ok"),
+        ("no_key", "None"),
+        ("bad_recon_type", "ok"),
+        ("fenced_valid_new", "ok"),
+        ("bare_array_of_valid", "ok"),
+        ("fenced_array_of_valid", "None"),
+        ("array_first_empty_dict", "None"),
+        ("array_all_scalars", "None"),
+        ("first_obj_empty_then_valid", "ok"),   # repair drops the empty object
+        ("first_obj_unrelated_then_valid", "None"),
+        ("two_different_valid", "ok"),
+        ("braces_in_string", "ok"),
+        ("empty_dict", "None"),
+        ("fenced_empty_dict", "None"),
+        ("prose_then_empty_dict", "None"),
+        ("invalid", "None"),
+        ("empty_string", "None"),
+    ],
+)
+def test_extract_foreshadow_json_matrix(name, expected):
+    """Foreshadow JSON extraction acceptance/failure matrix."""
+    result = extract_foreshadow_json(FORESHADOW_CASES[name])
+    if expected == "None":
+        assert result is None, f"{name}: expected None, got {result!r}"
+    else:
+        assert isinstance(result, dict), f"{name}: got {result!r}"
+
+
+def test_foreshadow_object_selection_is_repair_dependent():
+    """Precise selection for the foreshadow entry too."""
+    assert extract_foreshadow_json(f"{{}} {VALID_FJ}") == {
+        "reconciliation": [{"foreshadow_id": "f1"}],
+        "new_foreshadows": [],
+    }
+    assert extract_foreshadow_json(f'{{"zzz": 1}} {VALID_FJ}') is None
+    # two identical valid objects collapse into one accepted result
+    assert extract_foreshadow_json(f"{VALID_FJ} {VALID_FJ}") == {
+        "reconciliation": [{"foreshadow_id": "f1"}],
+        "new_foreshadows": [],
+    }
+
+
+def test_foreshadow_new_format_shape():
+    result = extract_foreshadow_json(VALID_FJ)
+    assert result == {
+        "reconciliation": [{"foreshadow_id": "f1"}],
+        "new_foreshadows": [],
+    }
+
+
+def test_foreshadow_old_format_shape():
+    result = extract_foreshadow_json(VALID_FJ_OLD)
+    assert result["reconciliation"] == [{
+        "foreshadow_id": "f2",
+        "is_resolved_in_this_batch": True,
+        "resolved_chapter": 3,
+        "resolution_summary": "done",
+    }]
+    assert result["new_foreshadows"] == [{"x": 1}]
+
+
+def test_foreshadow_bad_recon_type_passes_through_as_string():
+    result = extract_foreshadow_json('{"foreshadow_reconciliation": "notalist"}')
+    assert result is not None
+    assert result["reconciliation"] == "notalist"
+    assert result["new_foreshadows"] == []
+
+
+def test_foreshadow_empty_string_response():
+    assert extract_foreshadow_json("") is None
+
+
+def test_foreshadow_list_branch_removed_is_behavior_preserving():
+    """The `isinstance(data, list)` branch was removed in Step3.
+
+    It was provably unreachable (no helper can return a list), so removing it
+    must not change any observable result. This pins that the dict guard and
+    the schema conversion still behave identically.
+    """
+    # the dict guard still fires for anything that is not a dict
+    for text in ["42", '"hello"', "not json at all", ""]:
+        assert extract_foreshadow_json(text) is None, text
+
+    # the accepted shapes are unchanged
+    assert extract_foreshadow_json(VALID_FJ) == {
+        "reconciliation": [{"foreshadow_id": "f1"}],
+        "new_foreshadows": [],
+    }
+    assert extract_foreshadow_json(VALID_FJ_OLD)["reconciliation"] == [{
+        "foreshadow_id": "f2",
+        "is_resolved_in_this_batch": True,
+        "resolved_chapter": 3,
+        "resolution_summary": "done",
+    }]
+
+    # bare arrays still work through extract's first-object selection
+    assert extract_foreshadow_json(f"[{VALID_FJ}]") == {
+        "reconciliation": [{"foreshadow_id": "f1"}],
+        "new_foreshadows": [],
+    }
+
+
+def test_foreshadow_list_branch_is_unreachable():
+    """Prove the list branch is dead: no helper can ever produce a list."""
+    for text in list(CASES.values()) + list(FORESHADOW_CASES.values()):
+        data = safe_parse_json(text.strip())
+        assert data is None or isinstance(data, dict), text
+    assert safe_parse_json('[{"a": 1}]') is None
+    assert parse_json_robust('[{"a": 1}]')[0] is None
+
+
+# ---------------------------------------------------------------------------
+# 6) validate_reconciliation_json
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "name,expected_ok,expected_err",
+    [
+        ("valid_new", True, ""),
+        ("empty_recon", True, ""),
+        ("bare_array_of_valid", True, ""),
+        ("fenced_array_of_valid", False, "foreshadow_reconciliation JSON"),
+        ("no_key", False, "foreshadow_reconciliation JSON"),
+        ("bad_recon_type", False, "foreshadow_reconciliation"),
+    ],
+)
+def test_validate_reconciliation_json_matrix(name, expected_ok, expected_err):
+    ok, err = validate_reconciliation_json(FORESHADOW_CASES[name])
+    assert ok is expected_ok, f"{name}: {err}"
+    if not expected_ok:
+        assert expected_err in err, f"{name}: {err!r}"
+
+
+# ---------------------------------------------------------------------------
+# 7) Empty-dict divergence between the two parse-first entries
+# ---------------------------------------------------------------------------
+
+def test_empty_dict_divergence_between_parse_first_sites():
+    """location returns {}; summary returns None. This is current behavior.
+
+    The divergence is observable only on the location side: `_parse_llm_dict`
+    tests `isinstance(parsed, dict)` first and returns `{}` immediately.
+    `extract_foreshadow_json` tests `if not data` first, and since `{}` is falsy
+    it never reaches its own `isinstance(data, dict)` check, so the second guard
+    is not independently observable there.
+    """
+    assert _parse_llm_dict("{}") == {}
+    assert extract_foreshadow_json("{}") is None
+
+    empty: dict = {}
+    assert isinstance(empty, dict)
+    assert not empty
+
+
+# NOTE ON THE PIPELINE ENTRY (read-only audit, NOT a runtime matrix):
+#
+# `backend/core/pipeline.py` has three `extract_json_from_text` ->
+# `safe_parse_json` -> `_validate_and_fill_rolling_schema` sites (lines ~906,
+# ~1081, ~1128). They are guarded by `if raw:` / `if parsed:` truthiness, so an
+# empty dict is rejected there, whereas the analyzer entry tests `is None` and
+# keeps it. That divergence is real.
+#
+# It is NOT covered by a runtime test in this file: driving those three sites
+# needs a full pipeline run with a MemoryState and an output directory, which is
+# out of Step3's scope. The claim is therefore a READ-ONLY SOURCE AUDIT and is
+# deliberately not asserted by a test, because asserting `not {}` would only
+# restate Python truthiness rather than observe production behavior.
+
+
+# ---------------------------------------------------------------------------
+# 8) Mock-lifecycle guard
+#
+# R3 round-2 review found that earlier versions of this file reassigned
+# `LLMClient.chat_stream` and `style_analyzer.LLMClient` directly, leaking the
+# fakes into the rest of the process. Every mock in this file now goes through
+# the `monkeypatch` fixture, and the test below proves the production objects
+# are still the originals after the whole file has run.
+# ---------------------------------------------------------------------------
+
+def test_production_objects_not_leaked_by_this_module():
+    """Guard: no test in this module leaves a fake installed on production code."""
+    import backend.core.llm_client as llm_client_mod
+    from backend.core import style_analyzer as style_mod
+
+    assert llm_client_mod.LLMClient.chat_stream.__name__ == "chat_stream", (
+        "LLMClient.chat_stream must still be the production method"
+    )
+    assert style_mod.LLMClient.__name__ == "LLMClient", (
+        "style_analyzer.LLMClient must still be the production class"
+    )
+    assert llm_client_mod._get_failure_logger.__name__ == "_get_failure_logger", (
+        "_get_failure_logger must still be the production function"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "content,success,expect",
+    [
+        ("__valid__", True, "dict"),
+        ("not json", True, "None"),
+        ("__valid__", False, "None"),
+        ("__array__", True, "TypeError"),
+    ],
+)
+async def test_style_helper_restores_after_each_outcome(
+    monkeypatch, content, success, expect
+):
+    """The style mock must be restored after success, failure and exception.
+
+    Each case runs inside its own `pytest.MonkeyPatch.context()`, so restoration
+    is observable immediately after the call rather than at test teardown.
+    """
+    from backend.core import style_analyzer as style_mod
+
+    original = style_mod.LLMClient
+    if content == "__valid__":
+        content = _style_json()
+    elif content == "__array__":
+        content = f"[{_style_json()}]"
+
+    with pytest.MonkeyPatch.context() as mp:
+        if expect == "TypeError":
+            with pytest.raises(TypeError):
+                await _call_style(mp, content, success=success)
+        else:
+            result = await _call_style(mp, content, success=success)
+            if expect == "dict":
+                assert isinstance(result, dict)
+            else:
+                assert result is None
+
+    # restored the instant the context exits, not at test teardown
+    assert style_mod.LLMClient is original, (
+        "style_analyzer.LLMClient leaked past the helper call"
+    )

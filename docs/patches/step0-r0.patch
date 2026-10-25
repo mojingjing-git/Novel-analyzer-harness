@@ -1,0 +1,635 @@
+# Step0/R0 patch (2026-10-14, R0 round 2) - cleanup-batch-3
+# Scope: test runtime-root isolation only. Distinct from other sessions dirty changes.
+
+# ---- new file: pytest_isolation.py ----
+diff --git a/pytest_isolation.py b/pytest_isolation.py
+new file mode 100644
+index 0000000..d88792c
+--- /dev/null
++++ b/pytest_isolation.py
+@@ -0,0 +1,207 @@
++"""pytest 运行根隔离原语（第三批清理 Step0/R0，2026-10-14）
++
++为什么单独成模块：rootdir 下有两个 ``conftest.py``（仓库根与 ``tests/``），
++``import conftest`` 会随收集范围不同而解析到不同模块对象，测试无法稳定访问隔离原语。
++本模块由仓库根 ``conftest.py`` 在 import 期调用 :func:`install`，测试直接
++``import pytest_isolation`` 取用同一份状态。
++
++隔离策略（写前隔离，不是写后移除）：在任何 ``backend.*`` import 之前把测试进程 cwd
++切到会话级隔离根，使「默认相对路径」在首次 import、模块顶层实例化以及用例内任意
++重建实例时都落在隔离根。
++
++覆盖的默认相对路径写入点：
++
++- ``backend/core/llm_failure_logger.py``：``FailureLogger()`` 默认按 cwd 建
++  ``api_failures.log`` handler（模块顶层即实例化一次）；
++- ``backend/app.py``：``LOG_FILE`` 由 ``NOVEL_ROOT``/PROJECT_ROOT 求值并立即挂
++  ``RotatingFileHandler``；
++- ``backend/services/queue_manager.py``：``CONFIG_FILE`` / ``QUEUE_STATE_FILE``
++  由 PROJECT_ROOT 求值，``save_queue()`` 直接覆写。
++"""
++
++from __future__ import annotations
++
++import atexit
++import configparser
++import json
++import logging
++import os
++import shutil
++import tempfile
++from pathlib import Path
++
++SECRET_ENV_KEYS = ("LLM_API_KEY", "MINIMAX_API_KEY", "NOVEL_ANALYZER_SESSION_TOKEN")
++SYNTHETIC_MODEL = "test-model"
++
++# 由 install() 填充
++REPO_ROOT: Path
++ORIGINAL_CWD: Path
++ISOLATION_ROOT: Path
++ORIGINAL_SECRET_ENV_PRESENT: dict[str, bool]
++TESTPATH_PLACEHOLDERS: list[str]
++
++_installed = False
++
++
++def _read_testpaths(repo_root: Path) -> list[str]:
++    """读取 pytest.ini 的 testpaths（相对仓库根）。
++
++    pytest 在 rootdir conftest 被 import 之后立刻执行 ``Config._decide_args``，
++    其中 ``testpaths`` 用 ``glob.iglob(path)`` **按当前 cwd** 解析。我们已把 cwd 切到
++    隔离根，若不建同名占位目录会 glob 失败并回退成「从 invocation_dir 递归收集」，
++    把收集范围扩大到 workspace/ 等目录。建占位后 glob 正常返回，随后 pytest 用
++    ``invocation_params.dir``（仓库根）解析这些相对参数，仍指向真实测试目录。
++    """
++    ini_path = repo_root / "pytest.ini"
++    if not ini_path.exists():
++        return []
++    parser = configparser.ConfigParser()
++    try:
++        parser.read(ini_path, encoding="utf-8")
++        raw = parser.get("pytest", "testpaths", fallback="")
++    except Exception as exc:  # 配置不可解析即可诊断失败，不静默继续
++        raise RuntimeError(f"无法读取 {ini_path} 的 testpaths: {exc}") from exc
++    return raw.split()
++
++
++def install(repo_root: Path) -> Path:
++    """建立运行根隔离。必须在任何 backend.* import 之前调用，且只调用一次。"""
++    global _installed, REPO_ROOT, ORIGINAL_CWD, ISOLATION_ROOT
++    global ORIGINAL_SECRET_ENV_PRESENT, TESTPATH_PLACEHOLDERS
++    if _installed:
++        return ISOLATION_ROOT
++
++    REPO_ROOT = Path(repo_root).resolve()
++    ORIGINAL_CWD = Path.cwd()
++    ORIGINAL_SECRET_ENV_PRESENT = {
++        key: bool(os.environ.get(key)) for key in SECRET_ENV_KEYS
++    }
++
++    ISOLATION_ROOT = Path(tempfile.mkdtemp(prefix="novel-analyzer-pytests-")).resolve()
++
++    # 1) cwd 先切到隔离根：此后任何「默认相对路径」写入都落在隔离根
++    os.chdir(ISOLATION_ROOT)
++    os.environ["NOVEL_ROOT"] = str(ISOLATION_ROOT)
++
++    # 2) 真实密钥 / 会话 token 不得进入测试进程
++    for _secret_key in SECRET_ENV_KEYS:
++        os.environ.pop(_secret_key, None)
++
++    # 3) 合成配置：只有占位值，永不读取真实 config.json
++    (ISOLATION_ROOT / "workspace").mkdir(parents=True, exist_ok=True)
++    (ISOLATION_ROOT / "config.json").write_text(
++        json.dumps(
++            {
++                "api": {
++                    "base_url": "https://example.invalid/v1",
++                    "api_key": "",
++                    "model": SYNTHETIC_MODEL,
++                    "provider": "auto",
++                },
++                "analysis": {},
++                "gui": {},
++                "workspace_dir": "workspace",
++            },
++            ensure_ascii=False,
++            indent=2,
++        ),
++        encoding="utf-8",
++    )
++
++    # 4) testpaths 占位：保持收集范围等同于仓库配置
++    TESTPATH_PLACEHOLDERS = _read_testpaths(REPO_ROOT)
++    for _testpath in TESTPATH_PLACEHOLDERS:
++        (ISOLATION_ROOT / _testpath).mkdir(parents=True, exist_ok=True)
++
++    atexit.register(cleanup)
++    _installed = True
++    return ISOLATION_ROOT
++
++
++def _norm(path) -> str:
++    return os.path.normcase(os.path.realpath(str(path)))
++
++
++def _within(path, root: Path) -> bool:
++    p = _norm(path)
++    r = _norm(root)
++    return p == r or p.startswith(r + os.sep)
++
++
++def _is_null_device(path_str) -> bool:
++    """判断是否为 NUL / /dev/null 之类的空设备。
++
++    pytest 的 logging 插件会给 ``propagate=False`` 的 logger 挂一个写向
++    ``os.devnull`` 的 ``_FileHandler``（Windows 下 baseFilename 形如 ``\\.\\nul``）；
++    这类 handler 不落真实文件，不计入泄漏。
++    """
++    lowered = str(path_str).replace("/", "\\").lower()
++    return lowered.endswith("\\nul") or lowered in ("nul", "\\\\.\\nul", "\\\\?\\nul")
++
++
++def api_failures_handlers_outside_isolation() -> list[str]:
++    """返回指向隔离根之外真实文件的 api_failures file handler 路径（应为空）。"""
++    outside = []
++    for handler in logging.getLogger("api_failures").handlers:
++        base = getattr(handler, "baseFilename", "")
++        if not base or _is_null_device(base):
++            continue
++        if not _within(base, ISOLATION_ROOT):
++            outside.append(base)
++    return outside
++
++
++def assert_isolation_intact() -> None:
++    """校验隔离仍然成立；不成立直接抛可诊断错误，不静默修补、不吞异常。"""
++    cwd = Path.cwd()
++    if _norm(cwd) != _norm(ISOLATION_ROOT):
++        raise RuntimeError(
++            "测试运行根隔离失败：进程 cwd 已偏离隔离根。"
++            f"cwd={cwd} isolation_root={ISOLATION_ROOT}。"
++            "请检查是否有测试直接 chdir 未恢复。"
++        )
++    outside = api_failures_handlers_outside_isolation()
++    if outside:
++        raise RuntimeError(
++            "测试运行根隔离失败：api_failures handler 指向隔离根之外 "
++            f"(isolation_root={ISOLATION_ROOT}): {outside}"
++        )
++
++
++def cleanup() -> None:
++    """退出清理：先 chdir 出隔离根，再关句柄，再删目录。"""
++    try:
++        if _norm(Path.cwd()) == _norm(ISOLATION_ROOT):
++            os.chdir(ORIGINAL_CWD)
++    except Exception:
++        pass
++    for logger_obj in (logging.getLogger(), logging.getLogger("api_failures")):
++        for handler in list(logger_obj.handlers):
++            base = getattr(handler, "baseFilename", "")
++            if base and _within(base, ISOLATION_ROOT):
++                try:
++                    handler.close()
++                except Exception:
++                    pass
++    shutil.rmtree(ISOLATION_ROOT, ignore_errors=True)
++
++
++def reset_runtime_singletons() -> None:
++    """逐用例重置进程级单例与模块缓存，避免跨用例污染。"""
++    queue_service = sys.modules.get("backend.services.queue_service")
++    if queue_service is not None:
++        queue_service._service = None
++    book_service = sys.modules.get("backend.services.book_service")
++    if book_service is not None:
++        book_service._books.clear()
++        book_service._manual_books.clear()
++        book_service._refreshing = False
++    location_service = sys.modules.get("backend.services.location_normalization_service")
++    if location_service is not None:
++        location_service._service = None
++    summary_service = sys.modules.get("backend.services.summary_service")
++    if summary_service is not None:
++        summary_service._service = None
++
++
++import sys  # noqa: E402  (与 REPO_ROOT 求值相邻的副作用导入，保持此处可读)
+
+# ---- new file: conftest.py ----
+diff --git a/conftest.py b/conftest.py
+new file mode 100644
+index 0000000..af05f9d
+--- /dev/null
++++ b/conftest.py
+@@ -0,0 +1,35 @@
++"""pytest 运行根隔离（第三批清理 Step0/R0，2026-10-14；R0 第二轮修正）
++
++R0 第一轮被拒原因（主审复现）：原实现是「写后移除」——先 import
++``backend.core.llm_failure_logger``，模块顶层 ``FailureLogger()`` 已按真实 cwd
++创建/打开 ``api_failures.log``，之后才移除 handler；测试内部再 ``FailureLogger()``
++也会按真实 cwd 重建 handler 并写入。
++
++修正：在本文件顶层、任何 ``backend.*`` import 之前，把测试进程 cwd 切到会话级隔离根
++（实现见 :mod:`pytest_isolation`），使「默认相对路径」在首次 import、模块顶层实例化
++与用例内任意重建实例时都落在隔离根。
++
++测试代码与 fixture 路径全部按 ``__file__`` 绝对定位，不依赖 cwd。
++"""
++
++from __future__ import annotations
++
++from pathlib import Path
++
++import pytest_isolation
++
++REPO_ROOT = Path(__file__).resolve().parent
++pytest_isolation.install(REPO_ROOT)
++
++ISOLATION_ROOT = pytest_isolation.ISOLATION_ROOT
++
++
++import pytest  # noqa: E402  (隔离安装后再 import，保持文件意图清晰)
++
++
++@pytest.fixture(autouse=True)
++def _reset_runtime_singletons():
++    pytest_isolation.assert_isolation_intact()
++    yield
++    pytest_isolation.assert_isolation_intact()
++    pytest_isolation.reset_runtime_singletons()
+
+# ---- new file: backend/tests/test_runtime_isolation.py ----
+diff --git a/backend/tests/test_runtime_isolation.py b/backend/tests/test_runtime_isolation.py
+new file mode 100644
+index 0000000..a9e83ea
+--- /dev/null
++++ b/backend/tests/test_runtime_isolation.py
+@@ -0,0 +1,275 @@
++"""Step0/R0 守卫：pytest 运行根隔离必须生效（含独立子进程回归）。
++
++R0 第一轮被拒原因：原实现先 import ``backend.core.llm_failure_logger``（此时模块顶层
++``FailureLogger()`` 已按真实 cwd 创建/打开 ``api_failures.log``），之后才移除 handler，
++属于「写后移除」；测试内部新建 ``FailureLogger()`` 也会按真实 cwd 重建 handler 并写入。
++修正方式：rootdir ``conftest.py`` 顶层先把测试进程 cwd 切到隔离根。
++
++本文件分两层验证：
++
++1. 当前进程：cwd / ``NOVEL_ROOT`` / 关键路径 / 合成配置都必须指向隔离根。
++2. 独立子进程：用临时目录模拟「原始 cwd」，加载隔离代码后验证「首次 import」与
++   「用例内新建 ``FailureLogger()`` + ``record_failure``」都不会在原始 cwd 创建/改动
++   默认日志，且实际 handler 只指向隔离根。子进程的两个场景分别为
++   「原始 cwd 无默认日志」与「原始 cwd 存在 synthetic sentinel」。
++
++真实仓库文件只做存在性 / 哈希核验，测试不读取或改写真实日志内容。
++"""
++
++from __future__ import annotations
++
++import hashlib
++import json
++import os
++import subprocess
++import sys
++import textwrap
++from pathlib import Path
++
++REPO_ROOT = Path(__file__).resolve().parents[2]
++CONFTEST_PATH = REPO_ROOT / "conftest.py"
++
++
++def _norm(path) -> str:
++    return os.path.normcase(os.path.realpath(str(path)))
++
++
++def _sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with open(path, "rb") as handle:
++        for chunk in iter(lambda: handle.read(65536), b""):
++            digest.update(chunk)
++    return digest.hexdigest()
++
++
++# ---------------------------------------------------------------------------
++# 进程内契约
++# ---------------------------------------------------------------------------
++
++def test_process_cwd_is_isolation_root():
++    root = Path(os.environ["NOVEL_ROOT"])
++    assert "novel-analyzer-pytests-" in root.name
++    assert _norm(Path.cwd()) == _norm(root), (
++        f"测试进程 cwd 必须落在隔离根: cwd={Path.cwd()} isolation_root={root}"
++    )
++
++
++def test_novel_root_points_to_isolation_root():
++    novel_root = os.environ.get("NOVEL_ROOT")
++    assert novel_root, "conftest 必须在任何 backend import 前设置 NOVEL_ROOT"
++    assert "novel-analyzer-pytests-" in Path(novel_root).name, (
++        f"NOVEL_ROOT 应指向隔离临时根，实际 {novel_root}"
++    )
++
++
++def test_queue_manager_paths_isolated():
++    from backend.services import queue_manager
++
++    root = Path(os.environ["NOVEL_ROOT"]).resolve()
++    assert queue_manager.PROJECT_ROOT == root
++    assert queue_manager.CONFIG_FILE.parent == root
++    assert queue_manager.QUEUE_STATE_FILE.parent == root
++
++
++def test_analysis_service_reads_synthetic_config():
++    from backend.services.queue_service import get_service
++
++    root = Path(os.environ["NOVEL_ROOT"]).resolve()
++    service = get_service()
++    # 合成配置：model 固定非空、api_key 为空 —— 证明真实 config.json 未被读取
++    assert service.config_manager.config.api.model == "test-model"
++    assert service.config_manager.config.api.api_key == ""
++    # workspace_path = NOVEL_ROOT/workspace，写盘目标不在真实仓库 workspace/
++    assert service.workspace_path == root / "workspace"
++
++
++def test_analyzer_log_file_isolated():
++    import backend.app as app_module
++
++    root = Path(os.environ["NOVEL_ROOT"]).resolve()
++    assert app_module.PROJECT_ROOT == root
++    assert app_module.LOG_FILE.parent == root
++
++
++# ---------------------------------------------------------------------------
++# 独立子进程回归：原始 cwd = 临时目录
++# ---------------------------------------------------------------------------
++
++_CHILD_SCRIPT = textwrap.dedent(
++    """
++    import importlib.util
++    import json
++    import logging
++    import os
++    import sys
++    from pathlib import Path
++
++    repo_root = Path(sys.argv[1])
++    conftest_path = Path(sys.argv[2])
++    sys.path.insert(0, str(repo_root))
++
++    spec = importlib.util.spec_from_file_location("novel_isolation_bootstrap", conftest_path)
++    bootstrap = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(bootstrap)
++
++    isolation_root = Path(bootstrap.ISOLATION_ROOT)
++
++    # (1) first import in the process: module-level FailureLogger() builds a handler
++    import backend.core.llm_failure_logger as failure_logger_module
++
++    # (2) re-instantiation inside a test body: default relative path must stay isolated
++    extra = failure_logger_module.FailureLogger()
++    extra.record_failure(1, 1, 0.1, "RetryNeeded", "isolation-probe")
++
++    def norm(value):
++        return os.path.normcase(os.path.realpath(str(value)))
++
++    handlers = [
++        getattr(handler, "baseFilename", "")
++        for handler in logging.getLogger("api_failures").handlers
++    ]
++    outside = [
++        handler
++        for handler in handlers
++        if handler and not norm(handler).startswith(norm(isolation_root) + os.sep)
++    ]
++    payload = {
++        "isolation_root": str(isolation_root),
++        "cwd": os.getcwd(),
++        "handlers": handlers,
++        "handlers_outside": outside,
++    }
++    print("RESULT_JSON=" + json.dumps(payload, ensure_ascii=True))
++    """
++)
++
++
++def _run_isolation_child(original_cwd: Path) -> dict:
++    child_env = {
++        key: value
++        for key, value in os.environ.items()
++        if key not in ("NOVEL_ROOT", "LLM_API_KEY", "MINIMAX_API_KEY",
++                       "NOVEL_ANALYZER_SESSION_TOKEN")
++    }
++    child_env["PYTHONIOENCODING"] = "utf-8"
++    child_env["PYTHONUTF8"] = "1"
++    proc = subprocess.run(
++        [
++            sys.executable,
++            "-c",
++            _CHILD_SCRIPT,
++            str(REPO_ROOT),
++            str(CONFTEST_PATH),
++        ],
++        cwd=str(original_cwd),
++        env=child_env,
++        capture_output=True,
++        text=True,
++        encoding="utf-8",
++        errors="replace",
++        timeout=300,
++    )
++    assert proc.returncode == 0, (
++        f"隔离子进程失败（rc={proc.returncode}）\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
++    )
++    lines = [
++        line[len("RESULT_JSON="):]
++        for line in proc.stdout.splitlines()
++        if line.startswith("RESULT_JSON=")
++    ]
++    assert lines, f"子进程未返回结果: stdout={proc.stdout!r} stderr={proc.stderr!r}"
++    return json.loads(lines[-1])
++
++
++def test_child_does_not_create_default_log_in_original_cwd(tmp_path):
++    """场景 A：原始 cwd 无默认日志 —— 隔离后不得被创建"""
++    original_cwd = tmp_path / "original_cwd"
++    original_cwd.mkdir()
++
++    result = _run_isolation_child(original_cwd)
++
++    assert not (original_cwd / "api_failures.log").exists(), (
++        "子进程在原始 cwd 创建了默认 api_failures.log，隔离失败"
++    )
++    assert result["handlers"], "应存在指向隔离根的 api_failures handler"
++    assert result["handlers_outside"] == [], (
++        f"handler 指向隔离根之外: {result['handlers_outside']}"
++    )
++    assert _norm(result["cwd"]) == _norm(result["isolation_root"]), (
++        f"子进程 cwd 未落在隔离根: cwd={result['cwd']} root={result['isolation_root']}"
++    )
++
++
++def test_child_preserves_sentinel_log_in_original_cwd(tmp_path):
++    """场景 B：原始 cwd 存在 synthetic sentinel —— 必须逐字节不变"""
++    original_cwd = tmp_path / "original_cwd"
++    original_cwd.mkdir()
++    sentinel = original_cwd / "api_failures.log"
++    sentinel.write_text("SENTINEL-DO-NOT-TOUCH\n", encoding="utf-8")
++    before = sentinel.read_bytes()
++
++    result = _run_isolation_child(original_cwd)
++
++    assert sentinel.read_bytes() == before, "原始 cwd 的 sentinel 日志被改写"
++    assert result["handlers_outside"] == [], (
++        f"handler 指向隔离根之外: {result['handlers_outside']}"
++    )
++
++
++def test_child_does_not_touch_repo_default_log(tmp_path):
++    """端到端：子进程运行前后，真实仓库 api_failures.log 哈希不变（只做哈希核验）"""
++    repo_log = REPO_ROOT / "api_failures.log"
++    if not repo_log.exists():
++        return
++    before = _sha256(repo_log)
++
++    original_cwd = tmp_path / "original_cwd"
++    original_cwd.mkdir()
++    _run_isolation_child(original_cwd)
++
++    assert _sha256(repo_log) == before, "隔离子进程改写了真实仓库 api_failures.log"
++
++
++# ---------------------------------------------------------------------------
++# 正向对照：校验器本身必须能抓到真实泄漏（避免 nul/设备排除变成放行旁路）
++# ---------------------------------------------------------------------------
++
++def test_isolation_check_flags_real_outside_handler(tmp_path):
++    """api_failures 挂上隔离根之外的真实文件 handler 时，校验必须抛错"""
++    import pytest_isolation as isolation_bootstrap
++
++    outside_file = tmp_path / "outside_api_failures.log"
++    import logging
++    from logging.handlers import RotatingFileHandler
++
++    handler = RotatingFileHandler(str(outside_file), encoding="utf-8",
++                                  maxBytes=1024, backupCount=1)
++    flog = logging.getLogger("api_failures")
++    flog.addHandler(handler)
++    try:
++        detected = isolation_bootstrap.api_failures_handlers_outside_isolation()
++        assert any(_norm(item) == _norm(outside_file) for item in detected), (
++            f"校验器未抓到隔离根之外的真实 handler: {detected}"
++        )
++        try:
++            isolation_bootstrap.assert_isolation_intact()
++        except RuntimeError:
++            pass
++        else:
++            raise AssertionError("存在真实泄漏时 assert_isolation_intact 未报错")
++    finally:
++        flog.removeHandler(handler)
++        handler.close()
++
++    isolation_bootstrap.assert_isolation_intact()
++
++
++def test_isolation_check_tolerates_null_device_handler():
++    """空设备 handler（pytest logging 插件所挂）必须被排除，不算泄漏"""
++    import pytest_isolation as isolation_bootstrap
++
++    assert isolation_bootstrap._is_null_device(os.devnull)
++    assert isolation_bootstrap._is_null_device("\\\\.\\nul")
++    assert not isolation_bootstrap._is_null_device(
++        isolation_bootstrap.ISOLATION_ROOT / "api_failures.log"
++    )
+
+# ---- tracked: backend/tests/test_archive_path_update.py ----
+diff --git a/backend/tests/test_archive_path_update.py b/backend/tests/test_archive_path_update.py
+index 90235d5..8700cd9 100644
+--- a/backend/tests/test_archive_path_update.py
++++ b/backend/tests/test_archive_path_update.py
+@@ -8,6 +8,7 @@ bug: shutil.move 把书目录搬到 base_dir/分析结果/ 但没更新 item.wor
+ 修法: _archive_item 搬走成功后更新 item.workspace_dir + item.blocks_dir，
+       同步调 save_queue 持久化。
+ """
++import os
+ import sys
+ import tempfile
+ import shutil
+@@ -42,9 +43,15 @@ def test_archive_item_updates_workspace_dir():
+             total_chapters=1,
+         )
+         # mock config_manager with auto_archive enabled
++        from backend.services import book_service
++        from backend.services import queue_service as queue_service_module
+         from backend.services.queue_service import get_service
+         svc = get_service()
+         original_config_manager = svc.config_manager
++        # Step0/R0：快照进程级队列/书目缓存，测试结束后恢复（避免污染其他用例）
++        original_items = svc.queue._items
++        original_books = dict(book_service._books)
++        original_manual_books = dict(book_service._manual_books)
+ 
+         class _MockCfg:
+             class _Config:
+@@ -54,6 +61,11 @@ def test_archive_item_updates_workspace_dir():
+             config = _Config()
+         svc.config_manager = _MockCfg()
+         try:
++            # Step0/R0 守卫：save_queue 的落盘目标必须是被隔离的运行根，
++            # 不能是真实仓库 queue_state.json
++            assert queue_service_module.QUEUE_STATE_FILE.parent == (
++                Path(os.environ["NOVEL_ROOT"]).resolve()
++            ), f"queue_state 未隔离: {queue_service_module.QUEUE_STATE_FILE}"
+             svc._archive_item(item)
+ 
+             # 关键断言: item.workspace_dir 必须指向新位置
+@@ -73,10 +85,17 @@ def test_archive_item_updates_workspace_dir():
+             assert item.name == "《测试书》", f"book_name 不变，实际 {item.name}"
+         finally:
+             svc.config_manager = original_config_manager
++            svc.queue._items = original_items
++            book_service._books.clear()
++            book_service._books.update(original_books)
++            book_service._manual_books.clear()
++            book_service._manual_books.update(original_manual_books)
+ 
+ 
+ def test_archive_then_get_book_path_finds_new_location():
+     """归档后 book_service.get_book_path 用 book_id 能找到新位置（之前找不到旧路径）"""
++    from backend.services import book_service
++    from backend.services import queue_service as queue_service_module
+     from backend.services.book_service import refresh_books, get_book_path
+     from backend.services.queue_manager import QueueItem, QueueManager
+     from backend.services.queue_service import get_service
+@@ -95,6 +114,10 @@ def test_archive_then_get_book_path_finds_new_location():
+         # mock queue with this item
+         svc = get_service()
+         original_config_manager = svc.config_manager
++        # Step0/R0：快照队列/书目缓存，避免 _items 替换与 _books 重建污染其他用例
++        original_items = svc.queue._items
++        original_books = dict(book_service._books)
++        original_manual_books = dict(book_service._manual_books)
+ 
+         class _MockCfg:
+             class _Config:
+@@ -116,6 +139,11 @@ def test_archive_then_get_book_path_finds_new_location():
+         svc.queue._items = [item]
+ 
+         try:
++            # Step0/R0 守卫：归档触发的 save_queue 必须落在隔离运行根，
++            # 不能覆写真实仓库 queue_state.json
++            assert queue_service_module.QUEUE_STATE_FILE.parent == (
++                Path(os.environ["NOVEL_ROOT"]).resolve()
++            ), f"queue_state 未隔离: {queue_service_module.QUEUE_STATE_FILE}"
+             # 归档
+             svc._archive_item(item)
+ 
+@@ -129,3 +157,8 @@ def test_archive_then_get_book_path_finds_new_location():
+             assert path.exists()
+         finally:
+             svc.config_manager = original_config_manager
++            svc.queue._items = original_items
++            book_service._books.clear()
++            book_service._books.update(original_books)
++            book_service._manual_books.clear()
++            book_service._manual_books.update(original_manual_books)
