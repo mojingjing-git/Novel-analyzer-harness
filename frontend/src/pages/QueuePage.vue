@@ -209,6 +209,18 @@ function handleStart() {
   }, '启动分析')
 }
 function handleStop() { withBusy(async () => { await api.stopAnalysis(); add('分析已停止', 'warn', 'analysis') }, '停止分析') }
+
+// PR-1 收尾（2026-09-30）：日志端点受 session token 保护且返回 text/plain，
+// <a href> 顶层导航带不了 header 也渲染不了下载，改走 api.downloadLogs()（fetch + blob）
+async function handleDownloadLogs() {
+  try {
+    await api.downloadLogs()
+    add('日志已开始下载', 'info', 'analysis')
+  } catch (e) {
+    error.value = `下载日志: ${(e as Error).message}`
+    add(error.value, 'error', 'analysis')
+  }
+}
 function handleScanWorkspace() { withBusy(async () => { const res = await api.scanWorkspace(); add(`扫描完成，新增 ${res.added} 本小说`, 'info', 'analysis') }, '扫描工作区') }
 function handleRemove(index: number) { withBusy(async () => { await api.removeQueueItem(index); add(`已移出队列项 #${index}`, 'info', 'analysis') }, '移出队列') }
 function handleMoveUp(index: number) { withBusy(async () => { await api.moveQueueItemUp(index) }, '上移') }
@@ -272,7 +284,7 @@ const STALL_WARN_SEC = 480
 const tooltips: Record<string, string> = {
   // 工具栏
   scan_workspace: '扫描 working_directory 下的 .txt 文件，自动加入队列',
-  download_logs: '新窗口打开完整运行日志（含调试信息与 Python 技术日志）',
+  download_logs: '下载完整运行日志（含调试信息与 Python 技术日志）',
   // 章节输入
   chapter_input: '0 或留空 = 自动跟踪最新章节；输入数字 = 跳到指定章节',
   // Session token 累计 5 项
@@ -418,7 +430,7 @@ onUnmounted(() => {
         <span class="total-item" v-tooltip="tooltips.session_hit_rate">命中率 <CountUp :value="sessionTotal.hitRate" :format="fmtPercent" /></span>
         <span class="total-item" v-tooltip="tooltips.session_total">总消耗 <CountUp :value="sessionTotal.total" :format="fmt" /></span>
       </div>
-      <a href="/api/analysis/logs" target="_blank" class="glass-button" style="font-size: 12px" v-tooltip="tooltips.download_logs">下载日志</a>
+      <button class="glass-button" style="font-size: 12px" v-tooltip="tooltips.download_logs" @click="handleDownloadLogs">下载日志</button>
     </div>
 
     <div class="split-grid">

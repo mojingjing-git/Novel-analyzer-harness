@@ -77,3 +77,19 @@ def test_stderr_tee_survives_none_orig():
     # 顶部 None 补齐保证 _orig 不为 None（这是 __getattr__ 代理安全的前提）
     assert "if sys.stdout is None:" in source
     assert "if sys.stderr is None:" in source
+
+
+def test_api_get_session_token_reads_env():
+    """Api.get_session_token 从 SESSION_TOKEN_ENV 读取、未设返回空串（PR-1 收尾）
+
+    前端 client.ts 经 pywebview js_api 取 token 给所有 fetch 附加
+    X-Session-Token header；方法名是前端 sessionToken.ts 的硬契约
+    （frontend/src/api/sessionToken.test.ts 同步锁定），改名必须两侧同步。
+
+    源码级断言（与文件既有风格一致，不 import desktop.py——其顶层副作用
+    含 stdout 重绑 / chdir 会污染 pytest 进程）。
+    """
+    source = _load_desktop_source()
+    assert "def get_session_token(self)" in source
+    # 未设环境变量（浏览器 dev 模式）返回空串而非抛错
+    assert 'os.environ.get(SESSION_TOKEN_ENV, "")' in source

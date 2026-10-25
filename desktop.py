@@ -416,6 +416,17 @@ class Api:
         except Exception:
             pass
 
+    def get_session_token(self) -> str:
+        """返回会话 token，前端 fetch 据此附加 X-Session-Token header（PR-1 收尾）。
+
+        信任域前提：pywebview js_api 只暴露给 webview 当前加载的页面，而本应用
+        webview 只加载本地 dist（不渲染远程内容），与 /ws/progress 的 Origin
+        白名单同一信任模型——单用户本地应用中 webview JS 与 token 同信任域，
+        不构成提权。未设环境变量（浏览器 dev 模式）返回空串，前端保持 null、
+        不附加 header（后端 env 未设时本就放行）。token 不落日志、不进 localStorage。
+        """
+        return os.environ.get(SESSION_TOKEN_ENV, "")
+
 
 def _get_hwnd() -> int | None:
     """从 pywebview Window 拿到 Win32 窗口句柄（hwnd），不可用时返回 None

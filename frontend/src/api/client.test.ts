@@ -1,9 +1,10 @@
 /** request() 行为契约：JSON 解析/错误提取/非 JSON 显式失败 */
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { api } from './client'
+import { __setSessionTokenForTests } from './sessionToken'
 
 function mockFetch(body: string, ok = true, status = 200, statusText = 'OK') {
-  const fn = vi.fn(async () => ({
+  const fn = vi.fn(async (_path: string, init?: RequestInit) => ({
     ok, status, statusText,
     text: async () => body,
   }))
@@ -11,7 +12,15 @@ function mockFetch(body: string, ok = true, status = 200, statusText = 'OK') {
   return fn
 }
 
-afterEach(() => vi.unstubAllGlobals())
+/** 取 mock fetch 首次调用的请求 headers（调用方传的 init） */
+function firstHeaders(fn: ReturnType<typeof mockFetch>): Record<string, string> {
+  return (fn.mock.calls[0]?.[1]?.headers ?? {}) as Record<string, string>
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+  __setSessionTokenForTests(null)
+})
 
 describe('client.request', () => {
   it('合法 JSON 正常解析', async () => {
@@ -35,5 +44,60 @@ describe('client.request', () => {
       message: '书目不存在',
       status: 404,
     })
+  })
+})
+
+describe('client.request X-Session-Token（PR-1 收尾）', () => {
+  it('token 已注入时请求附带 X-Session-Token header', async () => {
+    __setSessionTokenForTests('tok-abc')
+    const fn = mockFetch('{"a":1}')
+    await api.health()
+    expect(firstHeaders(fn)['X-Session-Token']).toBe('tok-abc')
+  })
+
+  it('token 为 null（浏览器 dev）时不附带该 header', async () => {
+    __setSessionTokenForTests(null)
+    const fn = mockFetch('{"a":1}')
+    await api.health()
+    expect(firstHeaders(fn)['X-Session-Token']).toBeUndefined()
+  })
+
+  it('POST + body 时 token 与 Content-Type 共存（token 最后合并、不可覆盖既有键）', async () => {
+    __setSessionTokenForTests('tok-abc')
+    const fn = mockFetch('{"ok":true}')
+    await api.startAnalysis()
+    const h = firstHeaders(fn)
+    expect(h['Content-Type']).toBe('application/json')
+    expect(h['X-Session-Token']).toBe('tok-abc')
+  })
+})
+
+describe('client.downloadLogs（PR-1 收尾）', () => {
+  it('200 text/plain 触发 blob 下载且不抛错（独立 fetch，绕开 request() 非 JSON 抛错契约）', async () => {
+    __setSessionTokenForTests('tok-abc')
+    const createObjectURL = vi.fn(() => 'blob:mock')
+    const revokeObjectURL = vi.fn()
+    vi.stubGlobal('URL', { createObjectURL, revokeObjectURL } as unknown as typeof URL)
+    const fn = vi.fn(async (_path: string, init?: RequestInit) => ({
+      ok: true, status: 200, statusText: 'OK',
+      text: async () => '',
+      blob: async () => new Blob(['log content']),
+    }))
+    vi.stubGlobal('fetch', fn)
+    await expect(api.downloadLogs()).resolves.toBeUndefined()
+    expect(firstHeaders(fn as unknown as ReturnType<typeof mockFetch>)['X-Session-Token']).toBe('tok-abc')
+    expect(createObjectURL).toHaveBeenCalledOnce()
+  })
+
+  it('403 时抛错并带 status', async () => {
+    __setSessionTokenForTests(null)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: false, status: 403, statusText: 'Forbidden',
+        text: async () => '', blob: async () => new Blob(),
+      })),
+    )
+    await expect(api.downloadLogs()).rejects.toMatchObject({ status: 403 })
   })
 })

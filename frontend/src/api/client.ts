@@ -1,5 +1,7 @@
 // API 客户端 — fetch 封装 + 全部 TS 类型定义
 
+import { getSessionToken, initSessionToken } from './sessionToken'
+
 export interface QueueItemDto {
   name: string
   blocks_dir: string
@@ -266,9 +268,18 @@ export interface ForeshadowRankItem {
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  // PR-1 收尾（2026-09-30）：受保护端点需 X-Session-Token header。
+  // 合并顺序：Content-Type 默认 → 调用方 headers 覆盖 → token 最后（不可被覆盖）。
+  // 注意 options 里的 headers 必须先展开再合并，整体 ...options 会把 headers 键整个替换。
+  const { headers: extraHeaders, ...rest } = options ?? {}
+  const t = getSessionToken()
   const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
+    ...rest,
+    headers: {
+      'Content-Type': 'application/json',
+      ...extraHeaders,
+      ...(t ? { 'X-Session-Token': t } : {}),
+    },
   })
   // 关键：响应体只读取一次。之前先 res.json() 再 res.text() 会因为流已被消费而抛
   // “body stream already read”。现在统一读成文本，再按需要 JSON.parse。
@@ -321,7 +332,7 @@ export const api = {
   getModels: () => request<{ models: string[] }>('/api/settings/models'),
   previewModels: (params: { base_url?: string; api_key?: string; provider?: string }) =>
     request<{ models: string[] }>('/api/settings/preview/models', { method: 'POST', body: JSON.stringify(params) }),
-  probeThinking: (params: { base_url?: string; api_key?: string; provider?: string }) =>
+  probeThinking: (params: { base_url?: string; api_key?: string; provider?: string; model?: string }) =>
     request<ProbeThinkingResult>('/api/settings/probe-thinking', { method: 'POST', body: JSON.stringify(params) }),
 
   // 分析控制
@@ -475,4 +486,30 @@ export const api = {
     request<{ content: unknown; is_json: boolean }>(`/api/aggregate/${seg(book_id)}/file/${seg(name)}`),
   exportAggregateExcel: (book_id: string) =>
     request<{ ok: boolean; path: string }>(`/api/aggregate/${seg(book_id)}/excel`, { method: 'POST' }),
+
+  // 下载运行日志（PR-1 收尾）。受保护端点且返回 text/plain——不复用 request()
+  // 的 JSON 解析契约（其 P3 规则对 200 + 非 JSON 显式抛错），独立 fetch + blob。
+  downloadLogs: async (): Promise<void> => {
+    const t = getSessionToken()
+    const res = await fetch('/api/analysis/logs', {
+      headers: t ? { 'X-Session-Token': t } : {},
+    })
+    if (!res.ok) {
+      const err = new Error(`下载日志失败 (${res.status} ${res.statusText})`)
+      ;(err as Error & { status?: number }).status = res.status
+      throw err
+    }
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'analyzer.log'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  },
 }
+
+// PR-1 收尾：模块加载即尝试取 token；浏览器环境拿不到则保持 null（不附加 header）
+initSessionToken()
