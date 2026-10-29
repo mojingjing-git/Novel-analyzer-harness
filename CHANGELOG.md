@@ -2,6 +2,40 @@
 
 ---
 
+## [Unreleased] - 2026-10-30（v2 S0 基线：测试环境噪声根治 + CI + 合成语料）
+
+### 测试环境（S0-4）
+
+- **根治 `NO_PROXY` 方括号导致的 74 个假失败**：本机 `NO_PROXY` 含方括号 IPv6 写法 `[::1]`，httpx 把它当 URL 解析，端口段 `:1]` 转 int 失败 → `httpx.InvalidURL: Invalid port: ':1]'`，在 `backend/core/llm_client.py:143` 的 `AsyncOpenAI(...)` 构造期抛出。凡构造 `AsyncOpenAI`/`AsyncAnthropic` 的用例整片失败（`test_anthropic_provider.py` 7 例、`test_summary_checkpoint.py` 6 例等），同环境实测 74 failed / 790 passed
+- `pytest_isolation.sanitize_proxy_env()` 在 `install()` 内、任何 `backend.*` import 之前执行：把 no_proxy 中的 `[::1]` 改写为等价裸写法 `::1`，丢弃端口段不可解析的代理 URL。**只改本进程 `os.environ`，不触碰宿主全局环境**
+- 新增 `assert_proxy_env_sane()`，由根 `conftest.py` 的 autouse fixture 双向校验
+- 验收：原始未清理的代理环境下直接 `python -m pytest` → 892 用例全绿（此前 74 failed / 790 passed）
+- 新增 `backend/tests/test_pytest_isolation_proxy.py`（21 例）：归一化单测、代理 URL 可解析性单测、进程内已净化断言、以及症状级回归（构造 `AsyncOpenAI`/`AsyncAnthropic` 不得抛异常）
+
+### CI 与依赖（S0-2/S0-3/S0-6）
+
+- 新增 `.github/workflows/ci.yml`：`backend` job 跑 Windows + Ubuntu 双平台矩阵（Windows 覆盖文件替换/路径/CRLF 行为），`frontend` job 跑 `npm ci` + vitest + `npm run build`（含 `vue-tsc`），`hygiene` job 拦截被误跟踪的 `config.json`/`.env`/`session.token`/`queue_state*.json`/`*.log`/`*.tmp`
+- workflow 内显式声明**不带方括号**的 `NO_PROXY`，避免 CI 复现本机写法
+- 新增 `requirements-dev.txt`：`pytest` / `pytest-asyncio` / `pytest-timeout` / `pytest-cov`
+- CI 以 `-p pytest_timeout --timeout=180 --timeout-method=thread` 强制并发用例超时（此前 `agent.md` 记录该债已挂两个月）；本地不强制，避免耦合开发机插件
+
+### 合成语料（S0-5）
+
+- 新增 `backend/tests/fixtures/vnext_corpus.py`：24 章确定性中文语料，覆盖 6 类边界——断号（第 17 章缺失）、多章块（块边界跨缺口）、同章先埋后收（第 12 章）、补跑缺口（第 9/22 章）、有互动与无互动角色（第 14 章对话 vs 第 15 章城东/城西各做各事）、引用歧义（第 19 章"他又提起那顶铜匣"——引用真实且词面相关，但语义不构成回收）
+- 语料为**确定性生成**（无随机、无时间戳），同版本逐字节可重现；附 `CorpusTruth` 地面真值供断言
+- 新增 `backend/tests/test_vnext_corpus_fixture.py`（7 例）自检上述边界齐全
+
+### 基线归档（S0-1）
+
+- 新增 `docs/BASELINE-2026-10-30.md`：工具链版本、代码规模（backend 141 文件 / 26,688 行；frontend 75 文件 / 11,763 行）、测试基线（892 收集用例）、配置字段清单（仅字段名）、产物基线、已知未达标项登记
+
+### 说明
+
+- 本批**不含行为修复**：C-01（分类器误报致永久失败）等全部功能缺陷留待 S1 及后续批次
+- 旧 v1 产物（`workspace/`）未做任何迁移或修改；PLAN v2 `legacy_artifact_support: false`
+
+---
+
 ## [Unreleased] - 2026-10-25（厂商错误码分类体系 error_taxonomy）
 
 ### 错误分类器（T1）

@@ -1,0 +1,8 @@
+# 开发/测试依赖（不含运行时依赖，运行时装 requirements.txt）
+# 用法：pip install -r requirements.txt -r requirements-dev.txt
+pytest>=8.0.0
+pytest-asyncio>=1.4.0
+# C-17：并发用例缺超时兜底，一个 hang 会挂死整条流水线（agent.md 已记此债两个月）
+pytest-timeout>=2.3.0
+# 覆盖率门禁（当前只统计后端，基线值待 S0 实测后固化）
+pytest-cov>=5.0.0

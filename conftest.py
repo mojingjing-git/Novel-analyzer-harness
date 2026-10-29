@@ -30,6 +30,8 @@ import pytest  # noqa: E402  (隔离安装后再 import，保持文件意图清�
 @pytest.fixture(autouse=True)
 def _reset_runtime_singletons():
     pytest_isolation.assert_isolation_intact()
+    pytest_isolation.assert_proxy_env_sane()
     yield
     pytest_isolation.assert_isolation_intact()
+    pytest_isolation.assert_proxy_env_sane()
     pytest_isolation.reset_runtime_singletons()

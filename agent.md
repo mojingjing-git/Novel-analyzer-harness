@@ -1249,6 +1249,15 @@ mypy backend/
 - **测试**：`test_error_taxonomy.py` 37 例（日志真实串 gold fixtures + P2-4 歧义样本 + T2.1/T2.2/T2.4 集成）；既有 test_moderation/test_llm_moderation_sniff/test_moderation_threshold 零改动全过（text 置信 3 次短路语义是守卫）
 - **plan**：`docs/PLAN-provider-error-taxonomy-2026-09-30.md`（§8 独立复审 4 项 P2 + §9 二次复审 P2-5 共 5 项修订并入正文后实施）
 
+### 10.35 PLAN v2 S0：测试环境噪声根治 + CI + 合成语料（2026-10-30）
+
+- **改动**：`pytest_isolation.py` 新增 `normalize_no_proxy()` / `_proxy_url_is_parseable()` / `sanitize_proxy_env()` / `assert_proxy_env_sane()`，`install()` 内在任何 `backend.*` import 之前调用净化；根 `conftest.py` 的 autouse fixture 前后双向校验；新增 `.github/workflows/ci.yml`（backend Windows+Ubuntu 矩阵、frontend npm ci+vitest+build、hygiene 拦截误跟踪产物）、`requirements-dev.txt`（含 `pytest-timeout`/`pytest-cov`）、`backend/tests/fixtures/vnext_corpus.py`（24 章确定性语料 + `CorpusTruth`）、`backend/tests/test_vnext_corpus_fixture.py`（7 例）、`backend/tests/test_pytest_isolation_proxy.py`（21 例）、`docs/BASELINE-2026-10-30.md`
+- **原因**：本机 `NO_PROXY` 含方括号 IPv6 `[::1]`，httpx 当 URL 解析 → `Invalid port: ':1]'` → `AsyncOpenAI` 构造期抛 `InvalidURL`，凡构造 SDK 客户端的用例整片假失败（同环境 74 failed / 790 passed）。此前只能靠「进程内手工清代理」绕过，每次新机器/新会话都要重查一遍
+- **要点**：只改本进程 `os.environ`，不触碰宿主全局环境；可解析的代理原样保留，因此依赖代理的 CI 不受影响；CI 显式声明**不带方括号**的 `NO_PROXY`
+- **验收**：原始未清理代理环境下 `python -m pytest` → 892 用例全绿（S0 前 864）；`--collect-only` 3.14s
+- **未做**：本批**不含功能修复**，C-01 等全部行为缺陷留待 S1 及后续批次；v1 产物零迁移
+- **plan**：`docs/PLAN-v2-long-novel-reliability-2026-10-30.md` §S0；问题清单见 `docs/REPORT-review-consolidated-2026-10-30.md`
+
 ---
 
 ## 13. i18n 接口预留（L2 阶段，2026-09-02）

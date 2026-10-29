@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # 不用本机那种带方括号的写法：httpx 会把 "[::1]" 当 URL 解析，
+  # 端口段 ":1]" 转 int 失败 → AsyncOpenAI 构造期抛 InvalidURL（曾致 74 例假失败）。
+  NO_PROXY: "localhost,127.0.0.1,::1"
+  no_proxy: "localhost,127.0.0.1,::1"
+  PYTHONIOENCODING: "utf-8"
+  PYTHONUTF8: "1"
+
+jobs:
+  backend:
+    name: backend (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows 覆盖文件替换 / 路径 / CRLF 相关行为；Ubuntu 覆盖纯逻辑。
+        # 报告口径只声明各平台实际跑到的部分，不互相代称。
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Show collected count
+        run: python -m pytest --collect-only -p no:cacheprovider
+
+      - name: Run tests
+        # --timeout 由 CI 强制；本地未装 pytest-timeout 时不启用，避免耦合开发机。
+        # 测试内不访问网络、不使用真实密钥（pytest_isolation 会剔除 API key 并隔离 cwd）。
+        run: python -m pytest -p no:cacheprovider -p pytest_timeout --timeout=180 --timeout-method=thread -o addopts=""
+
+      - name: Upload failure log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-failure-${{ matrix.os }}
+          path: |
+            .pytest_cache/v/cache/lastfailed
+          if-no-files-found: ignore
+          retention-days: 7
+
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Type check + build
+        # build 脚本本身是 `vue-tsc -b && vite build`，类型检查已在其中
+        run: npm run build
+
+  hygiene:
+    name: repo hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No tracked secrets or runtime artifacts
+        run: |
+          set -e
+          fail=0
+          for pattern in 'config.json' '.env' 'session.token' 'queue_state*.json' '*.log' '*.tmp'; do
+            hits=$(git ls-files | grep -E "(^|/)${pattern}\$" | grep -v '^frontend/tsconfig.json$' || true)
+            if [ -n "$hits" ]; then
+              echo "::error::tracked artifact matching ${pattern}: $hits"
+              fail=1
+            fi
+          done
+          exit $fail

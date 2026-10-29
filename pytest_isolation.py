@@ -26,12 +26,26 @@ import configparser
 import json
 import logging
 import os
+import re
 import shutil
 import tempfile
 from pathlib import Path
 
 SECRET_ENV_KEYS = ("LLM_API_KEY", "MINIMAX_API_KEY", "NOVEL_ANALYZER_SESSION_TOKEN")
 SYNTHETIC_MODEL = "test-model"
+
+# S0（PLAN v2 §S0-4、REPORT-review C-17）：代理环境净化。
+# 不删除可用代理，只把「本进程内会让 httpx 构造期抛异常」的写法改成等价可解析写法。
+PROXY_ENV_KEYS = (
+    "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
+    "http_proxy", "https_proxy", "all_proxy", "no_proxy",
+)
+# 记录本次进程内实际发生的修正（诊断用；不影响宿主环境）
+PROXY_SANITIZATION: dict[str, str] = {}
+
+_BRACKETED_HOST = re.compile(r"^\[(?P<host>.+)\]$")
+_SCHEME_RE = re.compile(r"^(?P<scheme>[A-Za-z][A-Za-z0-9+.\-]*)://")
+_DIGITS_RE = re.compile(r"^\d+$")
 
 # 由 install() 填充
 REPO_ROOT: Path
@@ -64,6 +78,87 @@ def _read_testpaths(repo_root: Path) -> list[str]:
     return raw.split()
 
 
+def normalize_no_proxy(value: str) -> str:
+    """把 ``no_proxy``/``NO_PROXY`` 里的方括号 IPv6 改写成等价的裸写法。
+
+    httpx（0.28.x 与 0.28.1 同系）把 no_proxy 的每个条目当 URL 解析，条目
+    ``[::1]`` 会被切出端口段 ``:1]``，``int(':1]')`` 抛
+    ``ValueError: invalid literal for int() with base 10`` 并被包装成
+    ``httpx.InvalidURL: Invalid port: ':1]'``。裸 ``::1`` 语义相同且可解析。
+    """
+    tokens: list[str] = []
+    for raw in value.split(","):
+        token = raw.strip()
+        if not token:
+            continue
+        match = _BRACKETED_HOST.match(token)
+        if match:
+            token = match.group("host")
+        tokens.append(token)
+    return ",".join(tokens)
+
+
+def _proxy_url_is_parseable(value: str) -> bool:
+    """代理 URL 的端口段必须为纯数字，否则 httpx 构造期会抛 InvalidURL。"""
+    match = _SCHEME_RE.match(value.strip())
+    if not match:
+        return True  # 非 URL 形式（如 all_proxy=socks5h://）交给下游判断
+    rest = value.strip()[match.end():]
+    hostport = rest.split("/", 1)[0].rsplit("@", 1)[-1]
+    if hostport.startswith("["):  # IPv6 字面量：[::1]:8080
+        closing = hostport.find("]")
+        if closing < 0:
+            return False
+        tail = hostport[closing + 1:]
+        return not tail or (tail.startswith(":") and _DIGITS_RE.match(tail[1:]) is not None)
+    if ":" in hostport:
+        port = hostport.rsplit(":", 1)[1]
+        return bool(_DIGITS_RE.match(port))
+    return True
+
+
+def sanitize_proxy_env() -> dict[str, str]:
+    """在测试进程内修正会让 HTTP 客户端构造期抛异常的代理写法。
+
+    只改本进程 ``os.environ``，不触碰宿主全局环境（PLAN v2 §S0-4、§1.3）。
+    可解析的代理原样保留，因此依赖代理的 CI 不受影响。
+    """
+    changes: dict[str, str] = {}
+    for key in PROXY_ENV_KEYS:
+        value = os.environ.get(key)
+        if value is None:
+            continue
+        fixed = normalize_no_proxy(value) if "no_proxy" in key.lower() else value.strip()
+        if "no_proxy" not in key.lower() and not _proxy_url_is_parseable(fixed):
+            del os.environ[key]
+            changes[key] = f"{value} -> <dropped:unparseable>"
+            continue
+        if fixed != value:
+            os.environ[key] = fixed
+            changes[key] = f"{value} -> {fixed}"
+    PROXY_SANITIZATION.clear()
+    PROXY_SANITIZATION.update(changes)
+    return changes
+
+
+def assert_proxy_env_sane() -> None:
+    """确认进程内已无会让 httpx 抛 InvalidURL 的代理写法。"""
+    problems: list[str] = []
+    for key in PROXY_ENV_KEYS:
+        value = os.environ.get(key)
+        if value is None:
+            continue
+        if "no_proxy" in key.lower():
+            if value != normalize_no_proxy(value):
+                problems.append(f"{key}={value!r} 仍含方括号 IPv6")
+        elif not _proxy_url_is_parseable(value):
+            problems.append(f"{key}={value!r} 端口段不可解析")
+    if problems:
+        raise RuntimeError(
+            "测试进程代理环境未净化，httpx 构造期会抛 InvalidURL：" + "; ".join(problems)
+        )
+
+
 def install(repo_root: Path) -> Path:
     """建立运行根隔离。必须在任何 backend.* import 之前调用，且只调用一次。"""
     global _installed, REPO_ROOT, ORIGINAL_CWD, ISOLATION_ROOT
@@ -78,6 +173,10 @@ def install(repo_root: Path) -> Path:
     }
 
     ISOLATION_ROOT = Path(tempfile.mkdtemp(prefix="novel-analyzer-pytests-")).resolve()
+
+    # 0) 代理环境净化：必须早于任何 backend.* import，因为 httpx 在
+    #    AsyncOpenAI/AsyncAnthropic 构造期就会解析 no_proxy 并可能抛 InvalidURL。
+    sanitize_proxy_env()
 
     # 1) cwd 先切到隔离根：此后任何「默认相对路径」写入都落在隔离根
     os.chdir(ISOLATION_ROOT)
