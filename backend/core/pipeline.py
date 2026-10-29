@@ -31,6 +31,7 @@ from .knowledge_base import KnowledgeBaseManager
 from .llm_client import LLMClient
 from .memory_state import MemoryState
 from ..core.moderation import is_moderation_error
+from ..core.error_taxonomy import ErrorClass, RETRY_POLICY, classify_message
 from ..ws_events import PipelineStatus
 from ..utils.export_utils import export_summary_report
 from ..utils.json_utils import extract_json_from_text, safe_parse_json
@@ -216,6 +217,10 @@ class AnalysisPipeline:
         # 运行概览在途块（block_id -> {chapter, range, started_at}）：LLM 调用窗口内登记，
         # 供 /api/analysis/status#inflight_blocks 给前端车道对账（WS 丢 done 的治本纠偏源）
         self._inflight_blocks: dict = {}
+        # 致命错误块登记（block_id -> 错误类别值，error_taxonomy T2.4/P2-2②）：
+        # AUTH/BILLING/CONTEXT_LENGTH/BAD_REQUEST 类失败确定性不可自愈，补跑轮剔除不重试。
+        # 审核类除外——skip_moderation_blocked=False 时用户明确要求补跑审核块
+        self._fatal_blocks: dict = {}
 
     async def _emit(self, payload: dict) -> None:
         """发进度（替代旧 progress.emit）"""
@@ -244,6 +249,17 @@ class AnalysisPipeline:
             rolling_client.request_stop()
         logger.info("收到停止请求")
 
+    def _retryable_failed_blocks(self, failed_block_ids: list) -> list:
+        """补跑列表过滤（T2.4）：剔除致命错误块（AUTH/BILLING/CONTEXT_LENGTH/BAD_REQUEST，
+        见 _analyze_one_block_impl 的登记逻辑）。全部为致命错误时返回空列表，调用方据此终止补跑。"""
+        retryable = [bid for bid in failed_block_ids if bid not in self._fatal_blocks]
+        skipped_fatal = len(failed_block_ids) - len(retryable)
+        if skipped_fatal:
+            sample = ",".join(sorted({self._fatal_blocks[bid] for bid in failed_block_ids
+                                      if bid in self._fatal_blocks}))
+            logger.warning(f"补跑剔除{skipped_fatal}个致命错误块（{sample}，重试成功率恒为零）")
+        return retryable
+
     async def run(self) -> dict:
         """
         执行分析任务（三阶段：预热 → 并发 → 补跑）。
@@ -251,6 +267,7 @@ class AnalysisPipeline:
         异常向上抛出，由调用方（service）捕获并转为 error 消息。
         """
         total_analyzed = 0
+        self._fatal_blocks.clear()  # 断点续跑/复用实例时防止上一轮的 fatal 登记残留
 
         logger.info(f"开始分析任务（并发数={self.config.analysis.concurrency}）: {self.directory}")
 
@@ -547,6 +564,11 @@ class AnalysisPipeline:
                                 if bid in state._failed_chapters and bid not in state.results]
             if not failed_block_ids:
                 break
+            # T2.4（P2-2②）：致命错误块（欠费/认证/参数/上下文）确定性不可自愈，不进补跑
+            failed_block_ids = self._retryable_failed_blocks(failed_block_ids)
+            if not failed_block_ids:
+                logger.warning("补跑终止：失败块全部为致命错误（API 余额不足/认证失败等），不再补跑")
+                break
             logger.info(f"补跑第{retry_round + 1}轮: {len(failed_block_ids)}个失败块")
             for block_id in failed_block_ids:
                 if self._stop_requested:
@@ -683,6 +705,13 @@ class AnalysisPipeline:
                 state.add_skipped(block_id, "内容审核拦截")
                 logger.warning(f"块{block_id}内容审核拦截，跳过（重试1次后仍拦截）")
                 return False, elapsed, ch_tokens, None, retry_info
+            # 致命错误登记（T2.4，P2-2 最小方案②）：stop 类错误重试成功率恒为零，
+            # 补跑轮据此剔除——欠费场景整场浪费从"剩余块数×4 次调用"降到"×1 次"。
+            # 审核类不登记（见 __init__ 注释）；err_text 为空/UNKNOWN 保守不登记
+            _verdict = classify_message(err_text)
+            if _verdict.cls is not ErrorClass.UNKNOWN and RETRY_POLICY[_verdict.cls] == "stop" \
+                    and _verdict.cls not in (ErrorClass.MODERATION_INPUT, ErrorClass.MODERATION_OUTPUT):
+                self._fatal_blocks[block_id] = _verdict.cls.value
             reason = "分析失败（LLM响应解析失败或重试耗尽）"
             state.add_failed(block_id, reason)
             logger.warning(f"块{block_id}分析失败: {reason}，耗时{elapsed:.1f}s，tokens={ch_tokens}")

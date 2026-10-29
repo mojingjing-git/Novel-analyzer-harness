@@ -1,54 +1,41 @@
 """
 内容审核拦截识别（provider 无关）
 
-三层检测：
-1. 结构化错误码（各 SDK 异常上的 error.code / 状态码语义）
-2. 自由文本关键词（智谱/小米等返回自然语言，中英文都覆盖）
-3. （在 llm_client 层处理）隐式信号：content_filter / 空内容
-
-标记以 [MODERATION] 前缀注入错误字符串，对调用方零侵入传递。
+2026-10-25 起判定逻辑迁移至 error_taxonomy.py（厂商错误码分类体系，见
+docs/PLAN-provider-error-taxonomy-2026-09-30.md T1.2）：
+- 码表/文本表由 taxonomy 持有并扩容（旧 10 值码 + 文本模式全量吸收）
+- 本模块保留 [MODERATION] 标记契约（mark_moderation / is_moderation_error /
+  MODERATION_MARKER 原样，pipeline/analyzer/前端零改动），判定函数转发 taxonomy
 """
 
 import re
 
+from .error_taxonomy import (
+    MODERATION_BODY_CODES,
+    MODERATION_TEXT_PATTERNS,
+    is_moderation_code as _is_moderation_code,
+    is_moderation_message as _is_moderation_message,
+)
+
 MODERATION_MARKER = "[MODERATION]"
 
-# 1) 结构化错误码（各家实测/文档样例）
-MODERATION_CODES = {
-    # MiniMax：1026=输入内容涉敏，1027=输出内容涉敏
-    "1026", "1027",
-    # OpenAI 兼容系 error.code
-    "content_policy_violation", "content_filter", "safety",
-    "moderation", "policy_violation", "unsupported_content",
-    "inappropriate_content", "harmful_content",
-}
+# 兼容导出：旧码表位置（现为 taxonomy 结构化码表中审核类目的键集，已扩容）
+MODERATION_CODES = set(MODERATION_BODY_CODES)
 
-# 2) 自由文本关键词（大小写不敏感，正则片段）
-MODERATION_TEXT_PATTERNS = [
-    # 中文
-    r"安全规范", r"内容审核", r"内容安全", r"敏感", r"违规", r"不合规",
-    r"不符合.{0,6}规范", r"被过滤", r"拒绝回答", r"涉敏", r"高风险",
-    r"风险内容", r"无法生成.{0,8}内容", r"涉及.{0,6}(色情|暴力|政治)",
-    # 英文
-    r"high risk", r"safety policy", r"moderation", r"sensitive",
-    r"content filter", r"filtered", r"prohibited", r"blocked",
-    r"violat", r"inappropriat", r"harmful", r"unsafe", r"unacceptable",
-]
+# 兼容导出：旧文本模式列表（现含标记/new_sensitive 等新增项）
+MODERATION_TEXT_PATTERNS = list(MODERATION_TEXT_PATTERNS)
+
 _MOD_TEXT_RE = re.compile("|".join(MODERATION_TEXT_PATTERNS), re.IGNORECASE)
 
 
 def is_moderation_code(code) -> bool:
     """结构化错误码判定（code 可为 str/int/None）"""
-    if code is None:
-        return False
-    return str(code).strip() in MODERATION_CODES
+    return _is_moderation_code(code)
 
 
 def is_moderation_message(message) -> bool:
     """自由文本关键词判定"""
-    if not message:
-        return False
-    return bool(_MOD_TEXT_RE.search(str(message)))
+    return _is_moderation_message(message)
 
 
 def mark_moderation(error: str) -> str:

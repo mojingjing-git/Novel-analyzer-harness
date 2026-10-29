@@ -2,6 +2,31 @@
 
 ---
 
+## [Unreleased] - 2026-10-25（厂商错误码分类体系 error_taxonomy）
+
+### 错误分类器（T1）
+
+- 新增 `backend/core/error_taxonomy.py`：`ErrorClass` 11 类枚举 + `RETRY_POLICY` 决策矩阵 + `classify_exception(e)`（结构化通道：异常属性码 / body 深挖含 MiniMax `base_resp` / HTTP 状态兜底，400/404/422 不兜底）+ `classify_message(msg)`（字符串通道永不 None：码串扫描 structured 置信 + 类文本正则 text 置信）
+- 码表覆盖 11 家厂商官方调研（OpenAI/Anthropic/DeepSeek/MiniMax/智谱/火山方舟/百炼/硅基/Kimi/OpenRouter + Ollama 文本兜底）；判定优先级写死：MODERATION_INPUT → OUTPUT → BILLING → CONTEXT_LENGTH → AUTH → BAD_REQUEST → RATE_LIMIT → SERVER → NETWORK → TIMEOUT；前插规则：百炼 `Throttling.*` 强制限流（覆盖 `insufficient_quota` 同名冲突）；条件规则：422 `unprocessable_entity_error` + 敏感 message → 输入审核（MiniMax Anthropic 皮肤，日志最大样本 ~5525 条），否则按参数错
+- 审核**判侧**：码表逐条带 input/output（1026 输入 / 1027 输出 / 方舟 SensitiveContentDetected 输入），双侧码默认 OUTPUT；`refusal`、裸词码（safety/moderation）、智谱 1000/1302 系仅 body 通道，不进消息扫描（防误报）
+- `moderation.py` 改转发层：`[MODERATION]` 标记契约（`mark_moderation`/`is_moderation_error`/`MODERATION_MARKER`）原样，pipeline/analyzer/前端零改动；旧码表 10 值全量吸收
+
+### 接入修复（T2）
+
+- **流式异常分类标记（原 bug 直接动机）**：`chat_stream` 的 except 块原本不做审核嗅探——MiniMax 1027（558 条）/Anthropic 皮肤 422 输入拦截（~5525 条）被当普通失败烧完整温度退火链（13-16 次计费调用/块，重试成功率恒为零）。现异常在场时即分类：审核打 `[MODERATION]`、RATE_LIMIT 顺手提取 Retry-After（流式此前从未做过）
+- **重试循环按 RETRY_POLICY 决策**（流式/非流式 × 温度/退避 4 处同构）：stop 类（AUTH/BILLING/CONTEXT_LENGTH/BAD_REQUEST）首次命中即停并附可读提示（"API 余额不足，请充值后重试"/"建议调小 analysis.block_size"等）；审核 MODERATION_INPUT/structured 首次短路、text 置信维持连续 3 次（WAF 误判守卫语义不变）；`_is_429` 的 "429" 子串判定 6 处替换为 RATE_LIMIT 分类（"1429" 类误报不再加码退避）
+- **pipeline 补跑 fatal 过滤（P2-2 最小方案②）**：stop 类失败块登记 `_fatal_blocks`、补跑轮剔除（全 fatal 则终止补跑）——欠费场景整场浪费从"剩余块数 × 4 次调用"降到"×1 次"；审核类不登记（`skip_moderation_blocked=False` 时用户明确要求补跑）
+- `chat()` 非流式 APIError / anthropic.APIStatusError 分支对齐 `classify_exception`（后者原仅文本嗅探，Anthropic 结构化码由此进入）
+
+### 行为变化与兼容
+
+- 仅两类行为变化：①stop 类从"烧 N 次重试"变"停 1 次"（官方文档背书，省钱无正确性风险）；②structured/输入侧审核 1 次即短路（原 3 次）——text 置信阈值不变
+- `[MODERATION]` 标记格式、pipeline skip 契约、FailureLogger JSON 格式均不变；回滚 revert llm_client/pipeline 接入点即可
+- 新测试 `backend/tests/test_error_taxonomy.py` 37 例（api_failures.log 真实串 gold fixtures + P2-4 歧义样本 + 集成用例）；既有 test_moderation / test_llm_moderation_sniff / test_moderation_threshold 零改动通过
+- plan：`docs/PLAN-provider-error-taxonomy-2026-09-30.md`（§8 独立复审 4 项 P2 + §9 二次复审 1 项 P2 修订并入正文后实施）
+
+---
+
 ## [Unreleased] - 2026-10-15（第三批清理，Step0–R5 完成、Step6 暂停）
 
 ### 测试隔离基建（Step0）

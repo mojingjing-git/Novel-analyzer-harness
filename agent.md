@@ -31,6 +31,7 @@
 │   │   ├── llm_client.py         # LLM 客户端主类（双协议调用 + 三层重试链 + 三分竞争）
 │   │   ├── llm_probe.py          # 禁用思考参数探测（probe_thinking_params 多模式检测）
 │   │   ├── llm_failure_logger.py # API 失败日志记录器（FailureLogger 单例，RotatingFileHandler）
+│   │   ├── error_taxonomy.py     # 厂商错误码分类体系（ErrorClass/RETRY_POLICY/classify_exception/classify_message，2026-10-25）
 │   │   ├── llm_stream.py         # 流式数据结构（StreamChunk/StreamResult）+ 双协议事件/响应解析
 │   │   ├── stream_progress.py    # 流式 Token 进度回调工厂（make_stream_progress_callback，章节/总结/风格三路径共用，2026-10-15 抽取）
 │   │   ├── analyzer.py           # 单章分析引擎
@@ -222,8 +223,12 @@
 
 **三层重试链：**
 1. 温度退火：`temp_max_retries` 次，温度 = max(0, 初始 - attempt × step)
-2. 指数退避：`backoff_max_retries` 次，等待 = min(2^N, 60s)
-3. 429 限流：额外 3 轮，尊重 Retry-After 头
+2. 指数退火：`backoff_max_retries` 次，等待 = min(2^N, 60s)
+3. 429 限流：额外 3 轮，尊重 Retry-After 头（流式路径 2026-10-25 起也提取 Retry-After）
+
+**stop 类立即停（error_taxonomy，2026-10-25）：** AUTH/BILLING/CONTEXT_LENGTH/BAD_REQUEST 首次命中即停
+（`_error_action()` 按 RETRY_POLICY 决策，附用户可读提示，官方文档背书"重试不可恢复"）；
+审核 MODERATION_INPUT/structured 首次短路、text 置信维持连续 3 次。pipeline 补跑轮剔除 fatal 块（`_fatal_blocks`）。
 
 **三分竞争（单次 chat 调用）：**
 - API 任务 / 停止事件等待 / 硬超时（timeout + 30s）
@@ -345,8 +350,8 @@ self._flushed_chapters: Set[int]           # 已落盘的章号集合
 - **关键类**：`LLMClient`
 - **关键方法**：`chat()`、`chat_with_retry()`（温度退火+指数退避+429 三层）、`chat_stream()`/`chat_stream_with_retry()`（H16 流式）、`chat_auto()`、`list_models()`、`detect_provider()`
 - **KV Cache 统计**：读取 `prompt_tokens_details.cached_tokens`
-- **审核识别**：`moderation_hit_from_exception()` 统一判定；审核拦截需连续 3 次命中才短路退出重试链（瞬时误判多给一轮温度尝试）
-- **重试等待**：统一经 `_sleep()` 封装；失败记录走 `llm_failure_logger._get_failure_logger()`
+- **审核识别**：`moderation_hit_from_exception()` 委托 `classify_exception`（2026-10-25 起）；审核拦截 structured/输入侧首次短路、text 置信连续 3 次命中才短路退出重试链（瞬时误判多给一轮温度尝试）
+- **重试等待**：统一经 `_sleep()` 封装；失败记录走 `llm_failure_logger._get_failure_logger()`；429 判定经 `classify_message`（原 `_is_429` "429" 子串判定已替换，`_is_429` 保留为兼容壳）
 - ⚠️ 单测 patch 注意：`AsyncOpenAI` 的 patch 目标是 `backend.core.llm_client.AsyncOpenAI`（test_config_robustness/test_streaming 流式路径）；probe 相关 patch 在 `backend.core.llm_probe`
 
 #### llm_probe.py（277行）
@@ -397,9 +402,17 @@ self._flushed_chapters: Set[int]           # 已落盘的章号集合
   2. 8 维语义风格（LLM）：signature_expressions/narrative_rhythm/dialogue_style/rhetorical_preferences/emotional_expression/narrative_voice/information_control/narrator_and_genre
 - **采样策略**：前半随机 3 章 + 后半随机 3 章，每章随机位置取 1500 字
 
-#### moderation.py（64行）
-- **三层检测**：结构化错误码 + 自由文本关键词 + 隐式信号
+#### moderation.py（转发层）
+- **职责**：`[MODERATION]` 标记契约（`mark_moderation`/`is_moderation_error`/`MODERATION_MARKER` 原样，pipeline/analyzer/前端零改动）；码表与文本判定 2026-10-25 起转发 error_taxonomy
 - **标记机制**：`[MODERATION]` 前缀注入错误字符串
+
+#### error_taxonomy.py（厂商错误码分类体系，2026-10-25）
+- **`classify_exception(e)`**：结构化通道——异常属性码（`e.code`/`e.type`）→ body 深挖（OpenAI `error.code/type`、MiniMax `base_resp.status_code`、方舟/硅基 `error.code`）→ HTTP 状态兜底（401/403/402/413/429/5xx；**400/404/422 不兜底**，未识别返回 None 走保守退避）
+- **`classify_message(msg)`**：字符串通道永不 None——码串扫描（structured 置信：数字码 `\b` 边界 + snake/camel 码子串，判定结果靠它穿越字符串边界）→ 类文本正则（text 置信）
+- **判定优先级写死（P2-4）**：MODERATION_INPUT → MODERATION_OUTPUT → BILLING → CONTEXT_LENGTH → AUTH → BAD_REQUEST → RATE_LIMIT → SERVER → NETWORK → TIMEOUT → UNKNOWN；前插规则：百炼 `Throttling.*`；条件规则：422 `unprocessable_entity_error` + 敏感 message → 输入审核（MiniMax Anthropic 皮肤，日志 ~5525 条的最大样本），否则 BAD_REQUEST
+- **审核判侧（P2-5）**：码表逐条带侧（1026 输入/1027 输出/方舟 SensitiveContentDetected 输入），双侧码默认 OUTPUT（保留 3 次短路）；`refusal`/裸词码（safety/moderation 等）/智谱 1000/1302 系仅 body 通道，不进消息扫描（防误报）
+- **接入点**：流式生成器 except（分类 + 审核标记 + Retry-After 提取，llm_client D3）、重试循环 4 处（`_error_action()` 决策）、chat() APIError/anthropic.APIStatusError 分支、pipeline 补跑 fatal 过滤（`_fatal_blocks` + `_retryable_failed_blocks()`，P2-2 最小方案②）
+- **gold fixtures**：`backend/tests/test_error_taxonomy.py`（真实日志串 + 厂商码样例；**改码表/优先级前先看**）
 
 ### 5.2 服务层（backend/services/）
 
@@ -1227,6 +1240,14 @@ mypy backend/
 - **未做**：Step6（旧 schema 兼容）用户要求先讨论——已确认缺陷：`models/knowledge.py` 的 `_legacy_text` marker 在「旧层字段 → from_dict → to_dict → 再 from_dict」两轮往返后 `rolling_structured` 变 `{}`（旧滚动摘要静默丢失），修复须先写失败回归；伏笔 batch 字段仍在写入，删除/迁移另立方案
 - **回归**：各步定向集与全量数字见 REPORT（口径不一，以各步实际命令为准）；当前默认收集 **827** 用例（2026-10-25 实测）；前端 249 passed / vue-tsc 通过（清理未触前端）；Ruff F401/F811/F841/F821/F822/F823 全过；每步独立 patch 存 `docs/patches/`
 - **plan**：`docs/PLAN-cleanup-batch-3-2026-10-14.md`（Step6/R6 未授权，不自动回访）
+
+### 10.34 厂商错误码分类体系 error_taxonomy（plan 2026-09-30，两轮复审后实施）
+
+- **改动**：新增 `backend/core/error_taxonomy.py`（ErrorClass 11 类 + RETRY_POLICY + `classify_exception`/`classify_message` 双通道 + 各厂商结构化码表，优先级 MODERATION→BILLING→CONTEXT→AUTH→BAD_REQUEST→RATE_LIMIT→SERVER→NETWORK→TIMEOUT 写死）；moderation.py 改转发层（`[MODERATION]` 契约零改动）；llm_client 流式生成器 except 分类+标记+Retry-After 提取（原 bug：流式异常不做审核嗅探，558+5525 条日志全链白烧）、重试循环 4 处 `_error_action()` 决策（stop 类首次即停+可读提示、structured/输入侧审核首次短路、text 维持 3 次）、`_is_429` 子串判定 6 处替换；pipeline 补跑 fatal 过滤（`_fatal_blocks`，欠费场景整场浪费 剩余块数×4 → ×1 次调用）
+- **原因**：日志实证三类浪费——MiniMax 1027/422 输入拦截被当普通失败烧 13-16 次/块（重试成功率恒为零）、402 计费错烧全链、429 伪装的账单错（OpenAI insufficient_quota/智谱 1113）被当限流退避；调研 11 家厂商官方文档收敛码表（"按 HTTP 状态码必错"，billing 必须按业务码白名单）
+- **判侧设计（复审 P2-5）**：审核码逐条带 input/output 侧，双侧默认 OUTPUT；MiniMax 皮肤 422 `unprocessable_entity_error` 条件规则区分输入审核 vs 真 Anthropic 参数错；`refusal`/裸词码仅 body 通道防消息误报
+- **测试**：`test_error_taxonomy.py` 37 例（日志真实串 gold fixtures + P2-4 歧义样本 + T2.1/T2.2/T2.4 集成）；既有 test_moderation/test_llm_moderation_sniff/test_moderation_threshold 零改动全过（text 置信 3 次短路语义是守卫）
+- **plan**：`docs/PLAN-provider-error-taxonomy-2026-09-30.md`（§8 独立复审 4 项 P2 + §9 二次复审 P2-5 共 5 项修订并入正文后实施）
 
 ---
 
