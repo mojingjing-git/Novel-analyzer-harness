@@ -19,13 +19,34 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterable, Mapping, Sequence
 
-from . import artifacts
+from . import artifacts, project, rolling
+from .analyzer import PROMPT_STRATEGY_VERSION, analyze_block
+from .blocks import BlockPlan, plan_blocks
+from .constants import VnextFormatError
 from .budget import Budget, Usage
+from .knowledge import (
+    KnowledgeStore,
+    load_store,
+    records_from_extracted,
+    save_store,
+    store_fingerprint,
+)
+from .prompt_limits import PromptLimits
+from .prompt_view import build_prompt_window
+from .results import (
+    ResultRecord,
+    ResultStrategy,
+    classify,
+    list_results,
+    make_result_id,
+    publish_result,
+)
 from .recheck_plan import (
     RecheckPlan,
     RecheckSummary,
@@ -245,3 +266,222 @@ def coverage_counts(
 ) -> "count_verdicts_result":
     verdicts = [v for v in outcome.verdicts.values()]
     return count_verdicts(verdicts, expected_candidate_ids=list(expected_candidate_ids))
+
+# ---------------------------------------------------------------------------
+# B1b：顺序跑整本
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class AnalysisOutcome:
+    """一次整本分析的结果摘要。"""
+
+    committed_blocks: int
+    coverage: "rolling.Coverage"
+    stop_reason: str
+    prompt_tokens: int
+    completion_tokens: int
+    unknown_usage_blocks: int
+    store_fingerprint: str
+
+    def to_dict(self) -> dict:
+        return {
+            "committed_blocks": self.committed_blocks,
+            "commit_cursor": self.coverage.commit_cursor,
+            "gaps": list(self.coverage.gaps),
+            "partial": self.coverage.partial,
+            "stop_reason": self.stop_reason,
+            "prompt_tokens": self.prompt_tokens,
+            "completion_tokens": self.completion_tokens,
+            "unknown_usage_blocks": self.unknown_usage_blocks,
+            "store_fingerprint": self.store_fingerprint,
+        }
+
+
+def knowledge_path(book_dir: Path) -> Path:
+    return project.derived_dir(book_dir) / "knowledge.json"
+
+
+def load_or_rebuild_store(book_dir: Path, *, plans: Sequence["BlockPlan"] | None = None) -> KnowledgeStore:
+    """读库；读不出来就按块序**重放**结果重建（纯本地，零模型调用）。
+
+    重放是安全的：``extracted`` 里带着来源，重放的库与一次跑完的库指纹相同
+    （见 ``test_vnext_knowledge_persist.py``）。读不出来时不能"当空库继续跑"——
+    那会让续跑得到与一次跑完不同的结论，且没人看得出来。
+    """
+    path = knowledge_path(book_dir)
+    if path.is_file():
+        try:
+            store, _meta = load_store(path)
+            return store
+        except VnextFormatError:
+            pass
+
+    store = KnowledgeStore()
+    records = list_results(book_dir)
+    signature_to_plan = {p.block_signature: p for p in (plans or [])}
+    for result in sorted(records.values(), key=lambda r: r.created_at):
+        facts, chars = records_from_extracted(result.extracted)
+        store.add_block(
+            block_signature=result.block_signature,
+            facts=facts,
+            character_records=chars,
+        )
+        signature_to_plan.pop(result.block_signature, None)
+    return store
+
+
+
+
+def _expected_context_fingerprints(
+    manifest, plans: Sequence[BlockPlan], records: Mapping[str, object], *, limits: PromptLimits
+) -> dict[str, str]:
+    """按块序重放，算出"每块分析时应当看到的窗口指纹"。
+
+    这是依赖链能判"续跑降质"的前提：期望值必须由**当前结果重放出的库**计算，
+    而不是拿库里现有的东西反推——否则库被改坏了，期望值也跟着坏。
+    """
+    by_sig: dict[str, object] = {}
+    for record in records.values():
+        if getattr(record, "status", None) == "SUCCEEDED":
+            by_sig[getattr(record, "block_signature", "")] = record
+
+    ordinal_of = {c.chapter_id: c.ordinal for c in manifest.chapters}
+    store = KnowledgeStore()
+    fingerprints: dict[str, str] = {}
+    for plan in plans:
+        first = min(ordinal_of[cid] for cid in plan.chapter_ids if cid in ordinal_of)
+        fingerprints[plan.block_signature] = build_prompt_window(
+            store, exclusive_before=first, limits=limits
+        ).fingerprint()
+        record = by_sig.get(plan.block_signature)
+        if record is not None:
+            facts, chars = records_from_extracted(getattr(record, "extracted", {}))
+            store.add_block(
+                block_signature=plan.block_signature,
+                facts=facts,
+                character_records=chars,
+            )
+    return fingerprints
+
+async def run_analysis(
+    book_dir: Path,
+    *,
+    client: object,
+    limits: "PromptLimits",
+    strategy: "ResultStrategy | None" = None,
+    block_size: int = 4,
+    max_blocks: int | None = None,
+    title: str | None = None,
+    plans: Sequence["BlockPlan"] | None = None,
+) -> AnalysisOutcome:
+    """按块序跑整本。顺序是硬的：每块的上下文依赖"它之前的块"，跳着跑就换了一套输入。"""
+    book_dir = Path(book_dir)
+    manifest = await asyncio.to_thread(project.load_manifest, book_dir)
+    plans = list(plans) if plans is not None else plan_blocks(manifest, block_size=block_size)
+    strategy = strategy or ResultStrategy(model_fingerprint="")
+
+    store = await asyncio.to_thread(load_or_rebuild_store, book_dir, plans=plans)
+    records = await asyncio.to_thread(list_results, book_dir)
+    context_fingerprints = _expected_context_fingerprints(
+        manifest, plans, records, limits=limits
+    )
+    verdict = classify(
+        manifest, plans, records, strategy=strategy,
+        context_fingerprints=context_fingerprints,
+    )
+
+    prior: list[str | None] = []
+    committed = 0
+    analysed = 0
+    stop_reason = "completed"
+    prompt_tokens = 0
+    completion_tokens = 0
+    unknown_usage = 0
+
+    for index, plan in enumerate(plans):
+        done = verdict.done.get(plan.block_signature)
+        if done is not None:
+            # 跳过判据必须是 classify.done（验过依赖），不是 is_block_fresh（只验源）
+            prior.append(done.result_id)
+            committed += 1
+            continue
+        if max_blocks is not None and analysed >= max_blocks:
+            stop_reason = "block_limit"
+            break
+        try:
+            run = await analyze_block(
+                book_dir,
+                plan,
+                client=client,
+                limits=limits,
+                strategy=strategy,
+                prior_result_ids=list(prior),
+                store=store,
+                title=title or manifest.title,
+            )
+        except Exception as exc:  # noqa: BLE001 - 记 FAILED 再停，不吞掉类型
+            await asyncio.to_thread(
+                _record_failure, book_dir, plan, strategy, str(exc)
+            )
+            stop_reason = f"failed:block{index}"
+            break
+
+        analysed += 1
+        committed += 1
+        if run.record.usage_status == "KNOWN":
+            prompt_tokens += run.record.prompt_tokens or 0
+            completion_tokens += run.record.completion_tokens or 0
+        else:
+            unknown_usage += 1
+
+        # 库的读改写与 publish 同一把书锁：两路并发 publish 会丢事实，
+        # 而"丢事实"与"没分析过"在界面上长得一样。
+        with project._lock_for(book_dir):  # noqa: SLF001 - 同包内复用书锁
+            facts, chars = records_from_extracted(run.record.extracted)
+            store.add_block(
+                block_signature=plan.block_signature,
+                facts=facts,
+                character_records=chars,
+            )
+            save_store(
+                knowledge_path(book_dir),
+                store,
+                meta={
+                    "source_snapshot_id": manifest.source_snapshot_id,
+                    "ordered_result_ids": [r for r in prior if r] + [run.record.result_id],
+                },
+            )
+        prior.append(run.record.result_id)
+
+    results = await asyncio.to_thread(list_results, book_dir)
+    slots = rolling.slots_from_results(plans, results.values())
+    coverage = rolling.build_coverage(plans, batch_size=max(1, block_size), states=slots)
+    return AnalysisOutcome(
+        committed_blocks=committed,
+        coverage=coverage,
+        stop_reason=stop_reason,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        unknown_usage_blocks=unknown_usage,
+        store_fingerprint=store_fingerprint(store),
+    )
+
+
+def _record_failure(book_dir: Path, plan: "BlockPlan", strategy: "ResultStrategy", message: str) -> None:
+    """把失败也写成一条结果：否则下次进来还是"没有结果"，看不出试过。"""
+    record = ResultRecord(
+        result_id=make_result_id(
+            block_signature=plan.block_signature,
+            prompt_strategy_version=PROMPT_STRATEGY_VERSION,
+            model_fingerprint=strategy.model_fingerprint,
+            dependency_fingerprint="",
+        ),
+        block_signature=plan.block_signature,
+        source_chapters=(),
+        status="FAILED",
+        model_fingerprint=strategy.model_fingerprint,
+        prompt_strategy_version=PROMPT_STRATEGY_VERSION,
+        error=message,
+    )
+    publish_result(book_dir, record)

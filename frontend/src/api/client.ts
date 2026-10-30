@@ -417,6 +417,11 @@ export const api = {
       rejected: VnextRejected[]
     }>('/api/vnext/books'),
   vnextQueue: () => request<VnextQueue>('/api/vnext/queue'),
+  vnextDeleteBook: (bookId: string, confirm: string) =>
+    request<{ book_id: string; deleted: boolean }>(
+      `/api/vnext/books/${seg(bookId)}?confirm=${seg(confirm)}`,
+      { method: 'DELETE' },
+    ),
   vnextBlocks: (bookId: string) =>
     request<{ book_id: string; blocks: VnextBlock[] }>(`/api/vnext/books/${seg(bookId)}/blocks`),
   vnextCreateProject: (payload: { title: string; text?: string; chapters?: { title: string; content: string }[] }) =>

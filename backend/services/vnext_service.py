@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import threading
 import time
 from pathlib import Path
@@ -380,6 +381,42 @@ def enqueue_book(payload: dict) -> dict:
             state.entries.append(entry)
             save_queue(state)
     return _queue_payload(state, enqueued=book_id, created=created)
+
+
+def delete_book(book_id: str, *, confirm: str) -> dict[str, Any]:
+    """删除一个 vnext 项目。
+
+    顺序是硬的：**先 rename 成 ``.trash-<ts>``，再清队列，最后尽力 rmtree**。
+
+    为什么不能直接 rmtree：删到一半失败会留下一个残缺目录，`scan_projects` 会把它判成
+    ``LEGACY_DIR`` —— 用户看到"我的项目变成了旧版本"，而且再也删不掉（界面只对 vnext
+    项目给删除入口）。rename 是原子的：一旦改名成功，这本书立刻从列表消失，后续失败都
+    只是留下垃圾，不会变成错误状态。
+    """
+    book_id = (book_id or "").strip()
+    if not book_id:
+        raise VnextFormatError(ErrorCode.INVALID_FIELD_VALUE, "book_id 不能为空")
+    if confirm != book_id:
+        # 二次确认要输入完整 book_id：删书不可撤销，按一下回车就删的风险太高
+        raise VnextFormatError(
+            ErrorCode.INVALID_FIELD_VALUE,
+            "确认名不匹配：请原样输入 book_id 再删除",
+            path="confirm",
+        )
+
+    ref = registry.locate_project(data_root(), book_id)
+    book_dir = Path(ref.path)
+    trash = data_root() / f".trash-{int(time.time())}-{book_id}"
+    os.replace(book_dir, trash)
+
+    # 队列里若还有它，摘掉；不在就算了（删除不该因为"没入队"而失败）
+    try:
+        dequeue_book(book_id)
+    except VnextFormatError:
+        pass
+
+    shutil.rmtree(trash, ignore_errors=True)
+    return {"book_id": book_id, "deleted": True, "trash": trash.name}
 
 
 def dequeue_book(book_id: str) -> dict:

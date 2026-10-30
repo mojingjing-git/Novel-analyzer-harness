@@ -161,6 +161,15 @@ async def create_project(payload: dict):
         raise _http_error(exc) from exc
 
 
+@router.delete("/books/{book_id}")
+async def delete_book(book_id: str, confirm: str = "") -> dict:
+    """删除项目。``confirm`` 必须原样等于 ``book_id``（删书不可撤销）。"""
+    try:
+        return await asyncio.to_thread(vnext_service.delete_book, book_id, confirm=confirm)
+    except VnextFormatError as exc:
+        raise _http_error(exc) from exc
+
+
 @router.get("/books/{book_id}/blocks")
 async def get_blocks(book_id: str):
     """块级进度（断点恢复的读入口）：哪些块已完成、哪些失效、哪些没跑。"""

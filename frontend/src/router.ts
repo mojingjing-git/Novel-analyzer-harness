@@ -14,6 +14,7 @@ import TimelinePage from './pages/TimelinePage.vue'
 import GraphPage from './pages/GraphPage.vue'
 import MapPage from './pages/MapPage.vue'
 import VnextPage from './pages/VnextPage.vue'
+import VnextDetailPage from './pages/VnextDetailPage.vue'
 
 const routes = [
   {
@@ -22,6 +23,7 @@ const routes = [
     children: [
       { path: '', component: QueuePage },
       { path: 'vnext', component: VnextPage },
+    { path: 'vnext/:bookId', component: VnextDetailPage },
       { path: 'settings', component: SettingsPage },
       { path: 'characters', component: CharacterCardPage },
       { path: 'summary', component: SummaryPage },

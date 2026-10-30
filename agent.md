@@ -1592,3 +1592,11 @@ vnext 第一次真的会调模型。四条约束全部来自复审：
 指纹与身份：`PROMPT_STRATEGY_VERSION=1`；依赖用 `expected_dependency(prior, strategy, context_fingerprint=window.fingerprint())`；`result_id` 并进 `extracted_fingerprint`（内容变则身份变）。Prompt 里**显式告知截断**（"更早的记录因篇幅被截断"），否则模型把"没提到"当"不存在"。
 
 测试：`backend/tests/test_vnext_analyzer.py`（8 例，fake client 不触网）：正向发布+已定位、`classify` 判 done、解析失败不落盘、无引文不入库、伪造引文留 `UNVERIFIED`、内容变则身份变、代码围栏可解析而数组拒收、截断写进 Prompt。
+
+### 10.52 B1b/B2/B3：顺序跑整本、删除项目、项目详情页（2026-10-31）
+
+- **B1b `run_analysis`**：按块序跑，跳过判定用 `classify(strategy=…, context_fingerprints=…)`；失败写 `FAILED` 结果并停（不继续往后跑，否则后续块的依赖全断还白花钱）；知识库读改造与 `publish_result` 在同一把书锁里，临界区只做读-改-写-发布；`_expected_context_fingerprints()` 用**重放**算期望窗口指纹（不重放就得不出"库里有什么"，指纹也就没有对照物）。
+- **修 `slots_from_results`**：同块既有旧 `FAILED` 又有新 `SUCCEEDED` 时以成功为准。原来是"最后一条记录说话"，于是重跑成功后仍被判为失败过 —— 那种状态下永远跳不过去。
+- **B2 删除项目**：顺序是硬的 —— **先 `os.replace` 改成 `.trash-<ts>-<id>`，再摘队列条目，最后尽力 `rmtree`**。不能直接 rmtree：删到一半失败会留下没有 `manifest.json` 的目录，`scan_projects` 会判成 `LEGACY_DIR`（用户看到"我的项目变成了旧版本"，而界面只对 vnext 项目给删除入口，于是再也删不掉）。二次确认要求原样输入 `book_id`。
+- **B3 项目详情页**：`/vnext/:bookId`，块清单区分 `已完成` / `需重算（原因）` / `未分析（原因）`，删除区要输入完整 `book_id` 才亮。
+- **踩坑**：`test_vnext_runner_analysis.py` 里对照项目必须同 `book_id` —— `chapter_id` 由 `(book_id, ordinal)` 决定，两个项目各自 `create_project` 会得到不同 `chapter_id`，指纹必然不同，用例会假红。

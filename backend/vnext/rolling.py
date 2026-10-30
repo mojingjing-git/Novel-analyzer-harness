@@ -212,8 +212,14 @@ def slots_from_results(
                                       result_id=result_id, reason="可重试失败")
             continue
         if status == "SUCCEEDED" and result_id:
+            # 同一块可能既有旧的 FAILED 又有新的 SUCCEEDED（失败后补跑成功）：
+            # 只要成功过一次，这个块就是完成——否则永远卡在"失败过"。
             states[index] = BlockSlot(index, plan.block_signature, DONE, result_id=result_id)
-        elif status in ("FAILED", "CANCELLED"):
+            continue
+        existing = states.get(index)
+        if existing is not None and existing.state == DONE:
+            continue
+        if status in ("FAILED", "CANCELLED"):
             states[index] = BlockSlot(index, plan.block_signature, PENDING_RETRY,
                                       result_id=result_id, reason=f"结果状态 {status}")
         else:
