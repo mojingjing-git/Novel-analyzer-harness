@@ -2,6 +2,44 @@
 
 ---
 
+## [Unreleased] - 2026-10-30（外部复审六条修复：S1/S2 均未达验收）
+
+复审独立复现六处问题。共同点：**每条都能跑通、测试也绿，但结论是错的**。
+
+### 用量口径（T45）
+
+- 修复"无 usage 的失败继承前次 Token"：第二次尝试断连时不再返回上一次的 `(11,3)/KNOWN`
+- `LLMResult` 新增 `prior_known_tokens`：已确认消耗但产出未被采用的用量单独记账，不进 `tokens`
+- 三种口径分开：`attempt_tokens`（本次尝试）/ `prior_known_tokens`（历史已知）/ `last_consumed_tokens`（仅统计）
+
+### 判定保真
+
+- 修复"完整判定被压成三元组再重建"：新增 `_verdict_from_exception()`，在异常现场一次性构造含 `provider_code` / `http_status` / `source_channel` / `retry_after` 的完整判定
+- `_as_error_verdict()`：已是 `ErrorVerdict` 的输入原样返回，不再"按置信度重建"
+- `Retry-After` 优先取响应头（typed），字符串解析降为兜底；`typed=7` 不再退化成 30 秒
+
+### 结果协议（S2）
+
+- 文件名改 `<result_id>.json`，状态改 `SUCCEEDED/FAILED/SKIPPED/CANCELLED/BLOCKED`
+- **只有登记进 `manifest.active_results` 的结果才算数**；判定顺序「登记 → 状态 → `source_chapters` → （可选）依赖指纹」
+- 修复两个反向错误：合法的 `SUCCEEDED` 结果被跳过、未登记的 `done` 记录被算完成
+- `publish_result()` 返回提交后的清单（旧快照会看到空 `active_results`）
+- 新增 `orphans`（登记了但文件没了）与 `unregistered`（文件在但没登记）两类单列信息
+
+### 队列与书目
+
+- `restore_queue_after_restart()` 按当前源重算进度；算不出的书写明"项目不可用，进度未校验"
+- `locate_project()` 复用 `scan_projects` 的已校验结果：一个坏目录不再堵死其他书
+- 同一 `book_id` 出现在两个目录 → 冲突目录进 `rejected`（`DUPLICATE_BOOK_ID`），不任取其一
+- `block_size` 校验：拒绝 `true`（曾被顺成 1）、`2.9`（曾被截成 2）、`analysis: [1]`（曾抛 `AttributeError`）
+
+### 测试
+
+- 新增 `test_vnext_review_fixes.py`（9）、`test_llm_verdict_tokens_review.py`（5）
+- `test_vnext_results_queue.py` 按新协议重写（18）
+
+---
+
 ## [Unreleased] - 2026-10-30（v2 S2 数据空间：novel-analyzer-vnext 格式门禁与来源模型）
 
 ### 新数据空间与格式门禁

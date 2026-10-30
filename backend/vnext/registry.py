@@ -24,6 +24,7 @@ RejectReason = Literal[
     "UNSUPPORTED_FORMAT",   # 有清单但不是本版本格式
     "UNPARSEABLE",          # 有清单但读不出来
     "MISSING_SOURCE",       # 清单在，但 source/index.json 缺失
+    "DUPLICATE_BOOK_ID",    # 同一 book_id 出现在两个目录：身份冲突，不能任取其一
 ]
 
 
@@ -102,30 +103,52 @@ def scan_projects(data_root: Path) -> ScanResult:
                 total_chapters=len(manifest.chapters),
             )
         )
+    _reject_duplicate_identities(result)
     return result
+
+
+def _reject_duplicate_identities(result: ScanResult) -> None:
+    """同一 ``book_id`` 出现在多个目录时，**保留第一个、其余全部拒绝**。
+
+    为什么不是"取最新"或"取内容多的"：这两个判据都会让"打开哪一本书"取决于磁盘
+    状态，同一份数据在不同机器上可能打开不同的书。身份冲突必须让人看见并手动处理，
+    所以冲突目录连同原因一起进拒绝清单，界面上会出现两条提示而不是悄悄选一个。
+    """
+    seen: dict[str, ProjectRef] = {}
+    kept: list[ProjectRef] = []
+    for ref in result.accepted:
+        first = seen.get(ref.book_id)
+        if first is None:
+            seen[ref.book_id] = ref
+            kept.append(ref)
+            continue
+        result.rejected.append(
+            RejectedDir(
+                ref.path,
+                "DUPLICATE_BOOK_ID",
+                f"book_id {ref.book_id} 与 {first.path.name} 冲突（已保留第一个）",
+            )
+        )
+    result.accepted = kept
 
 
 def locate_project(data_root: Path, book_id: str) -> ProjectRef:
     """按 ``book_id`` 定位项目，返回带路径的引用。
 
-    与 :func:`open_project` 的区别是"要不要清单"：调用方若还需要读结果、写块，
-    就需要目录路径；只需要摘要时用 :func:`open_project` 更省事。
+    走的是 :func:`scan_projects` 的**已校验结果**，不自己再遍历一遍目录：否则一本
+    排序靠前的坏清单会在这里抛异常，把另一本好书也堵死（同一份数据，扫描能看到、
+    打开却打不开，是最难解释的那种故障）。重复身份也已在扫描阶段被剔除。
     """
-    data_root = Path(data_root)
-    for child in sorted(data_root.iterdir()) if data_root.is_dir() else []:
-        if not child.is_dir() or not is_vnext_project(child):
-            continue
-        manifest = load_manifest(child)
-        if manifest.book_id == book_id:
-            return ProjectRef(
-                book_id=manifest.book_id,
-                name=manifest.title,
-                path=child,
-                total_chapters=len(manifest.chapters),
-            )
-    raise VnextFormatError(
-        ErrorCode.MISSING_REQUIRED_FIELD, f"未找到 book_id={book_id} 的 vnext 项目"
-    )
+    scan = scan_projects(data_root)
+    for ref in scan.accepted:
+        if ref.book_id == book_id:
+            return ref
+    detail = f"未找到 book_id={book_id} 的 vnext 项目"
+    conflicts = [r for r in scan.rejected if r.reason == "DUPLICATE_BOOK_ID"
+                 and book_id in r.detail]
+    if conflicts:
+        detail += f"（存在身份冲突：{conflicts[0].path.name}）"
+    raise VnextFormatError(ErrorCode.MISSING_REQUIRED_FIELD, detail)
 
 
 def open_project(data_root: Path, book_id: str) -> Manifest:

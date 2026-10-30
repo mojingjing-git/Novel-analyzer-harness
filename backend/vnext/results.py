@@ -1,116 +1,213 @@
-"""块结果落盘与新鲜度判定（PLAN v2 §2.4 / §4 S2-6）。
+"""块结果落盘与新鲜度判定（PLAN v2 §2.4 / §3.4 / §4 S2-6）。
 
-结果文件按块签名命名，一眼能看出它属于哪一块；判定"还能不能复用"不靠文件
-是否存在，而靠**重算块签名**——正文改了、块重组了，同一个文件名就不会再被
-当成有效结果。这就是 S2 门槛里"更改块组成或正文使相关缓存失效"的落地点。
+协议在这一版按契约收紧，三处与原实现不同——都是为了"结果算不算数"只有一个答案：
+
+1. **文件名是 ``result_id``，不是块签名**。同一条链可以针对同一块产出多个结果
+   （换模型、换 Prompt 策略），块签名会让后写的覆盖先写的，历史版本凭空消失。
+2. **状态是 ``SUCCEEDED/FAILED/SKIPPED/CANCELLED/BLOCKED``**，与任务状态同词表。
+   小写 ``done`` 是另一套词表，混用必然在边界出错。
+3. **只有登记在 ``manifest.active_results`` 里的结果才算数**。"文件存在"不等于
+   "这是当前有效结果"：换源、重算、回滚都会让文件留在磁盘上但失去登记。
+
+判定顺序：登记 → 状态 → 源章节是否仍一致 → （可选）依赖指纹。
 """
 
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, Sequence
 
 from .artifacts import read_json_artifact, stamp_payload, write_json_atomic
-from .blocks import BlockPlan, verify_block
+from .blocks import BlockPlan
 from .constants import ErrorCode, VnextFormatError
-from .project import Manifest
+from .fingerprint import result_id as compute_result_id
+from .project import Manifest, commit_manifest
 
 RESULT_DIR_NAME = "results"
 
-#: 结果状态。只有 ``DONE`` 能被当作"这一块已完成"；
-#: ``STALE`` 不是写进去的状态，而是读出来后的判定结论（见 ``classify``）。
-STATUS_DONE = "done"
-STATUS_FAILED = "failed"
-STATUS_SKIPPED = "skipped"
-STATUS_CANCELLED = "cancelled"
-_WRITABLE_STATUSES = frozenset({STATUS_DONE, STATUS_FAILED, STATUS_SKIPPED, STATUS_CANCELLED})
+#: 结果状态（与 §3.4 / §3.6 同词表）。``BLOCKED`` 是"账户级错误导致整本停摆"，
+#: 与 ``FAILED`` 的区别是有没有人需要动手。
+ST_SUCCEEDED = "SUCCEEDED"
+ST_FAILED = "FAILED"
+ST_SKIPPED = "SKIPPED"
+ST_CANCELLED = "CANCELLED"
+ST_BLOCKED = "BLOCKED"
+RESULT_STATUSES = frozenset({ST_SUCCEEDED, ST_FAILED, ST_SKIPPED, ST_CANCELLED, ST_BLOCKED})
 
-#: 判定为失效的原因，供界面区分"要重算"与"根本换了一套源"。
+#: 失效原因。``STALE_*`` 不是写进文件的状态，而是读出来后的结论。
 STALE_BLOCK_CHANGED = "BLOCK_SIGNATURE_MISMATCH"
 STALE_NOT_DONE = "NOT_DONE"
+STALE_SOURCE_MISMATCH = "SOURCE_CHAPTERS_MISMATCH"
+STALE_DEPENDENCY = "DEPENDENCY_CHANGED"
 STALE_MISSING_BLOCK = "BLOCK_MISSING"
+
+MISSING_NOT_REGISTERED = "NOT_REGISTERED"
+MISSING_FILE_ABSENT = "FILE_ABSENT"
 
 
 def results_dir(book_dir: Path) -> Path:
     return Path(book_dir) / RESULT_DIR_NAME
 
 
-def result_path(book_dir: Path, block_signature: str) -> Path:
-    return results_dir(book_dir) / f"{block_signature}.json"
+def result_path(book_dir: Path, result_id: str) -> Path:
+    return results_dir(book_dir) / f"{result_id}.json"
 
 
 @dataclass(frozen=True)
 class ResultRecord:
+    """一条块结果。字段与契约 §3.4 一一对应。"""
+
+    result_id: str
     block_signature: str
+    source_chapters: tuple[tuple[str, str], ...]  # ((chapter_id, content_hash), …)
     status: str
-    result_id: str | None = None
-    usage_status: str | None = None
+    model_fingerprint: str = ""
+    prompt_strategy_version: int = 1
+    dependency_fingerprint: str = ""
+    extracted: dict = field(default_factory=dict)
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
+    usage_status: str = "UNKNOWN"
     error: str | None = None
-    updated_at: float = 0.0
+    created_at: float = 0.0
 
     def to_dict(self) -> dict:
         return stamp_payload(
             {
-                "block_signature": self.block_signature,
-                "status": self.status,
                 "result_id": self.result_id,
-                "usage_status": self.usage_status,
-                # 未知用量保持 None：写 0 会让"不知道"变成"花了 0 元"
-                "prompt_tokens": self.prompt_tokens,
-                "completion_tokens": self.completion_tokens,
+                "block_signature": self.block_signature,
+                "source_chapters": [[cid, chash] for cid, chash in self.source_chapters],
+                "status": self.status,
+                "model_fingerprint": self.model_fingerprint,
+                "prompt_strategy_version": self.prompt_strategy_version,
+                "dependency_fingerprint": self.dependency_fingerprint,
+                "extracted": self.extracted,
+                # 未知用量写 null + UNKNOWN：写 0 会让"不知道"变成"花了 0 元"
+                "usage": {
+                    "prompt_tokens": self.prompt_tokens,
+                    "completion_tokens": self.completion_tokens,
+                    "usage_status": self.usage_status,
+                },
                 "error": self.error,
-                "updated_at": self.updated_at or time.time(),
+                "created_at": self.created_at or time.time(),
             }
         )
 
     @classmethod
     def from_dict(cls, data: Mapping) -> "ResultRecord":
-        for key in ("block_signature", "status"):
+        for key in ("result_id", "block_signature", "source_chapters", "status"):
             if key not in data:
                 raise VnextFormatError(
                     ErrorCode.MISSING_REQUIRED_FIELD, f"结果记录缺字段：{key}"
                 )
         status = str(data["status"])
-        if status not in _WRITABLE_STATUSES:
+        if status not in RESULT_STATUSES:
             raise VnextFormatError(
-                ErrorCode.INVALID_FIELD_VALUE, f"非法的结果状态：{status}"
+                ErrorCode.INVALID_FIELD_VALUE,
+                f"非法的结果状态：{status}（只接受 {'/'.join(sorted(RESULT_STATUSES))}）",
             )
+        raw_chapters = data["source_chapters"]
+        if not isinstance(raw_chapters, list):
+            raise VnextFormatError(
+                ErrorCode.INVALID_FIELD_VALUE, "source_chapters 必须是数组"
+            )
+        chapters: list[tuple[str, str]] = []
+        for item in raw_chapters:
+            if not isinstance(item, (list, tuple)) or len(item) != 2:
+                raise VnextFormatError(
+                    ErrorCode.INVALID_FIELD_VALUE, f"source_chapters 元素形状非法：{item!r}"
+                )
+            chapters.append((str(item[0]), str(item[1])))
+        usage = data.get("usage") or {}
+        if not isinstance(usage, Mapping):
+            raise VnextFormatError(ErrorCode.INVALID_FIELD_VALUE, "usage 必须是对象")
         return cls(
+            result_id=str(data["result_id"]),
             block_signature=str(data["block_signature"]),
+            source_chapters=tuple(chapters),
             status=status,
-            result_id=data.get("result_id"),
-            usage_status=data.get("usage_status"),
-            prompt_tokens=data.get("prompt_tokens"),
-            completion_tokens=data.get("completion_tokens"),
+            model_fingerprint=str(data.get("model_fingerprint") or ""),
+            prompt_strategy_version=int(data.get("prompt_strategy_version") or 1),
+            dependency_fingerprint=str(data.get("dependency_fingerprint") or ""),
+            extracted=dict(data.get("extracted") or {}),
+            prompt_tokens=usage.get("prompt_tokens"),
+            completion_tokens=usage.get("completion_tokens"),
+            usage_status=str(usage.get("usage_status") or "UNKNOWN"),
             error=data.get("error"),
-            updated_at=float(data.get("updated_at") or 0.0),
+            created_at=float(data.get("created_at") or 0.0),
         )
+
+
+def make_result_id(
+    *,
+    block_signature: str,
+    prompt_strategy_version: int,
+    model_fingerprint: str,
+    dependency_fingerprint: str,
+) -> str:
+    """按契约算 ``result_id``（与 :mod:`backend.vnext.fingerprint` 同源）。"""
+    return compute_result_id(
+        block_sig=block_signature,
+        prompt_strategy_version=prompt_strategy_version,
+        model_fingerprint=model_fingerprint,
+        dependency_fp=dependency_fingerprint,
+    )
 
 
 def write_result(book_dir: Path, record: ResultRecord) -> Path:
-    if record.status not in _WRITABLE_STATUSES:
+    """只写文件，不动清单。要"生效"请用 :func:`publish_result`。
+
+    分开的理由：写文件是原子的，登记清单也是原子的，但两者不能同时原子。把
+    "写"与"发布"分成两步，失败时可重试而不产生"文件在、清单没登记"之外的中间态，
+    而那种中间态恰好会被 :func:`classify` 判成无效——安全侧。
+    """
+    if record.status not in RESULT_STATUSES:
         raise VnextFormatError(
             ErrorCode.INVALID_FIELD_VALUE, f"不能写入状态：{record.status}"
         )
-    path = result_path(book_dir, record.block_signature)
+    path = result_path(book_dir, record.result_id)
     write_json_atomic(path, record.to_dict())
     return path
 
 
-def read_result(book_dir: Path, block_signature: str) -> ResultRecord | None:
-    path = result_path(book_dir, block_signature)
+def publish_result(book_dir: Path, record: ResultRecord) -> Manifest:
+    """写文件并登记进 ``manifest.active_results``，返回**提交后的新清单**。
+
+    返回值是重点：``commit_manifest`` 在锁内重新读了一份清单来改，调用方手里那份
+    是发布之前的快照。拿旧快照去 :func:`classify` 会看到空的 ``active_results``，
+    于是刚刚发布的结果被判成"没登记"——这个坑排查起来很像"结果丢了"。
+    """
+    write_result(book_dir, record)
+
+    def _mutate(manifest: Manifest) -> None:
+        kept: list[str] = []
+        for rid in manifest.active_results:
+            if rid == record.result_id:
+                continue
+            other = _read_result_raw(book_dir, rid)
+            if other is not None and other.block_signature == record.block_signature:
+                continue  # 同块的旧版本：让位
+            kept.append(rid)
+        kept.append(record.result_id)
+        manifest.active_results = kept
+
+    return commit_manifest(book_dir, _mutate)
+
+
+def _read_result_raw(book_dir: Path, result_id: str) -> ResultRecord | None:
+    path = result_path(book_dir, result_id)
     if not path.is_file():
         return None
-    return ResultRecord.from_dict(dict(read_json_artifact(path)))
+    try:
+        return ResultRecord.from_dict(dict(read_json_artifact(path)))
+    except VnextFormatError:
+        return None
 
 
 def list_results(book_dir: Path) -> dict[str, ResultRecord]:
-    """按块签名索引全部结果。坏文件跳过并计数不给调用方 —— 单个坏文件
-    不该让整本书打不开（它会在 ``classify`` 里自然落到"未完成"）。"""
+    """按 ``result_id`` 索引全部结果文件。坏文件跳过——单个坏文件不该让整本书打不开。"""
     out: dict[str, ResultRecord] = {}
     directory = results_dir(book_dir)
     if not directory.is_dir():
@@ -120,7 +217,10 @@ def list_results(book_dir: Path) -> dict[str, ResultRecord]:
             record = ResultRecord.from_dict(dict(read_json_artifact(path)))
         except VnextFormatError:
             continue
-        out[record.block_signature] = record
+        if path.stem != record.result_id:
+            # 文件名与内部 ID 不一致：不认（否则改名就能让旧结果"复活"）
+            continue
+        out[record.result_id] = record
     return out
 
 
@@ -129,40 +229,77 @@ class Classified:
     """把"磁盘上有什么"翻译成"哪些块算完成、哪些要重算"。"""
 
     done: dict[str, ResultRecord]
-    stale: dict[str, str]  # block_signature -> 原因
-    missing: list[str]     # 计划里有、磁盘上没有的块签名
+    stale: dict[str, str]          # block_signature -> 原因
+    missing: dict[str, str]        # block_signature -> 原因（当前无有效结果）
+    #: 登记在册但文件不在的结果 ID —— "跑过但结果没了"，与"从没跑过"不同
+    orphans: list[str] = field(default_factory=list)
+    #: 文件在但未登记的结果 ID —— 通常是别的源留下的旧版本，不算错，但值得知道
+    unregistered: list[str] = field(default_factory=list)
+
+
+def _newest(records: Sequence[ResultRecord]) -> ResultRecord | None:
+    return max(records, key=lambda r: r.created_at) if records else None
 
 
 def classify(
     manifest: Manifest,
     plans: list[BlockPlan],
     records: Mapping[str, ResultRecord] | None = None,
+    *,
+    dependency_fingerprint: str | None = None,
 ) -> Classified:
     """判定每个计划块的状态。
 
-    判定顺序：签名是否还对得上 → 状态是否 DONE。签名先过是因为签名不符意味着
-    "这块的内容已经变了"，此时状态是什么都无意义。
+    规则（顺序固定，任一不过即失效）：
+
+    1. **必须被登记**：``result_id ∈ manifest.active_results``。没登记的可能是
+       别的源留下的，也可能是写的中间态，都不算。
+    2. **状态必须 SUCCEEDED**：FAILED/SKIPPED/CANCELLED/BLOCKED 都不是"完成"。
+    3. **送进去的章节必须还是这几章、这几个哈希**：否则这结果回答的是另一个问题。
+    4. 给了 ``dependency_fingerprint`` 时还要一致：上游变了，本块结论就过期。
     """
     if records is None:
         records = {}
+    active = set(manifest.active_results)
+    hash_by_chapter = {c.chapter_id: c.content_hash for c in manifest.chapters}
+    by_block: dict[str, list[ResultRecord]] = {}
+    for record in records.values():
+        if record.result_id in active:
+            by_block.setdefault(record.block_signature, []).append(record)
+
     done: dict[str, ResultRecord] = {}
     stale: dict[str, str] = {}
-    missing: list[str] = []
+    missing: dict[str, str] = {}
 
     for plan in plans:
-        record = records.get(plan.block_signature)
+        expected_source = tuple(
+            (cid, hash_by_chapter.get(cid, "")) for cid in plan.chapter_ids
+        )
+        candidates = by_block.get(plan.block_signature, [])
+        record = _newest(candidates)
         if record is None:
-            missing.append(plan.block_signature)
+            # 这里只说"当前没有有效结果"。至于"登记了但文件没了"与"文件在但没登记"，
+            # 都无法归因到某个具体块（文件不在就不知道它属于哪块），所以在下面按
+            # result_id 单列，不硬塞进块的结论里。
+            missing[plan.block_signature] = MISSING_NOT_REGISTERED
             continue
-        try:
-            verify_block(manifest, plan)
-        except VnextFormatError:
-            stale[plan.block_signature] = STALE_BLOCK_CHANGED
+        if record.status != ST_SUCCEEDED:
+            stale[plan.block_signature] = f"{STALE_NOT_DONE}:{record.status}"
             continue
-        if record.status != STATUS_DONE:
-            stale[plan.block_signature] = STALE_NOT_DONE
+        if record.source_chapters != expected_source:
+            stale[plan.block_signature] = STALE_SOURCE_MISMATCH
+            continue
+        if dependency_fingerprint is not None and (
+            record.dependency_fingerprint != dependency_fingerprint
+        ):
+            stale[plan.block_signature] = STALE_DEPENDENCY
             continue
         done[plan.block_signature] = record
 
-    # 磁盘上有、但当前计划里没有的块：不是"失效"，是"不再需要"
-    return Classified(done=done, stale=stale, missing=missing)
+    return Classified(
+        done=done,
+        stale=stale,
+        missing=missing,
+        orphans=[rid for rid in manifest.active_results if rid not in records],
+        unregistered=[rid for rid in records if rid not in active],
+    )

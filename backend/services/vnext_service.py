@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -115,9 +116,41 @@ def save_queue(state: queue.QueueState) -> None:
 
 
 def restore_queue_after_restart() -> queue.QueueState:
-    """进程启动时调用：把遗留的 running 回落 pending，并写回磁盘。"""
+    """进程启动时调用：回落遗留的 running，**并按当前源重算进度**。
+
+    只回落状态是不够的。磁盘上的 ``completed_blocks`` 是上一次运行时的结论，源变了
+    它就不成立——复现过的最坏情形是：改了一章之后，书籍详情显示 ``1 done + 1 missing``，
+    而队列仍写着 ``done 2/2, stale=0``，于是用户以为跑完了。
+
+    所以这里对每个能打开的书重算一次（``progress_from_manifest`` 是纯计算，不触模型）。
+    算不出来的书（项目被删/被换成旧目录）保留历史状态，但显式写上原因，让人知道
+    "这条记录不是当前进度的结论"。
+    """
+    from backend.vnext import blocks, project as project_mod, registry, results as results_mod
+
     state = load_queue()
     queue.normalize_after_restart(state)
+
+    root = data_root()
+    scan = registry.scan_projects(root)
+    by_id = {ref.book_id: ref for ref in scan.accepted}
+
+    size = block_size()
+    for entry in state.entries:
+        ref = by_id.get(entry.book_id)
+        if ref is None:
+            # 项目不在了：不改写历史结论，但把"为什么不能重算"写清楚
+            entry.error_message = "项目不可用，进度未校验"
+            entry.updated_at = time.time()
+            continue
+        try:
+            manifest = project_mod.load_manifest(ref.path)
+            plans = blocks.plan_blocks(manifest, block_size=size)
+            records = results_mod.list_results(ref.path)
+            queue.progress_from_manifest(entry, manifest, plans, records)
+        except VnextFormatError as exc:
+            entry.error_message = f"进度重算失败：{exc.code.value}"
+            entry.updated_at = time.time()
     save_queue(state)
     return state
 
@@ -137,19 +170,29 @@ def block_size() -> int:
     if not cfg_path.is_file():
         return 4
     payload = _read_config(cfg_path)
-    analysis = payload.get("analysis") or {}
-    raw = analysis.get("block_size", 4)
-    try:
-        value = int(raw)
-    except (TypeError, ValueError) as exc:
+    analysis = payload.get("analysis")
+    if analysis is None:
+        analysis = {}
+    if not isinstance(analysis, dict):
         raise VnextFormatError(
-            ErrorCode.INVALID_FIELD_VALUE, f"block_size 不是整数：{raw!r}", path=str(cfg_path)
-        ) from exc
-    if value < 1:
-        raise VnextFormatError(
-            ErrorCode.INVALID_FIELD_VALUE, f"block_size 必须 >= 1：{value}", path=str(cfg_path)
+            ErrorCode.INVALID_FIELD_VALUE,
+            f"analysis 必须是对象，实际 {type(analysis).__name__}",
+            path=str(cfg_path),
         )
-    return value
+    raw = analysis.get("block_size", 4)
+    # bool 是 int 的子类：`True` 会被 int() 顺成 1，配置写成 `block_size: true`
+    # 会静默变成"每章一块"。浮点同理（2.9 → 2 是截断不是四舍五入），都拒绝。
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        raise VnextFormatError(
+            ErrorCode.INVALID_FIELD_VALUE,
+            f"block_size 必须是整数：{raw!r}",
+            path=str(cfg_path),
+        )
+    if raw < 1:
+        raise VnextFormatError(
+            ErrorCode.INVALID_FIELD_VALUE, f"block_size 必须 >= 1：{raw}", path=str(cfg_path)
+        )
+    return raw
 
 
 def _read_config(path: Path) -> dict:

@@ -355,6 +355,10 @@ class LLMResult:
     call_stats: dict = field(default_factory=dict)
     verdict: Optional[ErrorVerdict] = None
     attempts: int = 1
+    #: 本次调用里**此前若干次尝试**已实际消耗、但其产出未被采用的用量（T45）。
+    #: 与 ``tokens`` 分开：``tokens`` 只表达"最终这次尝试的用量"，拿不到就是 None。
+    #: 早先把它填进 ``tokens`` 会让"本次未知"冒充"本次已知"，费用统计随之失真。
+    prior_known_tokens: Optional[Tuple[int, int]] = None
 
     def __post_init__(self) -> None:
         """一致性校验：tokens 为 None 时 usage_status 必须是 UNKNOWN
@@ -381,6 +385,11 @@ class LLMResult:
             "call_stats": dict(self.call_stats or {}),
             "verdict": self.verdict.to_dict() if self.verdict is not None else None,
             "attempts": int(self.attempts),
+            "prior_known_tokens": (
+                list(self.prior_known_tokens)
+                if self.prior_known_tokens is not None
+                else None
+            ),
         }
 
     @classmethod
@@ -416,4 +425,5 @@ class LLMResult:
             call_stats=dict(data.get("call_stats") or {}),
             verdict=verdict,
             attempts=attempts,
+            prior_known_tokens=_parse_tokens(data.get("prior_known_tokens")),
         )

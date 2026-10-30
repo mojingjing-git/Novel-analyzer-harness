@@ -1,126 +1,249 @@
-"""vnext 结果落盘与队列恢复（PLAN v2 §4 S2-4/6：进度由块签名重算，不数文件）。"""
+"""vnext 结果落盘与队列恢复（PLAN v2 §3.4 / §4 S2-6）。
+
+协议要点（这版按契约收紧，四处曾是错的）：
+- 文件名是 ``result_id``，不是块签名；
+- 状态是 ``SUCCEEDED/FAILED/SKIPPED/CANCELLED/BLOCKED``，不是小写 done；
+- **只有登记进 ``manifest.active_results`` 的结果才算数**；
+- 登记的判定要看"送进去的章节"是否仍与块成员一致。
+
+注意：``publish_result`` 返回**提交后的清单**。``commit_manifest`` 在锁内重新读清单
+再改，调用方手里那份是发布前快照，拿它去 classify 会看到空的 ``active_results``。
+"""
 
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 
 import pytest
 
 from backend.vnext import blocks, project, queue, results
 from backend.vnext.constants import VnextFormatError
+from backend.vnext.fingerprint import content_hash, normalize_chapter_text
 
 
-def _book(tmp_path, n: int = 4, *, book_id: str = "bk_qu000000001", root=None):
+def _book(tmp_path, n: int = 4, *, book_id: str = "bk_qu000000001", title: str = "书"):
     chapters = [(i, f"第{i}章\n正文{i}\n") for i in range(1, n + 1)]
-    return project.create_project((root or tmp_path), "书", chapters, book_id=book_id)
+    return project.create_project(tmp_path, title, chapters, book_id=book_id)
 
 
-# ---------------------------------------------------------------------------
-# 结果读写
-# ---------------------------------------------------------------------------
-
-
-def test_result_roundtrip_keeps_unknown_usage_unknown(tmp_path) -> None:
-    book = _book(tmp_path)
-    results.write_result(
-        book,
-        results.ResultRecord(
-            block_signature="sig1",
-            status=results.STATUS_DONE,
-            usage_status="UNKNOWN",
-            prompt_tokens=None,
-            completion_tokens=None,
-        ),
+def _publish(book, manifest, plan, *, status=results.ST_SUCCEEDED, dep="dep-1",
+             created_at=1.0, model="m1"):
+    """造一条结果并发布，返回 (记录, 提交后的清单)。"""
+    hashes = {c.chapter_id: c.content_hash for c in manifest.chapters}
+    source = tuple((cid, hashes[cid]) for cid in plan.chapter_ids)
+    rid = results.make_result_id(
+        block_signature=plan.block_signature,
+        prompt_strategy_version=1,
+        model_fingerprint=model,
+        dependency_fingerprint=dep,
     )
-    record = results.read_result(book, "sig1")
-    assert record is not None
-    # 关键：未知必须保持 None，不能落成 0（否则"不知道"变成"花了 0 元"）
-    assert record.prompt_tokens is None
-    assert record.usage_status == "UNKNOWN"
+    record = results.ResultRecord(
+        result_id=rid,
+        block_signature=plan.block_signature,
+        source_chapters=source,
+        status=status,
+        model_fingerprint=model,
+        dependency_fingerprint=dep,
+        created_at=created_at,
+    )
+    return record, results.publish_result(book, record)
 
 
-def test_result_rejects_unknown_status(tmp_path) -> None:
-    book = _book(tmp_path)
-    with pytest.raises(VnextFormatError):
-        results.write_result(book, results.ResultRecord(block_signature="s", status="halfway"))
+def _rewrite_chapter(book, manifest, ordinal: int, new_text: str):
+    """改一章正文并提交清单（同一项目内，active_results 保留）。"""
+    normalized = normalize_chapter_text(new_text)
+    chapter = manifest.chapters[ordinal - 1]
+    (book / "source" / "chapters" / f"{chapter.chapter_id}.txt").write_text(
+        normalized, encoding="utf-8"
+    )
 
+    def _mutate(m):
+        m.chapters[ordinal - 1] = replace(m.chapters[ordinal - 1],
+                                          content_hash=content_hash(normalized))
 
-def test_list_results_skips_corrupt_file(tmp_path) -> None:
-    """单个坏文件不该让整本书无法读取进度。"""
-    book = _book(tmp_path)
-    results.write_result(book, results.ResultRecord(block_signature="ok", status=results.STATUS_DONE))
-    (results.results_dir(book) / "broken.json").write_text("{", encoding="utf-8")
-
-    listed = results.list_results(book)
-    assert set(listed) == {"ok"}
+    return project.commit_manifest(book, _mutate)
 
 
 # ---------------------------------------------------------------------------
-# 失效分类
+# 落盘协议
 # ---------------------------------------------------------------------------
 
 
-def test_classify_splits_done_stale_missing(tmp_path) -> None:
-    book = _book(tmp_path, 4)
+def test_result_file_is_named_by_result_id(tmp_path) -> None:
+    book = _book(tmp_path, 2)
     manifest = project.load_manifest(book)
-    plans = blocks.plan_blocks(manifest, block_size=2)  # [1,2] [3,4]
+    plan = blocks.plan_blocks(manifest, block_size=2)[0]
+    record, _ = _publish(book, manifest, plan)
 
-    results.write_result(
-        book, results.ResultRecord(block_signature=plans[0].block_signature, status=results.STATUS_DONE)
-    )
-    results.write_result(
-        book, results.ResultRecord(block_signature=plans[1].block_signature, status=results.STATUS_FAILED)
-    )
-    records = results.list_results(book)
-
-    verdict = results.classify(manifest, plans, records)
-    assert set(verdict.done) == {plans[0].block_signature}
-    assert verdict.stale[plans[1].block_signature] == results.STALE_NOT_DONE
-    assert verdict.missing == []
+    path = results.result_path(book, record.result_id)
+    assert path.is_file()
+    assert path.name == f"{record.result_id}.json"
+    assert path.name != f"{plan.block_signature}.json"  # 不是块签名命名
 
 
-def test_classify_marks_block_stale_after_text_change(tmp_path) -> None:
-    """正文改动后，即使结果文件还在，也必须判失效——这是 S2 门槛的核心。"""
-    root = tmp_path / "v1"
-    book = _book(root, 4)
+def test_unknown_usage_stays_unknown(tmp_path) -> None:
+    book = _book(tmp_path, 2)
     manifest = project.load_manifest(book)
-    plans = blocks.plan_blocks(manifest, block_size=2)
-    for plan in plans:
+    plan = blocks.plan_blocks(manifest, block_size=2)[0]
+    record, _ = _publish(book, manifest, plan)
+
+    reread = results.list_results(book)[record.result_id]
+    assert reread.prompt_tokens is None
+    assert reread.usage_status == "UNKNOWN"
+
+
+def test_status_is_uppercase_vocabulary(tmp_path) -> None:
+    book = _book(tmp_path, 2)
+    with pytest.raises(VnextFormatError) as exc:
         results.write_result(
-            book, results.ResultRecord(block_signature=plan.block_signature, status=results.STATUS_DONE)
+            book,
+            results.ResultRecord(
+                result_id="r1", block_signature="s1", source_chapters=(), status="done"
+            ),
         )
-    records = results.list_results(book)
-
-    # 改第 3 章，重建同一 book_id 的项目（模拟重新导入同一本书）
-    chapters = [(i, f"第{i}章\n正文{i}\n") for i in range(1, 5)]
-    chapters[2] = (3, "第3章\n改过的内容\n")
-    edited = project.create_project(tmp_path / "v2" / "bk_qu000000001", "书", chapters, book_id="bk_qu000000001")
-    new_manifest = project.load_manifest(edited)
-    new_plans = blocks.plan_blocks(new_manifest, block_size=2)
-
-    verdict = results.classify(new_manifest, new_plans, records)
-    # 失效是局部的：含第 3 章的块签名变了 → 落 missing 待重算；
-    # 第 1-2 章那块的签名没变 → 仍然算完成，不该被牵连重跑。
-    assert set(verdict.done) == {new_plans[0].block_signature}
-    assert verdict.missing == [new_plans[1].block_signature]
+    assert exc.value.code.value == "INVALID_FIELD_VALUE"
 
 
-def test_classify_flags_changed_block_when_signature_reused(tmp_path) -> None:
-    """签名被沿用但内容已变的情形：必须判 STALE，不能算完成。"""
+def test_list_results_ignores_file_whose_name_disagrees_with_inner_id(tmp_path) -> None:
+    """改名不能让旧结果复活：文件名与内部 result_id 必须一致。"""
+    book = _book(tmp_path, 2)
+    manifest = project.load_manifest(book)
+    plan = blocks.plan_blocks(manifest, block_size=2)[0]
+    record, _ = _publish(book, manifest, plan)
+
+    original = results.result_path(book, record.result_id)
+    original.rename(results.results_dir(book) / "renamed.json")
+    assert results.list_results(book) == {}
+
+
+# ---------------------------------------------------------------------------
+# 登记与失效判定
+# ---------------------------------------------------------------------------
+
+
+def test_unregistered_result_does_not_count_as_done(tmp_path) -> None:
+    """写进磁盘但没登记的结果不算完成——它可能是别的源留下的。"""
     book = _book(tmp_path, 2)
     manifest = project.load_manifest(book)
     plan = blocks.plan_blocks(manifest, block_size=2)[0]
 
-    forged = blocks.BlockPlan(
-        block_signature="deadbeef" * 8,
-        chapter_ids=plan.chapter_ids,
-        block_strategy_version=plan.block_strategy_version,
+    hashes = {c.chapter_id: c.content_hash for c in manifest.chapters}
+    record = results.ResultRecord(
+        result_id="r-unregistered",
+        block_signature=plan.block_signature,
+        source_chapters=tuple((cid, hashes[cid]) for cid in plan.chapter_ids),
+        status=results.ST_SUCCEEDED,
     )
-    records = {"deadbeef" * 8: results.ResultRecord(block_signature="deadbeef" * 8, status=results.STATUS_DONE)}
+    results.write_result(book, record)  # 只写，不登记
 
-    verdict = results.classify(manifest, [forged], records)
+    verdict = results.classify(manifest, [plan], results.list_results(book))
     assert verdict.done == {}
-    assert verdict.stale["deadbeef" * 8] == results.STALE_BLOCK_CHANGED
+    assert verdict.missing[plan.block_signature] == results.MISSING_NOT_REGISTERED
+    # 文件在、没登记：单列出来（通常是别的源留下的旧版本）
+    assert verdict.unregistered == ["r-unregistered"]
+    assert verdict.orphans == []
+
+
+def test_registered_but_missing_file_is_reported_separately(tmp_path) -> None:
+    """登记了但文件被删 → 与"从没跑过"不同，要能分开报。"""
+    book = _book(tmp_path, 2)
+    manifest = project.load_manifest(book)
+    plan = blocks.plan_blocks(manifest, block_size=2)[0]
+    record, manifest = _publish(book, manifest, plan)
+
+    results.result_path(book, record.result_id).unlink()
+    verdict = results.classify(manifest, [plan], results.list_results(book))
+    assert verdict.missing[plan.block_signature] == results.MISSING_NOT_REGISTERED
+    # "登记了但文件没了"按 result_id 单列：文件不在时无法归因到具体块
+    assert verdict.orphans == [record.result_id]
+    assert verdict.unregistered == []
+
+
+def test_succeeded_registered_result_counts_as_done(tmp_path) -> None:
+    """反向错误也要堵：合法登记 + SUCCEEDED 的结果必须被认。"""
+    book = _book(tmp_path, 4)
+    manifest = project.load_manifest(book)
+    plans = blocks.plan_blocks(manifest, block_size=2)
+    for plan in plans:
+        _, manifest = _publish(book, manifest, plan)
+
+    verdict = results.classify(manifest, plans, results.list_results(book))
+    assert set(verdict.done) == {p.block_signature for p in plans}
+    assert verdict.stale == {}
+    assert verdict.missing == {}
+
+
+def test_failed_status_is_stale_not_done(tmp_path) -> None:
+    book = _book(tmp_path, 2)
+    manifest = project.load_manifest(book)
+    plan = blocks.plan_blocks(manifest, block_size=2)[0]
+    _, manifest = _publish(book, manifest, plan, status=results.ST_FAILED)
+
+    verdict = results.classify(manifest, [plan], results.list_results(book))
+    assert verdict.done == {}
+    assert verdict.stale[plan.block_signature] == f"{results.STALE_NOT_DONE}:FAILED"
+
+
+def test_changed_text_is_local_failure_not_global(tmp_path) -> None:
+    """改第 3 章：含它的块签名变了 → 待重算；不含它的块仍然算完成。"""
+    book = _book(tmp_path, 4)
+    manifest = project.load_manifest(book)
+    plans = blocks.plan_blocks(manifest, block_size=2)  # [1,2] [3,4]
+    for plan in plans:
+        _, manifest = _publish(book, manifest, plan)
+
+    manifest2 = _rewrite_chapter(book, manifest, 3, "第3章\n改过的内容\n")
+    new_plans = blocks.plan_blocks(manifest2, block_size=2)
+
+    verdict = results.classify(manifest2, new_plans, results.list_results(book))
+    assert new_plans[0].block_signature in verdict.done          # 未受影响
+    assert new_plans[1].block_signature in verdict.missing       # 换了签名 → 没跑过
+
+
+def test_source_chapters_mismatch_is_stale(tmp_path) -> None:
+    """结果自称送进去的章节与块成员不一致（被改过/串过）→ 不能算完成。"""
+    book = _book(tmp_path, 2)
+    manifest = project.load_manifest(book)
+    plan = blocks.plan_blocks(manifest, block_size=2)[0]
+    record, manifest = _publish(book, manifest, plan)
+
+    path = results.result_path(book, record.result_id)
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    raw["source_chapters"] = [[raw["source_chapters"][0][0], "0" * 64]]
+    path.write_text(json.dumps(raw, ensure_ascii=False), encoding="utf-8")
+
+    verdict = results.classify(manifest, [plan], results.list_results(book))
+    assert verdict.stale[plan.block_signature] == results.STALE_SOURCE_MISMATCH
+
+
+def test_dependency_change_marks_stale(tmp_path) -> None:
+    book = _book(tmp_path, 2)
+    manifest = project.load_manifest(book)
+    plan = blocks.plan_blocks(manifest, block_size=2)[0]
+    _, manifest = _publish(book, manifest, plan, dep="dep-old")
+
+    records = results.list_results(book)
+    fresh = results.classify(manifest, [plan], records, dependency_fingerprint="dep-old")
+    assert plan.block_signature in fresh.done
+
+    stale = results.classify(manifest, [plan], records, dependency_fingerprint="dep-new")
+    assert stale.stale[plan.block_signature] == results.STALE_DEPENDENCY
+
+
+def test_publishing_newer_result_retires_older_one(tmp_path) -> None:
+    """同块两条结果共存会让"取哪一条"不确定；发布新的即让旧的退出登记。"""
+    book = _book(tmp_path, 2)
+    manifest = project.load_manifest(book)
+    plan = blocks.plan_blocks(manifest, block_size=2)[0]
+    old, _ = _publish(book, manifest, plan, model="m1")
+    new, manifest2 = _publish(book, manifest, plan, model="m2")
+
+    assert manifest2.active_results == [new.result_id]
+    assert old.result_id not in manifest2.active_results
+
+    verdict = results.classify(manifest2, [plan], results.list_results(book))
+    assert verdict.done[plan.block_signature].result_id == new.result_id
 
 
 # ---------------------------------------------------------------------------
@@ -191,9 +314,7 @@ def test_progress_from_manifest_end_to_end(tmp_path) -> None:
     manifest = project.load_manifest(book)
     plans = blocks.plan_blocks(manifest, block_size=2)
     for plan in plans:
-        results.write_result(
-            book, results.ResultRecord(block_signature=plan.block_signature, status=results.STATUS_DONE)
-        )
+        _, manifest = _publish(book, manifest, plan)
 
     entry = queue.QueueEntry(book_id=manifest.book_id, name=manifest.title)
     queue.progress_from_manifest(entry, manifest, plans, results.list_results(book))

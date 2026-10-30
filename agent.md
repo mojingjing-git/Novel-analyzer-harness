@@ -1289,6 +1289,26 @@ mypy backend/
 - **服务门面与路由（S2 接线入口）**：`backend/services/vnext_service.py`（`list_books` 同时返回 accepted 与带原因的 rejected；`open_book` 按 `book_id`；`block_size` 只在配置文件**不存在**时兜底 4，存在但非法必须报错）、`backend/api/routes_vnext.py`（`GET /api/vnext/books`、`GET /api/vnext/books/{book_id}`、`GET /api/vnext/queue`、`POST /api/vnext/queue/restore`；错误码→HTTP 映射：格式/版本/冲突→409、缺字段→404、取值非法→422，**不把格式错误归到 500**），已在 `backend/app.py` 注册
 - **plan / 契约**：`docs/PLAN-v2-long-novel-reliability-2026-10-30.md` §1.1、§2、§4 S2；数据契约 `docs/data-contract-vnext.md`（含旧产物清单附录 A、入口矩阵附录 B、实现决定附录 C）
 
+### 10.38 外部复审六条修复：S1/S2 不能算验收完成（2026-10-30）
+
+复审独立复现了六处问题。**共同点：每条都能跑通、测试也绿，但给出的结论是错的**——这类问题的代价不是崩溃，而是"看起来正常"的错误数据。
+
+**S1 侧（用量与判定）**
+
+1. **无 usage 的失败继承前次 tokens**：旧实现把"上一次尝试报过的用量"存进 `last_consumed_tokens`，第二次尝试断连（无 usage）时仍返回 `(11,3)/KNOWN`。现在三种口径分开：`attempt_tokens`（本次尝试自己的用量，拿不到就是 `None`）、`prior_known_tokens`（已确认消耗但产出未被采用的累计，必须记账但不能算进 `tokens`）、`last_consumed_tokens`（仅内部统计）。新增字段 `LLMResult.prior_known_tokens`，DTO 同步。
+2. **完整判定被压成三元组再重建**：`_decide_retry` 原先把 `ErrorVerdict` 换成 `ClassVerdict` 再往下传，`provider_code`/`http_status`/`source_channel`/`retry_after` 全丢，最终结果是"按置信度重建"的仿制品（来源从 `ERROR_ENVELOPE` 退化成 `SDK_ATTRIBUTE`）。现在新增 `_verdict_from_exception(exc, error_text)`：**在异常现场**一次性构造完整判定（含厂商码、HTTP 状态、来源通道、响应头 `Retry-After`），全链只搬不改；`_as_error_verdict` 对已是 `ErrorVerdict` 的输入原样返回。
+3. **Retry-After 依赖字符串**：typed `retry_after=7` 但显示串不含 `Retry-After:` 时会退化成 30 秒。现在优先用 typed 值，字符串解析只作兜底。
+
+**S2 侧（结果协议与恢复）**
+
+4. **结果读取协议与索引没接通**：两个**反向**错误——合法登记且 `SUCCEEDED` 的结果被跳过（进度显示 missing）、未登记且指向不存在文件的 `done` 记录却被算完成。现已按契约对齐：文件名 `<result_id>.json`、状态 `SUCCEEDED/FAILED/SKIPPED/CANCELLED/BLOCKED`、**只有 `manifest.active_results` 里的结果才算数**，判定顺序为「登记 → 状态 → `source_chapters` 是否仍一致 → （可选）依赖指纹」。`publish_result` 返回**提交后的清单**（`commit_manifest` 在锁内重读，调用方手里的旧快照会看到空 `active_results`）。
+5. **队列恢复不重算进度**：只做 `running→pending`，源变了仍显示 `done 2/2, stale=0`。现在 `restore_queue_after_restart()` 对每个可打开的书按当前源重算；算不出的书保留历史状态但写明"项目不可用，进度未校验"。
+6. **书目定位被坏目录堵死 + 身份冲突任取其一**：`locate_project` 原来自行遍历并加载所有 manifest，一个排序靠前的坏清单会让好书也打不开；两个相同 `book_id` 都进 accepted，打开时任取第一个。现在定位复用 `scan_projects` 的已校验结果，冲突目录进 `rejected`（`DUPLICATE_BOOK_ID`，保留第一个并给出冲突路径）。
+
+**另修**：`block_size` 配置校验——`true` 曾被 `int()` 顺成 1、`2.9` 被截成 2、`analysis: [1]` 抛未封装的 `AttributeError`（接口直接 500）。现在先校验容器类型，再要求严格整数（排除 `bool`），非法一律 `INVALID_FIELD_VALUE`。
+
+**回归**：`backend/tests/test_vnext_review_fixes.py`（9 例）、`backend/tests/test_llm_verdict_tokens_review.py`（5 例），以及 `test_vnext_results_queue.py` 按新协议重写（18 例）。
+
 ---
 
 ## 13. i18n 接口预留（L2 阶段，2026-09-02）
