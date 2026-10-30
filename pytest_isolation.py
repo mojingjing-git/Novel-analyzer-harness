@@ -34,6 +34,12 @@ from pathlib import Path
 SECRET_ENV_KEYS = ("LLM_API_KEY", "MINIMAX_API_KEY", "NOVEL_ANALYZER_SESSION_TOKEN")
 SYNTHETIC_MODEL = "test-model"
 
+# vnext 数据空间标识（S2）。这里刻意写成字面量而不是 import backend.*：
+# 本模块必须在任何 backend.* import 之前运行，且底层 docstring 已说明原因。
+# 与 backend/vnext/constants.py 的一致性由 backend/tests/test_vnext_constants_alignment.py 断言。
+VNEXT_FORMAT_ID = "novel-analyzer-vnext"
+VNEXT_SCHEMA_VERSION = 1
+
 # S0（PLAN v2 §S0-4、REPORT-review C-17）：代理环境净化。
 # 不删除可用代理，只把「本进程内会让 httpx 构造期抛异常」的写法改成等价可解析写法。
 PROXY_ENV_KEYS = (
@@ -204,6 +210,38 @@ def install(repo_root: Path) -> Path:
             ensure_ascii=False,
             indent=2,
         ),
+        encoding="utf-8",
+    )
+
+    # 3b) vnext 数据空间（S2）：与旧空间同批隔离，避免测试写到开发者的真实
+    #     workspace_vnext/。合成文件保持"空但合法"，不伪造任何分析产物——
+    #     需要产物的用例必须自己用临时目录生成。
+    (ISOLATION_ROOT / "workspace_vnext").mkdir(parents=True, exist_ok=True)
+    (ISOLATION_ROOT / "config_vnext.json").write_text(
+        json.dumps(
+            {
+                "api": {
+                    "base_url": "https://example.invalid/v1",
+                    "api_key": "",
+                    "model": SYNTHETIC_MODEL,
+                    "provider": "auto",
+                },
+                "analysis": {},
+                "workspace_dir": "workspace_vnext",
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    (ISOLATION_ROOT / "queue_state_vnext.json").write_text(
+        json.dumps({"format_id": VNEXT_FORMAT_ID, "schema_version": VNEXT_SCHEMA_VERSION, "items": []},
+                   ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    (ISOLATION_ROOT / "books_vnext.json").write_text(
+        json.dumps({"format_id": VNEXT_FORMAT_ID, "schema_version": VNEXT_SCHEMA_VERSION, "books": []},
+                   ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 

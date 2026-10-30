@@ -28,6 +28,8 @@
 | 2026-10-30 | 尚未入库 | PLAN v2.2 复审二收口（scope 词汇统一 / 覆盖状态互斥 / 资源计量对象 / 附表 A 冻结口径 / T45·T47 自动化方式 / D-12 外置索引） | doc_check | 通过 | 未记录 | 主计划 703 行、delta 395 行、D-01 设计 257 行。校验：§5 内 T 唯一 47 条（T01–T47）无缺失无重复（附表 B 的 T 行是用例键，非重复定义）；两文档 `CALL/BLOCK/ACCOUNT` 旧词汇残留 0；`planned = executed` 旧守恒式残留 0 |
 | 2026-10-30 | 尚未入库 | PLAN v2 S1 收口（U1–U6b：C-01 止血 + 判定贯通 + usage 语义） | doc_check | 通过 | 未记录 | `agent.md` 新增 §10.36 并改写 §5.1 的 `error_taxonomy` 三条 bullet；`CHANGELOG.md` 新增 S1 段落；`docs/architecture.md`「两级重试链」改为「两级重试链与错误判定」。行尾保真：CHANGELOG 纯 CRLF(722)、agent.md 纯 LF、architecture 原 CRLF 保持 |
 | 2026-10-30 | 尚未入库 | 全量后端测试（S1 后） | business_test | **962 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，657.79s。相对 S0 基线 892 增加 70 例：新增 4 个测试文件 61 例（`test_error_types.py` 29 / `test_retry_decision_u2.py` 20 / `test_verdict_pipeline_u4b.py` 4 / `test_concurrency_and_usage_u6.py` 8）+ `test_error_taxonomy.py` 37→46（+9） |
+| 2026-10-30 | 尚未入库 | 全量后端测试（S2 后） | business_test | **1022 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，1493.09s。相对 S1 基线 962 增加 60 例：`test_vnext_constants_alignment` 4 / `test_vnext_artifacts` 15 / `test_vnext_fingerprint` 15 / `test_vnext_project` 15 / `test_vnext_blocks` 11 |
+| 2026-10-30 | 尚未入库 | PLAN v2 S2 文档同步 + 数据契约 | doc_check | 通过 | 未记录 | `agent.md` 新增 §10.37；`CHANGELOG.md` 新增 S2 段落；新建 `docs/data-contract-vnext.md`（385 行，LF 无 BOM，唯一 JSON 例子经 `json.loads` 校验）。行尾保真：CHANGELOG 纯 CRLF(753)、agent.md 纯 LF |
 
 ---
 

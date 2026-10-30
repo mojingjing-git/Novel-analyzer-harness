@@ -1272,6 +1272,21 @@ mypy backend/
 - **刻意未做**：不加 `__iter__`/可解包兼容层（旧元组一次性删除）；U2 引入的 `contextvars` 临时槽在 U5 删除，结构化结论改由结果对象显式携带；`analyzer.analyze_chapter` 对外 `(result, tokens, retry_info)` 形状不变；`_emit_rolling_tokens` 未知时直接不发（不宣称零）
 - **plan**：`docs/PLAN-v2-long-novel-reliability-2026-10-30.md` §4 S1；任务拆解 `docs/PLAN-S1-task-breakdown-2026-10-30.md`；类型契约 `docs/DESIGN-D01-verdict-transport-2026-10-30.md`
 
+### 10.37 PLAN v2 S2：vnext 数据空间与格式门禁（2026-10-30）
+
+- **改动**：新增包 `backend/vnext/`——`constants.py`（`FORMAT_ID="novel-analyzer-vnext"`、`SCHEMA_VERSION=1`、独立文件名常量、`ErrorCode` 9 值 + `VnextFormatError`）、`artifacts.py`（格式门禁 + 原子写）、`fingerprint.py`（文本规范化与六个指纹）、`project.py`（建项目/读清单/带 revision 的提交）、`blocks.py`（块规划与失效判定）；`.gitignore` 放行四个 vnext 文件名；`pytest_isolation.py` 增加 vnext 隔离段
+- **数据空间**：`workspace_vnext/`（数据）+ `queue_state_vnext.json` / `books_vnext.json` / `config_vnext.json`（运行时状态，放项目根）。**与旧 `workspace/` 完全隔离**：不打开、不覆盖、不删除、不归档、不写迁移脚本
+- **格式门禁**：每个产物顶层必须有 `format_id` + `schema_version`，缺失即 `UNSUPPORTED_ARTIFACT_FORMAT`（界面文案"此目录不属于本版本，请从原文创建新项目"）。校验顺序固定为「顶层对象 → format_id → schema_version → 必需字段 → 取值域」，**先判格式族再判版本**：旧文件同时缺这两个字段时，用户该看到的是"不属于本版本"，而不是指向错误方向的"版本号不对"
+- **身份不随内容漂移**：`chapter_id = ch_ + sha256(book_id \x1f ordinal)[:12]`，**不含正文哈希**——否则改一个字就变成"换了一章"，`STALE_INPUT` 无法沿依赖传播。正文改写只改 `content_hash`，`source_snapshot_id` 随之更新
+- **指纹**（全部 `canonical_json` = 键排序 + 无空白 + `ensure_ascii=False`，多段拼接用 `\x1f` 而非 `|`，避免 `a|b` 碰撞）：`block_signature`（策略版本 + 有序 `[[chapter_id, content_hash],…]`）、`dependency_fingerprint`、`task_key`（**不含 run_id**）、`result_id`、`evidence_id`（`book_id+chapter_id+content_hash+start+end`，12 hex）；`content_hash` 输入必须是规范化文本
+- **文本规范化**（`TEXT_NORMALIZATION_VERSION=1`，幂等）：去 BOM → 换行统一 LF → 删行尾空格/制表（**保留行首缩进**）→ 连续空行压至多 1 → 文末恰好 1 LF。**不做**全半角/简繁转换——会改变字符数，让已存的 `source_ref` 偏移整体失效
+- **写入规则**：`write_json_atomic` 用同目录 `mkstemp` + 唯一名 + `fsync` + `os.replace`，Windows `PermissionError` 固定 6 次退避重试；失败保留原文件并清理临时文件。**刻意不复用** `json_utils.safe_save_json`——它带 `json_repair` 兜底与"失败返回 default"，会把"没写进去"伪装成"写成功"
+- **并发**：`commit_manifest(book_dir, mutate, expected_revision=None)` 锁粒度是**书**（按绝对路径的 `threading.Lock`，跨书不共享），锁内读→改→`revision+1`→原子写；版本不符抛 `RevisionConflict`，**不重试不合并**
+- **块失效判定**：`verify_block` 按 manifest 重算签名，成员变/正文变/策略版本变三类都命中 `BLOCK_SIGNATURE_MISMATCH`；`is_block_fresh` 为布尔版供扫描过滤。块文件只存 `chapter_ids`，不重复存 `content_hash`（避免"两处哈希不一致"）
+- **测试**：`test_vnext_constants_alignment.py`(4) / `test_vnext_artifacts.py`(15) / `test_vnext_fingerprint.py`(15) / `test_vnext_project.py`(15) / `test_vnext_blocks.py`(11)，共 60 例；全量 **962 → 1022**（父 agent 亲跑）
+- **刻意未做**：不做旧字段兼容降级（缺字段即报错，不补默认值）；不为 `.md` 派生产物加 JSON 头（改旁挂 `.meta.json`）；S2 不逐域重写消费者，只把入口接上门禁（18 行入口矩阵见契约文档附录 B）
+- **plan / 契约**：`docs/PLAN-v2-long-novel-reliability-2026-10-30.md` §1.1、§2、§4 S2；数据契约 `docs/data-contract-vnext.md`（含旧产物清单附录 A、入口矩阵附录 B、实现决定附录 C）
+
 ---
 
 ## 13. i18n 接口预留（L2 阶段，2026-09-02）

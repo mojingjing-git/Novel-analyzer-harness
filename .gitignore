@@ -12,6 +12,12 @@ queue_state.json
 .tmp_verify/
 app.lock
 
+# vnext 运行时数据（S2，2026-10-30）：与旧数据空间完全分离，绝不入库
+workspace_vnext/
+queue_state_vnext.json
+books_vnext.json
+config_vnext.json
+
 # 会话鉴权 token（PR-1 引入，2026-09-10）
 session.token
 

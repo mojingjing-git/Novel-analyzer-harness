@@ -2,6 +2,37 @@
 
 ---
 
+## [Unreleased] - 2026-10-30（v2 S2 数据空间：novel-analyzer-vnext 格式门禁与来源模型）
+
+### 新数据空间与格式门禁
+
+- 新增 `backend/vnext/` 包（`constants` / `artifacts` / `fingerprint` / `project` / `blocks`）：新版本只认带 `format_id = "novel-analyzer-vnext"` 与 `schema_version = 1` 的产物
+- 数据根 `workspace_vnext/`，运行时状态独立为 `queue_state_vnext.json` / `books_vnext.json` / `config_vnext.json`；**与旧 `workspace/` 完全隔离**：不打开、不覆盖、不删除、不归档、不写迁移脚本
+- 缺格式标记一律 `UNSUPPORTED_ARTIFACT_FORMAT`（"此目录不属于本版本，请从原文创建新项目"）；**不猜字段、不回退解析、不用旧默认值补全**
+- 校验顺序固定：顶层对象 → `format_id` → `schema_version` → 必需字段 → 取值域。先判格式族再判版本，避免把"走错门"报成"版本号不对"
+
+### 身份与指纹
+
+- `chapter_id = ch_ + sha256(book_id \x1f ordinal)[:12]`，**不含正文哈希**：正文改写只改 `content_hash`，否则"改一个字"会变成"换了一章"，`STALE_INPUT` 无法沿依赖传播
+- 六个指纹集中定义：`content_hash` / `block_signature` / `dependency_fingerprint` / `task_key`（不含 `run_id`）/ `result_id` / `evidence_id`（12 hex）
+- 规范 JSON = 键排序 + 无空白 + `ensure_ascii=False`；多段拼接用 `\x1f` 而非 `|`（后者会让 `a|b` 与 `a|`+`b` 撞同一哈希）
+- 文本规范化版本化（`TEXT_NORMALIZATION_VERSION=1`，幂等）：去 BOM / 换行 LF / 删行尾空白但**保留行首缩进** / 连续空行压至多 1；不做全半角与简繁转换（会改变字符数，废掉已存偏移）
+
+### 写入与并发
+
+- `write_json_atomic`：同目录 `mkstemp` + 唯一名 + `fsync` + `os.replace`，Windows `PermissionError` 6 次固定退避；失败保留原文件并清理临时文件
+- 刻意**不复用** `json_utils.safe_save_json`：它带 `json_repair` 兜底与"失败返回 default"，会把"没写进去"伪装成"写成功"
+- `commit_manifest` 锁粒度是**书**（跨书不共享锁），锁内读→改→`revision+1`→原子写；版本不符抛 `RevisionConflict`，不重试不合并
+- `verify_block` 按 manifest 重算签名，成员变 / 正文变 / 策略版本变三类都判失效
+
+### 测试与文档
+
+- 新增 5 个测试文件共 60 例（`test_vnext_constants_alignment` 4 / `test_vnext_artifacts` 15 / `test_vnext_fingerprint` 15 / `test_vnext_project` 15 / `test_vnext_blocks` 11）；全量 **962 → 1022 passed**
+- 新增 `docs/data-contract-vnext.md`：格式标识与策略版本口径、目录布局、对象定义、十步校验顺序、六个指纹的精确输入、写入规则、错误码表，附录含旧产物实测清单、18 行读写入口矩阵、实现决定
+- `pytest_isolation.py` 增加 vnext 隔离段（合成 `config_vnext.json` / `queue_state_vnext.json` / `books_vnext.json`，空但合法，不伪造产物）
+
+---
+
 ## [Unreleased] - 2026-10-30（v2 S1 错误判定贯通：C-01 止血 + 结果对象化）
 
 ### C-01 止血：正文里的数字不再被当成厂商错误码
