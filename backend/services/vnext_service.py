@@ -19,7 +19,7 @@ from __future__ import annotations
 import os
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from backend.vnext import blocks, project, queue, registry, results
 from backend.vnext.constants import (
@@ -147,7 +147,9 @@ def restore_queue_after_restart() -> queue.QueueState:
             manifest = project_mod.load_manifest(ref.path)
             plans = blocks.plan_blocks(manifest, block_size=size)
             records = results_mod.list_results(ref.path)
-            queue.progress_from_manifest(entry, manifest, plans, records)
+            queue.progress_from_manifest(
+                entry, manifest, plans, records, strategy=result_strategy()
+            )
         except VnextFormatError as exc:
             entry.error_message = f"进度重算失败：{exc.code.value}"
             entry.updated_at = time.time()
@@ -199,3 +201,125 @@ def _read_config(path: Path) -> dict:
     from backend.vnext.artifacts import read_json_artifact
 
     return dict(read_json_artifact(path))
+
+
+def result_strategy() -> results.ResultStrategy:
+    """当前"生成条件"：Prompt 策略版本 + 模型指纹 + 上下文策略版本。
+
+    这三个值一起决定"旧结果还算不算数"。模型指纹取 ``api.model`` 与几个会影响输出的
+    参数；配置里没写就留空——留空的后果是"换模型不会被察觉"，这比"凭空失效"更糟，
+    所以只要能读到就一定要读。
+    """
+    parts: list[str] = []
+    cfg_path = novel_root() / CONFIG_FILE_NAME
+    if cfg_path.is_file():
+        payload = _read_config(cfg_path)
+        api = payload.get("api") or {}
+        if isinstance(api, dict):
+            for key in ("model", "temperature", "max_tokens", "thinking_mode"):
+                value = api.get(key)
+                if value not in (None, "", {}):
+                    parts.append(f"{key}={value}")
+    return results.ResultStrategy(
+        prompt_strategy_version=1,
+        model_fingerprint="|".join(parts),
+        context_strategy_version=results.CONTEXT_STRATEGY_VERSION,
+    )
+
+
+# ---------------------------------------------------------------------------
+# 从原文创建项目（S2 基础入口）
+# ---------------------------------------------------------------------------
+
+
+def create_book(
+    title: str,
+    *,
+    text: Optional[str] = None,
+    chapters: Optional[list[tuple[str, str]]] = None,
+    book_id: Optional[str] = None,
+    dir_name: Optional[str] = None,
+) -> dict:
+    """从原文（或已切好的章节）创建 vnext 项目。
+
+    两种输入：
+
+    * ``chapters``：调用方已经切好，直接写；
+    * ``text``：走**同一套**切章器（``splitter_service.split_text``）——不另写一份
+      正则，否则两套切章规则会分叉，同一本书在不同入口切出不同章节。
+
+    切章结果为空一律报错，不建"零章项目"：那会让后续每一步都在处理空集合，
+    错误要到很远的地方才显形。
+    """
+    if chapters is None:
+        if not text or not text.strip():
+            raise VnextFormatError(
+                ErrorCode.INVALID_FIELD_VALUE, "text 与 chapters 至少提供一个"
+            )
+        from backend.services import splitter_service
+
+        split = splitter_service.split_text(text, external_title=title)
+        if not split.chapters:
+            raise VnextFormatError(
+                ErrorCode.INVALID_FIELD_VALUE,
+                "切章结果为空：没有识别到任何章节起始行（可改用 chapters 直接指定）",
+            )
+        chapters = [
+            (i + 1, f"{block.title}\n{block.content}") for i, block in enumerate(split.chapters)
+        ]
+    if not chapters:
+        raise VnextFormatError(ErrorCode.INVALID_FIELD_VALUE, "章节列表为空")
+
+    book_dir = project.create_project(
+        data_root(), title, chapters, book_id=book_id, dir_name=dir_name
+    )
+    # create_project 返回的是项目目录（Path），字段要回读一次清单才有——
+    # 直接拿返回值当 Manifest 用会 AttributeError。
+    manifest = project.load_manifest(book_dir)
+    return {
+        "book_id": manifest.book_id,
+        "title": manifest.title,
+        "total_chapters": len(manifest.chapters),
+        "revision": manifest.revision,
+        "source_snapshot_id": manifest.source_snapshot_id,
+    }
+
+
+def list_blocks(book_id: str) -> dict:
+    """块级进度：断点恢复的读入口。
+
+    返回每块的签名、成员章数与当前状态（done / stale:<原因> / missing:<原因>），
+    并标注哪些块可以续跑。调用方据此决定"从哪继续"，而不是去数目录里的文件。
+    """
+    ref = registry.locate_project(data_root(), book_id)
+    manifest = project.load_manifest(ref.path)
+    plans = blocks.plan_blocks(manifest, block_size=block_size())
+    verdict = results.classify(
+        manifest, plans, results.list_results(ref.path), strategy=result_strategy()
+    )
+    by_sig_display = {p.block_signature: p.start_display_no for p in plans}
+    items = []
+    for plan in plans:
+        sig = plan.block_signature
+        if sig in verdict.done:
+            state = "done"
+        elif sig in verdict.stale:
+            state = f"stale:{verdict.stale[sig]}"
+        else:
+            state = f"missing:{verdict.missing.get(sig, 'NOT_REGISTERED')}"
+        items.append(
+            {
+                "block_signature": sig,
+                "chapter_count": len(plan.chapter_ids),
+                "start_display_no": by_sig_display.get(sig),
+                "state": state,
+            }
+        )
+    return {
+        "book_id": manifest.book_id,
+        "total_blocks": len(plans),
+        "done_blocks": len(verdict.done),
+        "stale_blocks": len(verdict.stale),
+        "missing_blocks": len(verdict.missing),
+        "blocks": items,
+    }

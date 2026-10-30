@@ -181,11 +181,17 @@ def progress_from_manifest(
     manifest,
     plans: list,
     records: dict | None = None,
+    *,
+    strategy=None,
 ):
-    """从 manifest + 块计划直接算出条目进度（不读旧状态）。"""
+    """从 manifest + 块计划直接算出条目进度（不读旧状态）。
+
+    传 ``strategy`` 时按"前面各块的结果 ID"逐块算期望依赖，因此上游变了会让后续块
+    失效——这是"局部失效"的正确边界；不传则只比块签名与状态。
+    """
     from .results import classify
 
-    verdict = classify(manifest, plans, records)
+    verdict = classify(manifest, plans, records, strategy=strategy)
     return apply_progress(
         entry,
         completed_blocks=len(verdict.done),

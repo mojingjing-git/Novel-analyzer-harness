@@ -22,10 +22,14 @@ from typing import Mapping, Sequence
 from .artifacts import read_json_artifact, stamp_payload, write_json_atomic
 from .blocks import BlockPlan
 from .constants import ErrorCode, VnextFormatError
+from .fingerprint import dependency_fingerprint as _fingerprint_dependencies
 from .fingerprint import result_id as compute_result_id
 from .project import Manifest, commit_manifest
 
 RESULT_DIR_NAME = "results"
+
+#: "上下文怎么拼"的版本（前情取哪些块、截断多少字符）。与 Prompt 措辞版本分开演进。
+CONTEXT_STRATEGY_VERSION = 1
 
 #: 结果状态（与 §3.4 / §3.6 同词表）。``BLOCKED`` 是"账户级错误导致整本停摆"，
 #: 与 ``FAILED`` 的区别是有没有人需要动手。
@@ -241,11 +245,45 @@ def _newest(records: Sequence[ResultRecord]) -> ResultRecord | None:
     return max(records, key=lambda r: r.created_at) if records else None
 
 
+@dataclass(frozen=True)
+class ResultStrategy:
+    """产出结果时用的"条件"。三者任一变化，旧结果就不该再被当作当前结论。
+
+    ``context_strategy_version`` 是"上下文怎么拼"的版本（前情取哪些、截断多少）。
+    它与 ``prompt_strategy_version`` 分开，是因为它们会独立演进：改 Prompt 措辞
+    和改"给模型看哪几章前情"是两件事，合成一个版本号会让任一方变动都白跑全库。
+    """
+
+    prompt_strategy_version: int = 1
+    model_fingerprint: str = ""
+    context_strategy_version: int = CONTEXT_STRATEGY_VERSION
+
+
+def expected_dependency(
+    prior_result_ids: Sequence[str | None], strategy: ResultStrategy
+) -> str:
+    """算"这一块现在应该依赖什么"。
+
+    ``prior_result_ids`` 是**按顺序**的、此前各块当前有效的结果 ID（未完成的位置是
+    ``None``）。用位置而不是"已完成集合"，是为了让"前面换了一块"精确地传导下去：
+    第 3 块换了结果，第 4、5 块必失效，而第 1、2 块不受影响。
+    """
+    return _fingerprint_dependencies(
+        {
+            "prior_results": list(prior_result_ids),
+            "context_strategy_version": strategy.context_strategy_version,
+            "prompt_strategy_version": strategy.prompt_strategy_version,
+            "model_fingerprint": strategy.model_fingerprint,
+        }
+    )
+
+
 def classify(
     manifest: Manifest,
     plans: list[BlockPlan],
     records: Mapping[str, ResultRecord] | None = None,
     *,
+    strategy: ResultStrategy | None = None,
     dependency_fingerprint: str | None = None,
 ) -> Classified:
     """判定每个计划块的状态。
@@ -256,7 +294,12 @@ def classify(
        别的源留下的，也可能是写的中间态，都不算。
     2. **状态必须 SUCCEEDED**：FAILED/SKIPPED/CANCELLED/BLOCKED 都不是"完成"。
     3. **送进去的章节必须还是这几章、这几个哈希**：否则这结果回答的是另一个问题。
-    4. 给了 ``dependency_fingerprint`` 时还要一致：上游变了，本块结论就过期。
+    4. **依赖必须仍是当前依赖**：给了 ``strategy`` 就按"前面各块的结果 ID"逐块滚动
+       计算期望依赖。前面任何一块换了结果、或 Prompt/模型/上下文策略变了，它之后
+       的块都会失效——而它之前的块不受影响。这就是"局部失效"的准确边界。
+
+    只按块签名判断会漏掉跨块依赖：某块读了前情摘要，前情变了它却"签名没变"，
+    于是被当成还能用——那正是"看起来跑完了、实际是旧结论"的来源。
     """
     if records is None:
         records = {}
@@ -270,31 +313,42 @@ def classify(
     done: dict[str, ResultRecord] = {}
     stale: dict[str, str] = {}
     missing: dict[str, str] = {}
+    prior: list[str | None] = []
 
     for plan in plans:
         expected_source = tuple(
             (cid, hash_by_chapter.get(cid, "")) for cid in plan.chapter_ids
         )
+        if strategy is not None:
+            expected_dep = expected_dependency(prior, strategy)
+        else:
+            expected_dep = dependency_fingerprint
+
         candidates = by_block.get(plan.block_signature, [])
         record = _newest(candidates)
+        reason: str | None = None
         if record is None:
-            # 这里只说"当前没有有效结果"。至于"登记了但文件没了"与"文件在但没登记"，
-            # 都无法归因到某个具体块（文件不在就不知道它属于哪块），所以在下面按
+            # "当前没有有效结果"。至于"登记了但文件没了"与"文件在但没登记"，
+            # 都无法归因到某个具体块（文件不在就不知道它属于哪块），因此在下面按
             # result_id 单列，不硬塞进块的结论里。
             missing[plan.block_signature] = MISSING_NOT_REGISTERED
+        elif record.status != ST_SUCCEEDED:
+            reason = f"{STALE_NOT_DONE}:{record.status}"
+        elif record.source_chapters != expected_source:
+            reason = STALE_SOURCE_MISMATCH
+        elif expected_dep is not None and record.dependency_fingerprint != expected_dep:
+            reason = STALE_DEPENDENCY
+
+        if reason is not None:
+            stale[plan.block_signature] = reason
+            prior.append(None)  # 这一块没有当前有效结果，后面的块依赖也就断了
             continue
-        if record.status != ST_SUCCEEDED:
-            stale[plan.block_signature] = f"{STALE_NOT_DONE}:{record.status}"
-            continue
-        if record.source_chapters != expected_source:
-            stale[plan.block_signature] = STALE_SOURCE_MISMATCH
-            continue
-        if dependency_fingerprint is not None and (
-            record.dependency_fingerprint != dependency_fingerprint
-        ):
-            stale[plan.block_signature] = STALE_DEPENDENCY
-            continue
-        done[plan.block_signature] = record
+
+        if record is not None:
+            done[plan.block_signature] = record
+            prior.append(record.result_id)
+        else:
+            prior.append(None)
 
     return Classified(
         done=done,

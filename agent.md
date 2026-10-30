@@ -1309,6 +1309,20 @@ mypy backend/
 
 **回归**：`backend/tests/test_vnext_review_fixes.py`（9 例）、`backend/tests/test_llm_verdict_tokens_review.py`（5 例），以及 `test_vnext_results_queue.py` 按新协议重写（18 例）。
 
+### 10.39 块间依赖链与 S2 基础入口（2026-10-30）
+
+**依赖链：局部失效的准确边界。** 只比块签名会有一种死法——某块读的是前情摘要，"签名没变"但它依赖的前情换过了，于是被判"还能用"。现在每块的期望依赖由 **有序的前序结果 ID + 生成条件** 算出（`results.expected_dependency`），`classify(..., strategy=...)` 按计划顺序前向滚链：
+
+- 前面某块换了结果（新 `result_id`）→ 它之后各块 `STALE_DEPENDENCY`，它之前的不受影响；
+- Prompt 策略 / 模型指纹 / 上下文策略变更 → 全部失效；
+- 前面某块未完成 → 其后各块依赖不成立（`prior.append(None)`）。
+
+`ResultStrategy(prompt_strategy_version, model_fingerprint, context_strategy_version)` 三件分开演进，"改措辞"和"改给模型看哪几章前情"不再互相牵连。不传 `strategy` 时退化为主看块签名，**仅供扫描预览**，不能用来决定"跳过"。
+
+**S2 基础入口（原计划排在 S3–S9，复审后归回 S2）**：`vnext_service.create_book()`（`text` 走 `splitter_service.split_text`，不另写切章正则）、`vnext_service.list_blocks()`（块级 `done` / `stale:<原因>` / `missing:<原因>`）、`POST /api/vnext/projects`（201；`chapters` 优先于 `text`）、`GET /api/vnext/books/{id}/blocks`。
+
+**两个坑**：① `project.create_project()` 返回**项目目录 Path**，不是 `Manifest`——想拿 `book_id` 必须 `load_manifest(book_dir)` 回读，直接当对象用会 `AttributeError`；② 没有章节标题的文本，切章器会整篇成 1 章而不是 0 章，所以"零章项目"这条错误路径实际不会触发（`INVALID_FIELD_VALUE` 只在 `chapters=[]` 时出现）。
+
 ---
 
 ## 13. i18n 接口预留（L2 阶段，2026-09-02）

@@ -86,6 +86,70 @@ async def get_queue():
     }
 
 
+@router.post("/projects", status_code=201)
+async def create_project(payload: dict):
+    """从原文创建 vnext 项目。
+
+    请求体二选一：
+
+    * ``{"title": "...", "text": "<整本原文>"}`` —— 后端用**同一套**切章器切分；
+    * ``{"title": "...", "chapters": [{"title": "...", "content": "..."}, ...]}``
+
+    两种都给时以 ``chapters`` 为准（调用方已经切好，不该再被切一遍）。
+    """
+    title = str(payload.get("title") or "").strip()
+    if not title:
+        raise _http_error(
+            VnextFormatError(ErrorCode.MISSING_REQUIRED_FIELD, "缺少 title")
+        )
+
+    raw_chapters = payload.get("chapters")
+    chapters = None
+    if raw_chapters is not None:
+        if not isinstance(raw_chapters, list):
+            raise _http_error(
+                VnextFormatError(ErrorCode.INVALID_FIELD_VALUE, "chapters 必须是数组")
+            )
+        chapters = []
+        for index, item in enumerate(raw_chapters, start=1):
+            if not isinstance(item, dict):
+                raise _http_error(
+                    VnextFormatError(
+                        ErrorCode.INVALID_FIELD_VALUE, f"chapters[{index}] 不是对象"
+                    )
+                )
+            body = item.get("content")
+            if not isinstance(body, str):
+                raise _http_error(
+                    VnextFormatError(
+                        ErrorCode.INVALID_FIELD_VALUE,
+                        f"chapters[{index}].content 必须是字符串",
+                    )
+                )
+            head = str(item.get("title") or "").strip()
+            chapters.append((index, f"{head}\n{body}" if head else body))
+
+    try:
+        return vnext_service.create_book(
+            title,
+            text=payload.get("text"),
+            chapters=chapters,
+            book_id=payload.get("book_id"),
+            dir_name=payload.get("dir_name"),
+        )
+    except VnextFormatError as exc:
+        raise _http_error(exc) from exc
+
+
+@router.get("/books/{book_id}/blocks")
+async def get_blocks(book_id: str):
+    """块级进度（断点恢复的读入口）：哪些块已完成、哪些失效、哪些没跑。"""
+    try:
+        return vnext_service.list_blocks(book_id)
+    except VnextFormatError as exc:
+        raise _http_error(exc) from exc
+
+
 @router.post("/queue/restore")
 async def restore_queue():
     """启动后修复：遗留 running 回落 pending。幂等，可重复调用。"""

@@ -71,6 +71,21 @@
 - 新增 `backend/services/vnext_service.py` 门面 + `backend/api/routes_vnext.py` 四个只读/修复端点；错误码→HTTP：格式/版本/冲突 409、缺字段 404、取值非法 422
 - 测试：新增 `test_vnext_registry`(10) / `test_vnext_results_queue`(12) / `test_vnext_service_routes`(11)
 
+### 块间依赖链（局部失效的准确边界）
+
+- 每块的期望依赖由**有序的前序结果 ID + 生成条件**算出：`prior_results` / `context_strategy_version` / `prompt_strategy_version` / `model_fingerprint`
+- `classify(..., strategy=...)` 前向滚链：前面某块换了结果 → 其后各块 `STALE_DEPENDENCY`，之前的块不受影响；Prompt/模型/上下文策略变更 → 全部失效；前面块未完成 → 后续依赖不成立
+- `ResultStrategy` 把"Prompt 措辞"与"上下文怎么拼"拆成两个独立版本号，避免任一方变动都白跑全库
+- 不传 `strategy` 时退化为只比块签名，**仅供扫描预览**，不能用于决定跳过
+
+### S2 基础入口（原计划在 S3–S9，复审后归回）
+
+- `vnext_service.create_book()`：`text` 走同一套切章器（`splitter_service.split_text`），不另写正则
+- `vnext_service.list_blocks()`：块级 `done` / `stale:<原因>` / `missing:<原因>`
+- `POST /api/vnext/projects`（201，`chapters` 优先于 `text`）、`GET /api/vnext/books/{id}/blocks`
+- 坑：`project.create_project()` 返回项目目录 `Path` 而非 `Manifest`，取字段须 `load_manifest()` 回读
+- 坑：无章节标题的文本会被整篇切成 1 章（不是 0 章），"零章项目"错误路径只在 `chapters=[]` 时触发
+
 ### 测试与文档
 
 - 新增 5 个测试文件共 60 例（`test_vnext_constants_alignment` 4 / `test_vnext_artifacts` 15 / `test_vnext_fingerprint` 15 / `test_vnext_project` 15 / `test_vnext_blocks` 11）；全量 **962 → 1022 passed**

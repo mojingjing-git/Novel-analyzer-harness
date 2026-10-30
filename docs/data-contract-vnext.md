@@ -374,8 +374,44 @@ S2 只把**入口**接上格式门禁，不逐域重写消费者（那是 S3–S
 | 17 | 风格产物 | `backend/services/style_service.py:53`、`backend/api/routes_analysis.py:264` | 读/写 | `style.md` | 换 `derived/style.md` + `.meta.json` |
 | 18 | 导出 | `backend/utils/export_utils.py:41` | 写 | `analysis_summary.md` | 换 `derived/` |
 
-## 附录 C：本批实现决定（不属契约，供审查）
+> **本轮已完成（原计划排在 S3–S9，复审后归回 S2）**：第 2（书目发现）、4（断点恢复）、
+> 9（结果落盘）、10（切章落盘）、11（项目创建）行。其余 13 行仍是"按域重写消费者"，
+> 留在 S3–S9；在那之前它们是**未接线**状态，不是"已兼容"。
 
+## §10 依赖链：局部失效的准确边界
+
+块的"已完成"不能只看块签名。某块读的是前情摘要，"签名没变"但它依赖的前情换过了——
+这时它其实已经过期。因此每块的期望依赖由**有序的前序结果 ID + 生成条件**算出：
+
+```
+expected_dependency = sha256(canonical({
+    prior_results: [前序各块当前有效 result_id, 未完成处为 null],
+    context_strategy_version, prompt_strategy_version, model_fingerprint
+}))
+```
+
+判定按计划顺序**前向滚链**：
+
+| 情形 | 结果 |
+| --- | --- |
+| 前序全部当前有效、本块依赖一致 | `done` |
+| 前面某块换了结果（新 `result_id`） | 本块及其后 `STALE_DEPENDENCY`，之前的块不受影响 |
+| Prompt 策略 / 模型 / 上下文策略变更 | 全部 `STALE_DEPENDENCY` |
+| 前面某块未完成 | 其后各块依赖不成立（`STALE_DEPENDENCY`；若本块根本没有结果则 `missing`） |
+
+不传 `strategy` 时退化为"只比块签名与状态"，仅供早期扫描/预览——**不能**用于判定"可以跳过"。
+
+## §11 S2 基础入口（本轮补齐）
+
+| 能力 | 入口 | 说明 |
+| --- | --- | --- |
+| 从原文建项目 | `POST /api/vnext/projects` | `{title, text}` 走同一套切章器；`{title, chapters:[…]}` 为已切好的输入；两者都给以 `chapters` 为准 |
+| 切章 | 同上（`text` 分支） | 复用 `splitter_service.split_text`，不另写正则——两套切章规则会分叉 |
+| 结果落盘 | `results.publish_result()` | 写 `results/<result_id>.json` + 登记 `active_results`，返回**提交后的**清单 |
+| 断点恢复（读） | `GET /api/vnext/books/{id}/blocks` | 返回每块 `done` / `stale:<原因>` / `missing:<原因>` |
+| 断点恢复（写） | `POST /api/vnext/queue/restore` | 按当前源重算进度；算不出的书写明"项目不可用，进度未校验" |
+
+## 附录 C：本批实现决定（不属契约，供审查）
 | 决定 | 理由 |
 | --- | --- |
 | 配置文件名 `config_vnext.json`、书目索引 `books_vnext.json` 由本批确定 | 计划只要求"独立"，未给名字；集中定义在 `constants.py`，改名只改一处 |
