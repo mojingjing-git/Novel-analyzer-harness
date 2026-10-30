@@ -9,6 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
+from backend.core.error_types import LLMResult, UsageStatus
 from backend.core.memory_state import MemoryState
 from backend.core.pipeline import AnalysisPipeline
 from backend.models.analysis_result import AnalysisResult
@@ -23,7 +24,8 @@ def test_failed_chapters_in_filters_by_scope():
 
 class _FakeRollingClient:
     async def chat_with_retry(self, messages, max_tokens=None):
-        return True, "ch1-3: 测试里程碑", "", (0, 0), {}
+        # U4：返回 LLMResult 对象（不再是 5 元组）
+        return LLMResult(True, "ch1-3: 测试里程碑", "", (0, 0), UsageStatus.KNOWN)
 
 
 def test_archive_momentum_tolerates_non_str_entries():

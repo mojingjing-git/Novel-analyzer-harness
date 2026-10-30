@@ -61,6 +61,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from backend.core.analyzer import NovelAnalyzer  # noqa: E402
+from backend.core.error_types import LLMResult, UsageStatus  # noqa: E402
 from backend.core.style_analyzer import SEMANTIC_FIELDS  # noqa: E402
 from backend.models.knowledge import KnowledgeBase  # noqa: E402
 from backend.services.final_summary import (  # noqa: E402
@@ -159,10 +160,11 @@ class _CapturingLLM:
             ok, err = validate_response(payload)
             self.captured.setdefault("validations", []).append((ok, err))
             if not ok:
-                return False, "", err, (10, 20), {
-                    "attempts": self.n, "failed_tokens": 5
-                }
-        return True, payload, "", (10, 20), {"attempts": self.n}
+                # U4：chat_auto 返回 LLMResult（验证失败但本次调用确实烧了 token）
+                return LLMResult(False, "", err, (10, 20), UsageStatus.KNOWN,
+                                 call_stats={"attempts": self.n, "failed_tokens": 5})
+        return LLMResult(True, payload, "", (10, 20), UsageStatus.KNOWN,
+                         call_stats={"attempts": self.n})
 
 
 def _make_analyzer(llm):
@@ -554,8 +556,10 @@ class _StyleLLM:
                         retry_messages_builder=None, on_progress=None):
         self.calls.append({"messages": messages, "on_progress": on_progress})
         if self.success:
-            return True, self.content, "", (10, 20), {"attempts": 1}
-        return False, "", "boom", (10, 20), {"attempts": 1}
+            return LLMResult(True, self.content, "", (10, 20), UsageStatus.KNOWN,
+                             call_stats={"attempts": 1})
+        return LLMResult(False, "", "boom", (10, 20), UsageStatus.KNOWN,
+                         call_stats={"attempts": 1})
 
 
 def _style_json():

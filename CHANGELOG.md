@@ -2,6 +2,43 @@
 
 ---
 
+## [Unreleased] - 2026-10-30（v2 S1 错误判定贯通：C-01 止血 + 结果对象化）
+
+### C-01 止血：正文里的数字不再被当成厂商错误码
+
+- **根因**：`classify_message` 用 `\b\d{3,4}\b` 扫任意文本，正文中的数字被当厂商码，判成 AUTH/BILLING/MODERATION_INPUT 且 `action=stop` → `llm_client` 首次即停 → `pipeline` 登记 `_fatal_blocks` → **该块永久失败、补跑也不重试**；命中 moderation 的情形还会被 `skip_moderation_blocked` 静默跳过
+- **实测对照**（`classify_message` 层）：
+  - `第 401 章 我叫王二`：`AUTH`/`text`/stop → `UNKNOWN`/`none`/`limited_retry`
+  - `这批货赚了 1008 块`：`BILLING`/`structured`/stop → `UNKNOWN`/`none`/`limited_retry`
+  - `总字数 1026 万，还在连载`：`MODERATION_INPUT`/`structured`/stop → `UNKNOWN`/`none`/`limited_retry`
+- **分级规则**：只有可信通道（SDK 异常属性 / 错误 envelope / 真实 HTTP 状态）有资格产出 `stop`；文本通道（命名错误码与错误措辞）上限是 `limited_retry`/`backoff`/`retry_after`，永不为 stop；纯数字厂商码只留在 `BODY_CODE_MAP`（structured 独享）
+- **识别能力未被削弱**：真实 `status_code=401` 仍是 `AUTH`/structured/stop 且 `attempts==1`；`code=rate_limit_error` 仍是 `RATE_LIMIT`/structured/retry_after
+
+### 判定对象贯通（D-01）
+
+- 新增 `backend/core/error_types.py`（422 行）：`ErrorVerdict` + `LLMResult` + 5 个共享枚举 + 显式 JSON DTO；最底层叶子模块，禁止反向 import
+- `ClassVerdict` 由 2 元组扩为 `(cls, confidence, action)`，`action` 由唯一策略函数 `resolve_action()` 推导；新增 `is_permanent()`（= structured 且 stop）
+- `chat` / `chat_with_retry` / `chat_auto` 返回 `LLMResult`；`StreamChunk` / `StreamResult` 增 `verdict`（流式块也携带完整契约，不只在终结结果上补齐）
+- 四处重复的重试决策收敛为 `_decide_retry()`；`_error_action` 判据由 `RETRY_POLICY[cls]=="stop"` 改为 `is_permanent()`
+- `ErrorClass` 收敛为单一定义（`error_types`），`error_taxonomy` 改为 re-export（两份同值 str-Enum 会让跨模块 `is` 静默为 False）
+- `pipeline` 致命块登记改为**结构化优先、文本兜底**：有 `retry_info["verdict"]` 用 `ErrorVerdict.is_permanent`，否则回退文本判定（文本恒不永久，不会误登记）
+
+### usage 语义与并发隔离
+
+- `LLMResult.tokens` 为 `Optional`，拿不到 usage 时 `None` + `usage_status=UNKNOWN`；`(0,0)` 记账口径保留，但"未知"与"真实为零"由 `usage_status` 区分
+- `block_done` 与 chapter `token_stats` 两个载荷都带 `usage_status`；停止早退（未发请求）显式标 `KNOWN`
+- 新增 6 路并发用例：按消息 tag 分派六种输入、`await asyncio.sleep(0)` 强制交错、断言 `peak>=2`，并用"结构化 402 与文本 BILLING 同为 `billing` 但 `(confidence, attempts)` 不同"锁死不串味
+- `_decide_retry` 加类型守卫：传 `ClassVerdict` 直接抛 `TypeError`（防止字段演进后静默降级成不 stop）
+
+### 测试与其它
+
+- 全量 **892 → 962**：新增 `test_error_types.py`(29) / `test_retry_decision_u2.py`(20) / `test_verdict_pipeline_u4b.py`(4) / `test_concurrency_and_usage_u6.py`(8)；`test_error_taxonomy.py` 37→45（4 条旧契约断言改名改写，均因断言的是"文本数字判 stop"这类误判行为）
+- 验收：`python -m pytest -o addopts=` → **962 passed / exit 0**
+- 顺带修：断点续跑跳过块原本上报 `"tokens": (0, 0)`（元组，前端按数字读会得 NaN），改为整数 `0` + `usage_status: "KNOWN"`
+- **刻意未做**：不加 `__iter__` / 可解包兼容层，旧五元组一次性删除；U2 曾用的 `contextvars` 临时槽已在 U5 删除，结构化结论改由结果对象显式携带
+
+---
+
 ## [Unreleased] - 2026-10-30（v2 S0 基线：测试环境噪声根治 + CI + 合成语料）
 
 ### 测试环境（S0-4）

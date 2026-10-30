@@ -301,10 +301,10 @@ class QueueManager:
         async def chat_ok(provider: str) -> bool:
             try:
                 client = LLMClient(replace(config.api, provider=provider))
-                ok, _c, err, _t = await client.chat([{"role": "user", "content": "hi"}])
-                if ok:
+                probe = await client.chat([{"role": "user", "content": "hi"}])
+                if probe.success:
                     return True
-                logger.debug(f"chat 探针失败({provider}): {err}")
+                logger.debug(f"chat 探针失败({provider}): {probe.error}")
                 return False
             except Exception as e:
                 logger.debug(f"chat 探针异常({provider}): {e}")

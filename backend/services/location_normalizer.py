@@ -554,23 +554,23 @@ class LocationNormalizer:
                     return None
                 messages = build_location_prompt(batch, batch_idx, len(batches))
                 try:
-                    success, content, error, _tokens = await self.llm_client.chat(messages)
+                    llm_result = await self.llm_client.chat(messages)
                 except Exception as e:
                     logger.error(f"Phase 0a batch {batch_idx} 失败: {e}")
                     if self.on_progress:
                         self.on_progress({"type": "batch_failed", "phase": "0a-batches", "batch_idx": batch_idx, "error": str(e),
                                           "message": f"[地点归一化 {batch_idx}/{len(batches)}] LLM 异常"})
                     return None
-                if not success:
-                    logger.error(f"Phase 0a batch {batch_idx} 失败: {error}")
+                if not llm_result.success:
+                    logger.error(f"Phase 0a batch {batch_idx} 失败: {llm_result.error}")
                     if self.on_progress:
-                        self.on_progress({"type": "batch_failed", "phase": "0a-batches", "batch_idx": batch_idx, "error": error,
+                        self.on_progress({"type": "batch_failed", "phase": "0a-batches", "batch_idx": batch_idx, "error": llm_result.error,
                                           "message": f"[地点归一化 {batch_idx}/{len(batches)}] LLM 返回失败"})
                     return None
-                parsed = parse_and_validate_locations(content, batch)
+                parsed = parse_and_validate_locations(llm_result.content, batch)
                 if not parsed:
                     logger.warning(
-                        f"Phase 0a batch {batch_idx} 解析为空，响应前300字: {content[:300]!r}"
+                        f"Phase 0a batch {batch_idx} 解析为空，响应前300字: {llm_result.content[:300]!r}"
                     )
                 if self.on_progress:
                     self.on_progress({"type": "batch_done", "phase": "0a-batches", "batch_idx": batch_idx,
@@ -614,23 +614,23 @@ class LocationNormalizer:
                     return None
                 messages = build_spatial_prompt(batch, whitelist, batch_idx, len(batches))
                 try:
-                    success, content, error, _tokens = await self.llm_client.chat(messages)
+                    llm_result = await self.llm_client.chat(messages)
                 except Exception as e:
                     logger.error(f"Phase 0b batch {batch_idx} 失败: {e}")
                     if self.on_progress:
                         self.on_progress({"type": "batch_failed", "phase": "0b-batches", "batch_idx": batch_idx, "error": str(e),
                                           "message": f"[空间关系 {batch_idx}/{len(batches)}] LLM 异常"})
                     return None
-                if not success:
-                    logger.error(f"Phase 0b batch {batch_idx} 失败: {error}")
+                if not llm_result.success:
+                    logger.error(f"Phase 0b batch {batch_idx} 失败: {llm_result.error}")
                     if self.on_progress:
-                        self.on_progress({"type": "batch_failed", "phase": "0b-batches", "batch_idx": batch_idx, "error": error,
+                        self.on_progress({"type": "batch_failed", "phase": "0b-batches", "batch_idx": batch_idx, "error": llm_result.error,
                                           "message": f"[空间关系 {batch_idx}/{len(batches)}] LLM 返回失败"})
                     return None
-                parsed = parse_and_validate_spatial(content, whitelist_names)
+                parsed = parse_and_validate_spatial(llm_result.content, whitelist_names)
                 if not parsed:
                     logger.warning(
-                        f"Phase 0b batch {batch_idx} 解析为空，响应前300字: {content[:300]!r}"
+                        f"Phase 0b batch {batch_idx} 解析为空，响应前300字: {llm_result.content[:300]!r}"
                     )
                 if self.on_progress:
                     self.on_progress({"type": "batch_done", "phase": "0b-batches", "batch_idx": batch_idx,

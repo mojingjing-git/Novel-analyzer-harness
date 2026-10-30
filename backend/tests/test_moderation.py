@@ -1,4 +1,4 @@
-﻿"""
+"""
 内容审核拦截识别测试：分类器 + chat 标记注入 + 重试短路 + pipeline 跳过
 """
 import sys
@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch, AsyncMock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
+from backend.core.error_types import LLMResult, UsageStatus
 from backend.core.moderation import (
     is_moderation_code, is_moderation_message,
     mark_moderation, is_moderation_error,
@@ -85,9 +86,9 @@ async def test_chat_api_error_moderation_marked():
     fake = MagicMock()
     fake.chat.completions.create = AsyncMock(side_effect=_api_error(code="content_policy_violation"))
     client.client = fake
-    ok, content, error, tokens = await client.chat([{"role": "user", "content": "hi"}])
-    assert not ok
-    assert "[MODERATION]" in error
+    res = await client.chat([{"role": "user", "content": "hi"}])
+    assert not res.success
+    assert "[MODERATION]" in res.error
 
 
 async def test_chat_error_text_moderation_marked():
@@ -97,9 +98,9 @@ async def test_chat_error_text_moderation_marked():
     fake = MagicMock()
     fake.chat.completions.create = AsyncMock(side_effect=RuntimeError("内容不符合安全规范"))
     client.client = fake
-    ok, content, error, tokens = await client.chat([{"role": "user", "content": "hi"}])
-    assert not ok
-    assert "[MODERATION]" in error
+    res = await client.chat([{"role": "user", "content": "hi"}])
+    assert not res.success
+    assert "[MODERATION]" in res.error
 
 
 async def test_retry_once_then_shortcircuit():
@@ -108,15 +109,15 @@ async def test_retry_once_then_shortcircuit():
     client = LLMClient(_make_cfg(temperature_max_retries=2, backoff_max_retries=1))
     err = mark_moderation("API错误 (HTTP 400): content policy")
     client.chat = AsyncMock(side_effect=[
-        (False, "", err, (0, 0)),
-        (False, "", err, (0, 0)),
+        LLMResult(False, "", err),
+        LLMResult(False, "", err),
     ])
     with patch("asyncio.sleep", new=AsyncMock()):
-        ok, content, error, tokens, stats = await client.chat_with_retry(
+        res = await client.chat_with_retry(
             [{"role": "user", "content": "hi"}])
-    assert not ok
-    assert "[MODERATION]" in error
-    assert stats["attempts"] == 2          # 只重试1次，不进退避（否则会是 3+）
+    assert not res.success
+    assert "[MODERATION]" in res.error
+    assert res.call_stats["attempts"] == 2          # 只重试1次，不进退避（否则会是 3+）
     assert client.chat.call_count == 2
 
 
@@ -126,30 +127,31 @@ async def test_retry_once_success():
     client = LLMClient(_make_cfg(temperature_max_retries=2, backoff_max_retries=1))
     err = mark_moderation("API错误 (HTTP 400): content policy")
     client.chat = AsyncMock(side_effect=[
-        (False, "", err, (0, 0)),
-        (True, '{"ok":1}', "", (1, 1)),
+        LLMResult(False, "", err),
+        LLMResult(True, '{"ok":1}', "", (1, 1), UsageStatus.KNOWN),
     ])
     with patch("asyncio.sleep", new=AsyncMock()):
-        ok, content, error, tokens, stats = await client.chat_with_retry(
+        res = await client.chat_with_retry(
             [{"role": "user", "content": "hi"}])
-    assert ok
-    assert stats["attempts"] == 2
+    assert res.success
+    assert res.call_stats["attempts"] == 2
 
 
 async def test_analyzer_propagates_moderation_error():
     """analyzer 失败时 retry_info.error 携带标记（pipeline 据此判 skipped）
 
     H16 Phase 3 (2026-08-26)：analyzer 改用 chat_auto()，返回 5-tuple（与 chat_with_retry 同）
+    U4（2026-10-30）：chat_auto() 改为返回 LLMResult 对象（此处只关心失败态与 call_stats）
     """
     from backend.core.analyzer import NovelAnalyzer
     from backend.config.settings import AppConfig
     from backend.core.moderation import mark_moderation
     analyzer = NovelAnalyzer(AppConfig())
     analyzer.llm_client = MagicMock()
-    # chat_auto 返回 (success, content, error, (prompt_tok, completion_tok), call_stats)
-    analyzer.llm_client.chat_auto = AsyncMock(return_value=(
-        False, "", mark_moderation("API错误 (HTTP 400): content policy"), (0, 0),
-        {"attempts": 2, "failed_tokens": 0}))
+    # chat_auto 返回 LLMResult(success, content, error, tokens, usage_status, call_stats, ...)
+    analyzer.llm_client.chat_auto = AsyncMock(return_value=LLMResult(
+        False, "", mark_moderation("API错误 (HTTP 400): content policy"),
+        call_stats={"attempts": 2, "failed_tokens": 0}))
     analyzer.prompt_builder = MagicMock()
     analyzer.prompt_builder.build_messages = MagicMock(return_value=[{"role": "user", "content": "x"}])
     result, tokens, retry_info = await analyzer.analyze_chapter(1, "内容", MagicMock())

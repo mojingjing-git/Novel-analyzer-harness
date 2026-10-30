@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 import asyncio
 
 from backend.config.settings import AppConfig
+from backend.core.error_types import LLMResult, UsageStatus
 from backend.core.llm_client import LLMClient
 from backend.core.moderation import mark_moderation
 
@@ -22,26 +23,26 @@ def _client():
 
 def test_transient_blocked_recovers_on_third_call():
     c = _client()
-    seq = [(False, "", BLOCKED, (0, 0)),
-           (False, "", BLOCKED, (0, 0)),
-           (True, "OK", "", (1, 2))]
+    seq = [LLMResult(False, "", BLOCKED),
+           LLMResult(False, "", BLOCKED),
+           LLMResult(True, "OK", "", (1, 2), UsageStatus.KNOWN)]
     with patch.object(LLMClient, "chat", new=AsyncMock(side_effect=seq)), \
          patch.object(LLMClient, "_sleep", new=AsyncMock()):
-        ok, content, err, tokens, stats = asyncio.run(
+        res = asyncio.run(
             c.chat_with_retry([{"role": "user", "content": "x"}]))
-    assert ok and content == "OK"
-    assert stats["attempts"] == 3
+    assert res.success and res.content == "OK"
+    assert res.call_stats["attempts"] == 3
 
 
 def test_persistent_blocked_gives_up_without_backoff():
     c = _client()
-    blocked = (False, "", BLOCKED, (0, 0))
+    blocked = LLMResult(False, "", BLOCKED)
     with patch.object(LLMClient, "chat", new=AsyncMock(return_value=blocked)), \
          patch.object(LLMClient, "_sleep", new=AsyncMock()) as zzz:
-        ok, _, err, _, stats = asyncio.run(
+        res = asyncio.run(
             c.chat_with_retry([{"role": "user", "content": "x"}]))
-    assert not ok
+    assert not res.success
     # 第 3 次命中即放弃：不进入指数退避（attempts 停在温度循环上限，无退避轮次）
-    assert stats["attempts"] == 3
+    assert res.call_stats["attempts"] == 3
     # 只发生温度等待(3s/6s)，没有任何指数退避等待
     assert [call_.args[0] for call_ in zzz.call_args_list] == [3, 6]

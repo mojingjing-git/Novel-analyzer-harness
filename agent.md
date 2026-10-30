@@ -408,10 +408,12 @@ self._flushed_chapters: Set[int]           # 已落盘的章号集合
 
 #### error_taxonomy.py（厂商错误码分类体系，2026-10-25）
 - **`classify_exception(e)`**：结构化通道——异常属性码（`e.code`/`e.type`）→ body 深挖（OpenAI `error.code/type`、MiniMax `base_resp.status_code`、方舟/硅基 `error.code`）→ HTTP 状态兜底（401/403/402/413/429/5xx；**400/404/422 不兜底**，未识别返回 None 走保守退避）
-- **`classify_message(msg)`**：字符串通道永不 None——码串扫描（structured 置信：数字码 `\b` 边界 + snake/camel 码子串，判定结果靠它穿越字符串边界）→ 类文本正则（text 置信）
+- **`classify_message(msg)`**：字符串通道永不 None——只认**命名错误码**（snake/camel 子串）与**错误措辞**（含 `HTTP`/`Error code` 前缀的状态码），命中一律 `text` 置信；无信号 → `UNKNOWN` + `none`。**纯数字厂商码不再参与文本扫描**（2026-10-30 C-01：`\b\d{3,4}\b` 扫任意文本会把正文「第 401 章」「赚了 1008 块」「总字数 1026 万」判成 AUTH/BILLING/MODERATION_INPUT 并永久熔断整块）；数字码只留在 `BODY_CODE_MAP`，structured 独享
+- **`ClassVerdict`（2026-10-30 S1）**：`(cls, confidence, action)` 三元组，`action` 由唯一策略函数 `resolve_action(cls, confidence)` 在构造时推导；`is_permanent()` = `structured` 且 `action == "stop"`，是判断"永久停止"的唯一谓词。文本通道的 action 上限是 `limited_retry`/`backoff`/`retry_after`，**永不为 stop**
+- **`ErrorClass` 定义处**：2026-10-30 起收敛到 `backend/core/error_types.py`，本模块只 re-export——两份同值 `str`-Enum 会让跨模块 `is` 比较静默返回 False
 - **判定优先级写死（P2-4）**：MODERATION_INPUT → MODERATION_OUTPUT → BILLING → CONTEXT_LENGTH → AUTH → BAD_REQUEST → RATE_LIMIT → SERVER → NETWORK → TIMEOUT → UNKNOWN；前插规则：百炼 `Throttling.*`；条件规则：422 `unprocessable_entity_error` + 敏感 message → 输入审核（MiniMax Anthropic 皮肤，日志 ~5525 条的最大样本），否则 BAD_REQUEST
 - **审核判侧（P2-5）**：码表逐条带侧（1026 输入/1027 输出/方舟 SensitiveContentDetected 输入），双侧码默认 OUTPUT（保留 3 次短路）；`refusal`/裸词码（safety/moderation 等）/智谱 1000/1302 系仅 body 通道，不进消息扫描（防误报）
-- **接入点**：流式生成器 except（分类 + 审核标记 + Retry-After 提取，llm_client D3）、重试循环 4 处（`_error_action()` 决策）、chat() APIError/anthropic.APIStatusError 分支、pipeline 补跑 fatal 过滤（`_fatal_blocks` + `_retryable_failed_blocks()`，P2-2 最小方案②）
+- **接入点**：流式生成器 except（分类 + 审核标记 + Retry-After 提取，llm_client D3）、`_decide_retry()`（2026-10-30 S1 起，四处重复决断收敛为单点，读 `verdict` 而非重分类）、chat() APIError/anthropic.APIStatusError 分支、pipeline 补跑 fatal 过滤（`:718-735` 起改为**结构化优先、文本兜底**：有 `retry_info["verdict"]` 就用 `ErrorVerdict.is_permanent`，无则回退文本判定；文本恒不永久，故兜底路径不会误登记）
 - **gold fixtures**：`backend/tests/test_error_taxonomy.py`（真实日志串 + 厂商码样例；**改码表/优先级前先看**）
 
 ### 5.2 服务层（backend/services/）
@@ -1257,6 +1259,18 @@ mypy backend/
 - **验收**：原始未清理代理环境下 `python -m pytest` → 892 用例全绿（S0 前 864）；`--collect-only` 3.14s
 - **未做**：本批**不含功能修复**，C-01 等全部行为缺陷留待 S1 及后续批次；v1 产物零迁移
 - **plan**：`docs/PLAN-v2-long-novel-reliability-2026-10-30.md` §S0；问题清单见 `docs/REPORT-review-consolidated-2026-10-30.md`
+
+### 10.36 PLAN v2 S1：错误判定贯通与 C-01 止血（2026-10-30）
+
+- **改动**：新增 `backend/core/error_types.py`（422 行：`ErrorClass`/`Confidence`/`SourceChannel`/`ErrorScope`/`UsageStatus` + `ErrorVerdict` + `LLMResult` + 显式 JSON DTO，最底层叶子模块，禁止反向 import）；`ErrorClass` 定义收敛到此、`error_taxonomy` 转为 re-export；`ClassVerdict` 扩为 `(cls, confidence, action)`，`action` 由 `resolve_action()` 推导；`chat`/`chat_with_retry`/`chat_auto` 返回 `LLMResult`，`StreamChunk`/`StreamResult` 携带 `verdict`；四处重复的重试决断收敛为 `_decide_retry()`；`pipeline` 致命块登记改为结构化优先
+- **原因（C-01，真实计费损失）**：`classify_message` 原先用 `\b\d{3,4}\b` 扫任意文本，本机实测三条正文本全部被判成永久错误 → `action=stop` → `llm_client` 首次即停 → `pipeline` 登记 `_fatal_blocks` → **该块永久失败、补跑也不重试**；命中 moderation 的情形还被 `skip_moderation_blocked` 静默跳过。改造后三条全部落到 `unknown/none/limited_retry`
+- **分级规则**：只有可信通道（SDK 异常属性 / 错误 envelope / 真实 HTTP 状态）有资格产出 `stop`；文本通道（命名码与错误措辞）上限是 `limited_retry`/`backoff`/`retry_after`；无信号 → `UNKNOWN` + 有限重试。真实 `status_code=401`/`402`/`400` 仍 structured 且 `attempts==1`，识别能力未被削弱
+- **判定链**：异常/流事件 → 单次结果 → 客户端重试结果（`_decide_retry` 读 `verdict`）→ analyzer（`retry_info["verdict"]` dict 形态）→ pipeline（结构化优先、文本兜底）→ 外层补跑与熔断。全链只消费同一份判定，不对显示字符串重新猜
+- **usage 语义（T04）**：`LLMResult.tokens` 为 `Optional`，无 usage 时 `None` + `usage_status=UNKNOWN`；`(0,0)` 记账口径保留但由 `usage_status` 区分"未知"与"真实为零"，`block_done` 与 chapter `token_stats` 两个载荷都带该字段。停止早退（未发请求）显式标 `KNOWN`
+- **并发隔离（T03）**：判定随结果对象传递，无共享状态；6 路并发用例按消息 tag 分派六种输入并断言 `peak>=2`，用"结构化 402 与文本 BILLING 同为 `billing` 但 `(confidence, attempts)` 不同"锁死不串味
+- **测试**：新增 `test_error_types.py`(29) / `test_retry_decision_u2.py`(20) / `test_verdict_pipeline_u4b.py`(4) / `test_concurrency_and_usage_u6.py`(8)；`test_error_taxonomy.py` 37→45（4 条旧契约断言改名改写，均因断言的是"文本数字判 stop"这类误判行为）；全量 **892 → 962**
+- **刻意未做**：不加 `__iter__`/可解包兼容层（旧元组一次性删除）；U2 引入的 `contextvars` 临时槽在 U5 删除，结构化结论改由结果对象显式携带；`analyzer.analyze_chapter` 对外 `(result, tokens, retry_info)` 形状不变；`_emit_rolling_tokens` 未知时直接不发（不宣称零）
+- **plan**：`docs/PLAN-v2-long-novel-reliability-2026-10-30.md` §4 S1；任务拆解 `docs/PLAN-S1-task-breakdown-2026-10-30.md`；类型契约 `docs/DESIGN-D01-verdict-transport-2026-10-30.md`
 
 ---
 

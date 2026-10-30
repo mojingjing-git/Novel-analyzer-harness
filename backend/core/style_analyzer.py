@@ -354,21 +354,21 @@ async def call_llm_semantic(prompt: str, api_config: dict,
         unit_idx=0,
     )
 
-    success, content, error, tokens, _call_stats = await client.chat_auto(
+    llm_result = await client.chat_auto(
         messages, max_tokens=20000, on_progress=on_progress,
     )
     if token_sink:
         try:
-            token_sink(tokens)
+            token_sink(llm_result.tokens)  # U4：tokens 可能是 None（没拿到 usage）
         except Exception:
             pass
 
-    if not success:
-        logger.warning(f"语义风格 LLM 调用失败: {error}")
+    if not llm_result.success:
+        logger.warning(f"语义风格 LLM 调用失败: {llm_result.error}")
         return None
 
     # 提取 JSON（剥离可能的代码块包裹，兜底截取花括号区间）
-    content = content.strip()
+    content = llm_result.content.strip()
     content = re.sub(r'^```(?:json)?\s*\n?', '', content)
     content = re.sub(r'\n?```\s*$', '', content)
     try:

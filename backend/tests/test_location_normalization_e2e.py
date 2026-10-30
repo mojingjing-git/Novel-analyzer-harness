@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from backend.app import app
+from backend.core.error_types import LLMResult, UsageStatus
 from backend.services import book_service
 from backend.services import location_normalization_service as loc_norm_svc
 
@@ -57,12 +58,13 @@ def test_full_flow_creates_normalized_files(mock_book):
     book_id, output_dir = mock_book
     with patch("backend.services.location_normalization_service.LLMClient") as MockLLM:
         mock_client = MockLLM.return_value
-        mock_client.chat = AsyncMock(return_value=(
+        mock_client.chat = AsyncMock(return_value=LLMResult(
             True,
             json.dumps({"locations": [{"canonical_name": "宁安县",
                                        "aliases": ["宁安县", "宁安县城"]}]}),
             "",
             (100, 50),
+            UsageStatus.KNOWN,
         ))
         mock_client.config.model = "test-model"
         mock_client._stop_requested = False

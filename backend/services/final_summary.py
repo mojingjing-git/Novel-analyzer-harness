@@ -622,16 +622,16 @@ class FinalSummaryRunner:
         await self._acquire_llm_slot()
         try:
             on_progress = self._make_on_progress("summary_phase_1", batch_idx)
-            success, content, error, tokens, _call_stats = await self._llm.chat_auto(
+            llm_result = await self._llm.chat_auto(
                 messages, max_tokens=self.config.api.max_tokens, validate_response=None,
                 on_progress=on_progress,
             )
         finally:
             self._release_llm_slot()
-        self._record_tokens("summary", tokens)
-        if success:
-            return content
-        logger.error(f"卷摘要 LLM 调用失败: {error}")
+        self._record_tokens("summary", llm_result.tokens)
+        if llm_result.success:
+            return llm_result.content
+        logger.error(f"卷摘要 LLM 调用失败: {llm_result.error}")
         return None
 
     async def _call_llm_final(self, prompt: str, batch_idx: int = 0) -> Optional[str]:
@@ -643,16 +643,16 @@ class FinalSummaryRunner:
         await self._acquire_llm_slot()
         try:
             on_progress = self._make_on_progress("summary_phase_4", batch_idx)
-            success, content, error, tokens, _call_stats = await self._llm.chat_auto(
+            llm_result = await self._llm.chat_auto(
                 messages, max_tokens=self.config.api.max_tokens, validate_response=None,
                 on_progress=on_progress,
             )
         finally:
             self._release_llm_slot()
-        self._record_tokens("final", tokens)
-        if success:
-            return content
-        logger.error(f"最终报告 LLM 调用失败: {error}")
+        self._record_tokens("final", llm_result.tokens)
+        if llm_result.success:
+            return llm_result.content
+        logger.error(f"最终报告 LLM 调用失败: {llm_result.error}")
         return None
 
     async def _call_llm_reconciliation(self, prompt: str, batch_idx: int = 0) -> Optional[dict]:
@@ -664,7 +664,7 @@ class FinalSummaryRunner:
         await self._acquire_llm_slot()
         try:
             on_progress = self._make_on_progress("summary_phase_1", batch_idx)
-            success, content, error, tokens, _call_stats = await self._llm.chat_auto(
+            llm_result = await self._llm.chat_auto(
                 messages, max_tokens=self.config.api.max_tokens,
                 validate_response=validate_reconciliation_json,
                 retry_messages_builder=build_reconciliation_retry_messages,
@@ -672,11 +672,11 @@ class FinalSummaryRunner:
             )
         finally:
             self._release_llm_slot()
-        self._record_tokens("reconciliation", tokens)
-        if not success:
-            logger.warning(f"伏笔 reconciliation 调用失败: {error}")
+        self._record_tokens("reconciliation", llm_result.tokens)
+        if not llm_result.success:
+            logger.warning(f"伏笔 reconciliation 调用失败: {llm_result.error}")
             return None
-        return extract_foreshadow_json(content)
+        return extract_foreshadow_json(llm_result.content)
 
     async def _call_llm_global_recheck(self, prompt: str, batch_idx: int = 0) -> Optional[dict]:
         """全书复检调用（H16 Phase 3 改 chat_auto + on_progress broadcast）"""
@@ -687,7 +687,7 @@ class FinalSummaryRunner:
         await self._acquire_llm_slot()
         try:
             on_progress = self._make_on_progress("summary_phase_2", batch_idx)
-            success, content, error, tokens, _call_stats = await self._llm.chat_auto(
+            llm_result = await self._llm.chat_auto(
                 messages, max_tokens=self.config.api.max_tokens,
                 validate_response=validate_reconciliation_json,
                 retry_messages_builder=build_reconciliation_retry_messages,
@@ -695,11 +695,11 @@ class FinalSummaryRunner:
             )
         finally:
             self._release_llm_slot()
-        self._record_tokens("recheck", tokens)
-        if not success:
-            logger.warning(f"全书复检调用失败: {error}")
+        self._record_tokens("recheck", llm_result.tokens)
+        if not llm_result.success:
+            logger.warning(f"全书复检调用失败: {llm_result.error}")
             return None
-        return extract_foreshadow_json(content)
+        return extract_foreshadow_json(llm_result.content)
 
     def _make_on_progress(self, context: str, unit_idx: int):
         """薄适配器：共用流式进度工厂，计时仍在拿到并发槽之后创建

@@ -12,6 +12,7 @@ import asyncio
 import inspect
 import logging
 import threading
+from collections import namedtuple
 from typing import AsyncIterator, Tuple, Optional, List, Callable, Awaitable
 from openai import AsyncOpenAI, APITimeoutError, APIError, AuthenticationError
 import anthropic
@@ -22,8 +23,16 @@ from ..core.moderation import (
     mark_moderation, is_moderation_message, is_moderation_error,
 )
 from .error_taxonomy import (
-    ErrorClass, RETRY_POLICY, ClassVerdict,
+    ErrorClass, ClassVerdict,
     classify_exception, classify_message,
+)
+# U4：非流式调用结果对象化。2026-10-30 S1 起 ErrorClass 只有一处定义（error_types），
+# error_taxonomy 对它 re-export，两者是同一个类对象；下面之所以仍按 .value 重建，
+# 只是为了不依赖导入顺序的显式兜底，不再是"身份不同"的规避手段。
+from .error_types import (
+    ErrorVerdict, LLMResult, UsageStatus,
+    Confidence as _ResConfidence, ErrorClass as _ResErrorClass,
+    ErrorScope, SourceChannel,
 )
 from .llm_failure_logger import _get_failure_logger, redact as _redact
 from .llm_stream import (
@@ -95,22 +104,151 @@ _STOP_ERROR_TYPES = {
     ErrorClass.BAD_REQUEST: "BadRequestBlocked",
 }
 
+# 单次 attempt 失败后的决策结果（U2：四处重复决断收敛到 LLMClient._decide_retry）：
+#   action ∈ {"stop", "continue"}；error 为可能被"标记审核 / 追加提示语"改写后的错误串；
+#   wait_time 只有温度层有意义（下一次重试的等待秒数），退避层原样回传调用点算好的值；
+#   verdict（U4）是该次决断所用的 ClassVerdict，调用点据此把结论搬进结果对象，
+#   不再二次分类（分类只发生一次，消费方只读）。
+# U5（2026-10-30）：决断结论改由结果对象自带（LLMResult / StreamResult / StreamChunk 的
+# verdict 字段），本字段由 _to_class_verdict 从结果对象上的 ErrorVerdict 还原；
+# U2 时代的进程内暂存槽（ContextVar）及配套存取 helper 已随本单元删除。
+RetryDecision = namedtuple(
+    "RetryDecision", ("action", "error", "moderation_hits", "wait_time", "verdict")
+)
 
-def _error_action(error: str, moderation_hits: int) -> Tuple[str, ClassVerdict]:
+
+# 类目 → 作用域（U4，仅对可信通道生效，键为类目字符串值）：
+# 账户级才有可能触发熔断（§3.5）；上下文超长/坏请求/审核拦截是请求自身的问题；
+# 限流/服务端/网络/超时是暂时性问题。表里没有的（UNKNOWN 等）留 UNKNOWN。
+_SCOPE_BY_CLASS = {
+    "auth": ErrorScope.ACCOUNT_GLOBAL,
+    "billing": ErrorScope.ACCOUNT_GLOBAL,
+    "context_length": ErrorScope.REQUEST_LOCAL,
+    "bad_request": ErrorScope.REQUEST_LOCAL,
+    "moderation_input": ErrorScope.REQUEST_LOCAL,
+    "moderation_output": ErrorScope.REQUEST_LOCAL,
+    "rate_limit": ErrorScope.TRANSIENT,
+    "server": ErrorScope.TRANSIENT,
+    "network": ErrorScope.TRANSIENT,
+    "timeout": ErrorScope.TRANSIENT,
+}
+
+# 置信度 → (跨层置信度, 来源通道)。taxonomy 内部还会细分"异常属性/错误体/状态兜底"，
+# 折成三元组后只保留了 structured/text/none，故此处只能按此三档还原。
+_CONFIDENCE_MAP = {
+    "structured": (_ResConfidence.STRUCTURED, SourceChannel.SDK_ATTRIBUTE),
+    "text": (_ResConfidence.TEXT, SourceChannel.TEXT_FALLBACK),
+    "none": (_ResConfidence.NONE, SourceChannel.TEXT_FALLBACK),
+}
+
+
+def _to_error_verdict(verdict: Optional[ClassVerdict],
+                      error: str = "") -> Optional[ErrorVerdict]:
+    """ClassVerdict（策略层三元组，U1）→ ErrorVerdict（跨层传输对象，U4）。
+
+    这是两个类型之间的唯一转换点。转换约定：
+    - action 原样搬运：策略函数算好的结论就是它，消费方只读、不重算（§3.4）；
+    - scope 只给结构化结论填具体值，文本通道一律 UNKNOWN——若允许按错误串升级，
+      "第 401 章 / 赚了 1008 块"这类正文文本就能把整本书判成账户级故障（§3.5）；
+    - retry_after 仅在 RATE_LIMIT 时从错误串的 [Retry-After:N] 标记读回；
+    - provider_code / http_status 需要 ClassVerdict 额外携带字段，本单元不动策略层，
+      先留 None（消费方只做展示，不参与判定）。
+    """
+    if verdict is None:
+        return None
+    conf, channel = _CONFIDENCE_MAP.get(
+        verdict.confidence, (_ResConfidence.NONE, SourceChannel.TEXT_FALLBACK)
+    )
+    try:
+        cls = _ResErrorClass(verdict.cls.value)
+    except ValueError:  # 策略层新增了本模块不认识的类目
+        cls = _ResErrorClass.UNKNOWN
+    scope = ErrorScope.UNKNOWN
+    if conf is _ResConfidence.STRUCTURED:
+        scope = _SCOPE_BY_CLASS.get(cls.value, ErrorScope.UNKNOWN)
+    retry_after = None
+    if cls is _ResErrorClass.RATE_LIMIT:
+        m = re.search(r'Retry-After:(\d+)', error or "")
+        if m:
+            try:
+                retry_after = max(1.0, float(m.group(1)))
+            except ValueError:
+                retry_after = None
+    return ErrorVerdict(
+        cls=cls,
+        confidence=conf,
+        source_channel=channel,
+        action=verdict.action,
+        scope=scope,
+        retry_after=retry_after,
+        message=error or "",
+    )
+
+
+def _to_class_verdict(verdict: Optional[ErrorVerdict]) -> Optional[ClassVerdict]:
+    """ErrorVerdict（结果对象上的传输形态，U5）→ ClassVerdict（策略层三元组，U1）。
+
+    与 _to_error_verdict 互为逆变换，是重试层消费「结果对象自带结论」的唯一入口：
+    分类只在异常现场做一次（chat()/chat_stream()），这里只做类型还原，**不重新分类**。
+    - 类目：按 .value 重建（两个 str-Enum 成员名/取值相同但身份不同，不能按身份比较），
+      本模块不认识的类目降级为 UNKNOWN，交给策略表按暂态处理；
+    - 置信度：error_types.Confidence 的取值是大写 "STRUCTURED"/"TEXT"/"NONE"，
+      策略层用小写 "structured"/"text"/"none"（is_permanent 按字面量比较），故降级小写；
+    - action 原样搬运（含 "stop"）。上游若没给 action，ErrorVerdict 默认为 "backoff"，
+      于是纯文本兜底结论绝不会被还原成 stop（方向保守）。
+    """
+    if verdict is None:
+        return None
+    try:
+        cls = ErrorClass(verdict.cls.value)
+    except ValueError:  # 跨层出现了策略层不认识的类目
+        cls = ErrorClass.UNKNOWN
+    raw_conf = getattr(verdict.confidence, "value", verdict.confidence)
+    confidence = str(raw_conf).lower()
+    if confidence not in ("structured", "text", "none"):
+        confidence = "none"
+    return ClassVerdict(cls, confidence, verdict.action)
+
+
+def _fail_result(error: str, verdict: Optional[ClassVerdict] = None) -> LLMResult:
+    """失败结果对象（U4）。
+
+    失败路径一律拿不到 usage → tokens=None + usage_status=UNKNOWN，
+    **不得**写成 (0, 0)：那会与"真的消耗了 0 token"混为一谈，统计口径失真。
+    """
+    return LLMResult(
+        success=False, content="", error=error,
+        verdict=_to_error_verdict(verdict, error),
+    )
+
+
+def _error_action(error: str, moderation_hits: int,
+                  verdict: Optional[ClassVerdict] = None) -> Tuple[str, ClassVerdict]:
     """重试循环统一错误决策（D4）。返回 (action, verdict)：
     - "moderation_stop"：审核短路（INPUT 确定性 / structured 首次 / text 连续第 3 次）
     - "moderation_count"：审核 text 置信，计入 3 次短路计数器后继续重试
-    - "stop"：RETRY_POLICY=stop（AUTH/BILLING/CONTEXT_LENGTH/BAD_REQUEST）
-    - "continue"：按退避/Retry-After 继续
-    MODERATION_OUTPUT 的"何时停"由本函数的计数器参数表达，不进 RETRY_POLICY（§8 P3-2）。"""
-    verdict = classify_message(error)
+    - "stop"：**仅结构化通道**的永久停止（verdict.is_permanent()：structured 且 stop）
+    - "continue"：按退避/Retry-After 继续（文本通道的 AUTH/BILLING 等一律落这里）
+    MODERATION_OUTPUT 的"何时停"由本函数的计数器参数表达，不进 RETRY_POLICY（§8 P3-2）。
+
+    C-01（2026-10-30，U2）：原实现用 ``RETRY_POLICY[verdict.cls] == "stop"`` 判定，绕开了
+    resolve_action 施加的文本通道上限——只要 cls 是 AUTH/BILLING 就停，哪怕置信度只是 text；
+    于是"正文里的第 401 章 / 赚了 1008 块"这类纯文本误判能直接永久熔断整块。现在唯一判据是
+    verdict.is_permanent()，文本通道（confidence=text/none）永不可能返回 stop。
+
+    verdict 参数：调用方手里若已有结论（异常对象还在场时的 classify_exception），
+    可直接传入以免二次文本降级；不传则按 error 文本分类。四条重试路径传入的是
+    _to_class_verdict(结果对象.verdict)：结论在 chat()/chat_stream() 的异常现场只算一次，
+    随 LLMResult / StreamResult / StreamChunk 外传，错误串一旦字符串化就只剩文本通道。"""
+    if verdict is None:
+        verdict = classify_message(error)
     if verdict.cls in _MODERATION_CLASSES:
         if (verdict.cls is ErrorClass.MODERATION_INPUT
                 or verdict.confidence == "structured"
                 or moderation_hits >= 2):
             return "moderation_stop", verdict
         return "moderation_count", verdict
-    if RETRY_POLICY[verdict.cls] == "stop":
+    if verdict.is_permanent():
         return "stop", verdict
     return "continue", verdict
 
@@ -269,7 +407,14 @@ class LLMClient:
         messages: List[dict],
         temperature: float = 0.1,
         max_tokens: Optional[int] = None
-    ) -> Tuple[bool, str, str, Tuple[int, int]]:
+    ) -> LLMResult:
+        """非流式单次调用（U4：返回 LLMResult 对象，不再返回元组）。
+
+        tokens 只有真的拿到 usage 才有值；拿不到时是 None + usage_status=UNKNOWN
+        （旧实现写 (0, 0)，与"确实消耗 0 token"无法区分）。
+        verdict 在失败时携带现场分类结论（异常对象还在场，故结构化通道可用），
+        成功时为 None。attempts 由重试层按真实轮次覆盖，单次调用恒为 1。
+        """
         if max_tokens is None:
             max_tokens = self.config.max_tokens
 
@@ -320,7 +465,7 @@ class LLMClient:
                 elif stop_wait in done:
                     # 用户请求停止：立即取消进行中的请求，不等超时
                     logger.info("用户请求停止，取消进行中的 API 请求")
-                    return False, "", "用户请求停止", (0, 0)
+                    return _fail_result("用户请求停止")
                 else:
                     # 硬超时：取消后走下方 asyncio.TimeoutError 分支
                     raise asyncio.TimeoutError
@@ -347,7 +492,7 @@ class LLMClient:
                         error_msg = mark_moderation(error_msg)
                         logger.warning("检测到内容审核拦截（空内容/refusal），将重试1次后跳过该章节")
                     logger.warning(error_msg)
-                    return False, "", error_msg, (0, 0)
+                    return _fail_result(error_msg, classify_message(error_msg))
                 with self._stats_lock:
                     self._total_tokens += total_tokens
                     self._cached_tokens += cached_tokens
@@ -359,7 +504,14 @@ class LLMClient:
                         logger.debug(f"已移除思考链: {original_len} -> {len(content)} 字符")
                 cache_hint = f"，缓存命中{cached_tokens}" if cached_tokens else ""
                 logger.info(f"API请求成功，使用{total_tokens} tokens (输入{prompt_tokens}+输出{completion_tokens}{cache_hint})")
-                return True, content, "", (prompt_tokens, completion_tokens)
+                # usage 缺失时 parse_anthropic_response 返回 0/0，那是"未知"而不是"零消耗"
+                tokens = ((prompt_tokens, completion_tokens)
+                          if getattr(response, "usage", None) is not None else None)
+                return LLMResult(
+                    success=True, content=content, error="", tokens=tokens,
+                    usage_status=(UsageStatus.KNOWN if tokens is not None
+                                  else UsageStatus.UNKNOWN),
+                )
 
             prompt_tokens = 0
             completion_tokens = 0
@@ -385,7 +537,7 @@ class LLMClient:
                 # 空 choices 通常是审核过滤（content_filter），按拦截处理
                 error_msg = mark_moderation(error_msg)
                 logger.warning("检测到内容审核拦截（空choices），将重试1次后跳过该章节")
-                return False, "", error_msg, (0, 0)
+                return _fail_result(error_msg, classify_message(error_msg))
 
             message = response.choices[0].message
             content = message.content or ""
@@ -407,7 +559,13 @@ class LLMClient:
             cache_hint = f"，缓存命中{cached_tokens}" if cached_tokens else ""
             logger.info(f"API请求成功，使用{response.usage.total_tokens if response.usage else 0} tokens (输入{prompt_tokens}+输出{completion_tokens}{cache_hint})")
 
-            return True, content, "", (prompt_tokens, completion_tokens)
+            tokens = ((prompt_tokens, completion_tokens)
+                      if response.usage is not None else None)
+            return LLMResult(
+                success=True, content=content, error="", tokens=tokens,
+                usage_status=(UsageStatus.KNOWN if tokens is not None
+                              else UsageStatus.UNKNOWN),
+            )
 
         except asyncio.TimeoutError:
             error_msg = f"请求硬超时 (timeout={self.config.timeout + 30}s): API 无响应"
@@ -420,11 +578,13 @@ class LLMClient:
                 error_message=error_msg,
                 messages_length=len(str(messages))
             )
-            return False, "", error_msg, (0, 0)
+            return _fail_result(error_msg, classify_message(error_msg))
 
         except AuthenticationError as e:
             error_msg = f"认证失败，请检查API Key: {_redact(str(e))}"
             logger.error(error_msg)
+            # 异常对象还在场：结构化结论写进结果对象（U4），重试层再从结果对象读回（U5）
+            verdict = classify_exception(e) or classify_message(error_msg)
 
             _get_failure_logger().record_failure(
                 attempt_num=0,
@@ -434,11 +594,13 @@ class LLMClient:
                 error_message=error_msg,
                 messages_length=len(str(messages))
             )
-            return False, "", error_msg, (0, 0)
+            return _fail_result(error_msg, verdict)
 
         except APITimeoutError as e:
             error_msg = f"请求超时 (timeout={self.config.timeout}s): {_redact(str(e))}"
             logger.warning(error_msg)
+            # 超时属暂时性，只有文本通道结论（不暂存结构化槽）
+            verdict = classify_exception(e) or classify_message(error_msg)
 
             _get_failure_logger().record_failure(
                 attempt_num=0,
@@ -448,14 +610,14 @@ class LLMClient:
                 error_message=error_msg,
                 messages_length=len(str(messages))
             )
-            return False, "", error_msg, (0, 0)
+            return _fail_result(error_msg, verdict)
 
         except APIError as e:
             status_code = getattr(e, 'status_code', None)
             error_msg = f"API错误 (HTTP {status_code}): {_redact(str(e))}"
 
             # 错误分类（T2.3）：结构化通道（异常属性码/body 深挖/状态兜底）+ 文本兜底。
-            # 审核类打标记；stop/billing 类决策由 chat_with_retry 按 RETRY_POLICY 统一做
+            # 审核类打标记；stop/billing 类决策由重试循环按 ClassVerdict.is_permanent() 统一做
             verdict = classify_exception(e) or classify_message(error_msg)
             if verdict.cls in _MODERATION_CLASSES:
                 error_msg = mark_moderation(error_msg)
@@ -482,11 +644,12 @@ class LLMClient:
                 error_message=error_msg,
                 messages_length=len(str(messages))
             )
-            return False, "", error_msg, (0, 0)
+            return _fail_result(error_msg, verdict)
 
         except anthropic.AuthenticationError as e:
             error_msg = f"认证失败，请检查API Key: {_redact(str(e))}"
             logger.error(error_msg)
+            verdict = classify_exception(e) or classify_message(error_msg)
             _get_failure_logger().record_failure(
                 attempt_num=0,
                 max_retries=self.config.max_retries,
@@ -495,11 +658,12 @@ class LLMClient:
                 error_message=error_msg,
                 messages_length=len(str(messages))
             )
-            return False, "", error_msg, (0, 0)
+            return _fail_result(error_msg, verdict)
 
         except anthropic.APITimeoutError as e:
             error_msg = f"请求超时 (timeout={self.config.timeout}s): {_redact(str(e))}"
             logger.warning(error_msg)
+            verdict = classify_exception(e) or classify_message(error_msg)
             _get_failure_logger().record_failure(
                 attempt_num=0,
                 max_retries=self.config.max_retries,
@@ -508,7 +672,7 @@ class LLMClient:
                 error_message=error_msg,
                 messages_length=len(str(messages))
             )
-            return False, "", error_msg, (0, 0)
+            return _fail_result(error_msg, verdict)
 
         except anthropic.APIStatusError as e:
             status_code = getattr(e, 'status_code', None)
@@ -535,11 +699,12 @@ class LLMClient:
                 error_message=error_msg,
                 messages_length=len(str(messages))
             )
-            return False, "", error_msg, (0, 0)
+            return _fail_result(error_msg, verdict)
 
         except anthropic.APIConnectionError as e:
             error_msg = f"连接失败: {_redact(str(e))}"
             logger.error(error_msg)
+            verdict = classify_exception(e) or classify_message(error_msg)
             _get_failure_logger().record_failure(
                 attempt_num=0,
                 max_retries=self.config.max_retries,
@@ -548,16 +713,18 @@ class LLMClient:
                 error_message=error_msg,
                 messages_length=len(str(messages))
             )
-            return False, "", error_msg, (0, 0)
+            return _fail_result(error_msg, verdict)
 
         except Exception as e:
             error_msg = f"未知错误: {type(e).__name__}: {_redact(str(e))}"
             logger.error(error_msg, exc_info=True)
+            verdict = classify_exception(e) or classify_message(error_msg)
 
             # 内容审核拦截识别（智谱/小米等自由文本消息走这里）
             if is_moderation_message(error_msg):
                 error_msg = mark_moderation(error_msg)
                 logger.warning("检测到内容审核拦截，将重试1次后跳过该章节")
+                verdict = classify_message(error_msg)
 
             _get_failure_logger().record_failure(
                 attempt_num=0,
@@ -567,7 +734,7 @@ class LLMClient:
                 error_message=error_msg,
                 messages_length=len(str(messages))
             )
-            return False, "", error_msg, (0, 0)
+            return _fail_result(error_msg, verdict)
 
     async def chat_stream(
         self,
@@ -681,7 +848,12 @@ class LLMClient:
                 if ra:
                     error_msg += f" [Retry-After:{ra}]"
             logger.warning(error_msg)
-            yield StreamChunk(type="error", error=error_msg)
+            # U5（主计划 §2.5）：错误块本身携带完整契约，重试层直接读 chunk.verdict 决断。
+            # retry_after 是从错误串的 [Retry-After:N] 标记读回的，故转换必须排在标记拼接之后。
+            yield StreamChunk(
+                type="error", error=error_msg,
+                verdict=_to_error_verdict(verdict, error_msg),
+            )
     @staticmethod
     async def _call_validate_response(validate_fn, content: str, timeout: float = 30.0):
         """兼容同步/异步 validate_response；30s 超时（与 chat_with_retry 风格一致）
@@ -701,6 +873,125 @@ class LLMClient:
             return False, "验证超时（30秒）"
         except Exception as e:
             return False, f"验证异常: {e}"
+
+    def _decide_retry(
+        self,
+        error: str,
+        *,
+        moderation_hits: int,
+        attempt: int,
+        total_attempts: int,
+        temperature: float,
+        messages_length: int,
+        phase: str,
+        moderation_log: str,
+        wait_time: Optional[float] = None,
+        verdict: Optional[ErrorVerdict] = None,
+    ) -> RetryDecision:
+        """单次 attempt 失败后的统一决策 + 失败登记（U2：原四份 ~45 行拷贝合一）。
+
+        此前 chat_stream_with_retry 温度层/退避层、chat_with_retry 温度层/退避层各内联了
+        一份同构的决断树（决断 + 失败日志 + 停止返回 + 退避计算），改一处要同步四处。
+        现在收在此处，四条调用路径只保留各自的结果包装（StreamResult / LLMResult）
+        与重试循环控制。
+
+        决断顺序与失败日志口径严格沿用原实现（行为等价重构，除 C-01 那处语义修正外不动）：
+        1. _error_action 给出 moderation_stop / moderation_count / stop / continue
+        2. moderation_stop：标记审核 → ModerationBlocked 登记 → 立即停
+        3. moderation_count：审核文本连续命中计数 +1，本轮继续
+        4. stop 且非 AUTH：追加 _STOP_HINTS 提示语 → 对应 error_type 登记 → 立即停
+        5. 通用登记（温度层 RetryNeeded / 退避层 ExponentialBackoff）
+        6. stop 且 AUTH：记录后即停（不追加提示语）
+        7. continue：温度层给出本次等待秒数（RATE_LIMIT 尊重 Retry-After，上限 120；
+           其余 3*(attempt+1)）；退避层的等待已由调用点算好，原样回传。
+
+        参数 phase ∈ {"temperature", "backoff"}——只影响通用失败登记的 error_type 与
+        是否把等待秒数写进失败日志（原口径）。attempt 为温度层轮次下标（退避层不使用）。
+        停止结果由调用点按各自返回结构构造，本方法不返回业务结果对象。
+        """
+        # U6：类型守卫。本形参只接受"结果对象上的跨层形态" ErrorVerdict（或 None）。
+        # 策略层 ClassVerdict 的字段恰好同形，传进来会被 _to_class_verdict 静默重包一层，
+        # 看起来"能用"；一旦两侧字段演进就会静默降级成"不 stop"（永久错误变可重试）。
+        # 这里直接拒收，让类型错位在调用点立刻暴露，而不是变成隐性坑。
+        if verdict is not None and not isinstance(verdict, ErrorVerdict):
+            raise TypeError(
+                "verdict 应传 ErrorVerdict（或 None）；"
+                f"实际收到 {type(verdict).__name__}。"
+                "ClassVerdict 请先用 _to_error_verdict 转换后再传入。"
+            )
+
+        # U5：入参是结果对象上的 ErrorVerdict（跨层传输形态），这里还原成策略层三元组；
+        # 还原不重新分类——cls/confidence/action 全部原样搬运，本方法是结论的唯一消费点。
+        action, verdict = _error_action(error, moderation_hits, _to_class_verdict(verdict))
+        max_retries = self.config.temperature_max_retries + self.config.backoff_max_retries
+        is_backoff = phase == "backoff"
+
+        if action == "moderation_stop":
+            if not is_moderation_error(error):
+                error = mark_moderation(error)
+            _get_failure_logger().record_failure(
+                attempt_num=total_attempts,
+                max_retries=max_retries,
+                temperature=temperature,
+                error_type="ModerationBlocked",
+                error_message=error,
+                messages_length=messages_length,
+            )
+            logger.warning(moderation_log)
+            return RetryDecision("stop", error, moderation_hits, 0, verdict)
+
+        if action == "moderation_count":
+            moderation_hits += 1
+
+        if action == "stop" and verdict.cls is not ErrorClass.AUTH:
+            hint = _STOP_HINTS.get(verdict.cls, "")
+            if hint and hint not in error:
+                error = error + hint
+            _get_failure_logger().record_failure(
+                attempt_num=total_attempts,
+                max_retries=max_retries,
+                temperature=temperature,
+                error_type=_STOP_ERROR_TYPES.get(verdict.cls, "StopBlocked"),
+                error_message=error,
+                messages_length=messages_length,
+                **({"wait_time": wait_time} if is_backoff else {}),
+            )
+            logger.error(f"⛔ {verdict.cls.value} 类错误（不可重试），停止重试: {error}")
+            return RetryDecision("stop", error, moderation_hits, 0, verdict)
+
+        if is_backoff:
+            _get_failure_logger().record_failure(
+                attempt_num=total_attempts,
+                max_retries=max_retries,
+                temperature=temperature,
+                error_type="ExponentialBackoff",
+                error_message=error,
+                wait_time=wait_time,
+                messages_length=messages_length,
+            )
+        else:
+            _get_failure_logger().record_failure(
+                attempt_num=total_attempts,
+                max_retries=max_retries,
+                temperature=temperature,
+                error_type="RetryNeeded",
+                error_message=error,
+                wait_time=0,
+                messages_length=messages_length,
+            )
+
+        if action == "stop":  # AUTH：保持原有"记录后即停"形态（不追加提示语）
+            logger.error("⛔ 认证错误，停止重试")
+            return RetryDecision("stop", error, moderation_hits, 0, verdict)
+
+        if is_backoff:
+            return RetryDecision("continue", error, moderation_hits, wait_time, verdict)
+        if verdict.cls is ErrorClass.RATE_LIMIT:
+            # 限流：尊重 Retry-After，退避拉长（限流是暂时的，值得等）
+            next_wait = min(self._retry_after_seconds(error) or 30 * (attempt + 1), 120)
+        else:
+            next_wait = 3 * (attempt + 1)
+        return RetryDecision("continue", error, moderation_hits, next_wait, verdict)
 
     async def chat_stream_with_retry(
         self,
@@ -730,6 +1021,7 @@ class LLMClient:
         final_content = ""  # 保留 partial content
         final_reasoning = ""
         last_usage: Optional[StreamChunk] = None
+        last_verdict: Optional[ClassVerdict] = None  # 最近一次决断结论（U5：失败结果携带它）
 
         logger.info("=" * 60)
         logger.info(f"开始流式API调用 - Model: {self.config.model}")
@@ -740,13 +1032,16 @@ class LLMClient:
             logger.info(f"启用响应验证回调")
         logger.info("=" * 60)
 
-        def _build_result(success, content, error, prompt_tok, comp_tok,
-                          cached_tokens=0, reasoning_chars=0):
+        def _build_stream_result(success, content, error, prompt_tok, comp_tok,
+                          cached_tokens=0, reasoning_chars=0, verdict=None):
+            # U5：verdict 是本次决断用的 ClassVerdict（决策层形态），出口统一转成 ErrorVerdict
+            # （跨层传输形态）；成功结果恒为 None，与 LLMResult 口径一致。
             return StreamResult(
                 success=success, content=content, error=error,
                 prompt_tokens=prompt_tok, completion_tokens=comp_tok,
                 cached_tokens=cached_tokens, reasoning_chars=reasoning_chars,
                 call_stats={"attempts": total_attempts, "failed_tokens": call_failed_tokens},
+                verdict=None if success else _to_error_verdict(verdict, error),
             )
 
         def _record_validation_failure(validation_error, temp):
@@ -767,13 +1062,16 @@ class LLMClient:
             )
 
         async def _run_stream_attempt(temp):
-            """单次流式 attempt：返回 (status, content, reasoning, usage_chunk, err)
-            status ∈ {"ok", "error", "cancelled"}"""
+            """单次流式 attempt：返回 (status, content, reasoning, usage_chunk, err, verdict)。
+            status ∈ {"ok", "error", "cancelled"}；
+            verdict 是错误块自带的 ErrorVerdict（chat_stream 在异常现场算好后挂在 chunk 上），
+            正常结束为 None——U5 起结论随块流转，不再依赖进程内暂存槽。"""
             nonlocal accumulated_output_tokens, last_consumed_tokens
             nonlocal final_content, final_reasoning, last_usage
             attempt_content = ""
             attempt_reasoning = ""
             attempt_error = ""
+            attempt_verdict = None
             try:
                 async for chunk in self.chat_stream(messages, temperature=temp, max_tokens=max_tokens):
                     if chunk.type == "content":
@@ -786,6 +1084,7 @@ class LLMClient:
                         last_consumed_tokens = (chunk.usage_prompt_tokens, chunk.usage_completion_tokens)
                     elif chunk.type == "error":
                         attempt_error = chunk.error
+                        attempt_verdict = chunk.verdict
                         break
                     # P0-4: on_progress 传累计值
                     if on_progress:
@@ -795,7 +1094,8 @@ class LLMClient:
                             text=chunk.text if chunk.type == "content" else "",
                         ))
             except asyncio.CancelledError:
-                return ("cancelled", attempt_content, attempt_reasoning, last_usage, "用户请求停止")
+                return ("cancelled", attempt_content, attempt_reasoning, last_usage,
+                        "用户请求停止", None)
             finally:
                 # P1-a (2026-08-26)：同步 attempt_content → final_content
                 # 失败路径（认证/审核/退避耗尽）依赖 final_content 作为残缺 JSON 兜底
@@ -804,14 +1104,15 @@ class LLMClient:
                 final_reasoning = attempt_reasoning
 
             if attempt_error:
-                return ("error", attempt_content, attempt_reasoning, last_usage, attempt_error)
-            return ("ok", attempt_content, attempt_reasoning, last_usage, "")
+                return ("error", attempt_content, attempt_reasoning, last_usage,
+                        attempt_error, attempt_verdict)
+            return ("ok", attempt_content, attempt_reasoning, last_usage, "", None)
 
         # === 温度退火重试层 ===
         for attempt in range(self.config.temperature_max_retries):
             if self._stop_requested:
                 logger.info("⛔ 检测到停止请求，终止重试链")
-                return _build_result(False, final_content, "用户请求停止",
+                return _build_stream_result(False, final_content, "用户请求停止",
                                      last_consumed_tokens[0], last_consumed_tokens[1])
             total_attempts += 1
             with self._stats_lock:
@@ -821,10 +1122,11 @@ class LLMClient:
             logger.info(f"\n[温度退火] 尝试 {total_attempts}，temperature={temp} "
                         f"(第{attempt + 1}/{self.config.temperature_max_retries}次)")
 
-            status, content, reasoning, usage, err = await _run_stream_attempt(temp)
+            status, content, reasoning, usage, err, chunk_verdict = \
+                await _run_stream_attempt(temp)
 
             if status == "cancelled":
-                return _build_result(False, content, err, 0, 0, reasoning_chars=len(reasoning))
+                return _build_stream_result(False, content, err, 0, 0, reasoning_chars=len(reasoning))
 
             if status == "error":
                 last_error = err
@@ -834,56 +1136,29 @@ class LLMClient:
                         self._failed_tokens += last_consumed_tokens[0] + last_consumed_tokens[1]
                     call_failed_tokens += last_consumed_tokens[0] + last_consumed_tokens[1]
 
-                # 错误分类决策（T2.2，D4）：审核短路（INPUT/structured 首次、text 连续第3次）/
-                # stop 类立即停（billing/上下文/参数——原样重试必然再失败，不烧退火链）/
-                # 其余按退避继续。沿用 _build_result 保证统计契约（§8 P3-4）
-                action, verdict = _error_action(err, moderation_hits)
-                if action == "moderation_stop":
-                    if not is_moderation_error(err):
-                        err = last_error = mark_moderation(err)
-                    _get_failure_logger().record_failure(
-                        attempt_num=total_attempts,
-                        max_retries=self.config.temperature_max_retries + self.config.backoff_max_retries,
-                        temperature=temp, error_type="ModerationBlocked",
-                        error_message=err, messages_length=messages_length,
-                    )
-                    logger.warning("⛔ 内容审核拦截，跳过该章节（结构化/输入侧首次命中，或文本连续3次）")
-                    return _build_result(False, final_content, err,
-                                         last_consumed_tokens[0], last_consumed_tokens[1])
-                if action == "moderation_count":
-                    moderation_hits += 1
-                if action == "stop" and verdict.cls is not ErrorClass.AUTH:
-                    hint = _STOP_HINTS.get(verdict.cls, "")
-                    if hint and hint not in err:
-                        err = last_error = err + hint
-                    _get_failure_logger().record_failure(
-                        attempt_num=total_attempts,
-                        max_retries=self.config.temperature_max_retries + self.config.backoff_max_retries,
-                        temperature=temp,
-                        error_type=_STOP_ERROR_TYPES.get(verdict.cls, "StopBlocked"),
-                        error_message=err, messages_length=messages_length,
-                    )
-                    logger.error(f"⛔ {verdict.cls.value} 类错误（不可重试），停止重试: {err}")
-                    return _build_result(False, final_content, err,
-                                         last_consumed_tokens[0], last_consumed_tokens[1])
-
-                _get_failure_logger().record_failure(
-                    attempt_num=total_attempts,
-                    max_retries=self.config.temperature_max_retries + self.config.backoff_max_retries,
-                    temperature=temp, error_type="RetryNeeded",
-                    error_message=err, wait_time=0, messages_length=messages_length,
+                # 错误分类决策（T2.2，D4；U2 收敛到 _decide_retry 单点）：审核短路
+                # （INPUT/structured 首次、text 连续第3次）/ 结构化 stop 类立即停 /
+                # 其余按退避继续。沿用 _build_stream_result 保证统计契约（§8 P3-4）
+                decision = self._decide_retry(
+                    err,
+                    moderation_hits=moderation_hits,
+                    verdict=chunk_verdict,
+                    attempt=attempt,
+                    total_attempts=total_attempts,
+                    temperature=temp,
+                    messages_length=messages_length,
+                    phase="temperature",
+                    moderation_log="⛔ 内容审核拦截，跳过该章节（结构化/输入侧首次命中，或文本连续3次）",
                 )
-
-                if action == "stop":  # AUTH：保持原有"记录后即停"形态
-                    logger.error("⛔ 认证错误，停止重试")
-                    return _build_result(False, final_content, err,
-                                         last_consumed_tokens[0], last_consumed_tokens[1])
+                moderation_hits = decision.moderation_hits
+                last_verdict = decision.verdict
+                if decision.action == "stop":
+                    return _build_stream_result(False, final_content, decision.error,
+                                         last_consumed_tokens[0], last_consumed_tokens[1], verdict=decision.verdict)
+                err = last_error = decision.error
 
                 if attempt < self.config.temperature_max_retries - 1:
-                    if verdict.cls is ErrorClass.RATE_LIMIT:
-                        wait_time = min(self._retry_after_seconds(err) or 30 * (attempt + 1), 120)
-                    else:
-                        wait_time = 3 * (attempt + 1)
+                    wait_time = decision.wait_time
                     logger.info(f"⏳ 等待{wait_time}秒后进行下一次温度尝试...")
                     await self._sleep(wait_time)
                 continue
@@ -931,7 +1206,7 @@ class LLMClient:
             logger.info(f"✅ API请求成功（第{total_attempts}次尝试）")
             logger.info(f"使用Tokens: {last_consumed_tokens}")
             logger.info("=" * 60)
-            return _build_result(
+            return _build_stream_result(
                 True, content, "",
                 last_consumed_tokens[0], last_consumed_tokens[1],
                 cached_tokens=usage.usage_cached_tokens if usage else 0,
@@ -949,7 +1224,7 @@ class LLMClient:
         for retry_num in range(backoff_rounds):
             if self._stop_requested:
                 logger.info("⛔ 检测到停止请求，终止重试链")
-                return _build_result(False, final_content, "用户请求停止",
+                return _build_stream_result(False, final_content, "用户请求停止",
                                      last_consumed_tokens[0], last_consumed_tokens[1])
             if is_moderation_error(last_error) and moderation_hits >= 2:
                 _get_failure_logger().record_failure(
@@ -959,8 +1234,8 @@ class LLMClient:
                     error_message=last_error, messages_length=messages_length,
                 )
                 logger.warning("⛔ 内容审核拦截（重试1次后仍拦截），跳过该章节")
-                return _build_result(False, final_content, last_error,
-                                     last_consumed_tokens[0], last_consumed_tokens[1])
+                return _build_stream_result(False, final_content, last_error,
+                                     last_consumed_tokens[0], last_consumed_tokens[1], verdict=last_verdict or classify_message(last_error))
 
             total_attempts += 1
             with self._stats_lock:
@@ -974,10 +1249,11 @@ class LLMClient:
                         f"temperature={final_temp} (第{retry_num + 1}/{backoff_rounds}次)")
             await self._sleep(wait_time)
 
-            status, content, reasoning, usage, err = await _run_stream_attempt(final_temp)
+            status, content, reasoning, usage, err, chunk_verdict = \
+                await _run_stream_attempt(final_temp)
 
             if status == "cancelled":
-                return _build_result(False, content, err, 0, 0, reasoning_chars=len(reasoning))
+                return _build_stream_result(False, content, err, 0, 0, reasoning_chars=len(reasoning))
 
             if status == "error":
                 last_error = err
@@ -988,46 +1264,24 @@ class LLMClient:
                     call_failed_tokens += last_consumed_tokens[0] + last_consumed_tokens[1]
 
                 # T2.2：退避层同构决策（stop 类在退避轮命中同样立即停，不再烧剩余轮次）
-                action, verdict = _error_action(err, moderation_hits)
-                if action == "moderation_stop":
-                    if not is_moderation_error(err):
-                        err = last_error = mark_moderation(err)
-                    _get_failure_logger().record_failure(
-                        attempt_num=total_attempts,
-                        max_retries=self.config.temperature_max_retries + self.config.backoff_max_retries,
-                        temperature=final_temp, error_type="ModerationBlocked",
-                        error_message=err, messages_length=messages_length,
-                    )
-                    logger.warning("⛔ 内容审核拦截，跳过该章节")
-                    return _build_result(False, final_content, err,
-                                         last_consumed_tokens[0], last_consumed_tokens[1])
-                if action == "moderation_count":
-                    moderation_hits += 1
-                if action == "stop" and verdict.cls is not ErrorClass.AUTH:
-                    hint = _STOP_HINTS.get(verdict.cls, "")
-                    if hint and hint not in err:
-                        err = last_error = err + hint
-                    _get_failure_logger().record_failure(
-                        attempt_num=total_attempts,
-                        max_retries=self.config.temperature_max_retries + self.config.backoff_max_retries,
-                        temperature=final_temp,
-                        error_type=_STOP_ERROR_TYPES.get(verdict.cls, "StopBlocked"),
-                        error_message=err, wait_time=wait_time, messages_length=messages_length,
-                    )
-                    logger.error(f"⛔ {verdict.cls.value} 类错误（不可重试），停止重试: {err}")
-                    return _build_result(False, final_content, err,
-                                         last_consumed_tokens[0], last_consumed_tokens[1])
-
-                _get_failure_logger().record_failure(
-                    attempt_num=total_attempts,
-                    max_retries=self.config.temperature_max_retries + self.config.backoff_max_retries,
-                    temperature=final_temp, error_type="ExponentialBackoff",
-                    error_message=err, wait_time=wait_time, messages_length=messages_length,
+                decision = self._decide_retry(
+                    err,
+                    moderation_hits=moderation_hits,
+                    verdict=chunk_verdict,
+                    attempt=attempt,
+                    total_attempts=total_attempts,
+                    temperature=final_temp,
+                    messages_length=messages_length,
+                    phase="backoff",
+                    moderation_log="⛔ 内容审核拦截，跳过该章节",
+                    wait_time=wait_time,
                 )
-                if action == "stop":  # AUTH：保持原有"记录后即停"形态
-                    logger.error("⛔ 认证错误，停止重试")
-                    return _build_result(False, final_content, err,
-                                         last_consumed_tokens[0], last_consumed_tokens[1])
+                moderation_hits = decision.moderation_hits
+                last_verdict = decision.verdict
+                if decision.action == "stop":
+                    return _build_stream_result(False, final_content, decision.error,
+                                         last_consumed_tokens[0], last_consumed_tokens[1], verdict=decision.verdict)
+                err = last_error = decision.error
                 continue
 
             # status == "ok"
@@ -1062,7 +1316,7 @@ class LLMClient:
             logger.info(f"✅ API请求成功（第{total_attempts}次尝试）")
             logger.info(f"使用Tokens: {last_consumed_tokens}")
             logger.info("=" * 60)
-            return _build_result(
+            return _build_stream_result(
                 True, content, "",
                 last_consumed_tokens[0], last_consumed_tokens[1],
                 cached_tokens=usage.usage_cached_tokens if usage else 0,
@@ -1078,8 +1332,8 @@ class LLMClient:
         summary = _get_failure_logger().get_summary()
         logger.error(f"失败统计: {summary}")
         logger.error("=" * 60)
-        return _build_result(False, final_content, final_msg,
-                             last_consumed_tokens[0], last_consumed_tokens[1])
+        return _build_stream_result(False, final_content, final_msg,
+                             last_consumed_tokens[0], last_consumed_tokens[1], verdict=last_verdict or classify_message(last_error))
 
     async def chat_auto(
         self,
@@ -1088,15 +1342,16 @@ class LLMClient:
         validate_response: Optional[Callable] = None,
         retry_messages_builder: Optional[Callable] = None,
         on_progress: Optional[Callable[[StreamChunk], Awaitable[None]]] = None,
-    ) -> Tuple[bool, str, str, Tuple[int, int], dict]:
+    ) -> LLMResult:
         """根据 self.config.streaming_enabled 自动选 chat_with_retry / chat_stream_with_retry
 
         H16 Phase 3 (2026-08-26) 业务接入统一入口：
         - streaming_enabled=True（默认）→ chat_stream_with_retry（流式，每 chunk 回调 on_progress）
         - streaming_enabled=False → chat_with_retry（旧非流式 API，on_progress 忽略）
 
-        返回值与 chat_with_retry 一致（兼容现有 4 个调用方）：
-        (success, content, error, (prompt_tokens, completion_tokens), call_stats)
+        U4：两条分支统一返回 LLMResult（不再拼 5 元组）。流式分支从 StreamResult 的字段
+        构造；U5 起 StreamResult 自带 verdict，这里原样透传——此前流式失败结果的
+        verdict 恒为 None，导致 final_summary / style_analyzer 拿不到判定。
         """
         if self.config.streaming_enabled:
             result = await self.chat_stream_with_retry(
@@ -1105,12 +1360,19 @@ class LLMClient:
                 retry_messages_builder=retry_messages_builder,
                 on_progress=on_progress,
             )
-            return (
-                result.success,
-                result.content,
-                result.error,
-                (result.prompt_tokens, result.completion_tokens),
-                result.call_stats,
+            # 流式 usage 缺失时 StreamResult 是 0/0；两个都为 0 视为"没拿到 usage"
+            raw_tokens = (result.prompt_tokens, result.completion_tokens)
+            tokens = raw_tokens if (raw_tokens[0] or raw_tokens[1]) else None
+            return LLMResult(
+                success=result.success,
+                content=result.content,
+                error=result.error,
+                tokens=tokens,
+                usage_status=(UsageStatus.KNOWN if tokens is not None
+                              else UsageStatus.UNKNOWN),
+                call_stats=result.call_stats,
+                verdict=result.verdict,
+                attempts=int(result.call_stats.get("attempts", 0) or 0),
             )
         # 非流式：on_progress 被忽略（保持接口一致）
         return await self.chat_with_retry(
@@ -1139,13 +1401,51 @@ class LLMClient:
         """重试等待的薄封装（测试注入点，行为同 asyncio.sleep）"""
         await asyncio.sleep(seconds)
 
+    def _build_result(
+        self,
+        success: bool,
+        content: str,
+        error: str,
+        tokens: Optional[Tuple[int, int]],
+        *,
+        total_attempts: int,
+        failed_tokens: int,
+        verdict: Optional[ClassVerdict] = None,
+    ) -> LLMResult:
+        """构造非流式调用结果对象（U4）。
+
+        这是非流式路径唯一的 LLMResult 出口（chat() 的直接返回除外），
+        保证 attempts/tokens/usage_status/verdict 四处口径一致：
+        - tokens 为 None ⟺ usage_status=UNKNOWN（__post_init__ 会拦自相矛盾的组合）；
+        - call_stats 的 attempts 与对象上的 attempts 同源，不再各自维护；
+        - verdict 只有失败时才有，且由 _decide_retry / chat() 的现场分类提供，
+          此处不再二次分类（策略结论只算一次）。
+        """
+        return LLMResult(
+            success=success,
+            content=content,
+            error=error,
+            tokens=tokens,
+            usage_status=(UsageStatus.KNOWN if tokens is not None
+                          else UsageStatus.UNKNOWN),
+            call_stats={"attempts": total_attempts, "failed_tokens": failed_tokens},
+            verdict=None if success else _to_error_verdict(verdict, error),
+            attempts=total_attempts,
+        )
+
     async def chat_with_retry(
         self,
         messages: List[dict],
         max_tokens: Optional[int] = None,
         validate_response: Optional[Callable[[str], Tuple[bool, str]]] = None,
         retry_messages_builder: Optional[Callable[[str, List[dict]], List[dict]]] = None
-    ) -> Tuple[bool, str, str, Tuple[int, int], dict]:
+    ) -> LLMResult:
+        """非流式重试包装（温度退火 → 指数退避），U4 起返回 LLMResult 对象。
+
+        tokens 保留"最后一次已扣费但未被采用"的用量（验证失败/后续全失败时也在），
+        一次都没拿到 usage 就是 None + usage_status=UNKNOWN（旧实现写 (0, 0)）。
+        verdict 由 _decide_retry 的决断结论带出，停止或最终失败时随结果返回，成功为 None。
+        """
         last_error = ""
         total_attempts = 0
         moderation_hits = 0  # 内容审核拦截连续命中次数（连续3次才短路，见下方短路判断）
@@ -1153,7 +1453,8 @@ class LLMClient:
         call_failed_tokens = 0
         messages_length = len(str(messages))
         # 跟踪最后一次 API 成功调用消耗的 tokens（即使 JSON 验证失败，API 已扣费）
-        last_consumed_tokens: Tuple[int, int] = (0, 0)
+        # U4：一次都没拿到 usage 时是 None，不再用 (0, 0) 冒充"零消耗"
+        last_consumed_tokens: Optional[Tuple[int, int]] = None
 
         logger.info("=" * 60)
         logger.info(f"开始API调用 - Model: {self.config.model}")
@@ -1168,7 +1469,10 @@ class LLMClient:
         for attempt in range(self.config.temperature_max_retries):
             if self._stop_requested:
                 logger.info("⛔ 检测到停止请求，终止重试链")
-                return False, "", "用户请求停止", last_consumed_tokens, {"attempts": total_attempts, "failed_tokens": call_failed_tokens}
+                return self._build_result(
+                    False, "", "用户请求停止", last_consumed_tokens,
+                    total_attempts=total_attempts, failed_tokens=call_failed_tokens,
+                )
             total_attempts += 1
             with self._stats_lock:
                 self._attempts += 1
@@ -1178,11 +1482,13 @@ class LLMClient:
             logger.info(f"\n[温度退火] 尝试 {total_attempts}，"
                        f"temperature={temp} (第{attempt + 1}/{self.config.temperature_max_retries}次)")
 
-            success, content, error, tokens = await self.chat(
+            result = await self.chat(
                 messages, temperature=temp, max_tokens=max_tokens
             )
+            content = result.content
+            tokens = result.tokens
 
-            if success:
+            if result.success:
                 if validate_response:
                     # 在线程中运行验证，避免 json5/ast.literal_eval 等同步解析器阻塞事件循环
                     try:
@@ -1200,7 +1506,7 @@ class LLMClient:
                         logger.warning(f"❌ 响应验证失败: {validation_error}")
                         logger.info(f"[DEBUG] LLM响应(全文): {repr(content)}")
                         # 累加失败 tokens（API 已消耗，但响应无效）
-                        if isinstance(tokens, tuple) and len(tokens) == 2:
+                        if tokens is not None:
                             with self._stats_lock:
                                 self._failed_tokens += tokens[0] + tokens[1]
                             call_failed_tokens += tokens[0] + tokens[1]
@@ -1227,70 +1533,45 @@ class LLMClient:
                 logger.info(f"✅ API请求成功（第{total_attempts}次尝试）")
                 logger.info(f"使用Tokens: {tokens}")
                 logger.info("=" * 60)
-                return True, content, "", tokens, {"attempts": total_attempts, "failed_tokens": call_failed_tokens}
+                return self._build_result(
+                    True, content, "", tokens,
+                    total_attempts=total_attempts, failed_tokens=call_failed_tokens,
+                )
 
-            last_error = error
+            last_error = error = result.error
             logger.warning(f"❌ 尝试失败: {error}")
 
-            # 错误分类决策（T2.2，D4）：审核短路 / stop 类立即停 / 其余按退避继续。
+            # 错误分类决策（T2.2，D4；U2 收敛到 _decide_retry 单点）：审核短路 /
+            # 结构化 stop 类立即停 / 其余按退避继续。
             # 审核 text 置信维持"连续 3 次短路"（P2 2026-08-24 阈值理由只适用于文本模糊匹配；
             # structured/输入侧无瞬时误判风险，首次即停）
-            action, verdict = _error_action(error, moderation_hits)
-            if action == "moderation_stop":
-                if not is_moderation_error(error):
-                    error = last_error = mark_moderation(error)
-                _get_failure_logger().record_failure(
-                    attempt_num=total_attempts,
-                    max_retries=self.config.temperature_max_retries + self.config.backoff_max_retries,
-                    temperature=temp,
-                    error_type="ModerationBlocked",
-                    error_message=error,
-                    messages_length=messages_length,
-                )
-                logger.warning("⛔ 内容审核拦截，跳过该章节，不再重试")
-                return False, "", error, last_consumed_tokens, {"attempts": total_attempts, "failed_tokens": call_failed_tokens}
-            if action == "moderation_count":
-                moderation_hits += 1
+            decision = self._decide_retry(
+                error,
+                moderation_hits=moderation_hits,
+                verdict=result.verdict,
+                attempt=attempt,
+                total_attempts=total_attempts,
+                temperature=temp,
+                messages_length=messages_length,
+                phase="temperature",
+                moderation_log="⛔ 内容审核拦截，跳过该章节，不再重试",
+            )
+            moderation_hits = decision.moderation_hits
 
             # 即使 API 调用失败，如果有成功的 tokens（如超时但部分计费），保留
-            if isinstance(tokens, tuple) and len(tokens) == 2 and (tokens[0] > 0 or tokens[1] > 0):
+            if tokens is not None and (tokens[0] > 0 or tokens[1] > 0):
                 last_consumed_tokens = tokens
 
-            if action == "stop" and verdict.cls is not ErrorClass.AUTH:
-                hint = _STOP_HINTS.get(verdict.cls, "")
-                if hint and hint not in error:
-                    error = last_error = error + hint
-                _get_failure_logger().record_failure(
-                    attempt_num=total_attempts,
-                    max_retries=self.config.temperature_max_retries + self.config.backoff_max_retries,
-                    temperature=temp,
-                    error_type=_STOP_ERROR_TYPES.get(verdict.cls, "StopBlocked"),
-                    error_message=error,
-                    messages_length=messages_length
+            error = last_error = decision.error
+            if decision.action == "stop":
+                return self._build_result(
+                    False, "", error, last_consumed_tokens,
+                    total_attempts=total_attempts, failed_tokens=call_failed_tokens,
+                    verdict=decision.verdict,
                 )
-                logger.error(f"⛔ {verdict.cls.value} 类错误（不可重试），停止重试: {error}")
-                return False, "", error, last_consumed_tokens, {"attempts": total_attempts, "failed_tokens": call_failed_tokens}
-
-            _get_failure_logger().record_failure(
-                attempt_num=total_attempts,
-                max_retries=self.config.temperature_max_retries + self.config.backoff_max_retries,
-                temperature=temp,
-                error_type="RetryNeeded",
-                error_message=error,
-                wait_time=0,
-                messages_length=messages_length
-            )
-
-            if action == "stop":  # AUTH：保持原有"记录后即停"形态
-                logger.error("⛔ 认证错误，停止重试")
-                return False, "", error, last_consumed_tokens, {"attempts": total_attempts, "failed_tokens": call_failed_tokens}
 
             if attempt < self.config.temperature_max_retries - 1:
-                if verdict.cls is ErrorClass.RATE_LIMIT:
-                    # 限流：尊重 Retry-After，退避拉长（限流是暂时的，值得等）
-                    wait_time = min(self._retry_after_seconds(error) or 30 * (attempt + 1), 120)
-                else:
-                    wait_time = 3 * (attempt + 1)
+                wait_time = decision.wait_time
                 logger.info(f"⏳ 等待{wait_time}秒后进行下一次温度尝试...")
                 await self._sleep(wait_time)
 
@@ -1303,7 +1584,10 @@ class LLMClient:
         for retry_num in range(backoff_rounds):
             if self._stop_requested:
                 logger.info("⛔ 检测到停止请求，终止重试链")
-                return False, "", "用户请求停止", last_consumed_tokens, {"attempts": total_attempts, "failed_tokens": call_failed_tokens}
+                return self._build_result(
+                    False, "", "用户请求停止", last_consumed_tokens,
+                    total_attempts=total_attempts, failed_tokens=call_failed_tokens,
+                )
             # 温度循环已连续 3 次命中审核拦截（含 temperature_max_retries<3 的配置）→ 直接放弃，
             # 不进入指数退避，避免对"永久拒绝"白等 30 分钟
             if is_moderation_error(last_error) and moderation_hits >= 2:
@@ -1316,7 +1600,11 @@ class LLMClient:
                     messages_length=messages_length,
                 )
                 logger.warning("⛔ 内容审核拦截（重试1次后仍拦截），跳过该章节，不再重试")
-                return False, "", last_error, last_consumed_tokens, {"attempts": total_attempts, "failed_tokens": call_failed_tokens}
+                return self._build_result(
+                    False, "", last_error, last_consumed_tokens,
+                    total_attempts=total_attempts, failed_tokens=call_failed_tokens,
+                    verdict=classify_message(last_error),
+                )
             total_attempts += 1
             with self._stats_lock:
                 self._attempts += 1
@@ -1331,13 +1619,15 @@ class LLMClient:
                        f"(第{retry_num + 1}/{backoff_rounds}次)")
             await self._sleep(wait_time)
 
-            success, content, error, tokens = await self.chat(
+            result = await self.chat(
                 messages,
                 temperature=final_temp,
                 max_tokens=max_tokens
             )
+            content = result.content
+            tokens = result.tokens
 
-            if success:
+            if result.success:
                 if validate_response:
                     # 在线程中运行验证，避免 json5/ast.literal_eval 等同步解析器阻塞事件循环
                     try:
@@ -1355,7 +1645,7 @@ class LLMClient:
                         logger.warning(f"❌ 响应验证失败: {validation_error}")
                         logger.info(f"[DEBUG] LLM响应(全文): {repr(content)}")
                         # 累加失败 tokens（API 已消耗，但响应无效）
-                        if isinstance(tokens, tuple) and len(tokens) == 2:
+                        if tokens is not None:
                             with self._stats_lock:
                                 self._failed_tokens += tokens[0] + tokens[1]
                             call_failed_tokens += tokens[0] + tokens[1]
@@ -1378,61 +1668,39 @@ class LLMClient:
                 logger.info(f"✅ API请求成功（第{total_attempts}次尝试）")
                 logger.info(f"使用Tokens: {tokens}")
                 logger.info("=" * 60)
-                return True, content, "", tokens, {"attempts": total_attempts, "failed_tokens": call_failed_tokens}
+                return self._build_result(
+                    True, content, "", tokens,
+                    total_attempts=total_attempts, failed_tokens=call_failed_tokens,
+                )
 
-            last_error = error
+            last_error = error = result.error
             logger.warning(f"❌ 重试失败: {error}")
 
             # 保留 API 调用消耗的 tokens
-            if isinstance(tokens, tuple) and len(tokens) == 2 and (tokens[0] > 0 or tokens[1] > 0):
+            if tokens is not None and (tokens[0] > 0 or tokens[1] > 0):
                 last_consumed_tokens = tokens
 
             # T2.2：退避层同构决策（stop 类立即停，不再烧剩余轮次）
-            action, verdict = _error_action(error, moderation_hits)
-            if action == "moderation_stop":
-                if not is_moderation_error(error):
-                    error = last_error = mark_moderation(error)
-                _get_failure_logger().record_failure(
-                    attempt_num=total_attempts,
-                    max_retries=self.config.temperature_max_retries + self.config.backoff_max_retries,
-                    temperature=final_temp,
-                    error_type="ModerationBlocked",
-                    error_message=error,
-                    messages_length=messages_length,
-                )
-                logger.warning("⛔ 内容审核拦截，跳过该章节，不再重试")
-                return False, "", error, last_consumed_tokens, {"attempts": total_attempts, "failed_tokens": call_failed_tokens}
-            if action == "moderation_count":
-                moderation_hits += 1
-            if action == "stop" and verdict.cls is not ErrorClass.AUTH:
-                hint = _STOP_HINTS.get(verdict.cls, "")
-                if hint and hint not in error:
-                    error = last_error = error + hint
-                _get_failure_logger().record_failure(
-                    attempt_num=total_attempts,
-                    max_retries=self.config.temperature_max_retries + self.config.backoff_max_retries,
-                    temperature=final_temp,
-                    error_type=_STOP_ERROR_TYPES.get(verdict.cls, "StopBlocked"),
-                    error_message=error,
-                    wait_time=wait_time,
-                    messages_length=messages_length
-                )
-                logger.error(f"⛔ {verdict.cls.value} 类错误（不可重试），停止重试: {error}")
-                return False, "", error, last_consumed_tokens, {"attempts": total_attempts, "failed_tokens": call_failed_tokens}
-
-            _get_failure_logger().record_failure(
-                attempt_num=total_attempts,
-                max_retries=self.config.temperature_max_retries + self.config.backoff_max_retries,
+            decision = self._decide_retry(
+                error,
+                moderation_hits=moderation_hits,
+                verdict=result.verdict,
+                attempt=attempt,
+                total_attempts=total_attempts,
                 temperature=final_temp,
-                error_type="ExponentialBackoff",
-                error_message=error,
+                messages_length=messages_length,
+                phase="backoff",
+                moderation_log="⛔ 内容审核拦截，跳过该章节，不再重试",
                 wait_time=wait_time,
-                messages_length=messages_length
             )
-
-            if action == "stop":  # AUTH：保持原有"记录后即停"形态
-                logger.error("⛔ 认证错误，停止重试")
-                return False, "", error, last_consumed_tokens, {"attempts": total_attempts, "failed_tokens": call_failed_tokens}
+            moderation_hits = decision.moderation_hits
+            error = last_error = decision.error
+            if decision.action == "stop":
+                return self._build_result(
+                    False, "", error, last_consumed_tokens,
+                    total_attempts=total_attempts, failed_tokens=call_failed_tokens,
+                    verdict=decision.verdict,
+                )
 
         final_msg = f"所有重试均失败（温度退火{self.config.temperature_max_retries}次 + " \
                    f"指数退避{self.config.backoff_max_retries}次 = 共{total_attempts}次）。" \
@@ -1446,7 +1714,11 @@ class LLMClient:
         logger.error(f"失败统计: {summary}")
         logger.error("=" * 60)
 
-        return False, "", final_msg, last_consumed_tokens, {"attempts": total_attempts, "failed_tokens": call_failed_tokens}
+        return self._build_result(
+            False, "", final_msg, last_consumed_tokens,
+            total_attempts=total_attempts, failed_tokens=call_failed_tokens,
+            verdict=classify_message(last_error),
+        )
 
     def get_stats(self) -> dict:
         return {

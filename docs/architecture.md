@@ -104,11 +104,14 @@ flowchart TD
 
 任意一方先到即取消其他两方，实现秒级停止。
 
-### 两级重试链
+### 两级重试链与错误判定
 
 - **温度退火**：`temp = max(0, 初始 - 尝试次 × temperature_step)`，默认从 0.5 起每次降 0.25
 - **指数退避**：最多 2^N 秒
-- **认证失败立即终止**：不进入退避
+- **错误分级（2026-10-30 S1）**：重试决策由 `error_taxonomy.ClassVerdict`(`cls`, `confidence`, `action`) 统一给出，四处重复决断已收敛为 `llm_client._decide_retry()`。只有**可信通道**（SDK 异常属性 / 错误 envelope / 真实 HTTP 状态）有资格产出 `stop`；**文本通道上限是可重试**——`classify_message` 不再扫描裸数字，正文里的「第 401 章」「赚了 1008 块」不会再被判成认证/计费错误
+- **判定贯通**：`ErrorVerdict` 随调用结果对象传递（`LLMResult.verdict` / `StreamResult.verdict`），经 `analyzer` 的 `retry_info["verdict"]` 抵达 `pipeline`；"永久停止"的唯一判据是 `is_permanent`（`structured` 且 `action == "stop"`）。pipeline 的致命块登记采用**结构化优先、文本兜底**，文本路径恒不永久，故不会误登记
+- **认证失败立即终止**：只对**结构化** 401 成立（如 SDK 抛 `AuthenticationError`）；纯文本形态的"认证失败"只走有限重试，由预算与轮数收尾
+- **usage 未知**：拿不到 usage 时 `LLMResult.tokens` 为 `None` 且 `usage_status=UNKNOWN`，上报载荷带该字段，避免把"未知消耗"宣称为零
 
 ### 思考模式双协议
 

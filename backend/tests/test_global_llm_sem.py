@@ -14,6 +14,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from backend.config.settings import AppConfig
+from backend.core.error_types import LLMResult, UsageStatus
 from backend.services.final_summary import FinalSummaryRunner
 
 
@@ -102,12 +103,8 @@ def test_peak_inflight_bounded_by_configured_concurrency(tmp_path, concurrency):
     async def fake_chat(messages, *args, **kwargs):
         # 模拟 LLM 真实耗时（50ms）让并发能展开
         await asyncio.sleep(0.05)
-        success = True
-        content = "{}"
-        error = None
-        tokens = (10, 5)
-        call_stats = {}
-        return success, content, error, tokens, call_stats
+        # U4：chat_auto 返回 LLMResult 对象
+        return LLMResult(True, "{}", "", (10, 5), UsageStatus.KNOWN)
 
     style_return = {
         "statistical": {"avg_sentence_length": 20, "short_sentence_ratio": 0.3,

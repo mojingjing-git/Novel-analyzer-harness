@@ -34,6 +34,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
+from backend.core.error_types import LLMResult, UsageStatus  # noqa: E402
 from backend.core.llm_stream import StreamChunk  # noqa: E402
 from backend.core.stream_progress import (  # noqa: E402
     BROADCAST_CHUNK_TYPES,
@@ -272,8 +273,11 @@ class FakeLLMClient:
             await on_progress(chunk("usage", 100))
             await on_progress(chunk("reasoning", 999))  # 必须被过滤
         if status == "ok":
-            return True, payload, "", (10, 20), {"attempts": self._attempt}
-        return False, "", payload, (10, 20), {"attempts": self._attempt, "failed_tokens": 5}
+            return LLMResult(True, payload, "", (10, 20), UsageStatus.KNOWN,
+                             call_stats={"attempts": self._attempt})
+        # U4：chat_auto 返回 LLMResult（失败也照样消耗了本次调用的 token）
+        return LLMResult(False, "", payload, (10, 20), UsageStatus.KNOWN,
+                         call_stats={"attempts": self._attempt, "failed_tokens": 5})
 
 
 def _analysis_json() -> str:
@@ -553,12 +557,12 @@ async def test_retry_chain_reuses_callback_and_keeps_timer(clock, monkeypatch):
         llm_client_mod, "_get_failure_logger", lambda: _NullFailureLogger()
     )
 
-    success, content, error, tokens, stats = await client.chat_auto(
+    res = await client.chat_auto(
         [{"role": "user", "content": "hi"}], on_progress=cb
     )
 
-    assert success is True, f"second attempt should succeed: {error}"
-    assert stats.get("attempts") == 2, f"expected 2 attempts: {stats}"
+    assert res.success is True, f"second attempt should succeed: {res.error}"
+    assert res.call_stats.get("attempts") == 2, f"expected 2 attempts: {res.call_stats}"
     assert len(attempts) == 2, "chat_stream should have been called twice"
 
     assert {e["context"] for e in hub.events} == {"analysis"}
@@ -616,13 +620,13 @@ async def test_retry_exhaustion_keeps_same_callback(clock, monkeypatch):
         llm_client_mod, "_get_failure_logger", lambda: _NullFailureLogger()
     )
 
-    success, content, error, tokens, stats = await client.chat_auto(
+    res = await client.chat_auto(
         [{"role": "user", "content": "hi"}], on_progress=cb
     )
 
-    assert success is False, "every attempt failed so the call must fail"
-    assert stats.get("attempts", 0) >= 2, f"expected retries: {stats}"
-    assert calls["n"] == stats.get("attempts"), (
+    assert res.success is False, "every attempt failed so the call must fail"
+    assert res.call_stats.get("attempts", 0) >= 2, f"expected retries: {res.call_stats}"
+    assert calls["n"] == res.call_stats.get("attempts"), (
         "each attempt should hit chat_stream exactly once"
     )
     # error chunks are never broadcast, and the callback is not re-created

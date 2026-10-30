@@ -31,7 +31,8 @@ from .knowledge_base import KnowledgeBaseManager
 from .llm_client import LLMClient
 from .memory_state import MemoryState
 from ..core.moderation import is_moderation_error
-from ..core.error_taxonomy import ErrorClass, RETRY_POLICY, classify_message
+from ..core.error_taxonomy import ErrorClass, classify_message
+from .error_types import ErrorVerdict, ErrorClass as VerdictErrorClass
 from ..ws_events import PipelineStatus
 from ..utils.export_utils import export_summary_report
 from ..utils.json_utils import extract_json_from_text, safe_parse_json
@@ -47,6 +48,20 @@ def _fmt_range(block_id: int, block_chs, block_size: int) -> str:
     if block_chs:
         return f"ch{block_chs[0]}-ch{block_chs[-1]}" if block_size > 1 else f"ch{block_id}"
     return f"ch{block_id}-ch{block_id + block_size - 1}" if block_size > 1 else f"ch{block_id}"
+
+
+def _usage_status_of(retry_info) -> str:
+    """从块的 retry_info 读出用量状态（U6 / T04），只返回 "KNOWN" 或 "UNKNOWN"。
+
+    - 缺省 KNOWN：未透传 usage_status 的调用方（含测试桩）保持原有统计口径，
+      成功调用本来就拿得到 usage，对外数字不变；
+    - 只有明确 UNKNOWN（本次没拿到 usage）才在对外载荷里打未知标记，
+      避免下游把"未知"读成"零消耗"。
+    兼容 UsageStatus 枚举与裸字符串两种输入。
+    """
+    raw = getattr((retry_info or {}).get("usage_status"), "value",
+                  (retry_info or {}).get("usage_status"))
+    return "UNKNOWN" if str(raw or "KNOWN").upper() == "UNKNOWN" else "KNOWN"
 
 
 # ==================== 结构化 Rolling 摘要 Prompt（原样移植） ====================
@@ -357,7 +372,10 @@ class AnalysisPipeline:
                     "progress": idx,
                     "total": total,
                     "elapsed": 0,
-                    "tokens": (0, 0),
+                    # 跳过块未发请求、未消耗：tokens 必须是整数（与其它载荷一致，
+                    # 元组会被前端读成 NaN/0），usage_status 标 KNOWN。
+                    "tokens": 0,
+                    "usage_status": "KNOWN",
                 })
         if not remaining_blocks:
             logger.info("所有块已完成，无需分析；仍执行最终 KB 合并与落盘收尾")
@@ -494,8 +512,11 @@ class AnalysisPipeline:
                     # 已登记的 start 车道将永远收不到 done（车道堆叠泄漏源之一）
                     logger.error(f"块{block_id}分析异常: {e}", exc_info=True)
                     state.add_failed(block_id, f"块分析异常: {e}")
+                    # U6（T04）：异常可能发生在请求已发出 / 已扣费之后，(0, 0) 只是记账哨兵，
+                    # 故标 UNKNOWN——不能把"没拿到用量"当成"用量确实为零"上报。
                     success, elapsed, ch_tokens, result, retry_info = (
-                        False, 0.0, (0, 0), None, {"retries": 0, "failed_tokens": 0})
+                        False, 0.0, (0, 0), None,
+                        {"retries": 0, "failed_tokens": 0, "usage_status": "UNKNOWN"})
                 return block_id, block_chs, success, elapsed, ch_tokens, result, retry_info, False
 
         tasks = [asyncio.create_task(_worker(bid, chs)) for bid, chs in remaining]
@@ -706,12 +727,32 @@ class AnalysisPipeline:
                 logger.warning(f"块{block_id}内容审核拦截，跳过（重试1次后仍拦截）")
                 return False, elapsed, ch_tokens, None, retry_info
             # 致命错误登记（T2.4，P2-2 最小方案②）：stop 类错误重试成功率恒为零，
-            # 补跑轮据此剔除——欠费场景整场浪费从"剩余块数×4 次调用"降到"×1 次"。
-            # 审核类不登记（见 __init__ 注释）；err_text 为空/UNKNOWN 保守不登记
-            _verdict = classify_message(err_text)
-            if _verdict.cls is not ErrorClass.UNKNOWN and RETRY_POLICY[_verdict.cls] == "stop" \
-                    and _verdict.cls not in (ErrorClass.MODERATION_INPUT, ErrorClass.MODERATION_OUTPUT):
-                self._fatal_blocks[block_id] = _verdict.cls.value
+            # 补跑轮据此剔除。审核类不登记（见 __init__ 注释）；err_text 为空/UNKNOWN 保守不登记。
+            # U4：**结构化优先、文本兜底**。
+            #  - 有 verdict（analyzer 从 llm_result.verdict 透传）→ 用 ErrorVerdict.is_permanent
+            #    判定（= structured 且 action=stop），billing / context_length 这类才真正登记，
+            #    补跑轮不再对它们重复烧钱。
+            #  - 无 verdict → 回退 classify_message(err_text) 文本通道；但文本通道经
+            #    resolve_action 施加上限（action 永不为 stop），故 is_permanent 恒 False，
+            #    兜底路径保留旧语义且不会误登记——纯文本永远不能触发永久熔断。
+            _verdict_dict = (retry_info or {}).get("verdict")
+            _fatal_value = None
+            if isinstance(_verdict_dict, dict):
+                _structured = ErrorVerdict.from_dict(_verdict_dict)
+                if _structured.is_permanent:
+                    _fatal_value = _structured.cls.value
+            else:
+                _text_verdict = classify_message(err_text)
+                if (_text_verdict.cls is not ErrorClass.UNKNOWN
+                        and _text_verdict.is_permanent()
+                        and _text_verdict.cls not in (ErrorClass.MODERATION_INPUT, ErrorClass.MODERATION_OUTPUT)):
+                    _fatal_value = _text_verdict.cls.value
+            # 审核类不登记（见 __init__ 注释）：skip_moderation_blocked=False 时
+            # 用户明确要求补跑审核块
+            if _fatal_value is not None and _fatal_value not in (
+                    VerdictErrorClass.MODERATION_INPUT.value,
+                    VerdictErrorClass.MODERATION_OUTPUT.value):
+                self._fatal_blocks[block_id] = _fatal_value
             reason = "分析失败（LLM响应解析失败或重试耗尽）"
             state.add_failed(block_id, reason)
             logger.warning(f"块{block_id}分析失败: {reason}，耗时{elapsed:.1f}s，tokens={ch_tokens}")
@@ -770,7 +811,9 @@ class AnalysisPipeline:
                 "retries": 0, "failed_tokens": 0,
                 "message": f"{prefix}{ch_range}分析异常",
             })
-            return False, completed_count, (0, 0), None, {"retries": 0, "failed_tokens": 0}
+            # U6（T04）：同上——异常路径的 (0, 0) 是哨兵而非测量值，标 UNKNOWN
+            return False, completed_count, (0, 0), None, {
+                "retries": 0, "failed_tokens": 0, "usage_status": "UNKNOWN"}
         return success, new_completed, ch_tokens, result, retry_info
 
     async def _handle_block_outcome(
@@ -780,12 +823,18 @@ class AnalysisPipeline:
     ):
         """单块结果后处理（accumulate + emit done/failed + token stats）。
 
+        对外载荷（block_done / chapter token_stats）统一携带 usage_status（U6 / T04）：
+        "UNKNOWN" 表示本次没拿到 usage，载荷里的 0 是记账哨兵而不是"零消耗"，
+        数字仍保持 int 以不破坏既有聚合口径，可信与否由本字段决定。
+
         Returns:
             (success, new_completed_count)
         """
         retry_info = retry_info or {"retries": 0, "failed_tokens": 0}
         ch_range = _fmt_range(block_id, block_chs, block_size)
         prefix = f"[{label}] " if label else ""
+        # U6（T04）：本块用量状态，随下面所有"消耗"上报一起走
+        usage_status = _usage_status_of(retry_info)
 
         if success:
             completed_count += 1
@@ -804,6 +853,7 @@ class AnalysisPipeline:
                 "input_tokens": ch_tokens[0], "output_tokens": ch_tokens[1],
                 "retries": retry_info.get("retries", 0),
                 "failed_tokens": retry_info.get("failed_tokens", 0),
+                "usage_status": usage_status,
                 "message": f"{prefix}{ch_range}分析完成"
             })
             # 广播后立即释放 raw_response：整段 LLM 原文在内存里只服务于这次广播，
@@ -837,6 +887,9 @@ class AnalysisPipeline:
             "input_tokens": in_tok,
             "output_tokens": out_tok,
             "current_tokens": in_tok + out_tok,  # 兼容旧前端读取 current_tokens
+            # U6（T04）：UNKNOWN = 没拿到 usage，上面的 0 只是哨兵，
+            # 不得被读成"本次确实消耗 0 token"
+            "usage_status": usage_status,
         })
         return success, completed_count
 
@@ -925,14 +978,14 @@ class AnalysisPipeline:
         for attempt in range(1 + ROLLING_SUMMARY_MAX_RETRIES):
             if self._stop_requested:
                 return last_chapter
-            success, content, error, tokens = await rolling_client.chat(
+            llm_result = await rolling_client.chat(
                 messages,
                 temperature=ROLLING_SUMMARY_TEMPERATURE,
                 max_tokens=ROLLING_SUMMARY_MAX_TOKENS
             )
-            await self._emit_rolling_tokens(tokens)
-            if success and content and content.strip():
-                raw = extract_json_from_text(content)
+            await self._emit_rolling_tokens(llm_result.tokens)
+            if llm_result.success and llm_result.content and llm_result.content.strip():
+                raw = extract_json_from_text(llm_result.content)
                 if raw:
                     parsed = safe_parse_json(raw)
                     if parsed:
@@ -940,7 +993,7 @@ class AnalysisPipeline:
                         break
                 logger.warning(f"rolling JSON 解析失败（第{attempt + 1}次），重试...")
             else:
-                logger.warning(f"rolling 更新第{attempt + 1}次调用失败: {error}")
+                logger.warning(f"rolling 更新第{attempt + 1}次调用失败: {llm_result.error}")
 
         if new_json is None:
             logger.warning(f"rolling 更新全部失败，保留旧数据（已纳入到第{last_chapter}章）")
@@ -1058,19 +1111,19 @@ class AnalysisPipeline:
 
         # 与全链路其它 LLM 调用一致，走带温度退火 + 退避重试的 chat_with_retry，
         # 避免单次失败直接丢弃势头归档（归档是热点路径上的关键节点）。
-        success, content, error, tokens, _call_stats = await rolling_client.chat_with_retry(
+        llm_result = await rolling_client.chat_with_retry(
             messages, max_tokens=100
         )
-        await self._emit_rolling_tokens(tokens)
-        if success and content and content.strip():
-            milestone = content.strip().strip('"').strip("'")
+        await self._emit_rolling_tokens(llm_result.tokens)
+        if llm_result.success and llm_result.content and llm_result.content.strip():
+            milestone = llm_result.content.strip().strip('"').strip("'")
             if len(milestone) > 60:
                 milestone = milestone[:60]
             structured_data.setdefault("global_milestones", []).append(milestone)
             structured_data["recent_momentum"] = []
             logger.info(f"归档完成：{len(momentum)}条势头条目 → 里程碑「{milestone}」")
         else:
-            logger.warning(f"归档 LLM 调用失败: {error}，保留原 recent_momentum")
+            logger.warning(f"归档 LLM 调用失败: {llm_result.error}，保留原 recent_momentum")
 
     async def _reinitialize_structured_rolling(self, rolling_client: LLMClient,
                                                output_dir: Path, rolling_data: dict,
@@ -1101,13 +1154,13 @@ class AnalysisPipeline:
             {"role": "user", "content": STRUCTURED_ROLLING_USER_TEMPLATE.format(chapters=chapters_text)}
         ]
 
-        success, content, error, tokens = await rolling_client.chat(
+        llm_result = await rolling_client.chat(
             messages, temperature=ROLLING_SUMMARY_TEMPERATURE, max_tokens=ROLLING_SUMMARY_MAX_TOKENS
         )
-        await self._emit_rolling_tokens(tokens)
+        await self._emit_rolling_tokens(llm_result.tokens)
 
-        if success and content and content.strip():
-            raw = extract_json_from_text(content)
+        if llm_result.success and llm_result.content and llm_result.content.strip():
+            raw = extract_json_from_text(llm_result.content)
             if raw:
                 parsed = safe_parse_json(raw)
                 if parsed:
@@ -1146,15 +1199,15 @@ class AnalysisPipeline:
             {"role": "user", "content": STRUCTURED_ROLLING_USER_TEMPLATE.format(chapters=chapters_text)}
         ]
 
-        success, content, error, tokens = await rolling_client.chat(
+        llm_result = await rolling_client.chat(
             messages,
             temperature=ROLLING_SUMMARY_TEMPERATURE,
             max_tokens=ROLLING_SUMMARY_MAX_TOKENS
         )
-        await self._emit_rolling_tokens(tokens)
+        await self._emit_rolling_tokens(llm_result.tokens)
 
-        if success and content and content.strip():
-            raw = extract_json_from_text(content)
+        if llm_result.success and llm_result.content and llm_result.content.strip():
+            raw = extract_json_from_text(llm_result.content)
             if raw:
                 parsed = safe_parse_json(raw)
                 if parsed:
@@ -1167,9 +1220,9 @@ class AnalysisPipeline:
                     logger.info(f"早期结构化摘要已生成（第1-{self._rolling_early}章，"
                                 f"里程碑{len(new_structured.get('global_milestones', []))}条）")
                     return
-            logger.warning(f"早期摘要 JSON 解析失败: {content[:200]}")
+            logger.warning(f"早期摘要 JSON 解析失败: {llm_result.content[:200]}")
         else:
-            logger.warning(f"早期摘要生成失败: {error}")
+            logger.warning(f"早期摘要生成失败: {llm_result.error}")
 
     def _format_chapters_for_rolling(self, results: list) -> str:
         """格式化章节信息用于 rolling prompt（完整版）"""

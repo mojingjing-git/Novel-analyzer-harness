@@ -326,6 +326,7 @@ import shutil
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.services.location_normalizer import LLMClient, LocationNormalizer
+from backend.core.error_types import LLMResult, UsageStatus
 
 
 def _setup_output_dir(tmp_path: Path, chapters: int = 5):
@@ -353,12 +354,12 @@ def _setup_output_dir(tmp_path: Path, chapters: int = 5):
 
 
 def _make_mock_llm(responses):
-    """构造 mock LLM client，按调用顺序返回 (success, content, error, tokens)"""
+    """构造 mock LLM client，按调用顺序返回 LLMResult（U4：不再是四元组）"""
     client = MagicMock()
     client.model = "mock-model"
     client._stop_requested = False
     client.chat = AsyncMock(side_effect=[
-        (True, r, "", (10, 20)) for r in responses
+        LLMResult(True, r, "", (10, 20), UsageStatus.KNOWN) for r in responses
     ])
     return client
 
@@ -663,8 +664,9 @@ class TestOnProgressCallback:
             nonlocal call_count
             call_count += 1
             if call_count == 2:
-                return (False, "", "模拟 LLM 错误", (0, 0))
-            return (True, '{"locations":[{"canonical_name":"A","aliases":["A"]}]}', "", (100, 50))
+                return LLMResult(False, "", "模拟 LLM 错误")
+            return LLMResult(True, '{"locations":[{"canonical_name":"A","aliases":["A"]}]}',
+                             "", (100, 50), UsageStatus.KNOWN)
 
         mock_llm = MagicMock()
         mock_llm.model = "mock-model"

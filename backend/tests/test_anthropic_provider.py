@@ -119,13 +119,13 @@ async def test_anthropic_chat_success():
     fake_anthropic.messages.create = AsyncMock(return_value=resp)
     client.anthropic = fake_anthropic
 
-    success, content, error, tokens = await client.chat(
+    res = await client.chat(
         [{"role": "system", "content": "sys"}, {"role": "user", "content": "hi"}],
         temperature=0.3,
     )
-    assert success
-    assert content == '{"ok": true}'
-    assert tokens == (10, 20)
+    assert res.success
+    assert res.content == '{"ok": true}'
+    assert res.tokens == (10, 20)
     # 断言 create 收到的载荷
     call_kwargs = fake_anthropic.messages.create.call_args.kwargs
     assert call_kwargs["model"] == "claude-sonnet-4-5"
@@ -145,9 +145,9 @@ async def test_anthropic_empty_content():
     resp.usage.cache_read_input_tokens = 0
     fake_anthropic.messages.create = AsyncMock(return_value=resp)
     client.anthropic = fake_anthropic
-    success, _c, error, _t = await client.chat([{"role": "user", "content": "hi"}])
-    assert not success
-    assert "空内容" in error
+    res = await client.chat([{"role": "user", "content": "hi"}])
+    assert not res.success
+    assert "空内容" in res.error
     print("✅ test_anthropic_empty_content passed")
 
 
@@ -168,10 +168,10 @@ async def test_openai_path_unchanged():
     resp.usage.prompt_tokens_details = None
     fake_openai.chat.completions.create = AsyncMock(return_value=resp)
     client.client = fake_openai
-    success, content, error, tokens = await client.chat([{"role": "user", "content": "hi"}])
-    assert success
-    assert content == '{"ok": true}'
-    assert tokens == (10, 20)
+    res = await client.chat([{"role": "user", "content": "hi"}])
+    assert res.success
+    assert res.content == '{"ok": true}'
+    assert res.tokens == (10, 20)
     print("✅ test_openai_path_unchanged passed")
 
 

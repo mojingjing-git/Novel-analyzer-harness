@@ -7,6 +7,11 @@ LLMClient 的 chat/chat_stream 经导入使用；单测直接对模块函数做�
 from dataclasses import dataclass, field
 from typing import Optional, Tuple
 
+# U5（2026-10-30）：协议层只向 error_types 单向依赖。流式块与终结结果都必须能携带
+# 完整判定契约（含 scope / retry_after），故 verdict 用 error_types.ErrorVerdict；
+# 本模块不得反向 import llm_client 或 error_taxonomy。
+from .error_types import ErrorVerdict
+
 
 # H16 (2026-08-26)：流式 LLM 调用数据结构
 @dataclass
@@ -23,6 +28,10 @@ class StreamChunk:
     - usage_*: type=usage 时的真实 usage（OpenAI 最后一个 chunk、Anthropic 每 chunk）
     - is_final: 是否最后一个 chunk（用于结束标志）
     - error: type=error 时的错误消息
+    - verdict: type=error 时的完整判定契约（U5）。§2.5 明确要求"流式块必须携带完整
+      契约（含 scope 与 retry_after）"，不允许只在终结结果上补齐——错误块带着
+      cls/confidence/action/scope/retry_after 一起外传，重试层与上层消费方只读它。
+      其余类型的块（content/reasoning/usage）为 None。
     """
     type: str = ""
     text: str = ""
@@ -33,6 +42,7 @@ class StreamChunk:
     usage_cached_tokens: int = 0
     is_final: bool = False
     error: str = ""
+    verdict: Optional[ErrorVerdict] = None
 
 
 @dataclass
@@ -46,6 +56,9 @@ class StreamResult:
     cached_tokens: int
     reasoning_chars: int  # 思考链总字符数（被剥离的）
     call_stats: dict = field(default_factory=dict)  # {"attempts": N, "failed_tokens": M}
+    # U5：失败时的完整判定契约（cls/confidence/action/scope/retry_after 俱全），
+    # 由 chat_stream 在异常现场判定后随结果外传；成功恒为 None（与 LLMResult 口径一致）。
+    verdict: Optional[ErrorVerdict] = None
 
 
 def parse_anthropic_response(response) -> Tuple[str, int, int, int]:

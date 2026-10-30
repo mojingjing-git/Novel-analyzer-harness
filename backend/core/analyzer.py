@@ -22,6 +22,18 @@ from ..utils.json_utils import extract_json_from_text, safe_parse_json
 logger = logging.getLogger(__name__)
 
 
+def _usage_status_str(usage_status) -> str:
+    """把用量状态归一成上报用的字符串（U6 / T04）。
+
+    retry_info 与 WS 载荷只认 "KNOWN"/"UNKNOWN"：
+    - "KNOWN"   拿到了 usage，tokens 里的数字是真实测量；
+    - "UNKNOWN" 没拿到 usage，tokens 里的 (0, 0) 只是记账哨兵，**不得**当"零消耗"。
+    缺省（None/空）按 UNKNOWN 处理——宁可标注未知，也不宣称零。
+    """
+    raw = getattr(usage_status, "value", usage_status)
+    return str(raw or "UNKNOWN").upper()
+
+
 def validate_parsed_analysis(data: dict) -> tuple:
     """对已解析的 JSON dict 做必须字段/类型校验。
 
@@ -98,12 +110,16 @@ class NovelAnalyzer:
             block_size: 本块合并的章节数（写入 result 用于断点续跑时检测 block_size 变更）
 
         Returns:
-            (分析结果, 本章消耗token数, {retries, failed_tokens})，
+            (分析结果, 本章消耗token数, retry_info)；
+            retry_info = {retries, failed_tokens, usage_status, error?, verdict?}，
+            usage_status == "UNKNOWN" 表示没拿到 usage，此时 token 数只是记账哨兵（U6）；
             失败返回 (None, 已消耗tokens, retry_info)
         """
         if self._is_stopped:
             logger.info("分析已被停止")
-            return None, (0, 0), {"retries": 0, "failed_tokens": 0}
+            # 未发起任何请求：这里的零消耗是真实测量，故 usage_status=KNOWN（U6）
+            return None, (0, 0), {"retries": 0, "failed_tokens": 0,
+                                  "usage_status": "KNOWN"}
 
         try:
             # 1. 使用传入的KB构建提示词
@@ -156,26 +172,39 @@ class NovelAnalyzer:
                 unit_idx=chapter_number,
             )
 
-            success, response, error, token_counts, call_stats = await self.llm_client.chat_auto(
+            llm_result = await self.llm_client.chat_auto(
                 messages,
                 max_tokens=self.config.api.max_tokens,
                 validate_response=validate_json_response,
                 retry_messages_builder=build_retry_messages,
                 on_progress=on_progress,
             )
+            response = llm_result.content
             retry_info = {
-                "retries": max(0, call_stats.get("attempts", 0) - 1),
-                "failed_tokens": call_stats.get("failed_tokens", 0),
+                "retries": max(0, llm_result.call_stats.get("attempts", 0) - 1),
+                "failed_tokens": llm_result.call_stats.get("failed_tokens", 0),
             }
+            # U6（T04）：用量状态在此统一写入，成功 / 失败 / 解析失败三条出口同一口径。
+            # 拿到 usage → "KNOWN"；没拿到 → "UNKNOWN"，此时下面的 (0, 0) 只是记账哨兵，
+            # pipeline 会在对外载荷里带上本字段，不让下游把"未知"读成"零消耗"。
+            retry_info["usage_status"] = _usage_status_str(llm_result.usage_status)
 
-            if not success:
-                logger.error(f"第{chapter_number}章分析失败: {error}")
-                # 保留实际消耗的 tokens（API 已扣费，不能归零）
-                actual_tokens = token_counts if isinstance(token_counts, tuple) else (0, 0)
-                retry_info["error"] = error  # 传播原始错误（含 [MODERATION] 标记，供 pipeline 判 skipped）
+            if not llm_result.success:
+                logger.error(f"第{chapter_number}章分析失败: {llm_result.error}")
+                # 保留实际消耗的 tokens（API 已扣费，不能归零）；tokens 为 None 表示没拿到 usage
+                actual_tokens = (llm_result.tokens if llm_result.tokens is not None
+                                 else (0, 0))
+                retry_info["error"] = llm_result.error  # 传播原始错误（含 [MODERATION] 标记，供 pipeline 判 skipped）
+                # U4：把结构化判定透传给 pipeline——
+                # pipeline 靠 verdict.is_permanent 识别"永久失败"块（补跑轮跳过，不重复烧钱）；
+                # 文本兜底判定恒不永久，故只有结构化结论才能点亮该分支。
+                # （usage_status 已在 retry_info 构造处统一写入，见上，U6）
+                retry_info["verdict"] = (llm_result.verdict.to_dict()
+                                        if llm_result.verdict is not None else None)
                 return None, actual_tokens, retry_info
 
-            in_tok, out_tok = token_counts if isinstance(token_counts, tuple) else (0, token_counts)
+            in_tok, out_tok = (llm_result.tokens if llm_result.tokens is not None
+                               else (0, 0))
             tokens = in_tok + out_tok
             logger.info(f"第{chapter_number}章API调用成功，使用{tokens} tokens (输入{in_tok}+输出{out_tok})")
 
@@ -184,6 +213,10 @@ class NovelAnalyzer:
             if result is None:
                 logger.error(f"第{chapter_number}章JSON解析失败，LLM响应前800字符:\n{response[:800]}")
                 retry_info["error"] = "JSON解析失败"
+                # U4：解析失败同属失败路径——verdict 为 None（LLM 调用本身成功），
+                # usage_status 已在构造处统一透传（U6，tokens 是否可信由它决定）
+                retry_info["verdict"] = (llm_result.verdict.to_dict()
+                                        if llm_result.verdict is not None else None)
                 return None, (in_tok, out_tok), retry_info
 
             result.raw_response = response
@@ -197,8 +230,10 @@ class NovelAnalyzer:
 
         except Exception as e:
             logger.error(f"第{chapter_number}章分析异常: {e}", exc_info=True)
-            # 尽量保留已消耗的 tokens
-            return None, (0, 0), {"retries": 0, "failed_tokens": 0}
+            # 尽量保留已消耗的 tokens；异常可能发生在已扣费之后，(0, 0) 只是记账哨兵，
+            # 故 usage_status 必须标 UNKNOWN（U6：未知不得宣称为零）
+            return None, (0, 0), {"retries": 0, "failed_tokens": 0,
+                                  "usage_status": "UNKNOWN"}
 
     def _parse_response(self, response: str, chapter_number: int,
                          pre_parsed: Optional[dict] = None) -> Optional[AnalysisResult]:
