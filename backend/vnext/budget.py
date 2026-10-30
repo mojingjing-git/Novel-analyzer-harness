@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass, field, replace
 from typing import Iterable, Mapping
 
@@ -81,15 +82,22 @@ class Usage:
 
 @dataclass(frozen=True)
 class Reservation:
-    """一次已预留的额度。``reserved`` 是上限，``settle`` 时按实际结算。"""
+    """一次已预留的额度。
+
+    必须有**唯一身份**：用值相等删除会出两种事故——两个同额预留在途时，释放其中一个
+    会把另一个也抹掉；同一个预留结算两次会重复扣费。两个都实测复现过。
+    """
 
     group: str
     calls: int
     tokens: int
-    reserved_tokens: int = 0
+    reservation_id: str = ""
+    ledger_id: str = ""
+    state: str = "OPEN"
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "reserved_tokens", self.tokens)
+        if not self.reservation_id:
+            object.__setattr__(self, "reservation_id", uuid.uuid4().hex)
 
 
 @dataclass
@@ -98,7 +106,9 @@ class Budget:
 
     caps: Mapping[str, BudgetCap] = field(default_factory=dict)
     used: Mapping[str, Usage] = field(default_factory=dict)
-    _open: list[Reservation] = field(default_factory=list, repr=False)
+    #: 在途预留：按 reservation_id 索引，绝不用值相等做键
+    _open: dict[str, Reservation] = field(default_factory=dict, repr=False)
+    ledger_id: str = field(default_factory=lambda: uuid.uuid4().hex)
 
     def __post_init__(self) -> None:
         self.caps = {group: self.caps.get(group, BudgetCap()) for group in BUDGET_GROUPS} | dict(self.caps)
@@ -123,23 +133,30 @@ class Budget:
                 f"在途 {pending.calls} 次/{pending.tokens} token，"
                 f"本次请求 {calls} 次/{tokens} token，上限 {cap.max_calls}/{cap.max_tokens}"
             )
-        reservation = Reservation(group=group, calls=calls, tokens=tokens)
-        self._open.append(reservation)
+        reservation = Reservation(group=group, calls=calls, tokens=tokens, ledger_id=self.ledger_id)
+        self._open[reservation.reservation_id] = reservation
         return reservation
 
-    def release(self, reservation: Reservation) -> None:
-        """退回**未开始**的预留。已经开始的一律用 :meth:`settle`，否则会掩盖真实花费。"""
-        try:
-            self._open.remove(reservation)
-        except ValueError:
-            return
+    def release(self, reservation: Reservation) -> bool:
+        """退回**未开始**的预留，返回是否真的退回。
+
+        重复调用、跨账本、已结算的预留一律无操作——回调重放不能影响别的请求。
+        """
+        if reservation.ledger_id != self.ledger_id:
+            return False
+        if self._open.pop(reservation.reservation_id, None) is None:
+            return False
+        return True
 
     def settle(self, reservation: Reservation, *, actual: Usage | None = None) -> Usage:
-        """按实际用量结算（失败也要结算：失败同样花钱）。"""
-        try:
-            self._open.remove(reservation)
-        except ValueError:
-            pass
+        """按实际用量结算（失败也要结算：失败同样花钱）。
+
+        幂等：同一个预留结算两次只扣一次。否则一次重放回调就能让费用翻倍。
+        """
+        if reservation.ledger_id != self.ledger_id:
+            return Usage()
+        if self._open.pop(reservation.reservation_id, None) is None:
+            return Usage()
         spent = actual if actual is not None else Usage(
             calls=reservation.calls,
             prompt_tokens=reservation.tokens,
@@ -150,7 +167,7 @@ class Budget:
 
     def _pending(self, group: str) -> Usage:
         total = Usage()
-        for reservation in self._open:
+        for reservation in self._open.values():
             if reservation.group == group:
                 total = total.plus(
                     Usage(calls=reservation.calls, prompt_tokens=reservation.tokens, completion_tokens=0)
@@ -174,7 +191,7 @@ class Budget:
         return used.calls >= cap.max_calls or used.tokens >= cap.max_tokens
 
     def outstanding(self) -> tuple[Reservation, ...]:
-        return tuple(self._open)
+        return tuple(self._open.values())
 
     def snapshot(self) -> dict:
         return {
@@ -213,7 +230,10 @@ def default_budget(overrides: Mapping[str, BudgetCap] | None = None) -> Budget:
 
 
 def rebuild_usage(usages: Iterable[Mapping[str, object]]) -> dict[str, Usage]:
-    """从任务记录重建用量（重启后不依赖内存计数器）。"""
+    """从任务记录重建用量（重启后不依赖内存计数器）。
+
+    入参就是 ``TaskRecord.to_dict()`` 的行——两者字段名必须一致，否则重建会静默得到空账。
+    """
     totals: dict[str, Usage] = {}
     for row in usages:
         group = str(row.get("group") or "")

@@ -526,3 +526,44 @@ expected_dependency = sha256(canonical({
 
 另一条改的是**状态继承**：块签名不符时不得继承 `DONE` 与旧 `result_id`（原先"纠正签名"后照旧继承，
 等于把旧块结果挂在新块下面还宣称前缀完整），现降为 `PENDING` 并记 `SIGNATURE_CHANGED`。
+
+
+## §14 预算、账本与执行入口（S7 定稿）
+
+### 14.1 预留必须有身份
+
+`Reservation` 带 `reservation_id` + `ledger_id`。规矩：
+
+- 释放/结算**按 ID**，不按值相等——两个同额预留在途时，按值删除会误删另一个；
+- `settle` 幂等：同一预留结算两次只扣一次（否则一次重放回调让费用翻倍）；
+- 跨账本的预留一律拒绝操作。
+
+### 14.2 记账与应用分开去重
+
+`TaskRecord` 有两件事必须分开：**结论应用**（同一条结论只能应用一次）与**费用记账**
+（每次尝试都要记）。早先实现把两者合并，第二次真实消耗 12 token 的记录被整条拒收，
+账本只剩 10——少算费用比重复应用更难发现。
+
+实现：重复应用时仍追加记录并置 `applied=False`；`totals()["duplicate_applies"]` 可查。
+
+### 14.3 用量重建的字段契约
+
+`rebuild_usage()` 的入参就是 `TaskRecord.to_dict()`，因此 `TaskRecord` **必须**导出
+`group`（预算组）。这一处字段错位不会报错，只会静默得到空账——重启后预算就白花了。
+
+### 14.4 覆盖完整性需要预期集合
+
+`count_verdicts` 只有拿到 `expected_candidate_ids` 才能宣布完整：
+没有集合时 `expected_known=False`，`integrity_error()` 报"无法核对"，`recheck_status`
+只能给 `PARTIAL`。数字能对上不代表没漏候选（重复两行就能凑平）。
+
+### 14.5 反证检索也要可核实
+
+`counter_search.performed=true` 不足以证明"查过"：它必须同时给出
+`checked_evidence_ids`，且这些 ID 必须属于本任务。否则判 `INSUFFICIENT`
+（`COUNTER_SEARCH_UNVERIFIED`）——"我查了"是声明，不是证据。
+
+### 14.6 执行入口先落盘再前进
+
+`runner.run_recheck` 每完成一个单元就调用一次 `persist`。崩溃后重启时，
+"已经花了钱的那几次"必须留在账上，否则预算会被重复花掉。

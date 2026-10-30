@@ -55,6 +55,11 @@ class TaskRecord:
     #: 结论指向（result_id / candidate_id / 产物路径），本模块不解释它
     result_ref: str | None = None
     reason: str = ""
+    #: 这条记录属于哪个预算组（重建用量要用；缺了它用量就重建不出来）
+    group: str = ""
+    #: 本条结论是否真的被应用。``False`` 表示"这是一次重复应用"——
+    #: 记录仍要保留（钱花了），但结论不能应用第二遍。
+    applied: bool = True
 
     @property
     def reusable(self) -> bool:
@@ -78,6 +83,8 @@ class TaskRecord:
             "apply_key": self.apply_key,
             "result_ref": self.result_ref,
             "reason": self.reason,
+            "group": self.group,
+            "applied": self.applied,
         }
 
     @classmethod
@@ -95,6 +102,8 @@ class TaskRecord:
             apply_key=data.get("apply_key") if isinstance(data.get("apply_key"), str) else None,
             result_ref=data.get("result_ref") if isinstance(data.get("result_ref"), str) else None,
             reason=str(data.get("reason") or ""),
+            group=str(data.get("group") or ""),
+            applied=bool(data.get("applied", True)),
         )
 
 
@@ -121,7 +130,7 @@ class TaskLedger:
 
     def _index(self, record: TaskRecord) -> None:
         self._by_key.setdefault(record.task_key, []).append(record)
-        if record.apply_key and record.status in REUSABLE:
+        if record.apply_key and record.status in REUSABLE and record.applied:
             self._applied.add(record.apply_key)
 
     def __len__(self) -> int:
@@ -149,11 +158,25 @@ class TaskLedger:
         return None
 
     def record(self, record: TaskRecord) -> bool:
-        """追加一条记录。``apply_key`` 已应用的结论拒绝重复应用，返回 False。"""
-        if record.apply_key and record.status in REUSABLE and record.apply_key in self._applied:
-            return False
+        """追加一条记录，返回**本条结论是否被应用**。
+
+        记账与应用必须分开去重：同一条结论应用两次是错的，但"第二次真的花了 12 token
+        却不能记账"更错——那会让费用少算，而费用是唯一能核对的东西。
+        所以重复应用时仍追加记录（``applied=False``），只是不再应用结论。
+        """
+        duplicate = bool(
+            record.apply_key
+            and record.status in REUSABLE
+            and record.apply_key in self._applied
+        )
+        if duplicate:
+            record = replace(record, applied=False)
         self._records.append(record)
         self._index(record)
+        if duplicate:
+            return False
+        if record.apply_key and record.status in REUSABLE:
+            self._applied.add(record.apply_key)
         return True
 
     def mark_stale(self, task_key: str, *, reason: str = "SOURCE_CHANGED") -> int:
@@ -199,6 +222,7 @@ class TaskLedger:
         return {
             "records": len(self._records),
             "by_status": dict(sorted(by_status.items())),
+            "duplicate_applies": sum(1 for r in self._records if not r.applied),
             "calls": calls,
             "prompt_tokens": prompt,
             "completion_tokens": completion,

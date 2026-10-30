@@ -116,11 +116,19 @@ def test_failed_retry_does_not_shadow_earlier_success() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_same_apply_key_applied_once() -> None:
+def test_same_apply_key_applied_once_but_still_accounted() -> None:
+    """同一条结论不能应用两次，但第二次真的花了的钱必须记账。
+
+    早先的实现直接拒收第二条记录，于是"两次实际消耗 10/12 token"在账本里只剩 10——
+    少算费用比重复应用更难发现。
+    """
     ledger = TaskLedger()
-    assert ledger.record(_rec("k1", SUCCEEDED, apply_key="ap_1")) is True
-    assert ledger.record(_rec("k2", SUCCEEDED, apply_key="ap_1")) is False
-    assert len(ledger) == 1
+    assert ledger.record(_rec("k1", SUCCEEDED, apply_key="ap_1", calls=1, prompt_tokens=10)) is True
+    assert ledger.record(_rec("k2", SUCCEEDED, apply_key="ap_1", calls=1, prompt_tokens=12)) is False
+    assert len(ledger) == 2
+    assert ledger.totals()["prompt_tokens"] == 22      # 两次都记账
+    assert ledger.totals()["duplicate_applies"] == 1   # 但只有一次被应用
+    assert [r.applied for r in ledger.records()] == [True, False]
 
 
 def test_unfinished_record_with_apply_key_does_not_block() -> None:

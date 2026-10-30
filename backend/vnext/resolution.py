@@ -52,6 +52,8 @@ REASON_MISSING_FIELD = "MISSING_FIELD"
 REASON_FOREIGN_ID = "FOREIGN_ID"
 REASON_NO_COUNTER_SEARCH = "NO_COUNTER_SEARCH"
 REASON_COUNTER_QUOTES_PRESENT = "COUNTER_QUOTES_PRESENT"
+#: 反证检索的声明无法核实（没给 ID、或 ID 不属于本任务）
+REASON_COUNTER_SEARCH_UNVERIFIED = "COUNTER_SEARCH_UNVERIFIED"
 REASON_MATERIAL_INSUFFICIENT = "MATERIAL_INSUFFICIENT"
 REASON_QUOTE_OUT_OF_RANGE = "QUOTE_OUT_OF_RANGE"
 REASON_EMPTY_ANSWER = "EMPTY_ANSWER"
@@ -175,6 +177,20 @@ def parse_recheck(
         if not quote_within_range(quote, int(start), int(end)):
             return CandidateVerdict(candidate_id, INVALID, reason=REASON_QUOTE_OUT_OF_RANGE)
 
+        # "查过反证"不能只凭 performed=True 一句话：它声明查了哪些 ID，这些 ID 必须
+        # 属于本任务。否则模型写一个 outside_this_task 就能把这道门糊过去。
+        checked_ids = counter.get("checked_evidence_ids")
+        if not isinstance(checked_ids, (list, tuple)) or not checked_ids:
+            return CandidateVerdict(
+                candidate_id, INSUFFICIENT, reason=REASON_COUNTER_SEARCH_UNVERIFIED
+            )
+        allowed = set(allowed_evidence_ids)
+        foreign = [cid for cid in checked_ids if not isinstance(cid, str) or cid not in allowed]
+        if foreign:
+            return CandidateVerdict(
+                candidate_id, INSUFFICIENT, reason=REASON_COUNTER_SEARCH_UNVERIFIED
+            )
+
         return CandidateVerdict(
             candidate_id, raw_verdict, answer=answer,
             evidence_id=evidence_id,
@@ -234,6 +250,8 @@ class CoverageCounts:
     duplicates: int = 0
     #: 不属于本批候选集合的裁决行（模型答非所问）
     foreign: int = 0
+    #: 是否拿到了"预期候选集合"。没有它就无法核对覆盖完整性——数字能对上也可能漏了候选
+    expected_known: bool = True
 
     def conservation_error(self) -> str | None:
         """候选维度守恒检查：每个候选必须**恰好**落进一个终态桶。
@@ -254,6 +272,8 @@ class CoverageCounts:
         return None
 
     def integrity_error(self) -> str | None:
+        if not self.expected_known:
+            return "缺少预期候选集合，无法核对覆盖完整性"
         """批次完整性：重复行与外来行都不影响守恒，但必须让这轮复检不能被标 COMPLETED。
 
         数字加起来对不代表核对过——同一候选给两次答案时，和照样能凑齐，但其中一行的
@@ -279,6 +299,7 @@ class CoverageCounts:
             "foreign": self.foreign,
             "stale": self.stale,
             "not_checked": self.not_checked,
+            "expected_known": self.expected_known,
         }
 
 
@@ -329,7 +350,11 @@ def count_verdicts(
             located += 1
 
     if expected is None:
+        seen_ids: set[str] = set()
         for verdict in rows:
+            if verdict.candidate_id in seen_ids:
+                duplicates += 1
+            seen_ids.add(verdict.candidate_id)
             _bucket(verdict)
         accounted = supported + insufficient + conflict + invalid + stale
         not_checked = max(0, total - accounted)
@@ -360,6 +385,8 @@ def count_verdicts(
 
     return CoverageCounts(
         candidates_total=total,
+        # 候选总数为 0 时无需预期集合也能确认完整（空集合是已知的）
+        expected_known=(expected is not None) or total == 0,
         checked=checked,
         located=located,
         supported=supported,

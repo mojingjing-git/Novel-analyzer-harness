@@ -2,6 +2,42 @@
 
 ---
 
+## [Unreleased] - 2026-10-30（复审三：S7 生产入口闭环与预算/账本语义修正）
+
+复审指出 27/27 只证明零件能拼，不证明链路成立。七条全部复现并修复。
+
+### 生产入口（最要紧）
+
+- 新增 `backend/vnext/runner.py`：`run_recheck()` 串起 规划 → 预算 → 裁决 → 账本 → 落盘
+- `call_model` 与 `verify` 由调用方注入 ⇒ 离线可跑完整链路
+- 验收脚本从 27 条增到 **32 条**，新增：首次执行调用一次、真实引文通过、账本落盘、
+  **重启后复用且不再调用**、重启后费用可重建
+
+### 预算
+
+- 预留改为**持有到执行结束**：原先"预留后立刻释放"，于是只允许 1 次调用的预算被拿去发 2 次请求
+- `Reservation` 带 `reservation_id` + `ledger_id`：按 ID 释放/结算，不按值相等
+- `settle` 幂等：同一预留结算两次只扣一次
+
+### 账本
+
+- `TaskRecord` 导出 `group`（预算组）：缺它会让 `rebuild_usage()` 静默得到空账
+- 记账与应用分开：重复应用仍记费用（`applied=False`），不再整条拒收
+- 汇总改双口径：当前状态按每个 `task_key` 的最新记录，费用按全部历史累计；
+  空账本 + 有候选 ⇒ `not_started`，不得报"无未完成"
+
+### 裁决门禁
+
+- 反证检索必须给出 `checked_evidence_ids` 且属于本任务，否则 `INSUFFICIENT`
+  （`COUNTER_SEARCH_UNVERIFIED`）：`performed=true` 是声明，不是证据
+- 没有预期候选集合时 `expected_known=False` → `integrity_error()` → 只能给 `PARTIAL`
+
+### 测试
+
+- 新增 `backend/tests/test_vnext_runner.py`（6 例，含重启复用与费用重建）
+
+---
+
 ## [Unreleased] - 2026-10-30（S7 任务缓存与预算 / S8 熔断 / S9-S10 状态）
 
 ### S7 复检任务缓存、确定性重放与预算（完成）

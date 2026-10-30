@@ -16,7 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Iterable, Mapping, Sequence
 
-from .budget import Budget, BudgetExceeded, RECHECK
+from .budget import Budget, BudgetExceeded, RECHECK, Reservation
 from .tasks import (
     BUDGET_SKIPPED,
     NO_CANDIDATE,
@@ -49,6 +49,9 @@ class RecheckPlan:
     pending: list[RecheckUnit] = field(default_factory=list)
     budget_skipped: list[RecheckUnit] = field(default_factory=list)
     task_keys: dict[str, str] = field(default_factory=dict)
+    #: 已支付额度的预留（entity_id → Reservation）。执行器**必须**在发起调用后
+    #: settle，或确认未发出时 release；否则额度会一直挂在途，后续轮次全被挡。
+    reservations: dict[str, "Reservation"] = field(default_factory=dict)
 
     @property
     def new_calls(self) -> int:
@@ -105,8 +108,9 @@ def plan_recheck(
         except BudgetExceeded:
             plan.budget_skipped.append(unit)
             continue
-        # 规划阶段只确认"能发"，真正发请求时由执行方 settle/release
-        budget.release(reservation)
+        # 预留**必须持有**到执行结束：立刻释放等于没预留——后面的单元仍能通过检查，
+        # 于是"只允许 1 次调用"的预算被拿去发 2 次请求。实测过。
+        plan.reservations[unit.entity_id] = reservation
         plan.pending.append(unit)
 
     return plan
@@ -151,6 +155,8 @@ class RecheckSummary:
     budget_skipped: int = 0
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    #: 有候选要核对、但一条任务记录都没有：这是"还没开始"，不是"没有缺口"
+    not_started: bool = False
 
     @property
     def executed(self) -> int:
@@ -159,6 +165,8 @@ class RecheckSummary:
 
     def not_completed_reason(self) -> str | None:
         """为什么这一轮不算跑完。``None`` 表示跑完了。"""
+        if self.not_started:
+            return "没有任何任务记录：本轮尚未开始"
         if self.cancelled:
             return f"{self.cancelled} 个单元被取消"
         if self.failed:
@@ -179,6 +187,7 @@ class RecheckSummary:
             "executed": self.executed,
             "prompt_tokens": self.prompt_tokens,
             "completion_tokens": self.completion_tokens,
+            "not_started": self.not_started,
             "not_completed_reason": self.not_completed_reason(),
         }
 
@@ -190,13 +199,23 @@ def summarize_from_ledger(
     stage: str,
     candidates_total: int = 0,
 ) -> RecheckSummary:
-    """从任务记录汇总本轮情况（重启后同样可用，不依赖内存状态）。"""
+    """从任务记录汇总本轮情况（重启后同样可用，不依赖内存状态）。
+
+    两条口径必须分开，否则汇总会自相矛盾：
+
+    * **当前状态**看每个 ``task_key`` 的**最新**记录——先失败后成功是"成功"，
+      不能让历史失败把这一轮永远标成未完成；
+    * **费用**按**全部历史**累加——失败的重试也是花了钱的，只算最新一次会少算。
+    """
     summary = RecheckSummary(candidates_total=candidates_total)
+    latest: dict[str, TaskRecord] = {}
     for record in ledger.records():
         if record.kind != kind or record.stage != stage:
             continue
-        summary.prompt_tokens += record.prompt_tokens
+        summary.prompt_tokens += record.prompt_tokens        # 历史累计
         summary.completion_tokens += record.completion_tokens
+        latest[record.task_key] = record                     # 后者覆盖前者 = 最新
+    for record in latest.values():
         if record.status == SUCCEEDED:
             summary.new_calls += 1
         elif record.status == NO_CANDIDATE:
@@ -207,4 +226,12 @@ def summarize_from_ledger(
             summary.cancelled += 1
         elif record.status == "FAILED":
             summary.failed += 1
+    if not latest and candidates_total > 0:
+        # 一个任务记录都没有，却有候选要核对：这不是"完成"，是"还没开始"
+        summary.budget_skipped += 0
+        summary.failed += 0
+        summary.no_candidate += 0
+        summary.cancelled += 0
+        summary.new_calls += 0
+        summary.not_started = True
     return summary

@@ -172,8 +172,8 @@ def main(argv: list[str] | None = None) -> int:
         good = parse_recheck(
             {"candidate_id": "cd_2", "verdict": "SUPPORTED", "answer": "已回收",
              "evidence_id": "ev_1", "supporting_span": [0, 5], "supporting_quote": "原文片段",
-             "counter_search": {"performed": True}},
-            allowed_candidate_ids={"cd_2"}, allowed_evidence_ids={"ev_1"},
+             "counter_search": {"performed": True, "checked_evidence_ids": ["ev_1"]}},
+            allowed_candidate_ids={"cd_2"}, allowed_evidence_ids={"ev_1", "ev_2"},
             quote_within_range=lambda q, s, e: True,
         )
         check("裁决：缺证据不算支持", no_ev.verdict != SUPPORTED, no_ev.reason)
@@ -220,6 +220,70 @@ def main(argv: list[str] | None = None) -> int:
         check("汇总：无缺口时才 COMPLETED",
               __import__("backend.vnext.resolution", fromlist=["recheck_status"]).recheck_status(
                   started=True, finished=True, stopped=False, counts=final) == COMPLETED)
+
+        # 14. 生产入口闭环：执行 → 落盘 → 重启 → 复用（用真实正文与真实校验器）
+        from backend.vnext.budget import rebuild_usage
+        from backend.vnext.recheck_plan import RecheckUnit as _Unit
+        from backend.vnext.runner import load_ledger, run_recheck, save_ledger
+
+        real_text = project.read_chapter_text(book_dir, manifest.chapters[0].chapter_id)
+        span = (0, 8)
+        real_quote = real_text[span[0] : span[1]]
+        unit = _Unit(
+            entity_id="fs_real",
+            candidate_ids=("cd_real",),
+            inputs={
+                "model": "m1",
+                "chapter": manifest.chapters[0].chapter_id,
+                "hash": manifest.chapters[0].content_hash,
+            },
+        )
+        ledger_file = book_dir / "recheck_ledger.json"
+        calls = {"n": 0}
+
+        def _model(_unit):
+            calls["n"] += 1
+            return {
+                "candidate_id": "cd_real",
+                "verdict": "SUPPORTED",
+                "answer": "方醒活着",
+                "evidence_id": "ev_real",
+                "supporting_span": list(span),
+                "supporting_quote": real_quote,
+                "counter_search": {"performed": True, "checked_evidence_ids": ["ev_other"]},
+            }
+
+        def _verify(text: str, start: int, end: int) -> bool:
+            return real_text[start:end] == text
+
+        def _evidence(_unit):
+            return {"ev_real", "ev_other"}
+
+        run1 = run_recheck(
+            [unit], ledger=load_ledger(ledger_file), call_model=_model,
+            budget=default_budget(), verify=_verify, allowed_evidence_ids=_evidence,
+            persist=lambda l: save_ledger(ledger_file, l), tokens_per_call=11,
+        )
+        check("生产入口：首次执行调用一次模型", calls["n"] == 1, calls["n"])
+        check("生产入口：真实引文通过校验", run1.executed == ["fs_real"], run1.as_dict())
+        check("生产入口：账本已落盘", ledger_file.is_file())
+
+        run2 = run_recheck(
+            [unit], ledger=load_ledger(ledger_file), call_model=_model,
+            budget=default_budget(), verify=_verify, allowed_evidence_ids=_evidence,
+            persist=lambda l: save_ledger(ledger_file, l),
+        )
+        check(
+            "生产入口：重启后复用且不再调用",
+            calls["n"] == 1 and run2.reused == ["fs_real"],
+            f"calls={calls['n']} reused={run2.reused}",
+        )
+        usage = rebuild_usage(load_ledger(ledger_file).to_dicts())
+        check(
+            "生产入口：重启后费用可重建",
+            "recheck" in usage and usage["recheck"].calls == 1,
+            usage,
+        )
 
     passed = sum(1 for _, status in CHECKS if status == "PASS")
     total = len(CHECKS)
