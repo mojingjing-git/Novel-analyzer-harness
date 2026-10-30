@@ -38,6 +38,8 @@
 | 2026-10-30 | 尚未入库 | 依赖链与基础入口文档同步 | doc_check | 通过 | 未记录 | `docs/data-contract-vnext.md` 新增 §10（依赖链语义与判定表）、§11（S2 基础入口表），附录 B 补"本轮已完成的 5 行"说明；`agent.md` 新增 §10.39；`CHANGELOG.md` 增两小节 |
 | 2026-10-30 | 尚未入库 | 全量后端测试（S3 U1/U2 安全快照后） | business_test | **1111 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，704.78s。相对依赖链基线 1092：新增 `test_vnext_knowledge_snapshot.py`（19）|
 | 2026-10-30 | 尚未入库 | S2 完成口径落文 + S3 拆解 | doc_check | 通过 | 未记录 | 主计划 §4 S2 加「状态：已完成」与口径 A 说明（vnext 读入口 = `/api/vnext/*` + 共享发现/队列；旧 1.x 端点不在本批加拒绝）；新建 `docs/PLAN-S3-task-breakdown-2026-10-30.md`（U1–U8，U1/U2 完成）；`agent.md` §10.40；`CHANGELOG.md` S3 U1/U2 段落 |
+| 2026-10-30 | 尚未入库 | 全量后端测试（S3 U5 引用校验后） | business_test | **1130 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，766.98s。相对 S3 U1/U2 基线 1111：新增 `test_vnext_citations.py`（19）|
+| 2026-10-30 | 尚未入库 | 引用校验文档同步 + S3 未决定稿 | doc_check | 通过 | 未记录 | `agent.md` §10.41；`CHANGELOG.md` S3 U5 段落；`docs/PLAN-S3-task-breakdown-2026-10-30.md` 的 U5 状态更新、未决第 2 条标记为已定（五级判定 + 失败降级不丢数据） |
 
 ---
 

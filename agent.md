@@ -1334,6 +1334,17 @@ mypy backend/
 - **测试**：`backend/tests/test_vnext_knowledge_snapshot.py` 19 例
 - **plan**：`docs/PLAN-v2-long-novel-reliability-2026-10-30.md` §4 S3-1/3/4/6；拆解 `docs/PLAN-S3-task-breakdown-2026-10-30.md`（U1/U2 完成，U3–U8 待做）
 
+### 10.41 PLAN v2 S3 U5：引用校验分级与 Prompt 引用规则（2026-10-30）
+
+- **改动**：新增 `backend/vnext/citations.py`——`CITATION_INSTRUCTION`（写进 Prompt 的引用规则）、`verify_citation()`、`verify_fact()`、`summarize_checks()`
+- **Prompt 侧**：规则要求逐字照抄、不改标点、不加省略号、偏移用**码点**左闭右开、找不到可照抄的连续片段就填 `null`。让模型给可逐字比对的引文，比事后用模糊匹配猜它想说什么有效得多
+- **比对分五级**，只把「是否定位」一位给下游：`EXACT`（逐字）→ `NORMALIZED`（去标点/空白/全半角后相同，模型改标点是常态）→ `RELOCATED`（偏移算错但整章搜得到，并给出修正位置）→ `SEGMENTED`（用"……"把两段原文接起来，各段按顺序都在）→ `FUZZY`（≥10 字且最长公共块覆盖率 ≥0.90，容忍个别错字）
+- **为什么必须分级**：全判过等于放弃校验（编造引用会污染结论）；全判不过会把真引用大量误杀（模型几乎从不逐字照抄）。分级让"过错的类型"可统计
+- **失败不丢数据**：`verify_fact()` 失败时原记录原样返回、状态仍是 `UNVERIFIED`；成功只把状态升为 `EVIDENCE_LOCATED`，**不偷偷修正偏移、不改写结论文字**——偏移由模型给，程序只判真假
+- **编造率统计**：`summarize_checks()` 输出 `located_ratio` 与 `by_kind` 分布。这个数字是"能不能换小模型"的判据
+- **测试**：`backend/tests/test_vnext_citations.py` 19 例（含"半角标点仍算通过"、"偏移错但引文真实"、"省略号顺序颠倒判否"、"编造长句判否"）
+- **plan**：§4 S3-6；拆解 U5（校验器完成，接线到结果写入与 `mismatch_reason` 落盘待做）
+
 ---
 
 ## 13. i18n 接口预留（L2 阶段，2026-09-02）
