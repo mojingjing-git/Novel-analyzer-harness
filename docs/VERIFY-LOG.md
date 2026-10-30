@@ -59,6 +59,8 @@
 | 2026-10-31 | 尚未入库 | vnext 端到端验收（发布接入三态后） | acceptance | **ACCEPTED 32/32** | — | `python scripts/acceptance_vnext.py` |
 | 2026-10-31 | 尚未入库 | 便携包真实用户闭环 | smoke（打包产物） | **5/5 PASS** | — | `python scripts/smoke_portable.py`：启动 `dist/novel-analyzer.exe` → 从日志取端口 → `/`(HTML) + `/api/vnext/books` + `/api/vnext/queue` + 空工作区 0 本书。与进程内验收互补，覆盖打包后的启动路径 |
 | 2026-10-31 | 尚未入库 | 最小 vnext 界面（前端） | build | **通过** | — | `npm run build` 5.68s；HTTP 验证 bundle 含 `/vnext` 与「新版空间」；重新打包后便携包闭环仍 5/5 |
+| 2026-10-31 | 尚未入库 | 全量后端测试（vnext 写操作端点后） | business_test（**全量**） | **1433 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，751.73s。相对 1426 增加 7 例：新增 `test_vnext_queue_endpoints.py`（入队/重复入队幂等/未知项目/缺 book_id/移出/移出不存在/缺 title 422）|
+| 2026-10-31 | 尚未入库 | vnext 写操作界面（前端） | build | **通过** | — | `npm run build` 5.37s；`VnextPage.vue` 重写为「新建项目 + 项目列表 + 队列入队/移出 + 被拒目录」，并修正 `title`/`chapter_count` 字段名（上一版读 `name`/`total_chapters`，书名与章节数一直是空的）|
 | 2026-10-30 | 尚未入库 | 测试节奏调整 + 相关集工具 | doc_check | 通过 | 未记录 | 新增 `scripts/pytest_related.py`（按"文件名对应 + import 引用"挑选相关测试）；`agent.md` §8 增加测试节奏约定：**迭代期跑相关集，批次收口跑全量**，且 VERIFY-LOG 必须写明这一遍是全量还是相关集。实测：改动 2 文件 → 选 1 个测试文件 → 3 秒；全量为 ~1100 例 / 12 分钟 |
 
 ---

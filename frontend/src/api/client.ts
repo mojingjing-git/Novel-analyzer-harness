@@ -320,21 +320,88 @@ function seg(s: string | number): string {
   return encodeURIComponent(String(s))
 }
 
+export interface VnextBook {
+  book_id: string
+  title: string
+  chapter_count: number
+}
+export interface VnextRejected {
+  path: string
+  reason: string
+}
+export interface VnextBlock {
+  block_signature: string
+  status: string
+}
+export interface VnextQueueEntry {
+  book_id: string
+  name: string
+  status: string
+  total_chapters: number
+  completed_blocks: number
+  total_blocks: number
+  stale_blocks: number
+  error_message: string
+}
+export interface VnextQueue {
+  entries: VnextQueueEntry[]
+  analysis_started?: boolean
+}
+
+/**
+ * 取后端返回的错误码。
+ *
+ * vnext 的错误体是 `{"detail": {"code","message","path"}}`，而 `request()` 只把
+ * 整体 `detail` 挂在 error 上——不解析的话界面只能显示一坨 JSON。读不到就返回空串，
+ * 由调用方决定降级文案。
+ */
+export function vnextErrorCode(err: unknown): string {
+  const detail = (err as { detail?: unknown })?.detail
+  if (detail && typeof detail === 'object' && 'code' in (detail as Record<string, unknown>)) {
+    return String((detail as Record<string, unknown>).code)
+  }
+  return ''
+}
+
+/** 错误码 → 中文主文案。未知码返回空串，调用方用通用文案兜底。 */
+export function vnextErrorText(code: string): string {
+  const map: Record<string, string> = {
+    NOT_FOUND: '找不到这个项目或队列条目',
+    INVALID_FIELD_VALUE: '提交的内容不合要求',
+    UNSUPPORTED_ARTIFACT_FORMAT: '这个目录不属于本版本，请从原文创建新项目',
+    UNSUPPORTED_SCHEMA_VERSION: '数据版本不匹配，请更新软件',
+    UNPARSEABLE_ARTIFACT: '数据文件已损坏',
+    BLOCK_SIGNATURE_MISMATCH: '项目内容已变化，需要重新计算',
+    REVISION_CONFLICT: '有另一个操作正在修改这个项目，请重试',
+    STALE_INPUT: '输入已过期，需要重新计算',
+    MISSING_REQUIRED_FIELD: '缺少必要字段',
+  }
+  return map[code] ?? ''
+}
+
 export const api = {
   // 基础
   health: () => request<{ status: string }>('/api/health'),
 
-  // vnext（新数据空间，只读）
+  // vnext（新数据空间）
   vnextBooks: () =>
     request<{
       data_root: string
-      books: { book_id: string; name: string; total_chapters: number }[]
-      rejected: { path: string; reason: string }[]
+      books: VnextBook[]
+      rejected: VnextRejected[]
     }>('/api/vnext/books'),
-  vnextQueue: () =>
-    request<{ entries: { book_id: string; state: string; completed: number; total: number }[] }>(
-      '/api/vnext/queue',
-    ),
+  vnextQueue: () => request<VnextQueue>('/api/vnext/queue'),
+  vnextBlocks: (bookId: string) =>
+    request<{ book_id: string; blocks: VnextBlock[] }>(`/api/vnext/books/${seg(bookId)}/blocks`),
+  vnextCreateProject: (payload: { title: string; text?: string; chapters?: { title: string; content: string }[] }) =>
+    request<{ book_id: string; title: string; chapter_count: number }>('/api/vnext/projects', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  vnextEnqueue: (bookId: string) =>
+    request<VnextQueue>('/api/vnext/queue', { method: 'POST', body: JSON.stringify({ book_id: bookId }) }),
+  vnextDequeue: (bookId: string) =>
+    request<VnextQueue>(`/api/vnext/queue/${seg(bookId)}`, { method: 'DELETE' }),
 
   // 设置
   getSettings: () => request<AppConfigDto>('/api/settings'),

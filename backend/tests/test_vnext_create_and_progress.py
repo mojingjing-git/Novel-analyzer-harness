@@ -151,10 +151,11 @@ def test_route_create_project_from_chapters(client, root) -> None:
     assert body["book_id"]
 
 
-def test_route_create_project_missing_title_is_404(client, root) -> None:
+def test_route_create_project_missing_title_is_422(client, root) -> None:
+    """缺 title 是请求不合法（422 + INVALID_FIELD_VALUE），不是「项目没找到」。"""
     resp = client.post("/api/vnext/projects", json={"text": SAMPLE})
-    assert resp.status_code == 404
-    assert resp.json()["detail"]["code"] == "MISSING_REQUIRED_FIELD"
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["code"] == "INVALID_FIELD_VALUE"
 
 
 def test_route_create_project_bad_chapters_is_422(client, root) -> None:

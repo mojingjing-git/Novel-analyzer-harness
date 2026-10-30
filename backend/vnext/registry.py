@@ -148,7 +148,7 @@ def locate_project(data_root: Path, book_id: str) -> ProjectRef:
                  and book_id in r.detail]
     if conflicts:
         detail += f"（存在身份冲突：{conflicts[0].path.name}）"
-    raise VnextFormatError(ErrorCode.MISSING_REQUIRED_FIELD, detail)
+    raise VnextFormatError(ErrorCode.NOT_FOUND, detail)
 
 
 def open_project(data_root: Path, book_id: str) -> Manifest:

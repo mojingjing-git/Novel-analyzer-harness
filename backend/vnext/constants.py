@@ -70,6 +70,10 @@ class ErrorCode(str, Enum):
     #: 与"格式不支持"分开，因为前者可能是一次写坏（可重写），后者是"走错门"。
     UNPARSEABLE_ARTIFACT = "UNPARSEABLE_ARTIFACT"
 
+    #: 要操作的东西不存在（项目、队列条目）。与「请求缺字段」区分开：
+    #: 前者是 404「没这个东西」，后者是 422「你的请求不合法」。
+    NOT_FOUND = "NOT_FOUND"
+
     #: 块签名与当前源快照不符（正文、章节集合或策略版本任一变化）。
     BLOCK_SIGNATURE_MISMATCH = "BLOCK_SIGNATURE_MISMATCH"
 

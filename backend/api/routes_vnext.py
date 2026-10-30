@@ -11,12 +11,15 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import logging
 
 from fastapi import APIRouter, HTTPException
 
 from backend.services import vnext_service
 from backend.vnext.constants import ErrorCode, VnextFormatError
+from backend.vnext.project import RevisionConflict
 
 logger = logging.getLogger(__name__)
 
@@ -32,10 +35,26 @@ _HTTP_BY_CODE = {
     ErrorCode.BLOCK_SIGNATURE_MISMATCH: 409,
     ErrorCode.REVISION_CONFLICT: 409,
     ErrorCode.STALE_INPUT: 409,
-    ErrorCode.MISSING_REQUIRED_FIELD: 404,
+    # 缺必需字段是「请求不合法」(422)，不是「资源不存在」(404)。
+    # 之前统一 404 会让「缺少 title」看起来像「项目没找到」。
+    ErrorCode.MISSING_REQUIRED_FIELD: 422,
+    ErrorCode.NOT_FOUND: 404,
     ErrorCode.INVALID_FIELD_VALUE: 422,
     ErrorCode.SOURCE_REF_UNRESOLVED: 422,
 }
+
+
+def _revision_error(exc: RevisionConflict) -> HTTPException:
+    """清单版本冲突（并发写）。`RevisionConflict` 刻意不继承 VnextFormatError——
+    它是并发语义而非格式问题，所以必须单独接住，否则会漏成 500。"""
+    return HTTPException(
+        status_code=409,
+        detail={
+            "code": ErrorCode.REVISION_CONFLICT.value,
+            "message": str(exc),
+            "path": None,
+        },
+    )
 
 
 def _http_error(exc: VnextFormatError) -> HTTPException:
@@ -97,11 +116,12 @@ async def create_project(payload: dict):
 
     两种都给时以 ``chapters`` 为准（调用方已经切好，不该再被切一遍）。
     """
-    title = str(payload.get("title") or "").strip()
-    if not title:
+    title = payload.get("title")
+    if not isinstance(title, str) or not title.strip():
         raise _http_error(
-            VnextFormatError(ErrorCode.MISSING_REQUIRED_FIELD, "缺少 title")
+            VnextFormatError(ErrorCode.INVALID_FIELD_VALUE, "title 必须是非空字符串")
         )
+    title = title.strip()
 
     raw_chapters = payload.get("chapters")
     chapters = None
@@ -158,3 +178,27 @@ async def restore_queue():
     except VnextFormatError as exc:
         raise _http_error(exc) from exc
     return {"entries": len(state.entries)}
+
+
+@router.post("/queue")
+async def enqueue_book(payload: dict):
+    """把项目放进队列（**不启动分析**）。
+
+    vnext 本版没有分析流水线，入队只是把条目写进 ``queue_state_vnext.json``；
+    响应带 ``analysis_started: false``，避免界面让人以为「点了就在跑」。
+    """
+    try:
+        return await asyncio.to_thread(vnext_service.enqueue_book, payload)
+    except VnextFormatError as exc:
+        # 服务层抛的是领域错误，必须在这里翻成 HTTP 状态；
+        # 漏掉这一步会变成 500「服务器错误」，界面只能显示"操作失败"。
+        raise _http_error(exc) from exc
+
+
+@router.delete("/queue/{book_id}")
+async def dequeue_book(book_id: str):
+    """把项目移出队列。移出不存在的条目返回 404，不静默成功。"""
+    try:
+        return await asyncio.to_thread(vnext_service.dequeue_book, book_id)
+    except VnextFormatError as exc:
+        raise _http_error(exc) from exc

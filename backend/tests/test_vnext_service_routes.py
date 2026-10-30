@@ -147,7 +147,8 @@ def test_route_get_book_ok(client, root) -> None:
 def test_route_unknown_book_is_404_with_code(client, root) -> None:
     resp = client.get("/api/vnext/books/bk_missing0001")
     assert resp.status_code == 404
-    assert resp.json()["detail"]["code"] == "MISSING_REQUIRED_FIELD"
+    # 「找不到」用 NOT_FOUND，不用「请求缺字段」——两者对用户意义不同
+    assert resp.json()["detail"]["code"] == "NOT_FOUND"
 
 
 def test_route_legacy_queue_is_409_with_code(client, root) -> None:
