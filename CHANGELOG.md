@@ -2,6 +2,39 @@
 
 ---
 
+## [Unreleased] - 2026-10-30（S7 任务缓存与预算 / S8 熔断 / S9-S10 状态）
+
+### S7 复检任务缓存、确定性重放与预算（完成）
+
+- 新增 `backend/vnext/tasks.py`：`TaskRecord`/`TaskLedger`，按 `task_key` 记录"跑没跑、结论是什么、花了多少"；业务状态不再充当缓存
+- `NO_CANDIDATE` 是结论（下次直接复用）；`BUDGET_SKIPPED`/`FAILED`/`CANCELLED` 是未完成，不写成功标记
+- 任务键含全部输入与策略版本：只哈希一处引用不能证明整份材料相同
+- 新增 `backend/vnext/budget.py`：**派发前**预留、失败按实际扣、未开始可退回、重启按记录重建；`rolling_rebuild`/`semantic_review` 默认 0 次（用 0 表达"本版不做"）
+- 新增 `backend/vnext/recheck_plan.py`：缓存 → 无候选 → 预算三段式规划 + 分类覆盖汇总，"未执行"不计入"已完成"
+- 应用键去重：同一结论只应用一次，重复应用被拒绝
+
+### S8 熔断（完成）
+
+- 新增 `backend/vnext/breaker.py`：只认结构化判定且 `scope=ACCOUNT_GLOBAL` 才跳闸；文本通道永不跳闸；跳闸粘性，恢复需显式 `reset()`
+- 写入一致性复用既有原子写 + 先落盘后登记；崩溃点注入测试未做
+- 交互保护（持锁不 await / 取消不终止工作线程）目前只有规则，没有代码守卫
+
+### S9 观测就位、付费实验未执行
+
+- 用量与预算快照、任务分状态计数、覆盖汇总已可用
+- A/B/C Prompt 实验与标注集评测需独立预算与授权，本批不执行
+
+### S10 端到端验收自动化、打包未执行
+
+- 新增 `scripts/acceptance_vnext.py`：离线全链验收 **27/27 通过**
+- PyInstaller 未安装（`build_exe.bat` 跑不通）、Windows 安装包与前端接入未做
+
+### 测试
+
+- 新增 `test_vnext_tasks_budget.py`（24）、`test_vnext_recheck_plan.py`（11）、`test_vnext_breaker.py`（10）
+
+---
+
 ## [Unreleased] - 2026-10-30（复审二：S4–S6 判定层七个会产出错误结论的缺口）
 
 七条都能通过原有用例——因为原用例把错误行为当成了正确行为。绿灯不代表语义对。

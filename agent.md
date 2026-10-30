@@ -1495,3 +1495,21 @@ splitter 内部有两条平行的"书名推断"路径：
 7. **窗口边界落在句中却标完整**：补足目标后未再对齐句界。现在末尾一定重新对齐；预算装不下时如实标 `HARD_BUDGET`/`SENTENCE_SPLIT`，且**硬上限永远优先**、引用必须完整覆盖。
 
 **回归**：`backend/tests/test_vnext_review_round2.py`（23 例）+ 四个旧文件按新语义重写（`resolution` 34、`foreshadow` 30、`context` 12、`rolling` 19）。
+
+### 10.45 S7–S10：任务缓存、预算、熔断与端到端验收（2026-10-30）
+
+**S7 完成**（`tasks.py` / `budget.py` / `recheck_plan.py`，35 例）。
+- `TaskLedger` 让"跑没跑过"与"业务状态"彻底分开：`NO_CANDIDATE` 是**结论**（下次直接复用），`BUDGET_SKIPPED`/`FAILED`/`CANCELLED` 是**未完成**（不写成功标记，拿到预算可续）。旧实现拿"已回收"当复检缓存，于是调和、人工、休眠判定都能间接改写"有没有核过"。
+- 任务键含**全部**输入与策略版本：只哈希"某一处引用"证明不了整份材料相同。
+- `Budget` 在**派发前**预留（十路并发"先查再调"会同时通过，事后记账拦不住）；失败按实际扣（失败也花钱）；未开始可退回；`rolling_rebuild`/`semantic_review` 默认 **0 次**——用 0 表达"本版不做"，真被调用会当场抛错，而不是悄悄多花钱。
+- `RecheckSummary` 把新调用/缓存复用/无候选/失败/取消/预算跳过分开报；`not_completed_reason()` 非空即未完成。
+- 未做：`STYLE`/`FINAL_REPORT` 的完整缓存（S7-8 明确列为条件优化，需先测重复费用）。
+
+**S8 部分**（`breaker.py`，10 例）。
+- 只认**结构化判定**且 `scope=ACCOUNT_GLOBAL` 才跳闸；文本通道永不跳闸（C-01 的教训）；跳闸粘性，恢复要显式 `reset()`。
+- 写入一致性复用既有 `write_json_atomic` + `publish_result` 先落盘后登记；**未做**崩溃点注入测试。
+- 交互保护（持锁不 await、取消不终止工作线程、预留等线程结束才释放）目前只有**文字规则**，没有代码守卫。
+
+**S9 观测就位，付费实验未执行**：用量/预算快照与任务计数已可用；A/B/C Prompt 实验与标注集评测需要独立预算与授权（PLAN §4 S9-7），本批不做——且 §4 S9-7 明确"基础修复不依赖实验结论才能交付"。
+
+**S10 验收自动化，打包未执行**：`scripts/acceptance_vnext.py` 离线跑通全链 **27/27**；PyInstaller 当前未安装、`build_exe.bat` 跑不通，Windows 安装包与前端接入均未做。

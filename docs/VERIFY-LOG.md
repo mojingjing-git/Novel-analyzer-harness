@@ -46,6 +46,9 @@
 | 2026-10-30 | 尚未入库 | S4–S6 文档同步 | doc_check | 通过 | 未记录 | `agent.md` §10.43；`CHANGELOG.md` S4–S6 段落；`docs/data-contract-vnext.md` 新增 §13（覆盖视图 / 伏笔实体 / 裁决 / 上下文取材）与 §13.2.1（S5 三处口径：整条排除优先、entity_id 首次确定不再重算、去重键为二元组）；新建 `docs/PLAN-S4-S6-task-breakdown-2026-10-30.md` |
 | 2026-10-30 | 尚未入库 | 全量后端测试（复审二七条修复后） | business_test（**全量**） | **1353 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，771.53s。相对 S4–S6 基线 1329 增加 24 例：新增 `test_vnext_review_round2.py`（23）+ `foreshadow` 29→30（+1，前缀不变性用例替换原"整条排除"用例）|
 | 2026-10-30 | 尚未入库 | 复审二文档同步 + 契约口径撤回 | doc_check | 通过 | 未记录 | `agent.md` §10.44（七条逐条）；`CHANGELOG.md` 复审二段落；`docs/data-contract-vnext.md` 新增 §13.3 并在 §13.2.1 原文标注"已撤回"（整条排除）；行尾保真：agent.md 纯 LF、CHANGELOG 纯 CRLF(982)、contract 纯 LF |
+| 2026-10-30 | 尚未入库 | 全量后端测试（S7 任务缓存与预算 / S8 熔断后） | business_test（**全量**） | **1398 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，736.78s。相对复审二基线 1353 增加 45 例：`test_vnext_tasks_budget.py`（24）+ `test_vnext_recheck_plan.py`（11）+ `test_vnext_breaker.py`（10）|
+| 2026-10-30 | 尚未入库 | vnext 端到端验收（离线，零模型调用） | acceptance | **ACCEPTED 27/27** | — | `python scripts/acceptance_vnext.py -v`：建项目→块→覆盖→快照→归约→窗口→引用校验→伏笔视图→裁决→覆盖计数→任务缓存→预算→汇总 |
+| 2026-10-30 | 尚未入库 | S7–S10 文档同步 | doc_check | 通过 | 未记录 | `agent.md` §10.45；`CHANGELOG.md` S7/S8 段落；新建 `docs/PLAN-S7-S10-status-2026-10-30.md`（含 S8 部分完成、S9 付费实验未执行、S10 打包未执行的具体原因）与 `docs/RELEASE-NOTES-vnext.md`；行尾保真：agent.md 纯 LF、CHANGELOG 纯 CRLF(1015) |
 | 2026-10-30 | 尚未入库 | 测试节奏调整 + 相关集工具 | doc_check | 通过 | 未记录 | 新增 `scripts/pytest_related.py`（按"文件名对应 + import 引用"挑选相关测试）；`agent.md` §8 增加测试节奏约定：**迭代期跑相关集，批次收口跑全量**，且 VERIFY-LOG 必须写明这一遍是全量还是相关集。实测：改动 2 文件 → 选 1 个测试文件 → 3 秒；全量为 ~1100 例 / 12 分钟 |
 
 ---
