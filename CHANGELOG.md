@@ -2,6 +2,22 @@
 
 ---
 
+## [Unreleased] - 2026-10-31（B1a：单块 async 分析）
+
+vnext 第一次真的会调模型。
+
+- `analyze_block()` 全程 async；`llm_client.chat` 返回 `LLMResult`，文件 IO 走 `to_thread`
+- 模型的 `quote` 转成 `SourceRef`；**没有可用引用的事实不进库**（无来源的记录重放时也会丢）
+- 校验对象是**引文**而非结论：`verify_citation` 判 `EVIDENCE_LOCATED`；模型给的偏移不被修正，偏移错但引文真实按 `RELOCATED` 通过
+- 解析失败抛 `UNPARSEABLE_ARTIFACT`，不把空结果当成功
+- Prompt 显式告知"更早记录被截断"，避免模型把"没提到"当"不存在"
+- 依赖指纹用裁剪后的 `PromptWindow`；`result_id` 并入内容指纹
+
+### 测试
+
+- `backend/tests/test_vnext_analyzer.py`（8 例，fake client 不触网）
+
+
 ## [Unreleased] - 2026-10-31（B0：结果 schema、知识库落盘、指纹闭环）
 
 目标是堵住一条静默降质：**"续跑"与"一次跑完"会得到不同结论，而系统看不出来**。

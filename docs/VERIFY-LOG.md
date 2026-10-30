@@ -68,6 +68,8 @@
 | 2026-10-31 | 尚未入库 | 全量后端测试（B0 前置后） | business_test（**全量**） | **1464 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，792.55s。相对 A 批 1456 增加 8 例：`test_vnext_knowledge_persist.py` |
 | 2026-10-31 | 尚未入库 | 端到端验收（B0 后） | acceptance | **ACCEPTED 32/32** | — | `python scripts/acceptance_vnext.py`；vnext 相关集 504 passed |
 | 2026-10-31 | 尚未入库 | B/C 计划复审并入 + B0 文档 | doc_check | 通过 | 未记录 | 复审结论 NEEDS_REVISION，五条 P1 并入 `docs/PLAN-BC-2026-10-31.md` §9；`docs/data-contract-vnext.md` 新增 §16；`agent.md` §10.50 |
+| 2026-10-31 | 尚未入库 | 全量后端测试（B1a 后） | business_test（**全量**） | **1472 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，763.93s。相对 B0 的 1464 增加 8 例：`test_vnext_analyzer.py` |
+| 2026-10-31 | 尚未入库 | B1a 文档同步 | doc_check | 通过 | 未记录 | `agent.md` §10.51；`CHANGELOG.md` B1a 段落；vnext 相关集 512 passed、验收 32/32 |
 
 ---
 

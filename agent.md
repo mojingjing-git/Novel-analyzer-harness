@@ -1579,3 +1579,16 @@ splitter 内部有两条平行的"书名推断"路径：
 - **写入临界区**：库的读写必须与 `publish_result` 同一把书锁（`project.commit_manifest`），否则并发 publish 丢事实——而"丢事实"与"没分析过"在界面上长得一样。
 - **测试**：`backend/tests/test_vnext_knowledge_persist.py`（8 例：schema 往返、缺来源丢弃、畸形跳过、落盘读回指纹一致、版本不符、坏文件、重放≡一次跑完、块序无关）。
 - **未做**：>2MB 或 >500 块时的追加日志（阈值已写进契约 §16.2）；重放与 publish 的接线在 B1a/B1b。
+
+### 10.51 B1a：单块 async 分析（2026-10-31）
+
+vnext 第一次真的会调模型。四条约束全部来自复审：
+
+- **全程 async**：`llm_client.chat(messages) -> LLMResult`；文件 IO 走 `asyncio.to_thread`。`make_chat_caller()` 提供"messages → 文本"的最小适配。
+- **`extracted` 带 `SourceRef`**：`normalize_extracted()` 把模型的 `quote` 转成 `SourceRef`，没有可用 quote 的条目不进 `extracted`（契约 §16.1：无来源的事实重放时也会丢，留着只是假象）。
+- **校验的是引文，不是结论**：结论是概括，本来不可能逐字出现在正文里。`_verify_state()` 用 `verify_citation(quote_text=..., chapter_text=..., start, end)` 判 `EVIDENCE_LOCATED`；模型给的偏移**不被修正**（只用于判定），偏移错但引文真实会走 `RELOCATED` 通过。
+- **解析失败必须炸**：`parse_block_output()` 用 `parse_json_robust`，返回非对象即 `UNPARSEABLE_ARTIFACT`；不许把空 dict 当成功落盘——那会让"模型抽风"变成"这一块没内容"。
+
+指纹与身份：`PROMPT_STRATEGY_VERSION=1`；依赖用 `expected_dependency(prior, strategy, context_fingerprint=window.fingerprint())`；`result_id` 并进 `extracted_fingerprint`（内容变则身份变）。Prompt 里**显式告知截断**（"更早的记录因篇幅被截断"），否则模型把"没提到"当"不存在"。
+
+测试：`backend/tests/test_vnext_analyzer.py`（8 例，fake client 不触网）：正向发布+已定位、`classify` 判 done、解析失败不落盘、无引文不入库、伪造引文留 `UNVERIFIED`、内容变则身份变、代码围栏可解析而数组拒收、截断写进 Prompt。
