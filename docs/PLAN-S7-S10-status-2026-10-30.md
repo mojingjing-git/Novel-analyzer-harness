@@ -33,24 +33,26 @@ created: 2026-10-30
 
 **未做（诚实记录）**：`STYLE`/`FINAL_REPORT` 的完整缓存（S7-8 列为条件优化）——需要先测重复费用，本批不做。
 
-## S8 熔断、写入一致性与交互保护 —— ◑ 部分
+## S8 熔断、写入一致性与交互保护 —— ✅ 完成
 
 | 条目 | 状态 |
 | --- | --- |
 | C-07 熔断 | ✅ `breaker.py`：只认**结构化判定**且 `scope=ACCOUNT_GLOBAL` 才跳闸；文本通道永不跳闸；跳闸粘性，恢复需显式 `reset()`。测试 10 例 |
-| C-09 写入一致性 | ✅ 既有 `artifacts.write_json_atomic`（同目录 mkstemp + fsync + replace）＋ `results.publish_result` 先落盘后登记；**未做**：进程崩溃点注入测试（需要 fault injection 框架，记为后续） |
-| C-16/C-18/C-19/C-20 交互保护 | ◑ 规则已固化（持锁不得 await、取消不终止工作线程、预留须等线程结束才释放），但**没有**代码级守卫；当前靠"临界区只做快照/引用切换"的写法约束。记为后续 |
+| C-09 写入一致性 | ✅ `consistency.publish_atomically`：四个故障点（`before_write`/`after_write`/`before_commit`/`after_commit`）可注入，文件写了但登记失败会**回滚并如实报告**；删不掉时记 `cleanup_done=False`（孤儿可被 `orphan_files` 扫出）。测试 8 例 |
+| C-16/C-18/C-19/C-20 交互保护 | ✅ `concurrency.run_thread_job`：**记账与状态转换只由"线程真正结束"触发**，取消等待方不打断登记（取消只影响要不要等）；`LockGuard` 提供"持锁时 await"的检查记录。测试 4 例 |
 
-## S9 规模治理与语义质量实验 —— ◑ 观测已就位，付费实验未执行
+## S9 规模治理与语义质量实验 —— ◑ 测量能力已就位，结论性实验未做
 
-- **已做**：用量与预算快照（`budget.snapshot()`）、任务维度分状态计数（`TaskLedger.totals()`）、覆盖汇总（`RecheckSummary`）。这三样是"重复费用"与"预算超支"的唯一可信来源。
-- **未做（需预算与授权，且 PLAN §4 S9-7 明确要求独立预算）**：A/B/C 三组 Prompt 组织方式实验、50–100 章标注集上的准确率/召回评测、随机顺序与候选可见性的配对评测（接口 B 锚定风险）、卷摘要压缩触发率测量。
+- **已做**：用量与预算快照、任务分状态计数、覆盖汇总；新增 `scripts/measure_prompt_cost.py` 并用**真实模型**跑出 4 次调用的 usage（见 `docs/MEASURE-S9-2026-10-30.md`）——A/B 两种历史组织方式的提示词差是固定 26 token，但合成样本里该块只有 38 字符（真实是 7,323 字符），**不足以支撑取舍结论**。
+- **未做**：50–100 章真实样本上的 A/B/C（每组 3 次重复取中位）、标注集准确率/召回、接口 B 锚定风险配对评测、卷摘要压缩触发率。原因：需要真实书库 + 独立预算，且本批已把"测量怎么做"落地，缺的是样本与预算。
 - **为什么可以先不做**：PLAN §4 S9-7 写明"基础来源/时序/证据修复不依赖实验显示文学质量提升才能交付"。本批交付的正是这部分。
 
-## S10 Windows 发布、文档与端到端验收 —— ◑ 验收已自动化，打包未执行
+## S10 Windows 发布、文档与端到端验收 —— ✅ 验收自动化 + 打包与首启冒烟通过
 
 - **已做**：`scripts/acceptance_vnext.py` 离线端到端验收，**27/27 通过**，覆盖建项目→块→覆盖视图→快照→归约→窗口→引用校验→伏笔视图→裁决→覆盖计数→任务缓存→预算→汇总。
-- **未做**：PyInstaller 打包（当前 `.venv` 未安装 PyInstaller，`build_exe.bat` 跑不通）；Windows 安装包与首次启动向导的端到端手测。
+- **已做**：PyInstaller 6.19.0 安装；`python -m PyInstaller desktop.spec` → `dist/novel-analyzer.exe`（31.45 MB，onefile，exit 0，仅 pycparser 两条无害 hidden-import 警告）；隐藏窗口启动 16–18 秒存活，`analyzer.log` 显示后端在 `127.0.0.1:8464` 起来、前端静态从 `_MEI` 挂载、WebSocket 已连接、依赖健康检查 6/6 通过。
+- **冒烟发现并修掉一个真 bug**：打包版首启时 `crash.log` 被"向已关闭流 emit 的 logging 错误"刷满——`_install_crash_diagnostics()` 里那行"崩溃诊断已启用"走 logging，而 pythonw/onefile 下 `sys.stdout` 已关闭，`handleError` 又把错误写回 crash.log。修法：摘掉根上已关闭的 StreamHandler + 该行直写文件。重新打包复验：crash.log 只剩 1 行 INFO。
+- **仍未做**：Windows 安装包（无 NSIS/Inno 脚本）、首次启动向导的交互手测、前端 vnext 界面。
 - **未做**：前端页面接入（vnext 目前只有只读 API，没有界面）。
 
 ## 一句话边界

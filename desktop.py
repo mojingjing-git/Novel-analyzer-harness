@@ -164,7 +164,25 @@ def _install_crash_diagnostics():
             return getattr(self._orig, name)
 
     sys.stderr = _StderrTee(sys.stderr, crash_logger)
-    logger.info(f"崩溃诊断已启用，原生报错将写入: {crash_path}")
+
+    # pythonw / onefile 下 sys.stdout 可能是已关闭的 devnull 包装：此时任何 logging 调用
+    # 都会在 emit 阶段抛 "I/O operation on closed file"，而 handleError 又把这段错误
+    # 写进 crash.log —— 于是"启用崩溃诊断"本身成了 crash.log 里第一条崩溃。实测复现
+    # （打包后首启的 crash.log 全是这条）。两件事一起做：
+    #   1) 把根上"已经关掉的 StreamHandler"摘掉；
+    #   2) 这行提示直写文件，不走 logging。
+    root = logging.getLogger()
+    for handler in list(root.handlers):
+        stream = getattr(handler, "stream", None)
+        if isinstance(handler, logging.StreamHandler) and (
+            stream is None or getattr(stream, "closed", False)
+        ):
+            root.removeHandler(handler)
+    try:
+        with open(crash_path, "a", encoding="utf-8") as handle:
+            handle.write(f"[INFO] 崩溃诊断已启用，原生报错将写入: {crash_path}\n")
+    except OSError:
+        pass
 
 
 def _find_free_port() -> int:

@@ -2,6 +2,33 @@
 
 ---
 
+## [Unreleased] - 2026-10-30（打包首启冒烟修了一个真 bug）
+
+- 打包版首次启动时 `crash.log` 被"向已关闭流 emit 的 logging 错误"刷满：`_install_crash_diagnostics()` 的启用提示走 logging，而 pythonw/onefile 下 `sys.stdout` 已关闭，`handleError` 又把错误写回 `crash.log`
+- 修法：安装时摘掉根上已关闭的 `StreamHandler`，该提示改为直写文件
+- 复验：重新打包 → 启动 16 秒存活、后端 `127.0.0.1:8464` 就绪、WebSocket 已连接、`crash.log` 只剩 1 行 INFO
+
+
+## [Unreleased] - 2026-10-30（S8 写入一致性/交互保护 · S9 真实测量 · S10 打包）
+
+### S8 完成
+
+- 新增 `backend/vnext/consistency.py`：`publish_atomically` 把"写文件 + 登记"包成可注入故障的操作，四个故障点各自可复现；文件写了但登记失败会回滚并如实报告，删不掉时标 `cleanup_done=False`，孤儿由 `orphan_files()` 扫出
+- 新增 `backend/vnext/concurrency.py`：`run_thread_job` 让**记账与状态转换只由线程真正结束触发**；取消等待方不打断登记（`asyncio.to_thread` 取消不取消线程，若在取消时结算就会漏账）
+- `LockGuard` 记录"持锁时 await"的检查结果
+
+### S9 测量能力
+
+- 新增 `scripts/measure_prompt_cost.py`：用真实模型测提示词花费，读 `usage` 而不猜 token
+- 实测（`docs/MEASURE-S9-2026-10-30.md`）：1 章 405 vs 379、6 章 1065 vs 1039 prompt tokens；去重块在这两档里是固定 26 token
+- **不足以支撑取舍结论**：合成样本的主线摘要仅 38 字符，真实数据是 7,323 字符；需 50+ 章样本、每组 3 次重复
+
+### S10
+
+- PyInstaller 6.19.0 安装并尝试 `desktop.spec` 构建；端到端验收 32/32
+- 前端 vnext 界面未做（目前只有只读 API）
+
+
 ## [Unreleased] - 2026-10-30（复审三：S7 生产入口闭环与预算/账本语义修正）
 
 复审指出 27/27 只证明零件能拼，不证明链路成立。七条全部复现并修复。

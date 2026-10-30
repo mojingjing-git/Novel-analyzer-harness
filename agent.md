@@ -1526,3 +1526,20 @@ splitter 内部有两条平行的"书名推断"路径：
 5. **预留无身份** → `reservation_id` + `ledger_id`；`settle` 幂等、`release` 不误伤同额预留。
 6. **反证 ID 未校验** → `checked_evidence_ids` 必须非空且属于本任务，否则 `INSUFFICIENT`。
 7. **汇总混淆历史与当前** → 当前状态按每个 `task_key` 的**最新**记录，费用按**全部历史**累计；空账本 + 有候选 ⇒ `not_started`，不得报"无未完成"。
+
+### 10.47 S8 写入一致性与交互保护 + S9 真实测量 + S10 打包（2026-10-30）
+
+**S8 完成**
+- `consistency.publish_atomically`：把"写文件"与"登记进 manifest"包成一个可注入故障的操作，四个故障点 `before_write`/`after_write`/`before_commit`/`after_commit` 各自可复现。文件写了但登记失败 → **回滚并如实报告**（`cleanup_done`）；删不掉时记 `cleanup_done=False`，孤儿由 `orphan_files()` 扫出——孤儿比失败更麻烦，它看起来像成功。
+- `concurrency.run_thread_job`：**记账与状态转换只由"线程真正结束"触发**。取消等待方不打断登记（取消只决定"还要不要等"）。这是 S8 里最反直觉的一条：`asyncio.to_thread` 取消 await 不会取消线程，若在 `finally` 里结算，实际仍在跑的请求就成了没记账的消耗。
+- 12 例测试（8 一致性 + 4 并发）。
+
+**S9 测量能力就位，结论性实验未做**
+- `scripts/measure_prompt_cost.py` 用真实模型发少量调用、读 `usage`（不猜 token）。实测 4 次：1 章样本 405 vs 379 prompt tokens，6 章 1065 vs 1039——去重块在这两档里是**固定 26 token**，因为合成样本的主线摘要只有 38 字符，而真实数据是 7,323 字符。
+- 因此**不能用这组数字决定去不去重**。真正有效的结构性事实是满配提示词的分布：正文 65% / 历史块 16% / system 10.5% / 其余 7 段 8%。要下结论需 50+ 章真实样本、每组 3 次重复。
+- 记录见 `docs/MEASURE-S9-2026-10-30.md`。
+
+**S10**
+- 端到端验收 `scripts/acceptance_vnext.py` **32/32**。
+- PyInstaller 6.19.0 已安装并尝试 `desktop.spec` 构建（结果见 `docs/PLAN-S7-S10-status-2026-10-30.md`）。
+- 前端 vnext 界面仍未做：目前只有 `/api/vnext/*` 只读 API。
