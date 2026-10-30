@@ -724,7 +724,21 @@ python -m pytest
 
 # 运行指定测试
 python -m pytest backend/tests/test_pipeline_inflight.py -v
+
+# 迭代期：只跑与本次改动相关的测试（约 3 秒 ~ 1 分钟，替代 12 分钟全量）
+python scripts/pytest_related.py              # 先看会跑哪些
+python scripts/pytest_related.py --run        # 直接跑
+python scripts/pytest_related.py --run --base HEAD~3   # 与某个基线比较
+
+# 批次收口：全量（每次提交/推送前那一遍，不是每一处小改动都跑）
+python -m pytest -o addopts= -q
 ```
+
+> **测试节奏（2026-10-30 明确）**：全量约 1100 例 / 12 分钟。**迭代期用相关集**
+> （`scripts/pytest_related.py`：按"文件名对应 + import 引用"挑选，宁可多选），
+> **批次收口才跑全量**。不要每改二十行就全量——那是把 12 分钟花在验证无关用例上。
+> 反过来，也不能只跑相关集就宣布完成：相关集是"我的改动没弄坏自己"，
+> 全量才是"没弄坏别人"。`docs/VERIFY-LOG.md` 的记录里必须写明这一遍是全量还是相关集。
 
 ### 前端
 

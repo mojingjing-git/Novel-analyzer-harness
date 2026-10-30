@@ -40,6 +40,7 @@
 | 2026-10-30 | 尚未入库 | S2 完成口径落文 + S3 拆解 | doc_check | 通过 | 未记录 | 主计划 §4 S2 加「状态：已完成」与口径 A 说明（vnext 读入口 = `/api/vnext/*` + 共享发现/队列；旧 1.x 端点不在本批加拒绝）；新建 `docs/PLAN-S3-task-breakdown-2026-10-30.md`（U1–U8，U1/U2 完成）；`agent.md` §10.40；`CHANGELOG.md` S3 U1/U2 段落 |
 | 2026-10-30 | 尚未入库 | 全量后端测试（S3 U5 引用校验后） | business_test | **1130 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，766.98s。相对 S3 U1/U2 基线 1111：新增 `test_vnext_citations.py`（19）|
 | 2026-10-30 | 尚未入库 | 引用校验文档同步 + S3 未决定稿 | doc_check | 通过 | 未记录 | `agent.md` §10.41；`CHANGELOG.md` S3 U5 段落；`docs/PLAN-S3-task-breakdown-2026-10-30.md` 的 U5 状态更新、未决第 2 条标记为已定（五级判定 + 失败降级不丢数据） |
+| 2026-10-30 | 尚未入库 | 测试节奏调整 + 相关集工具 | doc_check | 通过 | 未记录 | 新增 `scripts/pytest_related.py`（按"文件名对应 + import 引用"挑选相关测试）；`agent.md` §8 增加测试节奏约定：**迭代期跑相关集，批次收口跑全量**，且 VERIFY-LOG 必须写明这一遍是全量还是相关集。实测：改动 2 文件 → 选 1 个测试文件 → 3 秒；全量为 ~1100 例 / 12 分钟 |
 
 ---
 
