@@ -13,6 +13,7 @@ const isMaximized = ref(false)
 
 const navItems = [
   { path: '/', label: '分析队列', icon: 'queue' },
+  { path: '/vnext', label: '新版空间', icon: 'workspace' },
   { path: '/characters', label: '角色卡', icon: 'characters' },
   { path: '/summary', label: '最终总结', icon: 'summary' },
   { path: '/splitter', label: '小说切分', icon: 'splitter' },

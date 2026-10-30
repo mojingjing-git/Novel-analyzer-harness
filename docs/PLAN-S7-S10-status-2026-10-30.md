@@ -47,12 +47,14 @@ created: 2026-10-30
 - **未做**：50–100 章真实样本上的 A/B/C（每组 3 次重复取中位）、标注集准确率/召回、接口 B 锚定风险配对评测、卷摘要压缩触发率。原因：需要真实书库 + 独立预算，且本批已把"测量怎么做"落地，缺的是样本与预算。
 - **为什么可以先不做**：PLAN §4 S9-7 写明"基础来源/时序/证据修复不依赖实验显示文学质量提升才能交付"。本批交付的正是这部分。
 
-## S10 Windows 发布、文档与端到端验收 —— ✅ 验收自动化 + 打包与首启冒烟通过
+## S10 Windows 发布、文档与端到端验收 —— ✅ 便携包真实闭环 5/5 + 最小 vnext 界面
 
 - **已做**：`scripts/acceptance_vnext.py` 离线端到端验收，**27/27 通过**，覆盖建项目→块→覆盖视图→快照→归约→窗口→引用校验→伏笔视图→裁决→覆盖计数→任务缓存→预算→汇总。
 - **已做**：PyInstaller 6.19.0 安装；`python -m PyInstaller desktop.spec` → `dist/novel-analyzer.exe`（31.45 MB，onefile，exit 0，仅 pycparser 两条无害 hidden-import 警告）；隐藏窗口启动 16–18 秒存活，`analyzer.log` 显示后端在 `127.0.0.1:8464` 起来、前端静态从 `_MEI` 挂载、WebSocket 已连接、依赖健康检查 6/6 通过。
 - **冒烟发现并修掉一个真 bug**：打包版首启时 `crash.log` 被"向已关闭流 emit 的 logging 错误"刷满——`_install_crash_diagnostics()` 里那行"崩溃诊断已启用"走 logging，而 pythonw/onefile 下 `sys.stdout` 已关闭，`handleError` 又把错误写回 crash.log。修法：摘掉根上已关闭的 StreamHandler + 该行直写文件。重新打包复验：crash.log 只剩 1 行 INFO。
-- **仍未做**：Windows 安装包（无 NSIS/Inno 脚本）、首次启动向导的交互手测、前端 vnext 界面。
+- **便携包真实闭环（新增）**：`scripts/smoke_portable.py` → 启动 exe、读日志拿端口、探 `/`、`/api/vnext/books`、`/api/vnext/queue`、空工作区 0 本书 —— **5/5 PASS**。这条与之前的验收互补：验收跑的是进程内 app，跳过了打包后的启动路径（端口选择、静态挂载、session token、单实例锁）。
+- **最小 vnext 界面（新增）**：`frontend/src/pages/VnextPage.vue` + 路由 `/vnext` + 导航「新版空间」+ `api.vnextBooks()/vnextQueue()`。只读：列出可打开项目与被拒绝目录及原因，并明确写出"旧 `workspace/` 不会被读取"。`npm run build` 通过，产物经 HTTP 验证（bundle 内含 `/vnext` 与「新版空间」），重新打包后闭环仍 5/5。
+- **仍未做**：Windows 安装包（无 NSIS/Inno 脚本）、首次启动向导的交互手测、vnext 界面上的项目创建/队列操作（当前只读）。
 - **未做**：前端页面接入（vnext 目前只有只读 API，没有界面）。
 
 ## 一句话边界

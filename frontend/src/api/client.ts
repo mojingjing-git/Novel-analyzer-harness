@@ -324,6 +324,18 @@ export const api = {
   // 基础
   health: () => request<{ status: string }>('/api/health'),
 
+  // vnext（新数据空间，只读）
+  vnextBooks: () =>
+    request<{
+      data_root: string
+      books: { book_id: string; name: string; total_chapters: number }[]
+      rejected: { path: string; reason: string }[]
+    }>('/api/vnext/books'),
+  vnextQueue: () =>
+    request<{ entries: { book_id: string; state: string; completed: number; total: number }[] }>(
+      '/api/vnext/queue',
+    ),
+
   // 设置
   getSettings: () => request<AppConfigDto>('/api/settings'),
   putSettings: (config: Partial<AppConfigDto>) =>

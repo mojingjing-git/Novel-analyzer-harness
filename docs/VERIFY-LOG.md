@@ -57,6 +57,8 @@
 | 2026-10-30 | 尚未入库 | 打包与首启冒烟 | packaging | **构建 exit 0 / 启动存活 / crash.log 干净** | — | `python -m PyInstaller desktop.spec` → `dist/novel-analyzer.exe` 31.45 MB；隐藏窗口启动 16s 存活，`analyzer.log` 显示 `127.0.0.1:8464` 就绪、WebSocket 连接、健康检查 6/6。**首启发现并修掉 crash.log 自刷屏 bug**，重新打包复验只剩 1 行 INFO |
 | 2026-10-31 | 尚未入库 | 全量后端测试（S8 重做：发布三态/线程结算后） | business_test（**全量**） | **1426 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，736.02s。相对 S8 首版基线 1416 增加 10 例：`test_vnext_publish_faults.py`（6，入口级故障）+ `test_vnext_consistency.py` 12→16（取消后关循环仍以线程结束结算 / 结算回调失败不挂起 / wait_for_finish）|
 | 2026-10-31 | 尚未入库 | vnext 端到端验收（发布接入三态后） | acceptance | **ACCEPTED 32/32** | — | `python scripts/acceptance_vnext.py` |
+| 2026-10-31 | 尚未入库 | 便携包真实用户闭环 | smoke（打包产物） | **5/5 PASS** | — | `python scripts/smoke_portable.py`：启动 `dist/novel-analyzer.exe` → 从日志取端口 → `/`(HTML) + `/api/vnext/books` + `/api/vnext/queue` + 空工作区 0 本书。与进程内验收互补，覆盖打包后的启动路径 |
+| 2026-10-31 | 尚未入库 | 最小 vnext 界面（前端） | build | **通过** | — | `npm run build` 5.68s；HTTP 验证 bundle 含 `/vnext` 与「新版空间」；重新打包后便携包闭环仍 5/5 |
 | 2026-10-30 | 尚未入库 | 测试节奏调整 + 相关集工具 | doc_check | 通过 | 未记录 | 新增 `scripts/pytest_related.py`（按"文件名对应 + import 引用"挑选相关测试）；`agent.md` §8 增加测试节奏约定：**迭代期跑相关集，批次收口跑全量**，且 VERIFY-LOG 必须写明这一遍是全量还是相关集。实测：改动 2 文件 → 选 1 个测试文件 → 3 秒；全量为 ~1100 例 / 12 分钟 |
 
 ---
