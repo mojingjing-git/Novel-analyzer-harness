@@ -1452,3 +1452,32 @@ splitter 内部有两条平行的"书名推断"路径：
 - 两条书名路径**只合并一条**（外部权威），正文推断仅作 fallback
 - 不重切已分析的书（重切会清 `chapter_N_result.json`）
 - 不改 `infer_book_name` 算法（已经过 P5/P5b/P5c 修复）
+
+### 10.43 PLAN v2 S4–S6：有序覆盖、稳定实体、全自动裁决（2026-10-30）
+
+三批的共同判据：**结论必须能被程序复算**。凡是要靠排序序号、完成顺序或模型自评置信度才能得出的结论，一律不算。
+
+**S4 覆盖视图（`backend/vnext/rolling.py`，19 例）**
+- `commit_cursor` 是"从第一块起连续完成"的前缀长度，**不是"完成了几个"**：1、3 完成而 2 缺失时它是 1，`prefix_complete=False`——这正是"100/102 完成被说成基本完成"的防线
+- `consumable_upto` **对齐批次**：半个批次的信息不许进摘要；`claimed_range()` 用实际完成位置（诚实），两者分开是刻意的
+- `TERMINAL_SKIPPED` 可越过但留 `gaps` 并整体 `PARTIAL`；`PENDING_RETRY` **暂停推进**（它不是洞，是还没好）
+- `dirty_from` 使 `consumable_upto` 收缩到脏批次起点，并用 `batch_aligned_upto` 判断是否需要重建——否则"脏点还没被消费到"会被误判成必须重建
+- 用例覆盖：10 种完成顺序收敛到同一视图、签名不符的结果被忽略、`batch_size` 校验
+
+**S5 稳定实体（`backend/vnext/foreshadow.py`，29 例，子智能体产出，父级独立复跑确认）**
+- `occurrence_id` 用**完整 64 hex**（含 kind），12 位只作展示——缩写做键会撞
+- `entity_id = fs_ + 16 hex`，只依赖 `(book_id, seed_occurrence_id)`，seed 取**来源最早**的出现 ⇒ **补入更早证据不改号**（复审第 2 条 R2 的靶子）
+- `cutoff_view` 顺序固定：筛可见来源 → **整条排除**（实体只要有一条越过截止点就整个不出现，不能"凭首次出现靠前就放进来"）→ 算属性 → `min_mentions` → 排序 → 截断
+- **本层不做相似度合并**：两个悬念是否同一实体由调用方给的 `entity_id` 决定，"谁藏了王冠"与"王冠在哪里"不会被文本相似度误合并
+
+**S6 裁决（`backend/vnext/resolution.py` 34 例 + `context.py` 12 例）**
+- 模型只许给四枚举；**小写/近义词/缺失一律 `INVALID`**——宽容解析会让下游以为这条已核对
+- `SUPPORTED` 六道门禁：答案非空 + 无 `material_insufficient_reason` + 反证 `performed is True` + 无 `counter_quotes` + 引文落在给定范围 + ID 属于本任务
+- 归约：任一 SUPPORTED → `AUTO_RESOLVED`；仅有不足/冲突 → `PROPOSED_RESOLVED`；只有垃圾 → `OPEN`；**垃圾候选不降级已支持结论**
+- 覆盖守恒式：`candidates_total = supported + insufficient + conflict + invalid + stale + not_checked`（`conflict` = DIFFERENT_ANSWER + CONTRADICTED）；`invalid` 必须等于按 reason 分组之和
+- 任务状态有序互斥 `NOT_RUN → RUNNING → STOPPED → PARTIAL → COMPLETED`；**空候选跑过 = COMPLETED 且计数 0**、**缺覆盖汇总 = PARTIAL**（"没运行"不能显示成"已核对、无发现"）
+- 上下文取材：先扩句读边界再补目标，受 `HARD_MAX_CHARS` 约束；**到章节尽头不是截断、撞硬上限才是**，且硬上限下必须保住引用完整（引用被切掉就没法核对）
+
+**与 S7 的边界**：S4–S6 建的是**判定与状态层**——给定输入给出唯一可复算结论。接进真实流水线（真跑 LLM、真写摘要、真出报告）是 S7；本批**不改** 1.x 的 `pipeline.py` / `final_summary.py`。
+
+**plan**：`docs/PLAN-v2-long-novel-reliability-2026-10-30.md` §4 S4/S5/S6；拆解 `docs/PLAN-S4-S6-task-breakdown-2026-10-30.md`

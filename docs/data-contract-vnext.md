@@ -449,3 +449,56 @@ expected_dependency = sha256(canonical({
 1. `PromptLimits` 的非法值报错文案统一为 `{field} 必须是正整数，收到 {value!r}`，`path` 填 `prompt_limits.<field>`；
 2. 未知配置键**忽略**（配置可能来自更新版本），但顶层非 `Mapping` 直接拒收；
 3. `PromptLimits` 是**内部设置**，本期不新增任何用户可见开关——文档不得宣称它可在界面调整。
+
+## §13 覆盖、实体身份与裁决（S4–S6 定稿）
+
+### 13.1 覆盖视图（`rolling.py`）
+
+| 字段 | 含义 | 不能混淆的点 |
+| --- | --- | --- |
+| `commit_cursor` | 从第一块起"已完成且依赖新鲜"的**连续**前缀长度 | 不是"已完成块数" |
+| `committed_batches` | 已完成块数 // 批大小 | — |
+| `consumable_upto` | 可安全喂给摘要的最远位置，**对齐批次** | 半个批次不许进摘要 |
+| `batch_aligned_upto` | 脏点收缩前的对齐位置 | 用来判断"是否需要重建" |
+| `claimed_range` | 可对外声明的章号区间，从**真实首章**起算 | 分析从第 100 章开始就不能称"全文前缀" |
+| `gaps` | 被 `TERMINAL_SKIPPED` 越过的位置 | 越过 ≠ 完整，整体标 `PARTIAL` |
+| `dirty_from` | 已提交结果改版/迟到修复的位置 | 其后摘要不可信 |
+
+**不变量**：`PENDING_RETRY` 暂停推进；`TERMINAL_SKIPPED` 推进但留 gap；
+`DONE` 要求签名一致（签名不符的结果属于另一个块，忽略）。
+
+### 13.2 伏笔实体（`foreshadow.py`）
+
+- `occurrence_id` = 完整 64 hex（`book_id + chapter_id + content_hash + start + end + kind`）；12 位只用于展示。
+- `entity_id` = `fs_` + 16 hex，只依赖 `(book_id, seed_occurrence_id)`，seed 取**来源最早**的出现 ⇒ 补入更早证据不改号。
+- `candidate_id` = `cd_` + 16 hex，依赖 `(entity_id, volume_start_ordinal, batch_index)` ⇒ 同一轮重放不产生新身份。
+- `cutoff_view` 的顺序固定：筛可见来源 → **整条排除**（实体只要有一条越过截止点就整个不出现）→ 算属性 → `min_mentions` 过滤 → 排序（`-mentions, -importance, first_seen, entity_id`）→ 截断。
+- **本层不做相似度合并**：两个悬念是否同一实体由调用方给的 `entity_id` 决定。"谁藏了王冠"与"王冠在哪里"不会被文本相似度误合并。
+
+### 13.3 裁决（`resolution.py`）
+
+- 模型只许给四枚举；**小写、近义词、缺失值一律 `INVALID`**（宽容解析会让下游以为已核对）。
+- `SUPPORTED` 的门禁：答案非空 + 无反证引文 + 反证已执行 + 无材料不足 + 引文落在给定范围内 + ID 属于本任务。
+- 实体归约：任一 `SUPPORTED` → `AUTO_RESOLVED`；仅有不足/冲突 → `PROPOSED_RESOLVED`；只有垃圾 → `OPEN`。**垃圾候选不降级已支持结论。**
+- 覆盖守恒式：`candidates_total = supported + insufficient + conflict + invalid + stale + not_checked`，
+  其中 `conflict = DIFFERENT_ANSWER + CONTRADICTED`；`invalid` 必须等于 `invalid_by_reason` 之和。
+- 任务状态有序互斥：`NOT_RUN → RUNNING → STOPPED → PARTIAL → COMPLETED`；
+  **空候选跑过 = `COMPLETED` 且计数 0**，**缺覆盖汇总 = `PARTIAL`**。
+
+### 13.4 上下文取材（`context.py`）
+
+- 先扩到句读边界（`。！？；…\n`），再按 `PRE_TARGET/POST_TARGET` 补足，最后受 `HARD_MAX_CHARS` 约束。
+- **到章节尽头不是截断**；**撞硬上限才是截断**（`truncated=True`, `reason=HARD_BUDGET`），下游必须据此判证据不足。
+- 硬上限下**保证引用本身完整**（引用被切掉就没法核对）；引用本身超过上限时标 `QUOTE_EXCEEDS_HARD_MAX`。
+
+#### 13.2.1 三处实现口径（实现过程中发现规格有张力，此处定稿）
+
+1. **"整条排除"优先于"截止点之前可见"**：一个实体若横跨 1–10 章，而 `cutoff_ordinal=5`，
+   它在这个视图里**整个不出现**（而不是"只显示第 1–4 章那几次出现"）。理由：实体级属性
+   （类型、重要度、代表描述）是对全部出现记录算的，只给一部分会把属性算成半成品。
+   因此"1..10 取 5 → 只有 1–4"只适用于**每章一个实体**的构造，不能理解为"同一实体可被切片"。
+2. **`entity_id` 在首次登记时确定，之后不再重算**：``seed_occurrence_id`` 只是记录"当时最早的那次出现"。
+   补入更早证据时，`seed_occurrence_id` 会前移，但 `entity_id` 必须**沿用旧值**——否则
+   "补一条早期证据"就等于"换了一个悬念"，历史裁决全部失联。
+3. **去重键是 `(entity_id, occurrence_id)`**：`occurrence_id` 的公式不含 `entity_id`（同一处原文
+   确实只是同一处原文），所以同一锚点被两个实体引用时 ID 必然相同；靠二元组区分，不靠改公式。

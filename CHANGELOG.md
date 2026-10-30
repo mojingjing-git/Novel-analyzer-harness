@@ -2,6 +2,40 @@
 
 ---
 
+## [Unreleased] - 2026-10-30（v2 S4–S6：有序覆盖、稳定伏笔实体、全自动裁决）
+
+三批判据统一：**结论必须能被程序复算**。靠排序序号、完成顺序或模型自评置信度得出的结论，一律不算。
+
+### S4 覆盖视图（`rolling.py`）
+
+- `commit_cursor` = 从第一块起**连续**完成的前缀长度，不是"完成了几个"：1、3 完成而 2 缺失时它是 1
+- `consumable_upto` **对齐批次**（半个批次不许进摘要）；`claimed_range` 用实际完成位置，两者刻意的分开
+- `TERMINAL_SKIPPED` 越过但留 `gaps` 并标 `PARTIAL`；`PENDING_RETRY` **暂停推进**
+- `dirty_from` 收缩 `consumable_upto` 到脏批次起点；用 `batch_aligned_upto` 判断是否需重建
+- 用例：10 种完成顺序收敛到同一视图、签名不符的结果被忽略
+
+### S5 稳定实体（`foreshadow.py`）
+
+- `occurrence_id` 用完整 64 hex（含 kind），12 位只作展示
+- `entity_id` 只依赖 `(book_id, seed_occurrence_id)`，seed 取来源最早的出现 ⇒ **补入更早证据不改号**
+- `cutoff_view`：先筛可见来源 → **整条排除**（实体只要有一条越过截止点就整个不出现）→ 算属性 → 过滤 → 排序 → 截断
+- 本层**不做相似度合并**：是否同一实体由调用方给的 `entity_id` 决定
+
+### S6 全自动裁决（`resolution.py` / `context.py`）
+
+- 严格四枚举：小写/近义词/缺失一律 `INVALID`，不得当通过
+- `SUPPORTED` 六道门禁：答案非空 + 无材料不足 + 反证已执行 + 无反证引文 + 引文在范围内 + ID 属本任务
+- 归约：任一 SUPPORTED → `AUTO_RESOLVED`；仅不足/冲突 → `PROPOSED_RESOLVED`；只有垃圾 → `OPEN`；垃圾候选不降级已支持结论
+- 覆盖守恒式 + `INVALID` 按 reason 分组求和校验
+- 任务状态有序互斥；**空候选跑过 = COMPLETED(0)**、**缺汇总 = PARTIAL**
+- 上下文取材：先扩句读边界再补目标；**到章节尽头不是截断、撞硬上限才是**，且硬上限下保住引用完整
+
+### 测试
+
+- `test_vnext_rolling.py`(19)、`test_vnext_foreshadow.py`(29)、`test_vnext_resolution.py`(34)、`test_vnext_context.py`(12)
+
+---
+
 ## [Unreleased] - 2026-10-30（v2 S3 收口：知识归约、Prompt 窗口、图谱边分型、引用回填）
 
 S3 九个条目全部完成。核心判据：**同一份输入，无论分批到达还是一次给全、无论块按什么顺序跑完，最终知识库与快照指纹必须完全相同。**

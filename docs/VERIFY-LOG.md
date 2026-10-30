@@ -42,6 +42,8 @@
 | 2026-10-30 | 尚未入库 | 引用校验文档同步 + S3 未决定稿 | doc_check | 通过 | 未记录 | `agent.md` §10.41；`CHANGELOG.md` S3 U5 段落；`docs/PLAN-S3-task-breakdown-2026-10-30.md` 的 U5 状态更新、未决第 2 条标记为已定（五级判定 + 失败降级不丢数据） |
 | 2026-10-30 | 尚未入库 | 全量后端测试（S3 U3–U8 收口后） | business_test（**全量**） | **1235 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，717.19s。相对 S3 U5 基线 1130 增加 105 例：`knowledge_reduce` 14 + `prompt_limits` 31 + `prompt_view` 9 + `graph` 49 + `citations` 19→21（+2）|
 | 2026-10-30 | 尚未入库 | S3 收口文档同步 | doc_check | 通过 | 未记录 | `agent.md` §10.42（U3–U8 逐条 + 派工记录）；`CHANGELOG.md` S3 收口段落；`docs/data-contract-vnext.md` 新增 §12（三层职责 / 证据与引用 / 图谱边 / 三条口径）；`docs/PLAN-S3-task-breakdown-2026-10-30.md` U1–U8 全部标完成 |
+| 2026-10-30 | 尚未入库 | 全量后端测试（S4–S6 后） | business_test（**全量**） | **1329 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，699.24s。相对 S3 收口基线 1235 增加 94 例：`rolling` 19 + `foreshadow` 29 + `resolution` 34 + `context` 12 |
+| 2026-10-30 | 尚未入库 | S4–S6 文档同步 | doc_check | 通过 | 未记录 | `agent.md` §10.43；`CHANGELOG.md` S4–S6 段落；`docs/data-contract-vnext.md` 新增 §13（覆盖视图 / 伏笔实体 / 裁决 / 上下文取材）与 §13.2.1（S5 三处口径：整条排除优先、entity_id 首次确定不再重算、去重键为二元组）；新建 `docs/PLAN-S4-S6-task-breakdown-2026-10-30.md` |
 | 2026-10-30 | 尚未入库 | 测试节奏调整 + 相关集工具 | doc_check | 通过 | 未记录 | 新增 `scripts/pytest_related.py`（按"文件名对应 + import 引用"挑选相关测试）；`agent.md` §8 增加测试节奏约定：**迭代期跑相关集，批次收口跑全量**，且 VERIFY-LOG 必须写明这一遍是全量还是相关集。实测：改动 2 文件 → 选 1 个测试文件 → 3 秒；全量为 ~1100 例 / 12 分钟 |
 
 ---
