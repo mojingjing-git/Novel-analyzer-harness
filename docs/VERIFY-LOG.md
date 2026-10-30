@@ -55,6 +55,8 @@
 | 2026-10-30 | 尚未入库 | 全量后端测试（S8 一致性/并发 + S9 脚本后） | business_test（**全量**） | **1416 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，713.13s。相对复审三基线 1404 增加 12 例：新增 `test_vnext_consistency.py`（8 发布故障点 + 4 取消/并发）|
 | 2026-10-30 | 尚未入库 | 真实模型提示词花费测量 | measurement | **4 次调用 / 3591 token / usage_status=KNOWN** | — | `python scripts/measure_prompt_cost.py --chapters 1|6`：1 章 405 vs 379、6 章 1065 vs 1039 prompt tokens；结论写入 `docs/MEASURE-S9-2026-10-30.md`（明确写了"合成样本不足以支撑取舍结论"）|
 | 2026-10-30 | 尚未入库 | 打包与首启冒烟 | packaging | **构建 exit 0 / 启动存活 / crash.log 干净** | — | `python -m PyInstaller desktop.spec` → `dist/novel-analyzer.exe` 31.45 MB；隐藏窗口启动 16s 存活，`analyzer.log` 显示 `127.0.0.1:8464` 就绪、WebSocket 连接、健康检查 6/6。**首启发现并修掉 crash.log 自刷屏 bug**，重新打包复验只剩 1 行 INFO |
+| 2026-10-31 | 尚未入库 | 全量后端测试（S8 重做：发布三态/线程结算后） | business_test（**全量**） | **1426 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，736.02s。相对 S8 首版基线 1416 增加 10 例：`test_vnext_publish_faults.py`（6，入口级故障）+ `test_vnext_consistency.py` 12→16（取消后关循环仍以线程结束结算 / 结算回调失败不挂起 / wait_for_finish）|
+| 2026-10-31 | 尚未入库 | vnext 端到端验收（发布接入三态后） | acceptance | **ACCEPTED 32/32** | — | `python scripts/acceptance_vnext.py` |
 | 2026-10-30 | 尚未入库 | 测试节奏调整 + 相关集工具 | doc_check | 通过 | 未记录 | 新增 `scripts/pytest_related.py`（按"文件名对应 + import 引用"挑选相关测试）；`agent.md` §8 增加测试节奏约定：**迭代期跑相关集，批次收口跑全量**，且 VERIFY-LOG 必须写明这一遍是全量还是相关集。实测：改动 2 文件 → 选 1 个测试文件 → 3 秒；全量为 ~1100 例 / 12 分钟 |
 
 ---

@@ -20,11 +20,12 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 from .artifacts import read_json_artifact, stamp_payload, write_json_atomic
+from .consistency import PublishOutcome, orphan_files, publish_atomically
 from .blocks import BlockPlan
 from .constants import ErrorCode, VnextFormatError
 from .fingerprint import dependency_fingerprint as _fingerprint_dependencies
 from .fingerprint import result_id as compute_result_id
-from .project import Manifest, commit_manifest
+from .project import Manifest, commit_manifest, load_manifest
 
 RESULT_DIR_NAME = "results"
 
@@ -176,6 +177,14 @@ def write_result(book_dir: Path, record: ResultRecord) -> Path:
     return path
 
 
+class PublishFailed(RuntimeError):
+    """发布未确认成功。``outcome`` 里带着"到底哪一步、数据现在一致不一致"。"""
+
+    def __init__(self, outcome: PublishOutcome) -> None:
+        super().__init__(outcome.error or "发布未确认")
+        self.outcome = outcome
+
+
 def publish_result(book_dir: Path, record: ResultRecord) -> Manifest:
     """写文件并登记进 ``manifest.active_results``，返回**提交后的新清单**。
 
@@ -183,8 +192,6 @@ def publish_result(book_dir: Path, record: ResultRecord) -> Manifest:
     是发布之前的快照。拿旧快照去 :func:`classify` 会看到空的 ``active_results``，
     于是刚刚发布的结果被判成"没登记"——这个坑排查起来很像"结果丢了"。
     """
-    write_result(book_dir, record)
-
     def _mutate(manifest: Manifest) -> None:
         kept: list[str] = []
         for rid in manifest.active_results:
@@ -197,7 +204,30 @@ def publish_result(book_dir: Path, record: ResultRecord) -> Manifest:
         kept.append(record.result_id)
         manifest.active_results = kept
 
-    return commit_manifest(book_dir, _mutate)
+    def _verify() -> bool:
+        """登记是否成立——读**持久化状态**，不看上面那个回调有没有正常返回。
+
+        回调完全可能在"已经写进 manifest"之后才抛错（比如随后的日志写入失败）。
+        那时文件已经被引用，再删就是删真数据。
+        """
+        try:
+            current = load_manifest(book_dir)
+        except VnextFormatError:
+            return False
+        return record.result_id in current.active_results
+
+    outcome = publish_atomically(
+        write_file=lambda: write_result(book_dir, record),
+        commit=lambda: commit_manifest(book_dir, _mutate),
+        verify_commit=_verify,
+        remove_file=lambda: result_path(book_dir, record.result_id).unlink(missing_ok=True),
+    )
+    if not outcome.published:
+        # 未确认发布：把原因带出去，让调用方决定重试还是记失败。
+        # 注意 outcome.committed 为真时数据其实是一致的（已登记），只是流程上有异常。
+        raise PublishFailed(outcome)
+
+    return load_manifest(book_dir)
 
 
 def _read_result_raw(book_dir: Path, result_id: str) -> ResultRecord | None:
@@ -208,6 +238,19 @@ def _read_result_raw(book_dir: Path, result_id: str) -> ResultRecord | None:
         return ResultRecord.from_dict(dict(read_json_artifact(path)))
     except VnextFormatError:
         return None
+
+
+def scan_orphans(book_dir: Path) -> list[Path]:
+    """目录里有、但没人引用的结果文件。
+
+    这是 :func:`consistency.orphan_files` 的生产用法：发布时"提交状态不明就保留文件"
+    会留下孤儿，启动扫描把它们找出来——孤儿可回收，误删不可逆。
+    """
+    try:
+        manifest = load_manifest(book_dir)
+    except VnextFormatError:
+        return []
+    return orphan_files(results_dir(book_dir), known_ids=set(manifest.active_results))
 
 
 def list_results(book_dir: Path) -> dict[str, ResultRecord]:

@@ -1543,3 +1543,13 @@ splitter 内部有两条平行的"书名推断"路径：
 - 端到端验收 `scripts/acceptance_vnext.py` **32/32**。
 - PyInstaller 6.19.0 已安装并尝试 `desktop.spec` 构建（结果见 `docs/PLAN-S7-S10-status-2026-10-30.md`）。
 - 前端 vnext 界面仍未做：目前只有 `/api/vnext/*` 只读 API。
+
+### 10.48 S8 重做：发布与结算的四条硬规则（2026-10-31）
+
+复审三判定 S8 不能签"完成"，四条全部成立，重做后收口。
+
+- **提交判定改三态**：`commit()` 抛错 ≠ 没登记（可能 manifest 已写完、随后才炸）。现在由 `verify_commit()` 读持久化状态回答：True=已登记（保留文件）/ False=明确没登记（可回滚）/ **None=不明（保留文件）**。`_commit_state()` 的 docstring 写明理由：孤儿能扫出来回收，被引用的文件删了就没了——两类代价不对等。
+- **结算搬进线程**：`asyncio.to_thread` 取消 await 不取消线程；原实现把 `on_finish` 挂在循环回调上，取消后关循环就会"提前结算"。现在 `on_finish` 在工作线程的 `finally` 里执行，循环只负责把结果交回等待方（关了就放弃，不影响账）。
+- **结算失败可见**：`on_finish` 抛错不再让 Future 永久挂起——记 `settle_error` + `payload["settle_failed"]`，结果照常交回。
+- **接进生产入口**：`results.publish_result` 改走 `publish_atomically`，失败抛 `PublishFailed(outcome)`；新增 `results.scan_orphans()` 作为 `orphan_files` 的生产用法。入口级故障用例 `backend/tests/test_vnext_publish_faults.py`（6 例，含"manifest 写完才抛错时文件绝不能删"这条正例）。
+- **诚实边界**：用异常注入替代进程强杀，不能等同于崩溃注入；真实中断恢复仍需子进程测试。

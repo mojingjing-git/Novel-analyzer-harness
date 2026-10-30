@@ -16,7 +16,7 @@ from backend.vnext.consistency import (
     orphan_files,
     publish_atomically,
 )
-from backend.vnext.concurrency import LockGuard, run_thread_job
+from backend.vnext.concurrency import LockGuard, run_thread_job, wait_for_finish
 
 
 # ---------------------------------------------------------------------------
@@ -71,8 +71,24 @@ def test_crash_before_write_touches_nothing() -> None:
     assert store.files == set() and store.committed == set()
 
 
-def test_crash_after_write_rolls_back_file() -> None:
-    """文件写了、登记没成 → 必须删掉，否则留下一个看起来像成功的孤儿。"""
+def test_crash_after_write_with_negative_probe_rolls_back() -> None:
+    """探针明确回答"没登记"时才回滚——这时删是安全的。"""
+    store = _Store()
+    outcome = publish_atomically(
+        write_file=lambda: store.write("r1"),
+        commit=lambda: store.commit("r1"),
+        verify_commit=lambda: "r1" in store.committed,
+        remove_file=lambda: store.remove("r1"),
+        fault=_fault(AFTER_WRITE),
+    )
+    assert outcome.published is False
+    assert outcome.file_removed is True
+    assert store.files == set()
+    assert store.committed == set()
+
+
+def test_crash_after_write_without_probe_keeps_file() -> None:
+    """提交状态不明时**保留**文件：孤儿可回收，误删不可逆。"""
     store = _Store()
     outcome = publish_atomically(
         write_file=lambda: store.write("r1"),
@@ -81,16 +97,16 @@ def test_crash_after_write_rolls_back_file() -> None:
         fault=_fault(AFTER_WRITE),
     )
     assert outcome.published is False
-    assert outcome.cleanup_done is True
-    assert store.files == set()
-    assert store.committed == set()
+    assert outcome.kept_for_safety is True
+    assert store.files == {"r1"}
 
 
-def test_crash_before_commit_rolls_back_file() -> None:
+def test_crash_before_commit_rolls_back_file_when_probe_says_no() -> None:
     store = _Store()
     outcome = publish_atomically(
         write_file=lambda: store.write("r1"),
         commit=lambda: store.commit("r1"),
+        verify_commit=lambda: "r1" in store.committed,
         remove_file=lambda: store.remove("r1"),
         fault=_fault(BEFORE_COMMIT),
     )
@@ -121,11 +137,13 @@ def test_cleanup_failure_is_recorded_not_swallowed() -> None:
     outcome = publish_atomically(
         write_file=lambda: store.write("r1"),
         commit=lambda: store.commit("r1"),
+        verify_commit=lambda: "r1" in store.committed,
         remove_file=_boom,
         fault=_fault(AFTER_WRITE),
     )
     assert outcome.published is False
-    assert outcome.cleanup_done is False
+    assert outcome.file_removed is False
+    assert outcome.kept_for_safety is True
     assert store.files == {"r1"}
 
 
@@ -202,3 +220,57 @@ def test_lock_guard_flags_await_while_holding() -> None:
     guard.check(holding=True, awaiting=True, where="publish")
     guard.check(holding=True, awaiting=False, where="commit")
     assert guard.violations == ["publish"]
+
+
+def test_settlement_happens_in_thread_even_if_loop_closes() -> None:
+    """复审三第 3 条：取消等待方后关循环，结算仍要以"线程真的结束"为准。"""
+    import threading
+
+    recorded: list[tuple[str, int]] = []
+    thread_done = threading.Event()
+
+    async def scenario() -> None:
+        def slow() -> str:
+            time.sleep(0.15)
+            thread_done.set()
+            return "ok"
+
+        task = asyncio.ensure_future(
+            run_thread_job(slow, on_finish=lambda r, e: recorded.append((str(r), time.monotonic_ns())))
+        )
+        await asyncio.sleep(0.02)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        # 故意马上结束这个循环（不等待线程）
+
+    _run(scenario())
+    # 线程仍在跑；等它自己结束，结算必须发生在**线程内**，与循环是否存活无关
+    assert thread_done.wait(timeout=2.0)
+    deadline = time.time() + 2.0
+    while not recorded and time.time() < deadline:
+        time.sleep(0.01)
+    assert recorded and recorded[0][0] == "ok"      # 结算拿到的是真实结果，不是 CancelledError
+
+
+def test_settle_callback_failure_is_reported_not_hanging() -> None:
+    """复审三第 4 条：结算回调自己抛错，不能让 Future 永久挂起。"""
+    async def scenario() -> None:
+        def boom_finish(_result, _exc) -> None:
+            raise OSError("记账写盘失败")
+
+        job = await run_thread_job(lambda: 7, on_finish=boom_finish)
+        assert job.finished is True
+        assert "OSError" in job.settle_error
+        assert job.payload.get("settle_failed") is True
+        assert await job.future == 7          # 结果照样交回，不挂起
+
+    _run(scenario())
+
+
+def test_wait_for_finish_reports_timeout_for_unfinished_job() -> None:
+    async def scenario() -> bool:
+        job = await run_thread_job(lambda: 1, on_finish=lambda r, e: None)
+        return await wait_for_finish(job, timeout=1.0)
+
+    assert _run(scenario()) is True

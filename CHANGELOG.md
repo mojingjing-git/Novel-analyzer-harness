@@ -2,6 +2,36 @@
 
 ---
 
+## [Unreleased] - 2026-10-31（S8 重做：发布与结算的四条硬规则）
+
+复审三判定 S8 不能签完成，四条都会丢数据，重做后收口。
+
+### 提交判定改三态
+
+- `commit()` 抛错 **不等于** 没登记（完全可能 manifest 已写完、随后写日志炸了）
+- 由 `verify_commit()` 读持久化状态回答：`True` 已登记（保留文件）/ `False` 明确没登记（可回滚）/ `None` 不明（**保留文件**）
+- 理由写进 docstring：孤儿能扫出来回收，被引用的文件删了就再也拿不回来
+
+### 结算搬进线程
+
+- `asyncio.to_thread` 取消 `await` 不取消线程；原实现把 `on_finish` 挂在循环回调上，取消后关循环会提前结算
+- 现在 `on_finish` 在工作线程的 `finally` 里执行；循环只负责交回结果，关了就放弃，不影响账目
+
+### 结算失败可见
+
+- `on_finish` 抛错不再让 Future 永久挂起：记 `settle_error` + `payload["settle_failed"]`，结果照常交回
+
+### 接进生产入口
+
+- `results.publish_result` 改走 `publish_atomically`，失败抛 `PublishFailed(outcome)`
+- 新增 `results.scan_orphans()` 作为 `orphan_files` 的生产用法
+- 入口级故障测试 `backend/tests/test_vnext_publish_faults.py`（6 例），含"manifest 写完才抛错时文件绝不能删"的正例
+
+### 边界
+
+- 用异常注入替代进程强杀，**不能**等同于崩溃注入；真实中断恢复仍需子进程测试
+
+
 ## [Unreleased] - 2026-10-30（打包首启冒烟修了一个真 bug）
 
 - 打包版首次启动时 `crash.log` 被"向已关闭流 emit 的 logging 错误"刷满：`_install_crash_diagnostics()` 的启用提示走 logging，而 pythonw/onefile 下 `sys.stdout` 已关闭，`handleError` 又把错误写回 `crash.log`
