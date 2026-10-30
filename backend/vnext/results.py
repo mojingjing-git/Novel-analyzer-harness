@@ -151,6 +151,7 @@ def make_result_id(
     prompt_strategy_version: int,
     model_fingerprint: str,
     dependency_fingerprint: str,
+    extracted_fingerprint: str = "",
 ) -> str:
     """按契约算 ``result_id``（与 :mod:`backend.vnext.fingerprint` 同源）。"""
     return compute_result_id(
@@ -158,6 +159,7 @@ def make_result_id(
         prompt_strategy_version=prompt_strategy_version,
         model_fingerprint=model_fingerprint,
         dependency_fp=dependency_fingerprint,
+        extracted_fp=extracted_fingerprint,
     )
 
 
@@ -303,7 +305,10 @@ class ResultStrategy:
 
 
 def expected_dependency(
-    prior_result_ids: Sequence[str | None], strategy: ResultStrategy
+    prior_result_ids: Sequence[str | None],
+    strategy: ResultStrategy,
+    *,
+    context_fingerprint: str = "",
 ) -> str:
     """算"这一块现在应该依赖什么"。
 
@@ -317,6 +322,9 @@ def expected_dependency(
             "context_strategy_version": strategy.context_strategy_version,
             "prompt_strategy_version": strategy.prompt_strategy_version,
             "model_fingerprint": strategy.model_fingerprint,
+            # 真正进 Prompt 的那个窗口（含限额与截断计数）。没有它时，
+            # "改限额让窗口变小"与"开始截断"都不会让下游失效。
+            "context_fingerprint": context_fingerprint,
         }
     )
 
@@ -328,6 +336,7 @@ def classify(
     *,
     strategy: ResultStrategy | None = None,
     dependency_fingerprint: str | None = None,
+    context_fingerprints: Mapping[str, str] | None = None,
 ) -> Classified:
     """判定每个计划块的状态。
 
@@ -363,7 +372,11 @@ def classify(
             (cid, hash_by_chapter.get(cid, "")) for cid in plan.chapter_ids
         )
         if strategy is not None:
-            expected_dep = expected_dependency(prior, strategy)
+            expected_dep = expected_dependency(
+                prior,
+                strategy,
+                context_fingerprint=(context_fingerprints or {}).get(plan.block_signature, ""),
+            )
         else:
             expected_dep = dependency_fingerprint
 

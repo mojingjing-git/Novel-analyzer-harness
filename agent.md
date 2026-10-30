@@ -1566,3 +1566,16 @@ splitter 内部有两条平行的"书名推断"路径：
   - 顺带修一个静默行为：原用 `dir_name or book_id`，显式传空串会被悄悄替换成 `book_id`；改成 `is None` 判断，空串直接报错。
 - **A3 请求超时**：`request()` 此前无 `AbortSignal`，后端卡住时按钮永久禁用。现在默认 30s（`AbortSignal.timeout`），重接口按调用覆盖：`vnext/projects` 300s、`splitter/preview` 120s、`prompt/preview` 120s、`aggregate/run` 300s、excel 导出 300s；超时映射 `TIMEOUT`、主动取消映射 `ABORTED`，两者文案不同（超时=稍后重试，取消=正常），并进错误码中文映射。
 - **测试**：`backend/tests/test_vnext_project_atomic.py`（23 例，含 13 个非法名参数化、中途失败无残留、不被判 `LEGACY_DIR`、启动清理）；`frontend/src/api/client.test.ts` 增 4 例（超时/中断/信号存在/文案映射）。
+
+### 10.50 B0 前置：结果 schema、库落盘、指纹闭环（2026-10-31）
+
+复审指出的五条 P1 里有四条指向同一件事：**"续跑"与"一次跑完"会得到不同结论，而系统看不出来**。
+本批先把这条链闭合，再谈分析流水线。
+
+- **`extracted` 定死 schema**：`facts[]` + `characters[]`，两者都带 `SourceRef`。没有来源的条目在重放时**丢弃**——没有它无法判断事实属于哪一章，快照上界失效。
+- **`records_from_extracted()` / `KnowledgeStore.from_dict()`**：`extracted` → 记录的还原路径；对畸形条目静默跳过、对缺来源条目丢弃。
+- **库落盘** `derived/knowledge.json`（`save_store`/`load_store`）：带 `knowledge_store_version` + `meta`（`source_snapshot_id`、`ordered_result_ids`、`store_fingerprint`）。版本不符抛 `UNSUPPORTED_SCHEMA_VERSION`、坏文件抛 `UNPARSEABLE_ARTIFACT`，由调用方决定是否重放重建。
+- **指纹三层**：① `result_id` 并入 `extracted_fingerprint`（否则同条件重跑原地覆盖、`ordered_result_ids` 不变、重放不触发）；② 新增 `PromptWindow.fingerprint()`，含可见内容 + `dropped` + **限额**（否则"改限额让窗口变小"判不出变化）；③ `expected_dependency(..., context_fingerprint=…)` 把②接进依赖，`classify(..., context_fingerprints=…)` 由 runner 用当前库算出后传入。
+- **写入临界区**：库的读写必须与 `publish_result` 同一把书锁（`project.commit_manifest`），否则并发 publish 丢事实——而"丢事实"与"没分析过"在界面上长得一样。
+- **测试**：`backend/tests/test_vnext_knowledge_persist.py`（8 例：schema 往返、缺来源丢弃、畸形跳过、落盘读回指纹一致、版本不符、坏文件、重放≡一次跑完、块序无关）。
+- **未做**：>2MB 或 >500 块时的追加日志（阈值已写进契约 §16.2）；重放与 publish 的接线在 B1a/B1b。

@@ -607,3 +607,40 @@ expected_dependency = sha256(canonical({
 
 **仍未覆盖**（诚实边界）：进程强杀后的恢复验证需要子进程 + 真中断，本批用异常注入替代，
 不能等同于"崩溃注入"。
+
+## §16 结果内容、知识库落盘与指纹闭环（B0）
+
+### 16.1 `extracted` 是定死的 schema，不是自由字典
+
+```json
+{
+  "facts":       [{"fact_id","text","source":{"chapter_id","chapter_ordinal","start","end","content_hash"},"verification_state"}],
+  "characters":  [{"name","state","uncertain","source":{...同上...}}]
+}
+```
+
+**`source` 必须有**。没有来源的条目在重放时会被丢弃——不是保守，是因为没有它就无法
+判断"这条事实属于哪一章"，快照上界（`exclusive_before`）随之失效。这正是 B0 要消灭的
+静默降质：库看着有内容，续跑时却按"没有前情"重新分析。
+
+### 16.2 库落盘 `derived/knowledge.json`
+
+- 顶层带 `format_id`/`schema_version`（通用门禁）+ `knowledge_store_version`（库结构版本）
+- 必含 `meta`：`source_snapshot_id`、`ordered_result_ids`（按块序，元素是 `result_id`）、
+  `store_fingerprint`（整库指纹）
+- **写入必须与发布同一临界区**（`project.commit_manifest` 的书锁）：读结果 → 追加 → 写库
+  → publish 一次性完成。否则两路并发 publish 会丢事实，而"丢事实"和"没分析过"在界面上
+  长得一样。
+- 重写成本：单次几十 KB–1MB；>2MB 或 >500 块时改追加日志 + 周期合并（本期未做，阈值写死在此）
+
+### 16.3 指纹链（三层，缺一层就有静默降质）
+
+| 层 | 指纹 | 覆盖什么 | 漏了会怎样 |
+| --- | --- | --- | --- |
+| 内容 | `result_id` 含 `extracted_fingerprint` | 结果内容 | 同条件重跑原地覆盖，"结果变了"看不见 |
+| 上下文 | `PromptWindow.fingerprint()` | 可见事实/人物 + **dropped 计数** + **限额** | 改限额或开始截断，模型看到更少，却判"没变" |
+| 依赖 | `expected_dependency(..., context_fingerprint=…)` | 前序结果 + 三版本 + 窗口指纹 | 前面块变了、窗口变了，后面块仍"新鲜" |
+
+`classify(..., context_fingerprints={block_sig: fp})`：期望窗口指纹由调用方（runner）用
+**当前库**算出后传入。不传则退化为只比前序结果与三版本——留这个口子是为了扫描预览，
+**不能拿它决定是否跳过**。

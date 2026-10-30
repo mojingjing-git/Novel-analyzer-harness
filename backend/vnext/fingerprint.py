@@ -168,6 +168,7 @@ def result_id(
     prompt_strategy_version: int,
     model_fingerprint: str,
     dependency_fp: str,
+    extracted_fp: str = "",
 ) -> str:
     """结果身份：一块内容 + 一套生成条件 = 一个结果版本。
 
@@ -181,6 +182,9 @@ def result_id(
                 "prompt_strategy_version": prompt_strategy_version,
                 "model_fingerprint": model_fingerprint,
                 "dependency_fingerprint": dependency_fp,
+                # 内容指纹必须进身份：同条件重跑得到同 ID 会**原地覆盖**旧内容，
+                # 于是"结果变了"在 ordered_result_ids 上表现为没变，重放与失效都不触发。
+                "extracted_fingerprint": extracted_fp,
             }
         ).encode("utf-8")
     ).hexdigest()

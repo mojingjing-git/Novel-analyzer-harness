@@ -17,8 +17,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from .fingerprint import canonical_json, dependency_fingerprint
 from .knowledge import KnowledgeSnapshot, KnowledgeStore
 from .prompt_limits import PromptLimits
+
+#: 窗口构造规则的版本。改"怎么裁剪"就 +1，让所有下游失效。
+PROMPT_VIEW_VERSION = 1
 
 
 @dataclass(frozen=True)
@@ -33,6 +37,23 @@ class PromptWindow:
     @property
     def truncated(self) -> bool:
         return any(count > 0 for count in self.dropped.values())
+
+    def fingerprint(self) -> str:
+        """这个窗口作为"上下文"时的依赖指纹。
+
+        必须包含**真正进 Prompt 的全部东西**：可见事实、可见人物、被丢弃的计数、
+        以及限额本身。只哈希"可见内容"会漏掉两类变化——改限额（窗口变小但内容不变）
+        与开始截断（内容变了但事实集合没变），两者都会让模型看到的东西变少，
+        却仍被当成"和上次一样"。
+        """
+        return dependency_fingerprint(
+            {
+                "prompt_view_version": PROMPT_VIEW_VERSION,
+                "facts": list(self.facts),
+                "character_states": [list(pair) for pair in self.character_states],
+                "dropped": dict(self.dropped),
+            }
+        )
 
     def to_dict(self) -> dict:
         payload = {

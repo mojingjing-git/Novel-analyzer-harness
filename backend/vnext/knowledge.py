@@ -18,7 +18,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Iterable
+from pathlib import Path
+from typing import Any, Iterable, Mapping
 
 from .fingerprint import dependency_fingerprint as _fingerprint_dependencies
 
@@ -343,6 +344,42 @@ class KnowledgeStore:
             exclusive_before=exclusive_before, facts=facts, character_records=chars
         )
 
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "KnowledgeStore":
+        """与 :meth:`to_dict` 对称。只认 schema 内的两种记录，其余一律忽略。
+
+        重放路径靠它：先按块序还原 ``extracted`` → 再整体并入。``block_signatures``
+        丢失时按空集合处理，会让 ``add_block`` 的幂等判断失效但不影响正确性
+        （重复并入本来就是幂等的）。
+        """
+        store = cls()
+        for raw in data.get("facts", []) or []:
+            source = _source_from_dict(raw.get("source")) if isinstance(raw, Mapping) else None
+            if source is None:
+                continue
+            record = FactRecord(
+                fact_id=str(raw["fact_id"]),
+                text=str(raw["text"]),
+                source=source,
+                verification_state=str(raw.get("verification_state") or "UNVERIFIED"),
+            )
+            current = store._facts.get(record.fact_id)
+            if current is None or _prefer_fact(record, current):
+                store._facts[record.fact_id] = record
+        for raw in data.get("characters", []) or []:
+            source = _source_from_dict(raw.get("source")) if isinstance(raw, Mapping) else None
+            if source is None:
+                continue
+            store._characters.append(
+                CharacterStateRecord(
+                    name=str(raw["name"]),
+                    state=str(raw.get("state") or ""),
+                    source=source,
+                    uncertain=bool(raw.get("uncertain", False)),
+                )
+            )
+        return store
+
     def to_dict(self) -> dict:
         facts, chars = self.reduced()
         return {
@@ -358,3 +395,119 @@ class KnowledgeStore:
                 for r in chars
             ],
         }
+
+
+# ---------------------------------------------------------------------------
+# 落盘与重放（B0）：库必须能从磁盘重建，否则"续跑"等于换一套输入
+# ---------------------------------------------------------------------------
+
+#: 库结构版本。字段形状变化就 +1，旧文件按"不兼容"处理（走重放重建，不猜）。
+KNOWLEDGE_STORE_VERSION = 1
+
+
+def records_from_extracted(extracted: Mapping[str, Any]) -> tuple[list[FactRecord], list[CharacterStateRecord]]:
+    """把结果里的 ``extracted`` 还原成记录。
+
+    ``extracted`` 的 schema 是**定死**的（见 docs/data-contract-vnext.md §16）：
+    ``{"facts": [FactRecord.to_dict()...], "characters": [CharacterStateRecord...]}``。
+    缺 ``source`` 的条目一律丢弃——重放时拿不到来源就等于拿不到"这条事实属于哪一章"，
+    塞进库里会让快照上界失效（那正是要消灭的静默降质）。
+    """
+    facts: list[FactRecord] = []
+    for raw in extracted.get("facts", []) or []:
+        if not isinstance(raw, Mapping):
+            continue
+        source = _source_from_dict(raw.get("source"))
+        if source is None:
+            continue
+        fact_id = str(raw.get("fact_id") or "")
+        text = str(raw.get("text") or "")
+        if not fact_id or not text:
+            continue
+        facts.append(
+            FactRecord(
+                fact_id=fact_id,
+                text=text,
+                source=source,
+                verification_state=str(raw.get("verification_state") or "UNVERIFIED"),
+            )
+        )
+
+    characters: list[CharacterStateRecord] = []
+    for raw in extracted.get("characters", []) or []:
+        if not isinstance(raw, Mapping):
+            continue
+        source = _source_from_dict(raw.get("source"))
+        if source is None:
+            continue
+        name = str(raw.get("name") or "")
+        state = str(raw.get("state") or "")
+        if not name:
+            continue
+        characters.append(
+            CharacterStateRecord(
+                name=name,
+                state=state,
+                source=source,
+                uncertain=bool(raw.get("uncertain", False)),
+            )
+        )
+    return facts, characters
+
+
+def _source_from_dict(raw: object) -> SourceRef | None:
+    if not isinstance(raw, Mapping):
+        return None
+    try:
+        return SourceRef(
+            chapter_id=str(raw["chapter_id"]),
+            chapter_ordinal=int(raw["chapter_ordinal"]),
+            start=int(raw["start"]),
+            end=int(raw["end"]),
+            content_hash=str(raw["content_hash"]),
+        )
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def store_fingerprint(store: "KnowledgeStore") -> str:
+    """整库指纹（与排序无关，与上界无关）。用于 store_meta 与"重建是否一致"的比对。"""
+    data = store.to_dict()
+    return _fingerprint_dependencies(
+        {
+            "knowledge_store_version": KNOWLEDGE_STORE_VERSION,
+            "facts": data.get("facts", []),
+            "characters": data.get("characters", []),
+        }
+    )
+
+
+def save_store(path: Path, store: "KnowledgeStore", *, meta: Mapping[str, Any]) -> None:
+    """落盘库 + meta。调用方必须持有该书锁（见 ``project.commit_manifest``）。"""
+    from .artifacts import stamp_payload, write_json_atomic
+
+    payload = stamp_payload(
+        {
+            "knowledge_store_version": KNOWLEDGE_STORE_VERSION,
+            "meta": dict(meta),
+            "store": store.to_dict(),
+            "store_fingerprint": store_fingerprint(store),
+        }
+    )
+    write_json_atomic(Path(path), payload)
+
+
+def load_store(path: Path) -> "tuple[KnowledgeStore, dict[str, Any]]":
+    """读库 + meta。格式不对就抛 ``UNPARSEABLE_ARTIFACT``，由调用方决定是否重放重建。"""
+    from .artifacts import read_json_artifact
+    from .constants import ErrorCode, VnextFormatError
+
+    data = read_json_artifact(Path(path))
+    if int(data.get("knowledge_store_version", -1)) != KNOWLEDGE_STORE_VERSION:
+        raise VnextFormatError(
+            ErrorCode.UNSUPPORTED_SCHEMA_VERSION,
+            f"知识库结构版本不匹配：{data.get('knowledge_store_version')!r}",
+            path=str(path),
+        )
+    store = KnowledgeStore.from_dict(data.get("store") or {})
+    return store, dict(data.get("meta") or {})

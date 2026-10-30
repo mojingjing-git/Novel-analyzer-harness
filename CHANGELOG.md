@@ -2,6 +2,34 @@
 
 ---
 
+## [Unreleased] - 2026-10-31（B0：结果 schema、知识库落盘、指纹闭环）
+
+目标是堵住一条静默降质：**"续跑"与"一次跑完"会得到不同结论，而系统看不出来**。
+
+### extracted 定死 schema
+
+- `facts[]` 与 `characters[]`，两者都带 `source`（章节 ID、章序、码点区间、正文哈希）
+- 没有来源的条目在重放时**丢弃**——否则快照上界失效，库里"有内容"但续跑按"没有前情"重算
+
+### 库落盘 `derived/knowledge.json`
+
+- 带 `knowledge_store_version` 与 `meta`（`source_snapshot_id`、`ordered_result_ids`、`store_fingerprint`）
+- 版本不符 → `UNSUPPORTED_SCHEMA_VERSION`；坏文件 → `UNPARSEABLE_ARTIFACT`
+- 写入必须与发布同一把书锁（`commit_manifest`），否则并发 publish 丢事实
+
+### 指纹三层
+
+| 层 | 覆盖 | 漏了会怎样 |
+| --- | --- | --- |
+| `result_id` 含 `extracted_fingerprint` | 结果内容 | 同条件重跑原地覆盖，看不见"结果变了" |
+| `PromptWindow.fingerprint()` | 可见内容 + `dropped` + **限额** | 改限额/开始截断判不出变化 |
+| `expected_dependency(..., context_fingerprint=…)` | 前序结果 + 三版本 + 窗口 | 前面变了后面仍"新鲜" |
+
+### 测试
+
+- `backend/tests/test_vnext_knowledge_persist.py`（8 例，含"重放≡一次跑完"与"块序无关"）
+
+
 ## [Unreleased] - 2026-10-31（A 批：建项目事务化、路径校验、请求超时）
 
 ### 建项目不再留半个项目
