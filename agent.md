@@ -1285,6 +1285,8 @@ mypy backend/
 - **块失效判定**：`verify_block` 按 manifest 重算签名，成员变/正文变/策略版本变三类都命中 `BLOCK_SIGNATURE_MISMATCH`；`is_block_fresh` 为布尔版供扫描过滤。块文件只存 `chapter_ids`，不重复存 `content_hash`（避免"两处哈希不一致"）
 - **测试**：`test_vnext_constants_alignment.py`(4) / `test_vnext_artifacts.py`(15) / `test_vnext_fingerprint.py`(15) / `test_vnext_project.py`(15) / `test_vnext_blocks.py`(11)，共 60 例；全量 **962 → 1022**（父 agent 亲跑）
 - **刻意未做**：不做旧字段兼容降级（缺字段即报错，不补默认值）；不为 `.md` 派生产物加 JSON 头（改旁挂 `.meta.json`）；S2 不逐域重写消费者，只把入口接上门禁（18 行入口矩阵见契约文档附录 B）
+- **接线（S2 第二批）**：新增 `backend/vnext/registry.py`（`scan_projects` 只认合法 `manifest.json`，无清单即 `LEGACY_DIR` 记进拒绝清单，**绝不猜 `blocks/` 形状**；`locate_project` 按 `book_id` 定位，不按书名模糊匹配；`read_index`/`write_index` 路径存相对数据根）、`backend/vnext/results.py`（`results/<sig>.json`，状态 `done/failed/skipped/cancelled`，`ResultRecord` 未知用量保持 `None`；`classify` 先验签名后验状态，返回 `done/stale/missing`，`STALE` 三种原因 `STALE_BLOCK_CHANGED`/`STALE_NOT_DONE`/`STALE_MISSING_RESULT`）、`backend/vnext/queue.py`（`queue_state_vnext.json`；文件不存在=空队列，格式不对=报错，**不做"读不出来就当空"**；`normalize_after_restart` 只把 `running` 回落 `pending` 并清 `error_message`，`done/failed/skipped` 的历史结论不改写；`apply_progress` 判完成要求 `completed==total` 且 `stale==0`）
+- **服务门面与路由（S2 接线入口）**：`backend/services/vnext_service.py`（`list_books` 同时返回 accepted 与带原因的 rejected；`open_book` 按 `book_id`；`block_size` 只在配置文件**不存在**时兜底 4，存在但非法必须报错）、`backend/api/routes_vnext.py`（`GET /api/vnext/books`、`GET /api/vnext/books/{book_id}`、`GET /api/vnext/queue`、`POST /api/vnext/queue/restore`；错误码→HTTP 映射：格式/版本/冲突→409、缺字段→404、取值非法→422，**不把格式错误归到 500**），已在 `backend/app.py` 注册
 - **plan / 契约**：`docs/PLAN-v2-long-novel-reliability-2026-10-30.md` §1.1、§2、§4 S2；数据契约 `docs/data-contract-vnext.md`（含旧产物清单附录 A、入口矩阵附录 B、实现决定附录 C）
 
 ---

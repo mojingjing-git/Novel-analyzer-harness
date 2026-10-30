@@ -28,6 +28,7 @@ from backend.api import (
     routes_workspace,
     routes_aggregate,
     routes_foreshadow,
+    routes_vnext,
     routes_location_normalization,
     ws,
 )
@@ -234,6 +235,7 @@ def create_app() -> FastAPI:
     app.include_router(routes_prompt.router)
     app.include_router(routes_aggregate.router)
     app.include_router(routes_foreshadow.router)
+    app.include_router(routes_vnext.router)
 
     @app.get("/api/health")
     async def health():

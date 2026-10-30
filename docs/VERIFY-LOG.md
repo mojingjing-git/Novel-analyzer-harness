@@ -30,6 +30,8 @@
 | 2026-10-30 | 尚未入库 | 全量后端测试（S1 后） | business_test | **962 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，657.79s。相对 S0 基线 892 增加 70 例：新增 4 个测试文件 61 例（`test_error_types.py` 29 / `test_retry_decision_u2.py` 20 / `test_verdict_pipeline_u4b.py` 4 / `test_concurrency_and_usage_u6.py` 8）+ `test_error_taxonomy.py` 37→46（+9） |
 | 2026-10-30 | 尚未入库 | 全量后端测试（S2 后） | business_test | **1022 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，1493.09s。相对 S1 基线 962 增加 60 例：`test_vnext_constants_alignment` 4 / `test_vnext_artifacts` 15 / `test_vnext_fingerprint` 15 / `test_vnext_project` 15 / `test_vnext_blocks` 11 |
 | 2026-10-30 | 尚未入库 | PLAN v2 S2 文档同步 + 数据契约 | doc_check | 通过 | 未记录 | `agent.md` 新增 §10.37；`CHANGELOG.md` 新增 S2 段落；新建 `docs/data-contract-vnext.md`（385 行，LF 无 BOM，唯一 JSON 例子经 `json.loads` 校验）。行尾保真：CHANGELOG 纯 CRLF(753)、agent.md 纯 LF |
+| 2026-10-30 | 尚未入库 | 全量后端测试（S2 接线后） | business_test | **1055 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，647.75s。相对 S2 基础层基线 1022 增加 33 例：`test_vnext_registry` 10 / `test_vnext_results_queue` 12 / `test_vnext_service_routes` 11 |
+| 2026-10-30 | 尚未入库 | S2 接线文档同步（registry/results/queue/门面/路由） | doc_check | 通过 | 未记录 | `agent.md` §10.37 增两条接线 bullet；`CHANGELOG.md` 增「目录发现与队列恢复」小节；`backend/app.py` 差异经 `git diff -w --numstat` 核对为 **+2 行**（一个 import、一个 include_router），未触碰其他逻辑 |
 
 ---
 

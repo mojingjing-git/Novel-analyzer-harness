@@ -25,6 +25,14 @@
 - `commit_manifest` 锁粒度是**书**（跨书不共享锁），锁内读→改→`revision+1`→原子写；版本不符抛 `RevisionConflict`，不重试不合并
 - `verify_block` 按 manifest 重算签名，成员变 / 正文变 / 策略版本变三类都判失效
 
+### 目录发现与队列恢复（S2 接线）
+
+- 新增 `backend/vnext/registry.py`：`scan_projects` 只认合法 `manifest.json`，旧目录归入 `LEGACY_DIR` 拒绝清单并带原因；`locate_project` 按 `book_id` 定位（书名只是展示字段，改名不失联）
+- 新增 `backend/vnext/results.py`：结果落 `results/<sig>.json`；`classify` **先验块签名后验状态**，返回 `done/stale/missing`，正文或块组成变化即判 `STALE_BLOCK_CHANGED`；未知用量保持 `None` 不落 0
+- 新增 `backend/vnext/queue.py`：队列独立为 `queue_state_vnext.json`；文件不存在=空队列，格式不对=报错（**不"读不出来就当空"**）；重启只把 `running` 回落 `pending`，`done/failed/skipped` 的历史结论不改写；完成判定要求 `completed==total` 且 `stale==0`
+- 新增 `backend/services/vnext_service.py` 门面 + `backend/api/routes_vnext.py` 四个只读/修复端点；错误码→HTTP：格式/版本/冲突 409、缺字段 404、取值非法 422
+- 测试：新增 `test_vnext_registry`(10) / `test_vnext_results_queue`(12) / `test_vnext_service_routes`(11)
+
 ### 测试与文档
 
 - 新增 5 个测试文件共 60 例（`test_vnext_constants_alignment` 4 / `test_vnext_artifacts` 15 / `test_vnext_fingerprint` 15 / `test_vnext_project` 15 / `test_vnext_blocks` 11）；全量 **962 → 1022 passed**
