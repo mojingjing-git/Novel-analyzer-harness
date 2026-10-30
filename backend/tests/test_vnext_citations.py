@@ -221,3 +221,32 @@ def test_summary_reports_kind_distribution() -> None:
     assert summary["located"] >= 1
     assert summary["located_ratio"] <= 1.0
     assert "MISMATCH" in summary["by_kind"]
+
+# ---------------------------------------------------------------------------
+# 批量核对（结果落盘前的接线入口）
+# ---------------------------------------------------------------------------
+
+
+def test_batch_verify_upgrades_only_located_ones() -> None:
+    from backend.vnext.citations import verify_facts_against_book
+
+    quote = "方醒从棺中坐起"
+    start = CHAPTER.index(quote)
+    good = _fact(quote, start=start, end=start + len(quote))
+    bad = _fact("编造的一句完全不存在的话", start=1, end=20)
+
+    results = verify_facts_against_book([good, bad], {"ch_1": CHAPTER})
+    assert [r[0].verification_state for r in results] == [
+        "EVIDENCE_LOCATED",
+        "UNVERIFIED",
+    ]
+    assert [r[1].located for r in results] == [True, False]
+
+
+def test_batch_verify_missing_chapter_is_unverified() -> None:
+    from backend.vnext.citations import verify_facts_against_book
+
+    fact = _fact("随便一句", start=1, end=5)
+    results = verify_facts_against_book([fact], {})   # 章文本没给
+    assert results[0][0] is fact
+    assert results[0][1].reason == "CHAPTER_MISSING"

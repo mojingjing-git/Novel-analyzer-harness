@@ -419,3 +419,33 @@ expected_dependency = sha256(canonical({
 | 空依赖也要算出确定指纹，不允许字段缺失 | 缺字段等价于"没算过"，而"没算过"与"依赖为空"在处理上必须可区分 |
 | `.md` 派生产物用旁挂 `.meta.json` 存指纹 | Markdown 无法承载结构化字段；把 JSON 塞进注释会让产物不再是纯 Markdown |
 | S2 不实现 `MISSING_REQUIRED_FIELD` 及之后步骤的通用框架 | 各数据域的必需字段在 S3–S7 落地时才知道；先建通用框架会把错误形状固化 |
+
+## §12 知识与窗口（S3 定稿）
+
+### 12.1 三层职责
+
+| 层 | 模块 | 职责 | 关键约束 |
+| --- | --- | --- | --- |
+| 归约 | `knowledge.reduce_knowledge` | 去重、排序、定版 | **分批 ≡ 一次给全**；排序按来源位置而非到达顺序 |
+| 快照 | `knowledge.build_snapshot` | 按故事位置切出"某点之前可见" | 上界**排他**；来源未知**一律排除** |
+| 窗口 | `prompt_view.build_prompt_window` | 按限额切出"这次给模型看什么" | **库永不裁剪**；截断必须报告 |
+
+旧实现把三者揉在一起，落盘前做裁剪，于是"库里有什么"取决于当初配了多大窗口。
+
+### 12.2 证据与引用
+
+- `FactRecord.verification_state` 只有两档：`UNVERIFIED` / `EVIDENCE_LOCATED`。**没有"高置信"**——置信是模型的自我评价，不是事实属性。
+- 校验分五级（`EXACT` / `NORMALIZED` / `RELOCATED` / `SEGMENTED` / `FUZZY`），只把"是否定位"一位给下游；失败**不丢数据**，只降级为 `UNVERIFIED`，且**不修正模型给的偏移**。
+- `content_hash` **不由模型提供**，由 `graph.stamp_evidence_hash` 从 manifest 覆盖回填；该章无已知哈希的语义关系**丢弃并回报**（否则它永远无法被校验，却一直以"有来源"的样子存在）。
+
+### 12.3 图谱边
+
+- `CooccurrenceEdge`（同章邻近）与 `SemanticRelationship`（有互动证据）**分表**，`merge_edges` 收到语义边直接 `TypeError`——"永不合表"由类型守住，不靠调用方自觉。
+- 语义边准入：`interaction is True`（严格同一性）+ 来源区间合法 + `relation` 非空；`a == b` 丢弃；名字对归一（`甲-乙` ≡ `乙-甲`）。
+- **已知限制（本层不解决）**：名字匹配是裸子串，`甲` 在 `甲三` 中出现也算一次，共现可能虚高；消歧属实体归并（S5/S6）。同一对在同章多次共现只保留一条边（位置取首次），因为图展示与判定只需要"是否邻近"。
+
+### 12.4 三条口径（本批裁决）
+
+1. `PromptLimits` 的非法值报错文案统一为 `{field} 必须是正整数，收到 {value!r}`，`path` 填 `prompt_limits.<field>`；
+2. 未知配置键**忽略**（配置可能来自更新版本），但顶层非 `Mapping` 直接拒收；
+3. `PromptLimits` 是**内部设置**，本期不新增任何用户可见开关——文档不得宣称它可在界面调整。

@@ -18,12 +18,12 @@ created: 2026-10-30
 | --- | --- | --- | --- |
 | U1 | 快照上界：`exclusive_before` 排他位置；来源范围触及上界及之后的记录整条排除；**未知范围一律排除并单列** | S3-1 | ✅ 本轮完成 |
 | U2 | 内容与覆盖元数据同源读取：快照为不可变值（`frozen` dataclass + 元组），构造后与外部数据无引用关系 | S3-3 | ✅ 本轮完成 |
-| U3 | 人物状态来源顺序：同人取来源位置最新；**迟到低章号不得覆盖**；同位置冲突按"确定优先"，遍历顺序不影响结论 | S3-4 | 部分（覆盖规则已实现，落盘与增量合并待接） |
-| U4 | 统一归约规则：增量合并、快照子集重建、最终落盘共用同一套排序与去重 | S3-5 | 待做 |
-| U5 | `fact_records`：真实来源 + `verification_state`；引用校验分级（逐字/规范化/重定位/分段/模糊）与 `CITATION_INSTRUCTION` | S3-6 | 部分（校验器与 Prompt 规则已落地；接线到结果写入、`mismatch_reason` 落盘待做） |
-| U6 | 图谱边分型：`cooccurrence_edges` 与 `semantic_relationships` 分表，后者只收有互动证据的记录 | S3-7 | 待做 |
-| U7 | 存档与 Prompt 窗口分离：去掉"落盘裁剪"，Prompt 限额单独命名；`max_verified_facts` 口径更正 | S3-8 | 待做 |
-| U8 | Prompt 限额内部设置由统一构建入口传入（不新增用户按钮） | S3-9 | 待做 |
+| U3 | 人物状态来源顺序：同人取来源位置最新；**迟到低章号不得覆盖**；同位置冲突按"确定优先"，遍历顺序不影响结论 | S3-4 | ✅ 完成（`KnowledgeStore` 保留全部版本、去重键按 (name, chapter, start)，快照按时间点取最新可见） |
+| U4 | 统一归约规则：增量合并、快照子集重建、最终落盘共用同一套排序与去重 | S3-5 | ✅ 完成（`reduce_knowledge` 三处共用；不变量：**分批 ≡ 一次给全**，块到达顺序不影响结果） |
+| U5 | `fact_records`：真实来源 + `verification_state`；引用校验分级（逐字/规范化/重定位/分段/模糊）与 `CITATION_INSTRUCTION` | S3-6 | ✅ 完成（`verify_facts_against_book` 为批量入口；章文本由调用方一次性读入，校验本身零 IO） |
+| U6 | 图谱边分型：`cooccurrence_edges` 与 `semantic_relationships` 分表，后者只收有互动证据的记录 | S3-7 | ✅ 完成（`graph.py`：共现只记录"同章邻近"、语义关系必须 `interaction is True` 且带完整来源，两类边永不合表） |
+| U7 | 存档与 Prompt 窗口分离：去掉"落盘裁剪"，Prompt 限额单独命名；`max_verified_facts` 口径更正 | S3-8 | ✅ 完成（`prompt_view.build_prompt_window`：库永不裁剪、窗口在读取时裁剪、**截断必须报告**） |
+| U8 | Prompt 限额内部设置由统一构建入口传入（不新增用户按钮） | S3-9 | ✅ 完成（`prompt_limits.PromptLimits` 不可变 9 项 + 严格校验：拒 bool/float/字符串数字） |
 
 ## U1/U2 已落地的判据
 

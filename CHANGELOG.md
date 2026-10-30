@@ -2,6 +2,41 @@
 
 ---
 
+## [Unreleased] - 2026-10-30（v2 S3 收口：知识归约、Prompt 窗口、图谱边分型、引用回填）
+
+S3 九个条目全部完成。核心判据：**同一份输入，无论分批到达还是一次给全、无论块按什么顺序跑完，最终知识库与快照指纹必须完全相同。**
+
+### 归约与人物时序（U3/U4）
+
+- `reduce_knowledge`：事实按 `fact_id` 去重（来源更晚胜；来源相同时**已定位原文的胜**），按来源位置排序而**不按到达顺序**
+- 人物记录保留**全部版本**（快照按时间点取最新可见，历史不能丢），去重键 `(name, chapter, start)`，同位置"确定优先"
+- `KnowledgeStore` 不缓存派生状态，每次查询都走归约 ⇒ 无状态偏移、天然可重放、重复并入幂等
+- 不变量用例：分批 ≡ 一次给全、块到达顺序无关、增量快照 ≡ 直接快照
+
+### Prompt 窗口（U7/U8）
+
+- `PromptLimits` 不可变 9 项 + 严格校验：**拒 `bool`**（`True` 会被当 1）、**拒 `float`**、拒字符串数字、拒 0/负数
+- `build_prompt_window`：**库永不裁剪**，窗口在读取时裁剪；同一份库可被不同限额读成不同窗口
+- 截断方向：事实取来源位置最靠后的 N 条（离当前块最近才相关），渲染仍按故事正序
+- **截断必须被报告**（`truncated`/`dropped`）：模型不知道"上面还有 800 条被截掉了"，就会把"没提到"当成"不存在"
+
+### 图谱边分型（U6）
+
+- `CooccurrenceEdge`（同章邻近，带码点位置）与 `SemanticRelationship`（有互动证据）**分表，`merge_edges` 收到语义边直接 TypeError**
+- 语义边准入：`interaction is True`（严格同一性，`1`/`"true"` 不算）+ 区间合法 + `relation` 非空
+- 已知限制：名字裸子串匹配，`甲` 在 `甲三` 中出现也算一次，共现可能虚高（消歧属 S5/S6）
+
+### 证据哈希回填（U5 收口）
+
+- `stamp_evidence_hash`：`content_hash` 由 manifest **覆盖**回填（模型没资格定义正文版本）；该章无已知哈希的语义关系**丢弃并回报**
+- `verify_facts_against_book`：章文本由调用方一次性读入，校验本身**零 IO**
+
+### 测试
+
+- 新增 `test_vnext_knowledge_reduce.py`(14)、`test_vnext_prompt_view.py`(9)、`test_vnext_prompt_limits.py`(31)、`test_vnext_graph.py`(49)、`test_vnext_citations.py` 增至 21
+
+---
+
 ## [Unreleased] - 2026-10-30（v2 S3 U5：引用校验——Prompt 里写规则，比对时分五级）
 
 ### Prompt 侧

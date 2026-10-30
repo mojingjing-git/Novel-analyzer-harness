@@ -229,3 +229,132 @@ def snapshot_for_block(
         facts=facts,
         character_records=character_records,
     )
+
+
+# ---------------------------------------------------------------------------
+# 归约：增量合并、子集重建、最终落盘共用同一套规则
+# ---------------------------------------------------------------------------
+
+
+def _fact_sort_key(fact: FactRecord) -> tuple:
+    """事实的稳定排序键：来源位置优先，其次 ID。
+
+    时间线/事实窗口按**来源位置**取，不按"哪条后到"——否则重跑顺序一换，
+    保留下来的条目就变了，同一份输入给出两份不同结论。
+    """
+    if fact.source is None:
+        return (1, 0, 0, fact.fact_id)
+    return (0, fact.source.chapter_ordinal, fact.source.start, fact.fact_id)
+
+
+def _prefer_fact(candidate: FactRecord, current: FactRecord) -> bool:
+    """同一条事实出现两个版本时该留哪个。
+
+    规则：来源更晚的胜；来源相同时**已定位原文的胜**（证据更硬的版本优先）。
+    都相同时保留先到的（幂等）。
+    """
+    if candidate.source is None or current.source is None:
+        return current.source is None and candidate.source is not None
+    c_key = (candidate.source.chapter_ordinal, candidate.source.start)
+    cur_key = (current.source.chapter_ordinal, current.source.start)
+    if c_key != cur_key:
+        return c_key > cur_key
+    if candidate.verification_state != current.verification_state:
+        return candidate.verification_state == "EVIDENCE_LOCATED"
+    return False
+
+
+def _character_sort_key(record: CharacterStateRecord) -> tuple:
+    if record.source is None:
+        return (1, 0, 0, record.name)
+    return (0, record.source.chapter_ordinal, record.source.start, record.name)
+
+
+def reduce_knowledge(
+    facts: Iterable[FactRecord] = (),
+    character_records: Iterable[CharacterStateRecord] = (),
+) -> tuple[tuple[FactRecord, ...], tuple[CharacterStateRecord, ...]]:
+    """把任意顺序、可能重复的知识条目归约成规范形态。
+
+    这一份规则被三处共用：增量合并、从磁盘重建快照、最终落盘。共用是**必须**的
+    ——否则"边跑边存"与"重跑一次"会得到不同的库，而两者看起来都"正常"。
+    """
+    by_id: dict[str, FactRecord] = {}
+    for fact in facts:
+        current = by_id.get(fact.fact_id)
+        if current is None or _prefer_fact(fact, current):
+            by_id[fact.fact_id] = fact
+    reduced_facts = tuple(sorted(by_id.values(), key=_fact_sort_key))
+
+    # 人物记录保留**全部**版本（快照需要按时间点取"最新可见"），只做去重与排序。
+    # 去重键按 (name, chapter, start)：同一处位置只留一条，重复到达幂等。
+    seen: dict[tuple, CharacterStateRecord] = {}
+    for record in character_records:
+        if record.source is None:
+            key = (record.name, -1, -1)
+        else:
+            key = (record.name, record.source.chapter_ordinal, record.source.start)
+        current = seen.get(key)
+        if current is None or (current.uncertain and not record.uncertain):
+            seen[key] = record
+    reduced_chars = tuple(sorted(seen.values(), key=_character_sort_key))
+    return reduced_facts, reduced_chars
+
+
+class KnowledgeStore:
+    """知识的增量容器。
+
+    存在的理由只有一个：让"分批到达"与"一次给全"算出**同一个库**。因此它不缓存
+    任何派生状态（最新人物状态、可见集合），每次查询都走 :func:`reduce_knowledge`
+    ——快、无状态偏移，且天然可重放。
+    """
+
+    def __init__(self) -> None:
+        self._facts: dict[str, FactRecord] = {}
+        self._characters: list[CharacterStateRecord] = []
+        self._blocks: set[str] = set()
+
+    def add_block(
+        self,
+        *,
+        block_signature: str,
+        facts: Iterable[FactRecord] = (),
+        character_records: Iterable[CharacterStateRecord] = (),
+    ) -> None:
+        """并入一个块的知识。重复并入同一块是幂等的（结果不变）。"""
+        self._blocks.add(block_signature)
+        for fact in facts:
+            current = self._facts.get(fact.fact_id)
+            if current is None or _prefer_fact(fact, current):
+                self._facts[fact.fact_id] = fact
+        self._characters.extend(character_records)
+
+    @property
+    def block_signatures(self) -> tuple[str, ...]:
+        return tuple(sorted(self._blocks))
+
+    def reduced(self) -> tuple[tuple[FactRecord, ...], tuple[CharacterStateRecord, ...]]:
+        facts, chars = reduce_knowledge(self._facts.values(), self._characters)
+        return facts, chars
+
+    def snapshot(self, *, exclusive_before: int) -> KnowledgeSnapshot:
+        facts, chars = self.reduced()
+        return build_snapshot(
+            exclusive_before=exclusive_before, facts=facts, character_records=chars
+        )
+
+    def to_dict(self) -> dict:
+        facts, chars = self.reduced()
+        return {
+            "blocks": list(self.block_signatures),
+            "facts": [f.to_dict() for f in facts],
+            "character_records": [
+                {
+                    "name": r.name,
+                    "state": r.state,
+                    "source": r.source.to_dict() if r.source else None,
+                    "uncertain": r.uncertain,
+                }
+                for r in chars
+            ],
+        }

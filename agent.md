@@ -1359,6 +1359,42 @@ mypy backend/
 - **测试**：`backend/tests/test_vnext_citations.py` 19 例（含"半角标点仍算通过"、"偏移错但引文真实"、"省略号顺序颠倒判否"、"编造长句判否"）
 - **plan**：§4 S3-6；拆解 U5（校验器完成，接线到结果写入与 `mismatch_reason` 落盘待做）
 
+### 10.42 PLAN v2 S3 收口：U3–U8（2026-10-30）
+
+S3 剩余六个单元一次做完。核心判据只有一句：**同一份输入，无论分批到达还是一次给全、无论块按什么顺序跑完，最终知识库与快照指纹必须完全相同**。
+
+**U3/U4 归约与人物时序（`knowledge.py` 扩展）**
+- `reduce_knowledge(facts, character_records)`：事实按 `fact_id` 去重（来源更晚的胜；来源相同时**已定位原文的胜**）、按来源位置排序（**不按到达顺序**）；人物记录保留**全部版本**（快照要按时间点取"最新可见"，历史不能丢），去重键 `(name, chapter, start)`，同位置"确定优先"
+- `KnowledgeStore`：不缓存派生状态（最新状态、可见集合），每次查询都走 `reduce_knowledge` —— 无状态偏移、天然可重放，`add_block` 重复并入是幂等的
+- **不变量用例**：`test_incremental_equals_bulk`、`test_block_order_does_not_matter`、`test_snapshot_after_incremental_matches_direct_snapshot`。这三条挡住的是"续跑与重跑各得一套自称正确的结果"
+
+**U8 Prompt 限额（`prompt_limits.py`）**
+- `PromptLimits` 不可变 9 项（与旧 `prompt_builder.py` 参数名一致，便于对照迁移），`from_dict` 严格校验：**拒 `bool`**（`True` 会被 `int()` 悄悄变成 1）、**拒 `float`**（`2.0` 说明配置写错）、拒字符串数字、拒 `0`/负数；非法一律 `INVALID_FIELD_VALUE`，`detail` 必须带字段名与收到的值
+- 未知键忽略（配置可能来自更新版本），但顶层非 Mapping 直接拒收
+- `VnextFormatError.path` 约定填 `prompt_limits.<字段>`
+- 本期**不新增任何用户可见设置项**：这是内部设置，只有构建入口与测试能用
+
+**U7 存档与窗口分离（`prompt_view.py`）**
+- **库永不裁剪**：`KnowledgeStore` 里有多少就是多少，限额不影响落盘
+- **窗口在读取时裁剪**：`build_prompt_window(store, exclusive_before=…, limits=…)`，同一份库可被不同限额读成不同窗口，库本身不动
+- 截断方向：事实取**来源位置最靠后**的 N 条（离当前块最近才相关），渲染仍按时间正序（给模型读的顺序是故事顺序）；人物按名字排序取前 N（没有"最近活跃"信息时，确定性优于到达顺序）
+- **截断必须被报告**：`PromptWindow.truncated`/`dropped` 只在真截断时出现。模型不知道"上面还有 800 条被截掉了"，就会把"没提到"当成"不存在"，于是重复发现、重复推理——这是长篇小说分析最典型的退化
+
+**U6 图谱边分型（`graph.py`）**
+- `CooccurrenceEdge`（同章邻近，带两者首次出现的码点位置）与 `SemanticRelationship`（有互动证据的关系）**分表，永不合表**
+- `semantic_relationships` 只接受 `interaction is True`（严格同一性：`1`/`"true"` 不算）且四个来源字段齐备的记录；`a == b`、`relation` 为空、区间倒置/为负一律**静默丢弃**（输入是模型产出，容错优于中断）
+- 名字对 `normalize_pair` 归一（`甲-乙` 与 `乙-甲` 同一对），`a == b` 抛 `ValueError`
+- `merge_edges` 按 `(a, b, chapter_id)` 去重且幂等，结果与输入顺序无关
+
+**U5 收口（`citations.py` 扩展）**
+- `verify_facts_against_book(facts, chapter_texts)` 为批量入口：章文本由调用方一次性读入，**校验本身零 IO**（否则批量校验会变成 N 次文件读取，边界也难在测试里构造）
+- 缺章文本按 `CHAPTER_MISSING` 处理，不猜
+
+**测试**：`test_vnext_knowledge_reduce.py`（14）、`test_vnext_prompt_limits.py`（31，子智能体产出，父级独立复跑确认）、`test_vnext_prompt_view.py`（9）、`test_vnext_graph.py`（49，子智能体产出）、`test_vnext_citations.py` 增至 21。S3 全部单元用例 **143 例**（含 U1/U2 的 snapshot 19）
+- **派工记录**：U8（Prompt 限额）交 MiniMax、U6（图谱分型）交 deepseek，都给到"只建两个文件 + 精确 API 签名 + 完成标准 + 只回报四行"的规格；两者一次成功。对照之前"读遍全库 + 写长文档"两次零产出——**派工要窄、要可验证、要有明确停止条件**
+
+**plan**：`docs/PLAN-v2-long-novel-reliability-2026-10-30.md` §4 S3；拆解 `docs/PLAN-S3-task-breakdown-2026-10-30.md`（U1–U8 全部完成）
+
 ---
 
 ## 13. i18n 接口预留（L2 阶段，2026-09-02）

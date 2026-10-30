@@ -18,7 +18,7 @@ import difflib
 import re
 import unicodedata
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Mapping, Sequence
 
 from .knowledge import FactRecord, SourceRef
 
@@ -262,3 +262,21 @@ def summarize_checks(checks: Sequence[CitationCheck]) -> dict:
         "located_ratio": round(located / total, 4) if total else 0.0,
         "by_kind": by_kind,
     }
+
+
+def verify_facts_against_book(
+    facts: Sequence[FactRecord], chapter_texts: Mapping[str, str]
+) -> list[tuple[FactRecord, CitationCheck]]:
+    """对一批事实逐条核对，返回（升级后的记录，核对结果）。
+
+    ``chapter_texts`` 由调用方一次性读好传入（按 ``chapter_id`` 索引）：这里刻意
+    不做 IO——否则"校验"会顺手触发磁盘读，批量场景变成 N 次文件读取，边界也很难在
+    测试里构造。缺章文本按 ``CHAPTER_MISSING`` 处理，不猜。
+    """
+    results: list[tuple[FactRecord, CitationCheck]] = []
+    for fact in facts:
+        text = None
+        if fact.source is not None:
+            text = chapter_texts.get(fact.source.chapter_id)
+        results.append(verify_fact(fact, chapter_text=text))
+    return results
