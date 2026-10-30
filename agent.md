@@ -1481,3 +1481,17 @@ splitter 内部有两条平行的"书名推断"路径：
 **与 S7 的边界**：S4–S6 建的是**判定与状态层**——给定输入给出唯一可复算结论。接进真实流水线（真跑 LLM、真写摘要、真出报告）是 S7；本批**不改** 1.x 的 `pipeline.py` / `final_summary.py`。
 
 **plan**：`docs/PLAN-v2-long-novel-reliability-2026-10-30.md` §4 S4/S5/S6；拆解 `docs/PLAN-S4-S6-task-breakdown-2026-10-30.md`
+
+### 10.44 复审二：S4–S6 判定层的七个错误结论（2026-10-30）
+
+复审独立复现七条，**每条都能通过原有用例**——因为原用例把错误行为当成了正确行为。这是本轮最值得记住的一点：绿灯不代表语义对。
+
+1. **没有证据也能自动回收**：`parse_recheck` 接受 `evidence_id`/`span`/`quote` 全缺的 `SUPPORTED`，随后归约成 `AUTO_RESOLVED`；即使传了恒返回 False 的校验器，空引文也能绕过。现在四件套缺一不可，且**必须有校验器**（`NO_QUOTE_VERIFIER`）。
+2. **`INVALID` / `INSUFFICIENT` 混用**：没查反证本是"材料不足"，却判 `INVALID`，实体退回 `OPEN`——把"没查"读成"没问题"。现在响应不可用 → `INVALID` 且 `retryable=True`（计入未核对、可重跑）；证据不足 → `INSUFFICIENT`（计入已核对）。
+3. **覆盖计数按行数而非按候选集合**：同一候选答两次时 `supported=2, not_checked=0, COMPLETED`。现在按 `expected_candidate_ids` 逐项归类，重复/外来/缺失各自可数，出现重复或外来行时**不得标 `COMPLETED`**。
+4. **整条排除破坏前缀不变性**：实体第 3 章出现、第 12 章也出现时，`cutoff=11` 视图里它消失；"第 12 章还没写"时的同一视图里它在。判据：**过去没变，过去能查到的视图就不该变**。改为"截止点后的记录不进视图，属性只按可见记录重算"。
+5. **同锚点不同悬念撞 ID**：`entity_id` 只用 `(book_id, seed_occurrence_id)`，两处不同悬念若共用同一处原文作锚点就会算出同一个 ID。加 `motif_key`（调用方给的稳定母题键）参与哈希。
+6. **块签名不符仍继承完成状态**：原实现把 slot 的旧签名"纠正"成新的却保留 `DONE` 与 `result_id`，等于把旧块结果挂在新块下面还宣称前缀完整。现在降为 `PENDING` + `SIGNATURE_CHANGED`。
+7. **窗口边界落在句中却标完整**：补足目标后未再对齐句界。现在末尾一定重新对齐；预算装不下时如实标 `HARD_BUDGET`/`SENTENCE_SPLIT`，且**硬上限永远优先**、引用必须完整覆盖。
+
+**回归**：`backend/tests/test_vnext_review_round2.py`（23 例）+ 四个旧文件按新语义重写（`resolution` 34、`foreshadow` 30、`context` 12、`rolling` 19）。

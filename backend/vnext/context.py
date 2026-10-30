@@ -76,14 +76,20 @@ def build_context(
 ) -> ContextWindow:
     """为 ``[span_start, span_end)`` 构造上下文窗口。
 
-    步骤：① 先扩到句子边界；② 不足目标就按目标补；③ 超过硬上限则**对称**收缩，
-    但保证引用本身完整落在窗口内（引用被切掉的话，这条证据就没法核对了）。
+    顺序固定：① 句子边界 → ② 补足目标 → ③ 硬上限收缩 → ④ **再对齐句界（只在放得下时）**。
+
+    第 ④ 步是 2026-10-30 复审补的：只按字符数扩张会让窗口首尾停在句子中间，而那本身就是
+    一种截断，却被标成 ``truncated=False``。给模型半句话比少给半句更糟——它会以为那就是
+    原文的全部。因此最后一定检查边界是否落在句中，落在句中就如实标记 ``SENTENCE_SPLIT``。
+
+    硬上限永远优先：宁可窗口边界在句中（并说明），也不能超出预算。
     """
     if not (0 <= span_start < span_end <= len(chapter_text)):
         raise IndexError(
             f"引用区间越界: [{span_start}, {span_end}) 正文长度 {len(chapter_text)}"
         )
 
+    # ① 句子边界
     start = _sentence_start(chapter_text, span_start)
     end = _sentence_end(chapter_text, span_end)
 
@@ -93,22 +99,50 @@ def build_context(
 
     truncated = False
     reason = ""
+
+    # ③ 硬上限收缩（引用本身优先）
+    if span_end - span_start >= hard_max:
+        # 引用就超预算：只能保住引用，上下文全让给它，并如实说明材料不完整
+        return ContextWindow(
+            start=span_start,
+            end=span_end,
+            text=chapter_text[span_start:span_end],
+            chars_used=span_end - span_start,
+            truncated=True,
+            reason="QUOTE_EXCEEDS_HARD_MAX",
+        )
+
     if end - start > hard_max:
-        title_quote = span_end - span_start
-        if title_quote >= hard_max:
-            # 引用本身就超上限：只能保住引用，上下文全给引用——并如实标记材料不完整
-            start, end = span_start, span_end
-            truncated = True
-            reason = "QUOTE_EXCEEDS_HARD_MAX"
-        else:
-            spare = hard_max - title_quote
-            before = max(0, (spare) // 2)
-            start = max(0, span_start - before)
-            end = min(len(chapter_text), start + hard_max)
-            # 若右侧先到边界，把余量补回左侧
-            start = max(0, min(start, end - hard_max))
-            truncated = True
-            reason = "HARD_BUDGET"
+        spare = hard_max - (span_end - span_start)
+        before = max(0, spare // 2)
+        start = max(0, span_start - before)
+        end = min(len(chapter_text), start + hard_max)
+        start = max(0, min(start, end - hard_max))
+        truncated = True
+        reason = "HARD_BUDGET"
+
+    # ④ 再对齐句界——只在**不超预算**时向外扩，否则保持并标记边界落点
+    if start > 0:
+        anchored = _sentence_start(chapter_text, start)
+        if anchored < start and (end - anchored) <= hard_max:
+            start = anchored
+    aligned_end = _sentence_end(chapter_text, end) if end > 0 else end
+    if aligned_end > end and (aligned_end - start) <= hard_max:
+        end = min(len(chapter_text), aligned_end)
+
+    # 边界落在句中 = 这是一次真正的截断，必须说出来（预算够也不能假装完整）
+    head_cut = start > 0 and chapter_text[start - 1] not in SENTENCE_DELIMITERS
+    tail_cut = end < len(chapter_text) and chapter_text[end - 1] not in SENTENCE_DELIMITERS
+    if head_cut or tail_cut:
+        truncated = True
+        if not reason:
+            reason = "SENTENCE_SPLIT"
+
+    if not (start <= span_start and end >= span_end):
+        # 无论如何必须覆盖引用：这句在正常路径下不可达，留作断言式兜底
+        start, end = span_start, span_end
+        truncated = True
+        reason = "QUOTE_EXCEEDS_HARD_MAX"
 
     text = chapter_text[start:end]
     return ContextWindow(

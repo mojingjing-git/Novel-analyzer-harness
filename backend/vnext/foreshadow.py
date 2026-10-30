@@ -103,7 +103,7 @@ def make_occurrence_id(*, book_id: str, source: SourceRef, kind: str) -> str:
     return _sha256_hex(canonical_json(payload))
 
 
-def make_entity_id(*, book_id: str, seed_occurrence_id: str) -> str:
+def make_entity_id(*, book_id: str, seed_occurrence_id: str, motif_key: str = "") -> str:
     """伏笔实体身份：``"fs_" + 16 位十六进制``。
 
     只由"种子出现"决定，**不含**章号、排序序号、当前最大章号、"第几个实体"。原因：
@@ -111,11 +111,16 @@ def make_entity_id(*, book_id: str, seed_occurrence_id: str) -> str:
     "第一次被认出的章号"或"遍历到它的次序"，补一条更早证据就会改号——收藏、候选、
     审计日志里的全部引用随即失效。
 
+    ``motif_key`` 是调用方给的**稳定母题键**（例如"棺中人身份"），不是自由文本。它参与
+    哈希，是为了解决同一处原文可以同时是多个悬念的锚点：只用 ``(book_id, seed)`` 时，
+    两个不同的悬念会算出同一个 ``entity_id``，从此无法区分。``motif_key`` 由上游在
+    建立实体时确定，之后不得改写（改名 = 换一个悬念）。
+
     注意：``seed_occurrence_id`` 是**实体被锚定的那条证据**，不是"每次重新扫描后最先
     出现的那条"。已经存在的实体补入更早证据时，上游应沿用原 seed（出现记录自带
     ``entity_id`` 即可），:func:`register` 不重算 ID。
     """
-    digest = _sha256_hex(canonical_json([book_id, seed_occurrence_id]))
+    digest = _sha256_hex(canonical_json([book_id, motif_key, seed_occurrence_id]))
     return "fs_" + digest[:16]
 
 
@@ -286,6 +291,8 @@ def cutoff_view(
        重复出现只算一次——重复导入不是"又提了一次"。
     4. **再筛**：``mention_count >= min_mentions``。没有可见出现的实体一律不进视图，
        无论 ``min_mentions`` 取多少：没有证据就没有可展示的内容，``span`` 也无定义。
+       **属性全部只由可见记录算出**——同一实体在截止点之后还有出现时，本视图里它只按
+       过去的记录计价，不整条消失（否则前缀不变性不成立）。
     5. **排序**：``(-mention_count, -importance_score, first_seen_ordinal, entity_id)``，
        其中 ``importance_score = mention_count * 2 + min(span, 20)``。全序、与输入顺序
        完全无关（末位有 ``entity_id`` 兜底）。
@@ -302,21 +309,21 @@ def cutoff_view(
     # entity_id -> occurrence_id -> Occurrence：同一个 id 的重复记录只留第一条
     # （按全序取第一条，因此"留哪条"也与输入顺序无关）。
     visible: dict[str, dict[str, Occurrence]] = {}
-    has_future_evidence: set[str] = set()
 
     for occ in sorted(occurrences, key=_occurrence_key):
         if occ.entity_id not in entity_by_id:
             # 没有实体就没有 motif 可展示；静默跳过而不是猜一个空实体。
             continue
         if occ.source.chapter_ordinal >= cutoff_ordinal:
-            has_future_evidence.add(occ.entity_id)
+            # 截止点之后的出现记录**不进视图**，但它不抹掉这个实体在过去的出现。
+            # 2026-10-30 复审：原先"实体只要有一条越界就整条消失"，会让同一个早期视图
+            # 在追加第 12 章记录后变空——过去没变，过去的输入却变了，前缀不变性被破坏。
+            # 属性（次数、首末次、跨度）一律**只按可见记录重算**。
             continue
         visible.setdefault(occ.entity_id, {}).setdefault(occ.occurrence_id, occ)
 
     rows: list[dict] = []
     for entity_id, by_occurrence in visible.items():
-        if entity_id in has_future_evidence:
-            continue  # 整条排除：有越界证据的实体一条都不出现
         group = sorted(by_occurrence.values(), key=lambda occ: _source_key(occ.source))
         mention_count = len(group)
         if mention_count < min_mentions:

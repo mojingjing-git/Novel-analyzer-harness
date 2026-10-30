@@ -30,6 +30,9 @@ PENDING = "PENDING"                  # 未完成（含从未开始）
 PENDING_RETRY = "PENDING_RETRY"      # 失败但可重试：**暂停推进**，不能当成洞跳过
 TERMINAL_SKIPPED = "TERMINAL_SKIPPED"  # 永久跳过：可越过，但保留 gap 并标 PARTIAL
 
+#: 完成状态与当前块签名不符（源改过、块边界变了）→ 降为未完成
+REASON_SIGNATURE_CHANGED = "SIGNATURE_CHANGED"
+
 
 @dataclass(frozen=True)
 class BlockSlot:
@@ -114,9 +117,20 @@ def build_coverage(
         given = (states or {}).get(index)
         if given is None:
             slots.append(BlockSlot(index=index, block_signature=plan.block_signature))
+        elif given.block_signature != plan.block_signature:
+            # 签名不符 = 这份完成状态属于**另一个块**（源改过、块边界变了）。
+            # 2026-10-30 复审：原实现把签名"纠正"成新的却保留 DONE 与 result_id，
+            # 等于把旧块的结果挂在新块下面，还宣称前缀完整。
+            # 正确处置是降为未完成，并留下原因，交给上层决定重跑还是重建。
+            slots.append(
+                BlockSlot(
+                    index=index,
+                    block_signature=plan.block_signature,
+                    state=PENDING,
+                    reason=REASON_SIGNATURE_CHANGED,
+                )
+            )
         else:
-            # 用下标与签名对齐：调用方给的 slot 若来自另一份块列表，这里必须纠正，
-            # 否则"覆盖视图指向了不存在的块"会一路传到摘要与报告。
             slots.append(
                 BlockSlot(
                     index=index,

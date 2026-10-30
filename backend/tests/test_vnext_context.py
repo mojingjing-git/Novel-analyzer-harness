@@ -89,7 +89,8 @@ def test_hard_cap_marks_truncated_with_reason() -> None:
     window = build_context(long_text, span_start=start, span_end=start + 3, pre_target=3000,
                            post_target=3000, hard_max=HARD_MAX_CHARS)
     assert window.truncated is True
-    assert window.reason == "HARD_BUDGET"
+    # 收缩后仍要对齐句界；对不上时如实标"边界落在句中"，而不是假装完整
+    assert window.reason.startswith("HARD_BUDGET")
     assert window.chars_used <= HARD_MAX_CHARS
 
 

@@ -46,6 +46,7 @@ def _payload(**over):
         "evidence_id": "ev_1",
         "verdict": "SUPPORTED",
         "supporting_quote": "王冠早已熔成金锭",
+        "supporting_span": [10, 20],
         "answer": "王冠已被熔毁",
         "counter_search": {"performed": True, "checked_evidence_ids": ["ev_1"], "counter_quotes": []},
         "material_insufficient_reason": None,
@@ -54,8 +55,14 @@ def _payload(**over):
     return base
 
 
-def _parse(payload):
-    return parse_recheck(payload, allowed_candidate_ids=CANDIDATES, allowed_evidence_ids=EVIDENCE)
+def _parse(payload, *, verifier=None):
+    # 2026-10-30 复审：SUPPORTED 必须有可定位证据，且校验器在场才算核过
+    return parse_recheck(
+        payload,
+        allowed_candidate_ids=CANDIDATES,
+        allowed_evidence_ids=EVIDENCE,
+        quote_within_range=verifier if verifier is not None else (lambda q, s, e: True),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -68,6 +75,9 @@ def test_supported_passes_all_gates() -> None:
     assert verdict.verdict == SUPPORTED
     assert verdict.answer == "王冠已被熔毁"
     assert verdict.counter_search_performed is True
+    # 证据三件套必须齐备：ID、区间、引文
+    assert verdict.evidence_id == "ev_1"
+    assert verdict.supporting_span == (10, 20)
 
 
 def test_supported_with_valid_span_and_quote() -> None:
@@ -111,27 +121,31 @@ def test_foreign_evidence_id_is_rejected() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_supported_without_counter_search_is_invalid() -> None:
-    """`counter_evidence = null` 不能单独放行：没查 ≠ 查了没有。"""
+def test_supported_without_counter_search_is_insufficient() -> None:
+    """没查反证不是"响应坏了"，而是"材料/核对不足"——落 INSUFFICIENT，不是 INVALID。
+
+    2026-10-30 复审：原先判 INVALID 会让实体变成 OPEN，等于把"没查"读成"这个悬念没问题"。
+    """
     verdict = _parse(_payload(counter_search={"performed": False, "counter_quotes": []}))
-    assert verdict.verdict == INVALID
+    assert verdict.verdict == INSUFFICIENT
     assert verdict.reason == REASON_NO_COUNTER_SEARCH
 
 
-def test_supported_with_counter_quotes_is_invalid() -> None:
+def test_supported_with_counter_quotes_is_insufficient() -> None:
+    """说"支持"却又列了反证：自相矛盾，交给人/下一轮，不能算支持。"""
     verdict = _parse(_payload(counter_search={"performed": True, "counter_quotes": ["反证"]}))
-    assert verdict.verdict == INVALID
+    assert verdict.verdict == INSUFFICIENT
     assert verdict.reason == REASON_COUNTER_QUOTES_PRESENT
 
 
 def test_performed_must_be_true_not_truthy_string() -> None:
     verdict = _parse(_payload(counter_search={"performed": "true"}))
-    assert verdict.verdict == INVALID
+    assert verdict.verdict == INSUFFICIENT  # 没真执行 ⇒ 材料不足，而非响应无效
 
 
-def test_material_insufficient_blocks_supported() -> None:
+def test_material_insufficient_maps_to_insufficient() -> None:
     verdict = _parse(_payload(material_insufficient_reason="上下文不足"))
-    assert verdict.verdict == INVALID
+    assert verdict.verdict == INSUFFICIENT
     assert verdict.reason == REASON_MATERIAL_INSUFFICIENT
 
 

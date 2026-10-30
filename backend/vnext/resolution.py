@@ -56,6 +56,10 @@ REASON_MATERIAL_INSUFFICIENT = "MATERIAL_INSUFFICIENT"
 REASON_QUOTE_OUT_OF_RANGE = "QUOTE_OUT_OF_RANGE"
 REASON_EMPTY_ANSWER = "EMPTY_ANSWER"
 REASON_MALFORMED = "MALFORMED_PAYLOAD"
+# 2026-10-30 复审修正：证据门禁的三个缺口
+REASON_NO_EVIDENCE = "NO_EVIDENCE_ID"
+REASON_NO_QUOTE = "NO_SUPPORTING_QUOTE"
+REASON_NO_VERIFIER = "NO_QUOTE_VERIFIER"
 
 
 @dataclass(frozen=True)
@@ -69,6 +73,14 @@ class CandidateVerdict:
     supporting_span: tuple[int, int] | None = None
     counter_search_performed: bool = False
     reason: str = ""
+    #: 解析失败（枚举不认识、字段缺失、payload 不是对象）可重跑；语义结论不可重跑。
+    #: 区分这两者是为了不让"模型这次没按格式答"变成"这个候选被判无效"。
+    retryable: bool = False
+
+    @property
+    def checked(self) -> bool:
+        """是否真的核对过（可计入 COMPLETED 的分母）。"""
+        return self.cached_as_terminal and not self.retryable
 
     @property
     def cached_as_terminal(self) -> bool:
@@ -95,18 +107,21 @@ def parse_recheck(
     不该让整批复检崩掉，但必须被计数。
     """
     if not isinstance(payload, Mapping):
-        return CandidateVerdict("", INVALID, reason=REASON_MALFORMED)
+        return CandidateVerdict("", INVALID, reason=REASON_MALFORMED, retryable=True)
 
     candidate_id = payload.get("candidate_id")
     if not isinstance(candidate_id, str) or not candidate_id:
-        return CandidateVerdict("", INVALID, reason=REASON_MISSING_FIELD)
+        return CandidateVerdict("", INVALID, reason=REASON_MISSING_FIELD, retryable=True)
     if candidate_id not in set(allowed_candidate_ids):
+        # 答非所问：占了一个不属于本任务的 ID，这不是"这次没答好"，而是明显的错配
         return CandidateVerdict(candidate_id, INVALID, reason=REASON_FOREIGN_ID)
 
     raw_verdict = payload.get("verdict")
     # 严格枚举：大小写不同、近义词、缺失值都算解析失败——不能"宽容"成通过
     if raw_verdict not in MODEL_VERDICTS:
-        return CandidateVerdict(candidate_id, INVALID, reason=REASON_UNKNOWN_VERDICT)
+        return CandidateVerdict(
+            candidate_id, INVALID, reason=REASON_UNKNOWN_VERDICT, retryable=True
+        )
 
     answer = payload.get("answer")
     answer = answer.strip() if isinstance(answer, str) else ""
@@ -114,38 +129,56 @@ def parse_recheck(
     performed = bool(isinstance(counter, Mapping) and counter.get("performed") is True)
 
     if raw_verdict == SUPPORTED:
+        # 下面这些"没答好"的情形一律落 INSUFFICIENT（材料/核对不足），不是 INVALID：
+        # INVALID 的含义是"这条响应不可用"，INSUFFICIENT 的含义是"原文没给出足够证据"。
+        # 前者会被当作候选本身有问题，后者才是这条悬念的真实处境。
         if not answer:
             return CandidateVerdict(candidate_id, INVALID, reason=REASON_EMPTY_ANSWER)
         if payload.get("material_insufficient_reason"):
-            return CandidateVerdict(candidate_id, INVALID, reason=REASON_MATERIAL_INSUFFICIENT)
+            return CandidateVerdict(
+                candidate_id, INSUFFICIENT, reason=REASON_MATERIAL_INSUFFICIENT
+            )
         if not performed:
-            return CandidateVerdict(candidate_id, INVALID, reason=REASON_NO_COUNTER_SEARCH)
+            return CandidateVerdict(
+                candidate_id, INSUFFICIENT, reason=REASON_NO_COUNTER_SEARCH
+            )
         assert isinstance(counter, Mapping)
         counter_quotes = counter.get("counter_quotes") or []
         if counter_quotes:
-            return CandidateVerdict(candidate_id, INVALID, reason=REASON_COUNTER_QUOTES_PRESENT)
-
-        evidence_id = payload.get("evidence_id")
-        span = payload.get("supporting_span")
-        if evidence_id is not None:
-            if evidence_id not in set(allowed_evidence_ids):
-                return CandidateVerdict(candidate_id, INVALID, reason=REASON_FOREIGN_ID)
-        if isinstance(span, (list, tuple)) and len(span) == 2:
-            start, end = span
-            if not (isinstance(start, int) and isinstance(end, int) and 0 <= start < end):
-                return CandidateVerdict(candidate_id, INVALID, reason=REASON_QUOTE_OUT_OF_RANGE)
-            quote = payload.get("supporting_quote")
-            if quote_within_range is not None and isinstance(quote, str) and quote:
-                if not quote_within_range(quote, start, end):
-                    return CandidateVerdict(candidate_id, INVALID, reason=REASON_QUOTE_OUT_OF_RANGE)
+            # 说"支持"却又列了反证：自相矛盾，交给人/下一轮，不能算支持
             return CandidateVerdict(
-                candidate_id, raw_verdict, answer=answer,
-                evidence_id=evidence_id if isinstance(evidence_id, str) else None,
-                supporting_span=(start, end), counter_search_performed=True,
+                candidate_id, INSUFFICIENT, reason=REASON_COUNTER_QUOTES_PRESENT
             )
+
+        # ---- 证据门禁：没有"可定位的原文"，就不允许 SUPPORTED ----
+        # 2026-10-30 复审：原先 evidence_id / span / quote 全缺也能过，于是
+        # "模型觉得答对了"就成了 AUTO_RESOLVED。没有证据的支持只是又一次猜测。
+        evidence_id = payload.get("evidence_id")
+        if not isinstance(evidence_id, str) or not evidence_id:
+            return CandidateVerdict(candidate_id, INVALID, reason=REASON_NO_EVIDENCE)
+        if evidence_id not in set(allowed_evidence_ids):
+            return CandidateVerdict(candidate_id, INVALID, reason=REASON_FOREIGN_ID)
+
+        span = payload.get("supporting_span")
+        if not (isinstance(span, (list, tuple)) and len(span) == 2):
+            return CandidateVerdict(candidate_id, INVALID, reason=REASON_NO_QUOTE)
+        start, end = span[0], span[1]
+        if not (isinstance(start, int) and isinstance(end, int) and 0 <= start < end):
+            return CandidateVerdict(candidate_id, INVALID, reason=REASON_QUOTE_OUT_OF_RANGE)
+
+        quote = payload.get("supporting_quote")
+        if not isinstance(quote, str) or not quote.strip():
+            return CandidateVerdict(candidate_id, INVALID, reason=REASON_NO_QUOTE)
+        if quote_within_range is None:
+            # 没有校验器就无法确认引文真在原文里；此时放行等于把校验让给模型自评
+            return CandidateVerdict(candidate_id, INVALID, reason=REASON_NO_VERIFIER)
+        if not quote_within_range(quote, int(start), int(end)):
+            return CandidateVerdict(candidate_id, INVALID, reason=REASON_QUOTE_OUT_OF_RANGE)
+
         return CandidateVerdict(
             candidate_id, raw_verdict, answer=answer,
-            evidence_id=evidence_id if isinstance(evidence_id, str) else None,
+            evidence_id=evidence_id,
+            supporting_span=(int(start), int(end)),
             counter_search_performed=True,
         )
 
@@ -197,6 +230,10 @@ class CoverageCounts:
     stale: int = 0
     not_checked: int = 0
     invalid_by_reason: dict[str, int] = field(default_factory=dict)
+    #: 同一 candidate 出现多行裁决（批次不合法：同一个候选不能有两个结论）
+    duplicates: int = 0
+    #: 不属于本批候选集合的裁决行（模型答非所问）
+    foreign: int = 0
 
     def conservation_error(self) -> str | None:
         """候选维度守恒检查：每个候选必须**恰好**落进一个终态桶。
@@ -216,6 +253,18 @@ class CoverageCounts:
                     f"!= INVALID 总数 {self.invalid}")
         return None
 
+    def integrity_error(self) -> str | None:
+        """批次完整性：重复行与外来行都不影响守恒，但必须让这轮复检不能被标 COMPLETED。
+
+        数字加起来对不代表核对过——同一候选给两次答案时，和照样能凑齐，但其中一行的
+        结论根本没被采用过。
+        """
+        if self.duplicates:
+            return f"有 {self.duplicates} 行重复候选裁决（同一候选出现多次）"
+        if self.foreign:
+            return f"有 {self.foreign} 行裁决不属于本批候选"
+        return None
+
     def as_dict(self) -> dict:
         return {
             "candidates_total": self.candidates_total,
@@ -226,6 +275,8 @@ class CoverageCounts:
             "conflict": self.conflict,
             "invalid": self.invalid,
             "invalid_by_reason": dict(sorted(self.invalid_by_reason.items())),
+            "duplicates": self.duplicates,
+            "foreign": self.foreign,
             "stale": self.stale,
             "not_checked": self.not_checked,
         }
@@ -234,32 +285,81 @@ class CoverageCounts:
 def count_verdicts(
     verdicts: Iterable[CandidateVerdict],
     *,
-    candidates_total: int,
+    expected_candidate_ids: Iterable[str] | None = None,
+    candidates_total: int | None = None,
     stale: int = 0,
 ) -> CoverageCounts:
-    """把一批裁决统计成覆盖计数（``conflict`` = DIFFERENT_ANSWER + CONTRADICTED）。"""
+    """按**预期候选集合**逐项归类，而不是数返回了多少行。
+
+    差别在两种真实场景：
+
+    * 模型把同一个候选答了两次 → 数行数会得到 ``supported=2, not_checked=0``，
+      看起来"两条都核对完了"；按集合归类后它是 1 条重复 + 其余未核对。
+    * 模型答了本批之外的 ID → 数行数会把它算进分母，凑巧还能守恒。
+
+    因此优先用 ``expected_candidate_ids``；只给 ``candidates_total`` 时退化为
+    "没有预期集合"的宽容模式（仍能挡住外来行与重复行，但无法报"缺了哪几条"）。
+    """
+    rows = list(verdicts)
+    expected = list(expected_candidate_ids) if expected_candidate_ids is not None else None
+    total = len(expected) if expected is not None else int(candidates_total or 0)
+
     supported = insufficient = conflict = invalid = located = 0
     by_reason: dict[str, int] = {}
     checked = 0
-    for verdict in verdicts:
+    duplicates = 0
+    foreign = 0
+    not_checked = 0
+
+    def _bucket(verdict: CandidateVerdict) -> None:
+        nonlocal supported, insufficient, conflict, invalid, located, checked
         if verdict.verdict == SUPPORTED:
             supported += 1
-        elif verdict.verdict == DIFFERENT_ANSWER or verdict.verdict == CONTRADICTED:
+        elif verdict.verdict in (DIFFERENT_ANSWER, CONTRADICTED):
             conflict += 1
         elif verdict.verdict == INSUFFICIENT:
             insufficient += 1
-        elif verdict.verdict == INVALID:
+        else:  # INVALID
             invalid += 1
-            by_reason[verdict.reason or "UNSPECIFIED"] = \
-                by_reason.get(verdict.reason or "UNSPECIFIED", 0) + 1
-        if verdict.cached_as_terminal:
+            reason = verdict.reason or "UNSPECIFIED"
+            by_reason[reason] = by_reason.get(reason, 0) + 1
+        if verdict.checked:
             checked += 1
         if verdict.supporting_span is not None:
             located += 1
 
-    accounted = supported + insufficient + conflict + invalid + stale
+    if expected is None:
+        for verdict in rows:
+            _bucket(verdict)
+        accounted = supported + insufficient + conflict + invalid + stale
+        not_checked = max(0, total - accounted)
+    else:
+        by_id: dict[str, list[CandidateVerdict]] = {}
+        for verdict in rows:
+            if verdict.candidate_id in set(expected):
+                by_id.setdefault(verdict.candidate_id, []).append(verdict)
+            else:
+                foreign += 1
+        for candidate_id in expected:
+            got = by_id.get(candidate_id, [])
+            if not got:
+                not_checked += 1
+                continue
+            if len(got) > 1:
+                # 同一候选两个结论：采用不了，按无效计，并把多出来的行数记进 duplicates
+                duplicates += len(got) - 1
+                invalid += 1
+                by_reason["DUPLICATE_CANDIDATE"] = by_reason.get("DUPLICATE_CANDIDATE", 0) + 1
+                continue
+            verdict = got[0]
+            if not verdict.checked:
+                # 解析失败可重跑：属于"还没核对"，不是"核对完了但无效"
+                not_checked += 1
+                continue
+            _bucket(verdict)
+
     return CoverageCounts(
-        candidates_total=candidates_total,
+        candidates_total=total,
         checked=checked,
         located=located,
         supported=supported,
@@ -267,8 +367,10 @@ def count_verdicts(
         conflict=conflict,
         invalid=invalid,
         stale=stale,
-        not_checked=max(0, candidates_total - accounted),
+        not_checked=not_checked,
         invalid_by_reason=by_reason,
+        duplicates=duplicates,
+        foreign=foreign,
     )
 
 
@@ -299,6 +401,10 @@ def recheck_status(
         return PARTIAL
     error = counts.conservation_error()
     if error is not None:
+        return PARTIAL
+    # 数字加起来对不代表核对过：重复行/外来行让这轮不能被标完成
+    # （2026-10-30 复审 #4：同一候选答两次时和照样凑齐，但其中一行没被采用）
+    if counts.integrity_error() is not None:
         return PARTIAL
     if counts.not_checked > 0:
         return PARTIAL

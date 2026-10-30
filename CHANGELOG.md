@@ -2,6 +2,47 @@
 
 ---
 
+## [Unreleased] - 2026-10-30（复审二：S4–S6 判定层七个会产出错误结论的缺口）
+
+七条都能通过原有用例——因为原用例把错误行为当成了正确行为。绿灯不代表语义对。
+
+### 证据门禁
+
+- `SUPPORTED` 现在必须四件套齐备：`evidence_id` + `supporting_span` + `supporting_quote` + **校验器**；缺校验器判 `NO_QUOTE_VERIFIER`（无人核对引文，不能算核过）
+- 原先三样全缺也能过，于是"模型觉得答对了"直接变成 `AUTO_RESOLVED`
+
+### 状态语义
+
+- `INVALID` 只表示"响应不可用"（枚举写错/字段缺失/payload 非对象），且 `retryable=True`、计入**未核对**
+- `INSUFFICIENT` 表示"原文没给出足够证据"（没查反证/材料不足/说支持却列反证），计入**已核对**
+- 把后者打成 `INVALID` 会让实体退回 `OPEN`，等于把"没查"读成"没问题"
+
+### 覆盖计数
+
+- 改按 `expected_candidate_ids` 逐项归类：同一个候选答两次不再算成两条支持
+- 新增 `duplicates` / `foreign` 计数与 `integrity_error()`：出现这两类时该轮复检**不得标 `COMPLETED`**（降 `PARTIAL`）
+
+### 前缀不变性
+
+- **撤回**"实体整条排除"：实体在第 3 章与第 12 章都出现时，`cutoff=11` 的视图原先会把它整个抹掉——过去没变，可查的视图却变了
+- 现口径：截止点之后的记录不进视图，次数/首末次/跨度**只按可见记录重算**
+
+### 身份与状态继承
+
+- `entity_id` 加入 `motif_key` 参与哈希：同一处原文作为两个悬念的锚点时会算出不同 ID（原先撞成一个）
+- 块签名不符不再继承 `DONE` 与旧 `result_id`，降为 `PENDING` + `SIGNATURE_CHANGED`
+
+### 上下文窗口
+
+- 补足目标后**再对齐句界**；预算装不下时标 `HARD_BUDGET`/`SENTENCE_SPLIT`
+- 硬上限永远优先，但引用必须完整覆盖
+
+### 测试
+
+- 新增 `backend/tests/test_vnext_review_round2.py`（23 例）；四个旧文件按新语义重写（`resolution` 34 / `foreshadow` 30 / `context` 12 / `rolling` 19）
+
+---
+
 ## [Unreleased] - 2026-10-30（v2 S4–S6：有序覆盖、稳定伏笔实体、全自动裁决）
 
 三批判据统一：**结论必须能被程序复算**。靠排序序号、完成顺序或模型自评置信度得出的结论，一律不算。

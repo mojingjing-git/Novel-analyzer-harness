@@ -310,37 +310,43 @@ def test_cutoff_is_exclusive_one_to_ten_take_five() -> None:
     assert by_chapter[5] not in {row["entity_id"] for row in rows}
 
 
-def test_entity_with_future_evidence_disappears_entirely() -> None:
-    """第 3 章与第 12 章都有证据、cutoff=11 → 该实体完全不出现（整条排除）。
+def test_future_evidence_does_not_erase_past_view() -> None:
+    """前缀不变性：追加第 12 章的出现记录，**不能**让同一个早期视图变空。
 
-    只看"首次出现 3 < 11"就放进来是最常见的一种泄漏；截掉第 12 章那条再输出，
-    同样是把被削过的历史当成完整历史。
+    2026-10-30 复审推翻了原先的"整条排除"：过去的内容没有变，过去能查询到的视图就不该变。
+    截止点之后的记录不进视图，但它不抹掉实体在截止点之前的出现——属性按可见记录重算。
     """
-    batch = [_occ(E1, 3), _occ(E1, 12), _occ(E2, 2)]
-    rows = _view(batch, cutoff_ordinal=11)
-    assert [row["entity_id"] for row in rows] == [E2]
+    before = _view([_occ(E1, 3), _occ(E2, 2)], cutoff_ordinal=11)
+    after = _view([_occ(E1, 3), _occ(E1, 12), _occ(E2, 2)], cutoff_ordinal=11)
 
-    # 单独验证：只有这个实体时，视图必须是空的而不是"3 章那条"。
-    only_leaky = _view([_occ(E1, 3), _occ(E1, 12)], cutoff_ordinal=11)
-    assert only_leaky == []
+    assert [row["entity_id"] for row in before] == [row["entity_id"] for row in after]
+    assert after[0]["entity_id"] == E2          # E2 两次出现、跨度更大，排在前面
+    e1_row = next(row for row in after if row["entity_id"] == E1)
+    assert e1_row["mention_count"] == 1         # 只看可见记录
+    assert e1_row["last_seen_ordinal"] == 3     # 第 12 章那条不进视图
+    assert e1_row["span"] == 1
+
+
+def test_visible_attributes_ignore_future_occurrences() -> None:
+    """跨度与首末次都按可见记录算：第 12 章的证据不能让 span 变成 10。"""
+    rows = _view([_occ(E1, 3), _occ(E1, 12)], cutoff_ordinal=11)
+    assert len(rows) == 1
+    assert rows[0]["first_seen_ordinal"] == 3
+    assert rows[0]["last_seen_ordinal"] == 3
+    assert rows[0]["span"] == 1
 
 
 def test_mention_count_only_counts_visible_occurrences() -> None:
-    """``mention_count`` 是"可见证据条数"，绝不是"全量条数"。
+    """``mention_count`` 是"可见证据条数"，不是"全量条数"。
 
-    两个规则叠加后的后果值得钉住：存活的实体不可能有越界证据（否则整条消失），所以它的
-    可见条数恰好等于全量条数；而 E2 这种"第 2 章一条、第 8 章又一条"的，正确结果不是
-    "只数可见的 1 条"，而是整条不出现。截断越界记录再输出的实现会在这一条上暴露。
+    E2 在第 2 章与第 8 章各出现一次，cutoff=4 时只有第 2 章可见 ⇒ 计 1 次，
+    而不是"整条消失"（旧行为）或"计 2 次"（按全量算）。
     """
     batch = [_occ(E1, 1), _occ(E1, 2), _occ(E1, 3), _occ(E2, 2), _occ(E2, 8)]
     rows = _view(batch, cutoff_ordinal=4)
-    assert len(rows) == 1
-    row = rows[0]
-    assert row["entity_id"] == E1
-    assert row["mention_count"] == 3
-    assert row["evidence"] == [_occ(E1, ordinal).occurrence_id for ordinal in (1, 2, 3)]
-    assert E2 not in {item["entity_id"] for item in rows}
-
+    by_id = {row["entity_id"]: row for row in rows}
+    assert by_id[E1]["mention_count"] == 3
+    assert by_id[E2]["mention_count"] == 1
 
 def test_evidence_is_in_story_order_regardless_of_input_order() -> None:
     """``evidence`` 按故事顺序给出，不按输入顺序。"""
