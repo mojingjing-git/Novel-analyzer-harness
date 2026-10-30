@@ -1323,6 +1323,17 @@ mypy backend/
 
 **两个坑**：① `project.create_project()` 返回**项目目录 Path**，不是 `Manifest`——想拿 `book_id` 必须 `load_manifest(book_dir)` 回读，直接当对象用会 `AttributeError`；② 没有章节标题的文本，切章器会整篇成 1 章而不是 0 章，所以"零章项目"这条错误路径实际不会触发（`INVALID_FIELD_VALUE` 只在 `chapters=[]` 时出现）。
 
+### 10.40 PLAN v2 S3 U1/U2：安全快照（2026-10-30）
+
+- **改动**：新增 `backend/vnext/knowledge.py`——`SourceRef`（chapter_id + ordinal + 码点区间 + content_hash）、`FactRecord`（`verification_state` 只有 `UNVERIFIED`/`EVIDENCE_LOCATED` 两档，没有"高置信"第三档：置信是模型的自我评价，不是事实属性）、`CharacterStateRecord`、`KnowledgeSnapshot`、`build_snapshot()`、`snapshot_for_block()`
+- **上界是排他的**：`exclusive_before=5` ⇒ 第 1–4 章可见。写成包含上界会让每块的边界都差一，调用处极难查。来源范围 `end >= N` 的记录**整条**排除，不做"部分可见"
+- **未知范围一律排除**：没有可定位来源的记录不进快照，并记进 `dropped_unknown_range`（要能说清排除了什么，不能静默丢）。宁可少给一条事实，也不能塞进一条未来事实
+- **快照是不可变值**：`frozen` dataclass + 元组，构造完与外部数据无引用关系。仅 deepcopy 内容、另外再读一遍覆盖元数据，会读到"另一个时刻"的范围——这是 S3-3 明确点名的坑
+- **指纹只含可见内容**：`dependency_fingerprint()` 不含 `exclusive_before` 本身，所以"同样可见内容、不同上界"得到同一依赖——块前进了不该让依赖变。它正是 `results.expected_dependency()` 里"上下文"那一项的输入
+- **人物覆盖顺序**：同人取来源位置最新；迟到低章号不覆盖（复审第 4 条的靶子）；同位置冲突按"确定优先"，结论与遍历顺序无关；新人物照样能加入（限制的是覆盖顺序，不是加入资格）
+- **测试**：`backend/tests/test_vnext_knowledge_snapshot.py` 19 例
+- **plan**：`docs/PLAN-v2-long-novel-reliability-2026-10-30.md` §4 S3-1/3/4/6；拆解 `docs/PLAN-S3-task-breakdown-2026-10-30.md`（U1/U2 完成，U3–U8 待做）
+
 ---
 
 ## 13. i18n 接口预留（L2 阶段，2026-09-02）

@@ -1,0 +1,231 @@
+"""vnext 知识快照：逐块分析时模型"能看到什么"的唯一来源。
+
+三条硬规则（PLAN v2 §4 S3 第 1–3、6 条）：
+
+1. **显式上界，不用"最新"**。快照由 ``exclusive_before`` 故事位置界定：只纳入
+   来源范围**完全早于**该位置的记录。旧实现按"当前最大章号"取全量 KB，于是同一份
+   输入在不同进度下会给出不同前情——这既是不可复现的来源，也是未来信息泄漏的入口。
+2. **未知范围一律排除**。记录没有可定位的来源（缺章号、缺正文哈希）时不猜它"大概靠前"，
+   直接不进快照。宁少不多：漏掉一条事实只是保守，塞进去一条未来事实会污染结论。
+3. **内容与覆盖元数据是同一次读取**。快照是**不可变值**：构造时把记录复制进元组，
+   之后任何外部改动都影响不到已发出的快照。仅 deepcopy 内容而另外去读一遍元数据，
+   会读到"另一个时刻"的覆盖范围。
+
+另外，快照自带依赖指纹（:meth:`KnowledgeSnapshot.dependency_fingerprint`），
+它就是块级依赖链里"上下文"那一项的输入——快照变了，依赖它的块自然失效。
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Iterable
+
+from .fingerprint import dependency_fingerprint as _fingerprint_dependencies
+
+#: 快照构造规则的版本。改"哪些记录算可见"的规则就 +1。
+SNAPSHOT_STRATEGY_VERSION = 1
+
+
+# ---------------------------------------------------------------------------
+# 来源
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SourceRef:
+    """一条记录的真实来源：哪一章、哪一段、哪一版正文。"""
+
+    chapter_id: str
+    chapter_ordinal: int
+    start: int
+    end: int
+    content_hash: str
+
+    def to_dict(self) -> dict:
+        return {
+            "chapter_id": self.chapter_id,
+            "chapter_ordinal": self.chapter_ordinal,
+            "start": self.start,
+            "end": self.end,
+            "content_hash": self.content_hash,
+        }
+
+
+@dataclass(frozen=True)
+class FactRecord:
+    """一条"已经发生的事"。
+
+    ``verification_state`` 刻意只有两档：
+
+    * ``UNVERIFIED``：模型说了，但没给可定位的原文引用；
+    * ``EVIDENCE_LOCATED``：有引用，且引用落在真实正文上（由调用方校验后标）。
+
+    没有"高置信"之类的第三档——置信度是模型的自我评价，不是事实的属性。
+    """
+
+    fact_id: str
+    text: str
+    source: SourceRef | None = None
+    verification_state: str = "UNVERIFIED"
+
+    def to_dict(self) -> dict:
+        return {
+            "fact_id": self.fact_id,
+            "text": self.text,
+            "source": self.source.to_dict() if self.source else None,
+            "verification_state": self.verification_state,
+        }
+
+
+@dataclass(frozen=True)
+class CharacterStateRecord:
+    """人物状态的一条来源版本。
+
+    同一人物可以有多条，按来源位置排序后**只允许较新的有效来源覆盖**。
+    """
+
+    name: str
+    state: str
+    source: SourceRef | None = None
+    uncertain: bool = False
+
+
+# ---------------------------------------------------------------------------
+# 快照
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class KnowledgeSnapshot:
+    """某一故事位置之前的知识视图。不可变：构造完就与外部数据无关。"""
+
+    exclusive_before: int
+    facts: tuple[FactRecord, ...] = ()
+    character_states: tuple[tuple[str, str], ...] = ()
+    dropped_unknown_range: tuple[str, ...] = field(default=(), compare=False)
+
+    def dependency_fingerprint(self) -> str:
+        """这个快照作为"上下文"时对应的依赖指纹。
+
+        只包含**实际进入快照**的内容（含来源章节与哈希），不含 ``exclusive_before``
+        之外的东西——所以"同样的可见内容、不同的上界"应被视为同一份上下文。
+        """
+        return _fingerprint_dependencies(
+            {
+                "snapshot_strategy_version": SNAPSHOT_STRATEGY_VERSION,
+                "facts": [f.to_dict() for f in self.facts],
+                "character_states": [list(pair) for pair in self.character_states],
+            }
+        )
+
+    def as_prompt_payload(self) -> dict:
+        """给 Prompt 用的最小结构（不含内部指纹字段）。"""
+        return {
+            "facts": [f.text for f in self.facts],
+            "character_states": [
+                {"name": name, "state": state} for name, state in self.character_states
+            ],
+        }
+
+    def to_dict(self) -> dict:
+        return {
+            "exclusive_before": self.exclusive_before,
+            "facts": [f.to_dict() for f in self.facts],
+            "character_states": [list(pair) for pair in self.character_states],
+        }
+
+
+def _max_ordinal(record_source: SourceRef | None) -> int | None:
+    """记录所触及的最靠后的故事位置；无法确定就返回 ``None``（= 未知）。"""
+    if record_source is None:
+        return None
+    return record_source.chapter_ordinal
+
+
+def build_snapshot(
+    *,
+    exclusive_before: int,
+    facts: Iterable[FactRecord] = (),
+    character_records: Iterable[CharacterStateRecord] = (),
+) -> KnowledgeSnapshot:
+    """构造"第 ``exclusive_before`` 章之前"的知识快照。
+
+    ``exclusive_before`` 是**排他**上界：传 5 表示第 1–4 章的内容可见，第 5 章及之后
+    一律不可见。用"排他上界"而不是"包含上界"，是因为逐块分析时每块要的是"我之前"，
+    写成包含上界会让第 N 块的边界写成 N-1，调用处极易差一。
+
+    任何来源范围触及 ``exclusive_before`` 及之后的记录都会被排除——即使它同时含有
+    更早的信息。整条记录要么可见，要么不可见，不做"部分可见"。
+    """
+    if exclusive_before < 1:
+        raise ValueError(f"exclusive_before 必须 >= 1，收到 {exclusive_before}")
+
+    visible_facts: list[FactRecord] = []
+    dropped: list[str] = []
+    for fact in facts:
+        end = _max_ordinal(fact.source)
+        if end is None:
+            # 没有可定位来源：不猜它"大概靠前"，直接不给模型看
+            dropped.append(fact.fact_id)
+            continue
+        if end < exclusive_before:
+            visible_facts.append(fact)
+
+    visible_states: list[CharacterStateRecord] = []
+    for record in character_records:
+        end = _max_ordinal(record.source)
+        if end is None:
+            continue
+        if end < exclusive_before:
+            visible_states.append(record)
+
+    # 同一人物取来源位置最新的那条；位置相同再按稳定字段排序，保证结果确定。
+    # "迟到章节的新人物"照样能进来——限制的是覆盖顺序，不是加入资格。
+    latest: dict[str, CharacterStateRecord] = {}
+    for record in visible_states:
+        assert record.source is not None
+        current = latest.get(record.name)
+        if current is None or _newer(record, current):
+            latest[record.name] = record
+
+    ordered = tuple(
+        (name, rec.state)
+        for name, rec in sorted(latest.items(), key=lambda kv: kv[0])
+    )
+
+    return KnowledgeSnapshot(
+        exclusive_before=exclusive_before,
+        facts=tuple(sorted(visible_facts, key=lambda f: (f.source.chapter_ordinal, f.source.start, f.fact_id))),
+        character_states=ordered,
+        dropped_unknown_range=tuple(dropped),
+    )
+
+
+def _newer(candidate: CharacterStateRecord, current: CharacterStateRecord) -> bool:
+    """判断 candidate 是否应当覆盖 current。
+
+    规则：先比章号，再比段内位置；完全相同时"不确定"的一方不覆盖确定的。这样
+    "同章两处描述互相矛盾"时不会因为遍历顺序不同得出不同结论。
+    """
+    assert candidate.source is not None and current.source is not None
+    c_key = (candidate.source.chapter_ordinal, candidate.source.start)
+    cur_key = (current.source.chapter_ordinal, current.source.start)
+    if c_key != cur_key:
+        return c_key > cur_key
+    if candidate.uncertain != current.uncertain:
+        return not candidate.uncertain
+    return False
+
+
+def snapshot_for_block(
+    *,
+    block_first_ordinal: int,
+    facts: Iterable[FactRecord] = (),
+    character_records: Iterable[CharacterStateRecord] = (),
+) -> KnowledgeSnapshot:
+    """逐块快照的便捷入口：'本块第一"章之前'。"""
+    return build_snapshot(
+        exclusive_before=block_first_ordinal,
+        facts=facts,
+        character_records=character_records,
+    )

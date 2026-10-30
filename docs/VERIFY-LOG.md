@@ -36,6 +36,8 @@
 | 2026-10-30 | 尚未入库 | 外部复审六条修复文档同步 | doc_check | 通过 | 未记录 | `agent.md` 新增 §10.38（六条逐条：问题/现在）；`CHANGELOG.md` 新增「外部复审六条修复」段落。行尾保真：agent.md 纯 LF、CHANGELOG 纯 CRLF |
 | 2026-10-30 | 尚未入库 | 全量后端测试（依赖链 + S2 基础入口后） | business_test | **1092 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，691.03s。相对复审修复基线 1075：新增 `test_vnext_dependency_chain.py`（7）+ `test_vnext_create_and_progress.py`（10）= +17 |
 | 2026-10-30 | 尚未入库 | 依赖链与基础入口文档同步 | doc_check | 通过 | 未记录 | `docs/data-contract-vnext.md` 新增 §10（依赖链语义与判定表）、§11（S2 基础入口表），附录 B 补"本轮已完成的 5 行"说明；`agent.md` 新增 §10.39；`CHANGELOG.md` 增两小节 |
+| 2026-10-30 | 尚未入库 | 全量后端测试（S3 U1/U2 安全快照后） | business_test | **1111 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，704.78s。相对依赖链基线 1092：新增 `test_vnext_knowledge_snapshot.py`（19）|
+| 2026-10-30 | 尚未入库 | S2 完成口径落文 + S3 拆解 | doc_check | 通过 | 未记录 | 主计划 §4 S2 加「状态：已完成」与口径 A 说明（vnext 读入口 = `/api/vnext/*` + 共享发现/队列；旧 1.x 端点不在本批加拒绝）；新建 `docs/PLAN-S3-task-breakdown-2026-10-30.md`（U1–U8，U1/U2 完成）；`agent.md` §10.40；`CHANGELOG.md` S3 U1/U2 段落 |
 
 ---
 
