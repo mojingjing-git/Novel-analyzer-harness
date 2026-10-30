@@ -2,6 +2,30 @@
 
 ---
 
+## [Unreleased] - 2026-10-31（A 批：建项目事务化、路径校验、请求超时）
+
+### 建项目不再留半个项目
+
+- 原实现逐章写进最终目录，写 `manifest.json` 时失败会留下无清单目录，`registry` 判成 `LEGACY_DIR`——用户看到"新项目变成旧版了"
+- 改为 `.staging-<hex>/` 暂存 + manifest 最后写 + `os.replace` 整套换上；异常 `rmtree` 暂存
+- Windows 限制写死在注释里：目标必须不存在（`WinError 5`）、必须同卷（否则 `EXDEV`）、句柄占用重试 6 次
+- 启动清理 `cleanup_stale_staging()`（点号目录会被扫描跳过，不主动清就永远看不见）
+
+### 外部名字不能变成任意路径
+
+- `validate_name()` 拒绝空、中文/空格、路径分隔符、盘符、`..`、Windows 保留名、超长
+- `book_id` 与 `dir_name` 都校验；顺手修掉"显式空串被悄悄换成 `book_id`"的静默行为
+
+### 请求不再无限等待
+
+- `request()` 默认 30s 超时；重接口按调用覆盖（建项目/聚合/导出 300s，切章/预览 120s）
+- 超时 → `TIMEOUT`、取消 → `ABORTED`，文案区分，并进错误码中文映射
+
+### 测试
+
+- 后端 `test_vnext_project_atomic.py`（23 例）；前端 `client.test.ts` 增 4 例
+
+
 ## [Unreleased] - 2026-10-31（S8 重做：发布与结算的四条硬规则）
 
 复审三判定 S8 不能签完成，四条都会丢数据，重做后收口。

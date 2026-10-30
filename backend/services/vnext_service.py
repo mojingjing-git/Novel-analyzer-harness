@@ -59,6 +59,13 @@ def list_books() -> dict[str, Any]:
     拒绝列表不是给开发者看的调试信息，而是"用户点了旧目录才能得到解释"的来源；
     因此 ``message`` 用中文写清楚下一步该做什么。
     """
+    # 异常退出遗留的暂存目录以点开头，扫描会跳过它——不主动清就永远不会被发现。
+    # 放在这里而不是 scan_projects 里：扫描应当是只读的，清理是入口的职责。
+    try:
+        project.cleanup_stale_staging(data_root())
+    except OSError:
+        pass
+
     scan = registry.scan_projects(data_root())
     return {
         "data_root": str(data_root()),

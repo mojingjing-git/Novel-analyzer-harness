@@ -13,8 +13,12 @@
 
 from __future__ import annotations
 
+import os
+import re
 import secrets
+import shutil
 import threading
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -201,6 +205,92 @@ def workspace_id_for(data_root: Path) -> str:
     return _short_id("ws", str(Path(data_root).resolve()).lower())
 
 
+#: 目录名/ID 白名单：字母数字开头，允许 . _ -，总长 64。
+_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
+
+#: Windows 保留设备名。它们能以目录名写进去，但之后任何 open() 都会指向设备而不是文件。
+_RESERVED_NAMES = {
+    "CON", "PRN", "AUX", "NUL",
+    *(f"COM{i}" for i in range(1, 10)),
+    *(f"LPT{i}" for i in range(1, 10)),
+}
+
+#: 事务暂存目录前缀。以点开头 → ``registry.scan_projects`` 会跳过，
+#: 半成品永远不会被当成项目；残留由 :func:`cleanup_stale_staging` 清理。
+STAGING_PREFIX = ".staging-"
+
+
+def validate_name(value: str, *, field: str = "name") -> str:
+    """校验"会被拼进文件路径的名字"。
+
+    这是**唯一**允许把外部输入变成路径分量的地方。拒绝：空、路径分隔符、``..``、
+    盘符、Windows 保留设备名、超长、非 ASCII（不拒绝会让跨平台行为不一致）。
+    """
+    if not isinstance(value, str) or not value:
+        raise VnextFormatError(
+            ErrorCode.INVALID_FIELD_VALUE, f"{field} 不能为空", path=field
+        )
+    if not _NAME_RE.match(value):
+        raise VnextFormatError(
+            ErrorCode.INVALID_FIELD_VALUE,
+            f"{field} 只能由字母、数字、下划线、点、连字符组成且以字母/数字开头：{value!r}",
+            path=field,
+        )
+    if value.strip(".") == "":
+        raise VnextFormatError(
+            ErrorCode.INVALID_FIELD_VALUE, f"{field} 不能只由点组成：{value!r}", path=field
+        )
+    if value.split(".")[0].upper() in _RESERVED_NAMES:
+        raise VnextFormatError(
+            ErrorCode.INVALID_FIELD_VALUE, f"{field} 是系统保留名：{value!r}", path=field
+        )
+    return value
+
+
+def cleanup_stale_staging(data_root: Path) -> list[str]:
+    """删除上次异常退出留下的暂存目录，返回删掉的名字。
+
+    为什么要显式清理：暂存目录以点开头，扫描会跳过它——"看不见"等于"永远不会被发现"。
+    进程被强杀时不会走 ``except``，所以这条清理必须有人在启动时做。
+    """
+    root = Path(data_root)
+    if not root.is_dir():
+        return []
+    removed: list[str] = []
+    for child in sorted(root.iterdir()):
+        if child.is_dir() and child.name.startswith(STAGING_PREFIX):
+            shutil.rmtree(child, ignore_errors=True)
+            removed.append(child.name)
+    return removed
+
+
+def _publish_dir(staging: Path, final_dir: Path) -> None:
+    """把暂存目录整体换成最终目录。
+
+    Windows 上 ``os.replace`` 对目录有两条限制，写死在这里，免得下次有人"优化"成
+    跨卷暂存：
+    1. 目标必须不存在（POSIX 可覆盖空目录，Windows 抛 ``WinError 5``）；
+    2. 源与目标必须同卷（放 ``%TEMP%`` 会 ``EXDEV``）。
+    故暂存目录一律建在 ``data_root`` 下。
+    """
+    if final_dir.exists():
+        raise VnextFormatError(
+            ErrorCode.INVALID_FIELD_VALUE,
+            f"项目已存在，拒绝覆盖：{final_dir}",
+            path=str(final_dir),
+        )
+    last: OSError | None = None
+    for attempt in range(6):
+        try:
+            os.replace(staging, final_dir)
+            return
+        except PermissionError as exc:  # 杀毒/索引器短暂持有句柄
+            last = exc
+            time.sleep(0.05 * (attempt + 1))
+    assert last is not None
+    raise last
+
+
 def create_project(
     data_root: Path,
     title: str,
@@ -215,19 +305,24 @@ def create_project(
     只做规范化与落盘，不切块——切块是 :mod:`backend.vnext.blocks` 的事。
     """
     data_root = Path(data_root)
-    book_id = book_id or f"bk_{secrets.token_hex(6)}"
-    book_dir = data_root / (dir_name or book_id)
+    # 用 `is None` 而不是 `or`：显式传空串是调用方的错误，不该被悄悄替换成默认值
+    # （否则"目录名写错"会变成"用了 book_id 当目录名"，排查时毫无线索）。
+    raw_book_id = book_id if book_id is not None else f"bk_{secrets.token_hex(6)}"
+    book_id = validate_name(raw_book_id, field="book_id")
+    dir_label = validate_name(dir_name if dir_name is not None else book_id, field="dir_name")
+    final_dir = data_root / dir_label
 
     # 已存在的 vnext 项目不覆盖：覆盖会让旧结果的引用指向新正文。
-    if manifest_path(book_dir).exists():
+    if manifest_path(final_dir).exists():
         raise VnextFormatError(
             ErrorCode.INVALID_FIELD_VALUE,
-            f"项目已存在，拒绝覆盖：{book_dir}",
-            path=str(book_dir),
+            f"项目已存在，拒绝覆盖：{final_dir}",
+            path=str(final_dir),
         )
 
     entries: list[ChapterEntry] = []
-    payloads: list[tuple[Path, str]] = []
+    payloads: list[tuple[str, str]] = []
+    rel_chapters = chapters_dir(final_dir).relative_to(final_dir).as_posix()
     for ordinal, (display_no, raw_text) in enumerate(chapters, start=1):
         normalized = normalize_chapter_text(raw_text)
         chapter_id = _short_id("ch", book_id, f"{ordinal:06d}")
@@ -239,19 +334,12 @@ def create_project(
                 content_hash=content_hash(normalized),
             )
         )
-        payloads.append((chapters_dir(book_dir) / f"{chapter_id}.txt", normalized))
+        payloads.append((f"{rel_chapters}/{chapter_id}.txt", normalized))
 
     if not entries:
         raise VnextFormatError(
             ErrorCode.INVALID_FIELD_VALUE, "项目必须至少包含一章"
         )
-
-    for path, text in payloads:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        # 章节正文是纯文本，不是 JSON：用同目录临时文件 + replace 保证原子
-        tmp = path.with_name(f".{path.name}.tmp{secrets.token_hex(4)}")
-        tmp.write_text(text, encoding="utf-8", newline="\n")
-        tmp.replace(path)
 
     snapshot_id = _snapshot_id(entries)
     manifest = Manifest(
@@ -262,16 +350,39 @@ def create_project(
         source_snapshot_id=snapshot_id,
         chapters=entries,
     )
-    write_json_atomic(_source_index_path(book_dir), stamp_payload(
-        {
-            "book_id": book_id,
-            "source_snapshot_id": snapshot_id,
-            "text_normalization_version": TEXT_NORMALIZATION_VERSION,
-            "chapters": [c.to_dict() for c in entries],
-        }
-    ))
-    write_json_atomic(manifest_path(book_dir), manifest.to_dict())
-    return book_dir
+    index_rel = _source_index_path(final_dir).relative_to(final_dir)
+
+    # 事务：全部写在暂存目录里，最后一步整套换上。中途失败绝不留下"半个项目"——
+    # 那种目录没有 manifest，会被 registry 判成 LEGACY_DIR，用户看到的是
+    # "我的新项目变成旧版了"，比直接报错更误导。
+    data_root.mkdir(parents=True, exist_ok=True)
+    staging = data_root / f"{STAGING_PREFIX}{secrets.token_hex(8)}"
+    try:
+        staging.mkdir(parents=True, exist_ok=False)
+        for rel_path, text in payloads:
+            path = staging / rel_path
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_name(f".{path.name}.tmp{secrets.token_hex(4)}")
+            tmp.write_text(text, encoding="utf-8", newline="\n")
+            tmp.replace(path)
+        write_json_atomic(
+            staging / index_rel,
+            stamp_payload(
+                {
+                    "book_id": book_id,
+                    "source_snapshot_id": snapshot_id,
+                    "text_normalization_version": TEXT_NORMALIZATION_VERSION,
+                    "chapters": [c.to_dict() for c in entries],
+                }
+            ),
+        )
+        # manifest 最后写：它是"这个目录算不算项目"的唯一判据。
+        write_json_atomic(staging / MANIFEST_FILE_NAME, manifest.to_dict())
+        _publish_dir(staging, final_dir)
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+    return final_dir
 
 
 def _snapshot_id(entries: Sequence[ChapterEntry]) -> str:

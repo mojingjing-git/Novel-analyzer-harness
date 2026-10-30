@@ -62,6 +62,9 @@
 | 2026-10-31 | 尚未入库 | 全量后端测试（vnext 写操作端点后） | business_test（**全量**） | **1433 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，751.73s。相对 1426 增加 7 例：新增 `test_vnext_queue_endpoints.py`（入队/重复入队幂等/未知项目/缺 book_id/移出/移出不存在/缺 title 422）|
 | 2026-10-31 | 尚未入库 | vnext 写操作界面（前端） | build | **通过** | — | `npm run build` 5.37s；`VnextPage.vue` 重写为「新建项目 + 项目列表 + 队列入队/移出 + 被拒目录」，并修正 `title`/`chapter_count` 字段名（上一版读 `name`/`total_chapters`，书名与章节数一直是空的）|
 | 2026-10-30 | 尚未入库 | 测试节奏调整 + 相关集工具 | doc_check | 通过 | 未记录 | 新增 `scripts/pytest_related.py`（按"文件名对应 + import 引用"挑选相关测试）；`agent.md` §8 增加测试节奏约定：**迭代期跑相关集，批次收口跑全量**，且 VERIFY-LOG 必须写明这一遍是全量还是相关集。实测：改动 2 文件 → 选 1 个测试文件 → 3 秒；全量为 ~1100 例 / 12 分钟 |
+| 2026-10-31 | 尚未入库 | 全量后端测试（A 批后） | business_test（**全量**） | **1456 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，739.38s。相对 1433 增加 23 例：`test_vnext_project_atomic.py` |
+| 2026-10-31 | 尚未入库 | 前端构建与超时用例 | frontend_test | **vitest 13 passed / build 6.19s** | — | `npx vitest run src/api/client.test.ts` + `npm run build`；新增 4 例（超时/中断/信号/文案映射） |
+| 2026-10-31 | 尚未入库 | A/B/C 计划复审并入 | doc_check | 通过 | 未记录 | 只读审查结论 NEEDS_REVISION，五条修订并入 `docs/PLAN-ABC-2026-10-31.md` §7；`agent.md` §10.49；`CHANGELOG.md` A 批段落 |
 
 ---
 

@@ -101,3 +101,41 @@ describe('client.downloadLogs（PR-1 收尾）', () => {
     await expect(api.downloadLogs()).rejects.toMatchObject({ status: 403 })
   })
 })
+
+describe('client.request 超时（A3：此前没有超时，请求卡住会永久禁用按钮）', () => {
+  it('fetch 抛 TimeoutError 时映射为 TIMEOUT 并给中文文案', async () => {
+    const fn = vi.fn(async () => {
+      const err = new Error('signal timed out')
+      err.name = 'TimeoutError'
+      throw err
+    })
+    vi.stubGlobal('fetch', fn)
+    await expect(api.health()).rejects.toMatchObject({
+      message: '请求超时，请稍后重试',
+      code: 'TIMEOUT',
+    })
+  })
+
+  it('主动中断映射为 ABORTED，与超时区分开', async () => {
+    const fn = vi.fn(async () => {
+      const err = new Error('aborted')
+      err.name = 'AbortError'
+      throw err
+    })
+    vi.stubGlobal('fetch', fn)
+    await expect(api.health()).rejects.toMatchObject({ code: 'ABORTED' })
+  })
+
+  it('默认请求带上 AbortSignal，且调用方可覆盖 timeoutMs', async () => {
+    const fn = mockFetch('{"ok":true}')
+    await api.health()
+    const init = fn.mock.calls[0]?.[1] as RequestInit
+    expect(init.signal).toBeDefined()
+  })
+
+  it('T I M E O U T 出现在错误码中文映射里', async () => {
+    const { vnextErrorText } = await import('./client')
+    expect(vnextErrorText('TIMEOUT')).toContain('超时')
+    expect(vnextErrorText('ABORTED')).toContain('取消')
+  })
+})

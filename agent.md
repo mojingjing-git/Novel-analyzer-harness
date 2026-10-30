@@ -1553,3 +1553,16 @@ splitter 内部有两条平行的"书名推断"路径：
 - **结算失败可见**：`on_finish` 抛错不再让 Future 永久挂起——记 `settle_error` + `payload["settle_failed"]`，结果照常交回。
 - **接进生产入口**：`results.publish_result` 改走 `publish_atomically`，失败抛 `PublishFailed(outcome)`；新增 `results.scan_orphans()` 作为 `orphan_files` 的生产用法。入口级故障用例 `backend/tests/test_vnext_publish_faults.py`（6 例，含"manifest 写完才抛错时文件绝不能删"这条正例）。
 - **诚实边界**：用异常注入替代进程强杀，不能等同于崩溃注入；真实中断恢复仍需子进程测试。
+
+### 10.49 A 批：建项目事务化、路径校验、请求超时（2026-10-31）
+
+三条都是"失败会被伪装成正常"的类型，按 A/B/C 计划先做。
+
+- **A1 建项目事务化**：原实现逐章直接写进最终目录，写 manifest 时失败会留下没有清单的目录，`registry` 判成 `LEGACY_DIR` —— 用户看到的是"我的新项目变成旧版了"，比报错更误导。现在全部写在 `data_root/.staging-<hex>/` 里、**manifest 最后写**、最后一步 `os.replace` 整套换上；异常分支 `rmtree` 暂存目录。
+  - Windows 两条硬限制写进 `_publish_dir` docstring：目标必须不存在（`WinError 5` 不可自愈）、源与目标必须同卷（放 `%TEMP%` 会 `EXDEV`），故暂存目录一律建在 `data_root` 下；句柄占用（杀毒/索引器）重试 6 次。
+  - 残留只能靠启动清理：暂存目录以点开头，`scan_projects` 会跳过它——**看不见等于永远不被发现**。`project.cleanup_stale_staging()` 挂在 `vnext_service.list_books()` 入口（扫描应只读，清理是入口职责）。
+  - 用例只断言"异常路径无残留"，不宣称"进程被杀也无残留"。
+- **A2 名字校验**：`validate_name()` 是唯一允许外部输入变成路径分量的地方。拒绝空、中文/空格、`/`、`\`、盘符、`..`、Windows 保留设备名（`CON`/`NUL`/`COM1`…）、超长；`book_id` 与 `dir_name` **都校验**（`dir_name` 缺省时 `book_id` 就是目录名）。
+  - 顺带修一个静默行为：原用 `dir_name or book_id`，显式传空串会被悄悄替换成 `book_id`；改成 `is None` 判断，空串直接报错。
+- **A3 请求超时**：`request()` 此前无 `AbortSignal`，后端卡住时按钮永久禁用。现在默认 30s（`AbortSignal.timeout`），重接口按调用覆盖：`vnext/projects` 300s、`splitter/preview` 120s、`prompt/preview` 120s、`aggregate/run` 300s、excel 导出 300s；超时映射 `TIMEOUT`、主动取消映射 `ABORTED`，两者文案不同（超时=稍后重试，取消=正常），并进错误码中文映射。
+- **测试**：`backend/tests/test_vnext_project_atomic.py`（23 例，含 13 个非法名参数化、中途失败无残留、不被判 `LEGACY_DIR`、启动清理）；`frontend/src/api/client.test.ts` 增 4 例（超时/中断/信号存在/文案映射）。

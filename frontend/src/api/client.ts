@@ -267,20 +267,44 @@ export interface ForeshadowRankItem {
   resolved_chapter: number | null
 }
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
+/**
+ * 默认超时。之前所有请求都没有超时：后端一旦卡住（等模型、等磁盘），
+ * 前端按钮会永久处于"请求中"禁用态，用户只能刷新页面。
+ * 30s 覆盖常规读写；整本切章/预览/聚合/导出这类重活按调用传 `timeoutMs` 覆盖。
+ */
+const DEFAULT_TIMEOUT_MS = 30_000
+
+/** `timeoutMs` 是本客户端自己的字段，不进 fetch。 */
+type RequestOptions = RequestInit & { timeoutMs?: number }
+
+async function request<T>(path: string, options?: RequestOptions): Promise<T> {
   // PR-1 收尾（2026-09-30）：受保护端点需 X-Session-Token header。
   // 合并顺序：Content-Type 默认 → 调用方 headers 覆盖 → token 最后（不可被覆盖）。
   // 注意 options 里的 headers 必须先展开再合并，整体 ...options 会把 headers 键整个替换。
-  const { headers: extraHeaders, ...rest } = options ?? {}
+  const { headers: extraHeaders, timeoutMs, ...rest } = options ?? {}
   const t = getSessionToken()
-  const res = await fetch(path, {
-    ...rest,
-    headers: {
-      'Content-Type': 'application/json',
-      ...extraHeaders,
-      ...(t ? { 'X-Session-Token': t } : {}),
-    },
-  })
+  // 调用方已给 signal 就尊重它（可能来自组件卸载），否则自己造一个超时信号。
+  const signal = rest.signal ?? AbortSignal.timeout(timeoutMs ?? DEFAULT_TIMEOUT_MS)
+  let res: Response
+  try {
+    res = await fetch(path, {
+      ...rest,
+      signal,
+      headers: {
+        'Content-Type': 'application/json',
+        ...extraHeaders,
+        ...(t ? { 'X-Session-Token': t } : {}),
+      },
+    })
+  } catch (raw) {
+    // 超时与主动中断都在这里：区分开，界面文案不同（超时=稍后重试；中断=正常取消）。
+    const name = (raw as { name?: string } | null)?.name
+    const err = new Error(name === 'TimeoutError' ? '请求超时，请稍后重试' : '请求已中断')
+    const tagged = err as Error & { code?: string; detail?: unknown }
+    tagged.code = name === 'TimeoutError' ? 'TIMEOUT' : 'ABORTED'
+    tagged.detail = { code: tagged.code }
+    throw err
+  }
   // 关键：响应体只读取一次。之前先 res.json() 再 res.text() 会因为流已被消费而抛
   // “body stream already read”。现在统一读成文本，再按需要 JSON.parse。
   const text = await res.text()
@@ -367,6 +391,8 @@ export function vnextErrorCode(err: unknown): string {
 export function vnextErrorText(code: string): string {
   const map: Record<string, string> = {
     NOT_FOUND: '找不到这个项目或队列条目',
+    TIMEOUT: '请求超时，请稍后重试或检查后端是否卡住',
+    ABORTED: '请求已取消',
     INVALID_FIELD_VALUE: '提交的内容不合要求',
     UNSUPPORTED_ARTIFACT_FORMAT: '这个目录不属于本版本，请从原文创建新项目',
     UNSUPPORTED_SCHEMA_VERSION: '数据版本不匹配，请更新软件',
@@ -397,6 +423,8 @@ export const api = {
     request<{ book_id: string; title: string; chapter_count: number }>('/api/vnext/projects', {
       method: 'POST',
       body: JSON.stringify(payload),
+      // 整本切章可能跑几十秒到几分钟
+      timeoutMs: 300_000,
     }),
   vnextEnqueue: (bookId: string) =>
     request<VnextQueue>('/api/vnext/queue', { method: 'POST', body: JSON.stringify({ book_id: bookId }) }),
@@ -484,7 +512,11 @@ export const api = {
 
   // 切分
   previewSplit: (body: Record<string, unknown>) =>
-    request<SplitterPreview>('/api/splitter/preview', { method: 'POST', body: JSON.stringify(body) }),
+    request<SplitterPreview>('/api/splitter/preview', {
+      method: 'POST',
+      body: JSON.stringify(body),
+      timeoutMs: 120_000,
+    }),
   inferBookName: (file_path: string) =>
     request<{ book_name: string }>('/api/splitter/infer_name', { method: 'POST', body: JSON.stringify({ file_path }) }),
   batchSplit: (body: {
@@ -515,7 +547,8 @@ export const api = {
 
   // Prompt
   promptPreview: (book_id: string, max_chars: number = 0, chapter: number = 1) =>
-    request<{ book_id: string; chapter: number; chapter_label: string; chapter_total_chars: number; chapter_truncated: boolean; system_prompt: string; user_prompt: string; system_len: number; user_len: number; total_len: number; params: Record<string, unknown> }>('/api/prompt/preview', { method: 'POST', body: JSON.stringify({ book_id, max_chars, chapter }) }),
+    request<{ book_id: string; chapter: number; chapter_label: string; chapter_total_chars: number; chapter_truncated: boolean; system_prompt: string; user_prompt: string; system_len: number; user_len: number; total_len: number; params: Record<string, unknown> }>('/api/prompt/preview', { method: 'POST', body: JSON.stringify({ book_id, max_chars, chapter }),
+    timeoutMs: 120_000 }),
 
   // 可视化
   getTimeline: (book_id: string) => request<{ events: unknown[]; foreshadows: unknown[]; category_map_loaded?: boolean }>(`/api/viz/timeline/${seg(book_id)}`),
@@ -558,7 +591,8 @@ export const api = {
 
   // 聚合
   runAggregate: (book_id: string, include_raw: boolean) =>
-    request<{ ok: boolean; files: Record<string, string> }>('/api/aggregate/run', { method: 'POST', body: JSON.stringify({ book_id, include_raw }) }),
+    request<{ ok: boolean; files: Record<string, string> }>('/api/aggregate/run', { method: 'POST', body: JSON.stringify({ book_id, include_raw }),
+    timeoutMs: 300_000 }),
   getAggregateFiles: (book_id: string) =>
     request<{ files: { name: string; size_kb: number }[] }>(`/api/aggregate/${seg(book_id)}/files`),
   getAggregateFile: (book_id: string, name: string) =>
