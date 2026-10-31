@@ -784,3 +784,39 @@ expected_dependency = sha256(canonical({
 
 理由：两套定位语义一旦漂移，同一个引文在一个地方算对、在另一个地方算错，而错误还会被
 "两边各自都通过测试"掩盖。校验器是复检的地基，地基只能有一份。
+
+## §13 复检服务层 `recheck_v2`（阶段 2，2026-10-31）
+
+### 13.1 形状
+
+`backend/services/recheck_v2.py`：
+
+```
+run_recheck_v2(items, *, book_text, call_model, max_calls=300, batch_size=10, emit=None) -> RecheckOutcome
+```
+
+- `items`：账本条目（只处理 `status` 为 `active`/`open` 且**有锚点**的）
+- `book_text`：**全文**。回收发生在后文，证据不能只看埋设那一章
+- `call_model`：注入的模型调用（异步），便于离线测试与换模型
+- 判定核复用 `backend/vnext/resolution.py`：枚举、门禁顺序、覆盖守恒都在那边被三轮复审压过
+
+### 13.2 三条硬边界
+
+| 情形 | 处理 |
+| --- | --- |
+| 条目没有锚点 | 记 `not_checked`，**绝不**凭模型自述判回收 |
+| 锚点在全文里定位不到 | 同上（锚点是采集时校验过的，定位不到说明正文变了） |
+| 预算用尽 | 剩余候选全记 `not_checked`，`status != COMPLETED` |
+
+### 13.3 编造引文与"不可用响应"
+
+模型说 `SUPPORTED` 但 `supporting_quote` 在全文里找不到 → `INVALID/QUOTE_NOT_FOUND`，
+且 `retryable=True` → 计入 `not_checked`（下一轮重问），**不计入 `invalid`**，
+更不会被当成"已核对通过"。这个区分有用：`invalid` 表示"这条候选本身有问题"，
+`not_checked` 表示"这次没问出结果"。
+
+### 13.4 两个踩过的坑
+
+1. `parse_recheck` 的 `locate` 回调**第二个参数是 `evidence_id`，不是正文**。传错时每条 SUPPORTED 都变
+   `QUOTE_NOT_FOUND`，而测试会"看起来通过了错误的东西"。
+2. `extract_json_from_text` 返回的是 **JSON 文本**，不是已解析对象；直接当 dict 用会静默得到空列表。

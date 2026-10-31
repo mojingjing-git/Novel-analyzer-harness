@@ -1648,3 +1648,11 @@ C2 实测把问题定性了：模型判"支持"20 次、**引文逐字命中 9/9
 - 实现搬到 `backend/core/citations.py`（`verify_citation`/`_normalize`/`_to_raw_offset`/`summarize_checks`/五级匹配常量）。
 - `backend/vnext/citations.py` 变转发层，只留 `verify_fact`/`verify_facts_against_book` 两个依赖 vnext 类型的包装。
 - 理由：两套定位语义漂移时，同一引文一处对一处错，而且"两边各自都通过测试"会把问题掩盖掉。
+
+### 10.54 复检服务层 recheck_v2（阶段 2）
+
+- 新增 `backend/services/recheck_v2.py`：`run_recheck_v2(items, *, book_text, call_model, ...)`，判定核复用 `vnext/resolution`，本模块只做 1.x 胶水（账本→候选→提示词→调用→写回）。
+- 三条硬边界：无锚点/锚点定位不到/预算用尽 → 一律 `not_checked`，不许判回收；`status != COMPLETED`。
+- 编造引文 → `INVALID/QUOTE_NOT_FOUND` 且 `retryable` → 计 `not_checked`（下轮重问），不算"已核对"、也不算 `invalid`（后者表示候选本身有问题）。
+- 两个坑写进代码注释：`parse_recheck` 的 `locate` 第二参是 `evidence_id` 不是正文；`extract_json_from_text` 返回 JSON 文本不是对象。
+- 用例 `test_recheck_v2.py`（11 例）。
