@@ -2,6 +2,24 @@
 
 ---
 
+## [Unreleased] - 2026-10-31（D-19：引文定位下沉）
+
+### 改了什么
+
+- 模型不再需要自己数偏移：只交「证据 id + 逐字引文」，位置由程序算（`located_span`）
+- `supporting_span` 降级为提示：能用它破歧义就用，不含引文就忽略，永不因此判失败
+- 只接受 `EXACT/NORMALIZED/RELOCATED` 三种匹配；`SEGMENTED`（省略号拼引文）与 `FUZZY`（相似即过）拒绝
+- 引文最短 10 字（实测语料里「这一日无事」出现 13 次）
+- 新 reason：`QUOTE_NOT_FOUND`、`QUOTE_TOO_SHORT`、`AMBIGUOUS_QUOTE`
+- 模型回包键名收敛到 `RECHECK_MODEL_KEYS` 单一来源，Prompt 由它渲染，并有用例双向核对
+- 账本应用键加入引文哈希；位置不进键（位置是派生物，不该产生第二条记录）
+
+### 为什么
+
+C2 实测：模型判「支持」20 次、引文逐字命中 9/9，但 11 次因自报 span 对不上被判 INVALID。
+C3 同类 5/18。失分全在"数偏移"，不在"判对错"。
+
+
 ## [Unreleased] - 2026-10-31（C 批：真实模型实测）
 
 ### 新增测量脚本

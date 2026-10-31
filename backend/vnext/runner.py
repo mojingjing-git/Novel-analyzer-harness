@@ -142,6 +142,8 @@ def run_recheck(
     budget: Budget | None = None,
     strategy_versions: Mapping[str, int] | None = None,
     verify: Callable[[str, int, int], bool] | None = None,
+    locate: Callable[[str, str], object] | None = None,
+    evidence_text: Callable[[RecheckUnit, str], str] | None = None,
     allowed_evidence_ids: Callable[[RecheckUnit], Iterable[str]] | None = None,
     persist: Callable[[TaskLedger], None] | None = None,
     kind: str = "recheck",
@@ -192,6 +194,10 @@ def run_recheck(
             allowed_candidate_ids=set(unit.candidate_ids),
             allowed_evidence_ids=evidence_ids,
             quote_within_range=verify,
+                    locate=locate,
+                    evidence_text=(
+                        (lambda eid, _u=unit: evidence_text(_u, eid)) if evidence_text else None
+                    ),
         )
         outcome.verdicts[unit.entity_id] = verdict
         status = _STATUS_BY_VERDICT.get(verdict.verdict, FAILED)
@@ -229,7 +235,12 @@ def _apply_key(unit: RecheckUnit, verdict: CandidateVerdict) -> str:
     用结论而不是时间戳：重跑得到同一结论时不该重复应用（历史会被追加两次），
     得到不同结论时才是一个新的应用。
     """
-    return f"{unit.entity_id}|{verdict.candidate_id}|{verdict.verdict}"
+    # 位置**不进键**：它是派生物，位置从错到正不该重复应用同一结论。
+    # 引文哈希要进键：换了证据/换了原话就是另一条论据，必须重新记账。
+    return (
+        f"{unit.entity_id}|{verdict.candidate_id}|{verdict.verdict}"
+        f"|{verdict.evidence_id or '-'}|{verdict.quote_hash or '-'}"
+    )
 
 
 def _flush(persist: Callable[[TaskLedger], None] | None, ledger: TaskLedger) -> None:

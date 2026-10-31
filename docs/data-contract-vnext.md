@@ -654,3 +654,60 @@ expected_dependency = sha256(canonical({
 **17.3 库的读-改-写与结果发布在同一把书锁内。** 临界区只做四件事：读库、追加本块记录、写库、发布结果并把 `result_id` 登记进 manifest。**LLM 调用必须在锁外**——否则一本书内所有块串行，等于放弃并发。
 
 **删除的顺序（B2）**：`os.replace` → 摘队列 → `rmtree(ignore_errors=True)`。改名是原子的，一旦成功这本书立刻从列表消失；后续失败只留 `.trash-*` 垃圾，不会留下"没有 manifest 的目录"（那会被判成旧版本目录，界面上再也删不掉）。
+
+## §17 引文定位：模型给原话，程序给位置（D-19）
+
+**背景（实测）**：C2 的 30 条标注里，模型判"支持"20 次、引文逐字命中 9/9，但有 **11 次**
+因为自报的 `supporting_span` 对不上而被判 `INVALID`。C3 同类 5/18。**不是判定错，是数不出偏移。**
+
+### 17.1 判据（九条，全部满足才是 SUPPORTED）
+
+见 `docs/PLAN-D19-quote-locate-2026-10-31.md` §10.5，实现即 `resolution.parse_recheck`。
+要点：`supporting_span` **不再是必需字段**；位置由程序算，写进 `located_span`。
+
+### 17.2 定位只接受三种匹配级别
+
+`citations.verify_citation` 有六级，但作为**证据门禁**只接受：
+
+| 级别 | 接受 | 理由 |
+| --- | --- | --- |
+| `EXACT` | ✅ | 逐字命中 |
+| `NORMALIZED` | ✅ | 只差空白/全半角 |
+| `RELOCATED` | ✅ | 偏移错、引文真——正是要救的那类 |
+| `SEGMENTED` | ❌ | 省略号拼引文 |
+| `FUZZY` | ❌ | 相似即过，等于关掉闸门 |
+| `MISMATCH` | ❌ | 判 `QUOTE_NOT_FOUND` |
+
+定位后必须回验：`EXACT` 严等；其余用**双侧规范化**相等（`_to_raw_offset` 会把夹在中间的
+标点带进切片，严等会把合法结果打成失败）。
+
+### 17.3 引文最短 10 字
+
+`MIN_QUOTE_CHARS = 10`。实测语料里「这一日无事」出现 13 次——短句在长段里几乎必然命中，
+不设下限等于把闸门交给巧合。
+
+### 17.4 歧义：用 span 指路，指不了就判 INVALID
+
+引文在同一证据里出现 ≥2 次时：
+
+- 模型给了 `supporting_span` 且窗口能指向其中一处 → 采纳，记 `ambiguous=True`；
+- 没给或指不到 → `INVALID/AMBIGUOUS_QUOTE`（**不是** `INSUFFICIENT`：后者属 `REUSABLE`，
+  `recheck_plan` 会直接复用缓存，歧义会被永久粘住）。
+
+### 17.5 退化模式
+
+只传旧 `quote_within_range(quote, start, end)` 时行为与 D-19 之前完全一致
+（`supporting_span` 必填、必须逐字对上、失败码 `QUOTE_OUT_OF_RANGE`）。保留它是为了
+让旧调用方不被一次性推翻，但**新代码不该用它**——它拿不到 `evidence_id`。
+
+### 17.6 账本应用键：`entity|candidate|verdict|evidence_id|quote_hash`
+
+**位置不进键**：位置是派生物，模型报错、程序算对之后不该产生第二条应用记录。
+**引文哈希要进键**：换了原话就是换了一条论据，必须重新记账。
+
+### 17.7 键名只有一个来源
+
+`resolution.RECHECK_MODEL_KEYS` 是模型回包字段名的唯一定义；`render_recheck_schema()`
+渲染 Prompt 里的字段示例；`test_vnext_schema_keys.py` 做**双向核对**（渲染键集合 == 常量；
+解析器源码实际读取的键 == 常量）。2026-10-31 的 36 次调用 / 109k token 事故就是
+"两边各写一份字段名"造成的。

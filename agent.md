@@ -1600,3 +1600,25 @@ vnext 第一次真的会调模型。四条约束全部来自复审：
 - **B2 删除项目**：顺序是硬的 —— **先 `os.replace` 改成 `.trash-<ts>-<id>`，再摘队列条目，最后尽力 `rmtree`**。不能直接 rmtree：删到一半失败会留下没有 `manifest.json` 的目录，`scan_projects` 会判成 `LEGACY_DIR`（用户看到"我的项目变成了旧版本"，而界面只对 vnext 项目给删除入口，于是再也删不掉）。二次确认要求原样输入 `book_id`。
 - **B3 项目详情页**：`/vnext/:bookId`，块清单区分 `已完成` / `需重算（原因）` / `未分析（原因）`，删除区要输入完整 `book_id` 才亮。
 - **踩坑**：`test_vnext_runner_analysis.py` 里对照项目必须同 `book_id` —— `chapter_id` 由 `(book_id, ordinal)` 决定，两个项目各自 `create_project` 会得到不同 `chapter_id`，指纹必然不同，用例会假红。
+
+### 10.51 D-19 引文定位下沉：模型给原话，程序给位置（2026-10-31）
+
+C2 实测把问题定性了：模型判"支持"20 次、**引文逐字命中 9/9**，却有 11 次因自报 span 对不上被判 INVALID。
+所以补的不是模型能力，是**分工**。
+
+- `locate_quote()`：先逐字查（`count_occurrences`，含重叠），找不到才退到 `citations.verify_citation`
+  的 `NORMALIZED/RELOCATED`，并**回验**（EXACT 严等、其余双侧规范化相等）
+- 只接受 `EXACT/NORMALIZED/RELOCATED`；拒 `SEGMENTED`（省略号拼引文）与 `FUZZY`（相似即过）
+- `MIN_QUOTE_CHARS=10`：语料里「这一日无事」出现 13 次，短句在长段里几乎必然命中
+- `supporting_span` 降为提示：窗口内含引文就用来破歧义，不含就**忽略**、永不因此判失败
+- `CandidateVerdict` 增 `located_span`/`reported_span`/`ambiguous`/`quote_hash`
+- `count_verdicts.located` 改按 `located_span` 统计（原来按 `supporting_span`，改后会把"有位置"算成 0）
+- 账本 `apply_key` 加 `evidence_id` + `quote_hash`，**位置不进键**
+- `locate(quote, evidence_id)` 真的被调用（旧校验器拿不到 evidence_id，验不了"属于哪一段"）
+- 键名收敛：`RECHECK_MODEL_KEYS` + `render_recheck_schema()` + 双向核对用例
+
+**踩到的坑（都是我自己写的）**：
+1. 改写门禁时删了 `start, end = span[0], span[1]`，返回语句仍在用 → 任何成功 SUPPORTED 都 `NameError`。
+   子智能体复现报出，`file:line` 精准。
+2. 定位回验一开始用严等，会把 `NORMALIZED/RELOCATED` 全打成失败——正好抹掉要救的那类。
+3. `locate` 一开始只是"开关"，没真被调用；测出后改为真正注入。

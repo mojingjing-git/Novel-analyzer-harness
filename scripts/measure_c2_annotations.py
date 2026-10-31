@@ -33,12 +33,15 @@ import sys
 import time
 from pathlib import Path
 
+
 for _key in [k for k in list(os.environ) if "proxy" in k.lower()]:
     os.environ.pop(_key, None)
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+from backend.vnext.resolution import render_recheck_schema  # noqa: E402
 sys.path.insert(0, str(ROOT / "scripts"))
 
 MAX_CALLS = 30
@@ -51,22 +54,20 @@ SYSTEM = (
     "支持时必须给逐字引文，不许改写标点。只输出 JSON。"
 )
 
-SCHEMA = """输出 JSON（字段名必须逐字照抄）：
-{
-  "candidate_id": "<给的 id>",
-  "verdict": "SUPPORTED | CONTRADICTED | INSUFFICIENT",
-  "answer": "一句话结论",
-  "evidence_id": "ev_1" 或 null,
-  "supporting_span": [起, 止] 或 null,
-  "supporting_quote": "逐字引文" 或 null,
-  "counter_search": {"performed": true, "checked_evidence_ids": ["ev_1"], "counter_quotes": []},
-  "material_insufficient_reason": null 或 "原因"
-}
-判定口径：
-- SUPPORTED：片段字面写明了该陈述；
-- CONTRADICTED：片段与陈述字面冲突；
-- INSUFFICIENT：片段没提到（既不支持也不冲突）。
-"""
+SCHEMA = "\n".join(
+    [
+        "输出 JSON（字段名由 backend.vnext.resolution.render_recheck_schema() 渲染；"
+        "不许在脚本里手写——2026-10-31 就是因为手写键名，两轮 36 次调用白烧）：",
+        render_recheck_schema(),
+        "判定口径：",
+        "- SUPPORTED：片段明确指出该伏笔已回收；必须给 evidence_id 与逐字 supporting_quote"
+        "（supporting_span 可选，只用于多处出现时指路）；",
+        "- DIFFERENT_ANSWER：回收了，但答案与埋设时的指向不同；",
+        "- CONTRADICTED：片段明确否定或与该伏笔冲突；",
+        "- INSUFFICIENT：片段里没有能定论的内容。",
+    ]
+)
+
 
 
 def _texts() -> dict[int, str]:
