@@ -1,0 +1,44 @@
+{
+  "chapters": 2,
+  "foreshadow_items_raw": 8,
+  "anchor": {
+    "total": 8,
+    "located": 8,
+    "missing": 0,
+    "hit_rate": 1.0
+  },
+  "ledger_candidates": 8,
+  "candidates_with_anchor": 8,
+  "recheck": {
+    "calls": 2,
+    "applied": {
+      "fs_001": "PROPOSED_RESOLVED",
+      "fs_005": "PROPOSED_RESOLVED"
+    },
+    "coverage": {
+      "candidates_total": 8,
+      "checked": 2,
+      "located": 0,
+      "supported": 0,
+      "insufficient": 2,
+      "conflict": 0,
+      "invalid": 0,
+      "invalid_by_reason": {},
+      "duplicates": 0,
+      "foreign": 0,
+      "stale": 0,
+      "not_checked": 6,
+      "expected_known": true
+    },
+    "status": "RUNNING",
+    "status_reason": "存在未核对候选",
+    "not_checked": [
+      "fs_002",
+      "fs_003",
+      "fs_004",
+      "fs_006",
+      "fs_007",
+      "fs_008"
+    ]
+  }
+}

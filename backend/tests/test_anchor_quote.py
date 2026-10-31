@@ -110,3 +110,23 @@ def test_verify_counts_by_kind():
     result = _result("铜匣打开，里面只有一张旧契。")
     stats = verify_result_anchors(result, BLOCK, 1)
     assert stats["by_kind"] == {"EXACT": 1}
+
+
+def test_verification_runs_inside_analyze_chapter():
+    """守卫：校验必须发生在**拿得到正文**的那个函数里。
+
+    第一次落地时它被插进了 `_parse_response`（那里没有正文变量），异常被 except 吞成
+    一行 warning，于是"每章都校验了"变成"每章都没校验"，锚点全是模型自述。
+    这个用例用源码位置把这条钉死。
+    """
+    import inspect
+
+    from backend.core.analyzer import NovelAnalyzer
+
+    in_target = inspect.getsource(NovelAnalyzer.analyze_chapter)
+    in_wrong_place = inspect.getsource(NovelAnalyzer._parse_response)
+
+    assert "verify_result_anchors" in in_target
+    assert "verify_result_anchors" not in in_wrong_place
+    # 引用的正文变量必须是该函数的形参，否则就是又一个 NameError
+    assert "chapter_content" in inspect.signature(NovelAnalyzer.analyze_chapter).parameters

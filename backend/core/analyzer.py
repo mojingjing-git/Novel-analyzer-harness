@@ -221,6 +221,35 @@ class NovelAnalyzer:
 
             result.raw_response = response
             result.block_size = block_size
+            # 伏笔锚点就地校验：落盘前把"逐字引文"钉回原文坐标。
+            # 定位不到就置空并计数——一条伏笔缺锚点不该让整章失败。
+            try:
+                from .anchor import verify_result_anchors
+
+                a_cfg = getattr(self.config, "analysis", None)
+                enabled = bool(getattr(a_cfg, "anchor_quote_enabled", True))
+                min_chars = int(getattr(a_cfg, "anchor_min_chars", 6) or 6)
+                first_chapter = chapter_number
+                if enabled:
+                    result.anchor_stats = verify_result_anchors(
+                        result, chapter_content, first_chapter, min_chars
+                    )
+                else:
+                    # 关掉锚点采集时必须**明确标出来**：这一章的伏笔没有证据，
+                    # 复检阶段要按"无证据模式"对待，而不是假装证据只是没找到。
+                    n = len(getattr(result, "foreshadowing", []) or [])
+                    result.anchor_stats = {
+                        "total": n, "located": 0, "missing": n, "by_kind": {}, "disabled": True,
+                    }
+                if result.anchor_stats["total"]:
+                    logger.info(
+                        "伏笔锚点: %s/%s 已定位（缺 %s）",
+                        result.anchor_stats["located"],
+                        result.anchor_stats["total"],
+                        result.anchor_stats["missing"],
+                    )
+            except Exception as exc:  # noqa: BLE001 - 锚点校验失败不该影响分析
+                logger.warning(f"伏笔锚点校验异常，已跳过: {exc}")
 
             # 4. 文件写入由 MemoryState.flush_to_disk() 统一处理
             logger.debug(f"第{chapter_number}章 result 已在内存中")
@@ -266,35 +295,6 @@ class NovelAnalyzer:
         try:
             # 转换为AnalysisResult
             result = AnalysisResult.from_dict(data)
-            # 伏笔锚点就地校验：落盘前把"逐字引文"钉回原文坐标。
-            # 定位不到就置空并计数——一条伏笔缺锚点不该让整章失败。
-            try:
-                from .anchor import verify_result_anchors
-
-                a_cfg = getattr(self.config, "analysis", None)
-                enabled = bool(getattr(a_cfg, "anchor_quote_enabled", True))
-                min_chars = int(getattr(a_cfg, "anchor_min_chars", 6) or 6)
-                first_chapter = chapter_number
-                if enabled:
-                    result.anchor_stats = verify_result_anchors(
-                        result, chapter_content, first_chapter, min_chars
-                    )
-                else:
-                    # 关掉锚点采集时必须**明确标出来**：这一章的伏笔没有证据，
-                    # 复检阶段要按"无证据模式"对待，而不是假装证据只是没找到。
-                    n = len(getattr(result, "foreshadowing", []) or [])
-                    result.anchor_stats = {
-                        "total": n, "located": 0, "missing": n, "by_kind": {}, "disabled": True,
-                    }
-                if result.anchor_stats["total"]:
-                    logger.info(
-                        "伏笔锚点: %s/%s 已定位（缺 %s）",
-                        result.anchor_stats["located"],
-                        result.anchor_stats["total"],
-                        result.anchor_stats["missing"],
-                    )
-            except Exception as exc:  # noqa: BLE001 - 锚点校验失败不该影响分析
-                logger.warning(f"伏笔锚点校验异常，已跳过: {exc}")
             result.chapter_number = chapter_number
             return result
 

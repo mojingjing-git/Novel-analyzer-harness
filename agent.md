@@ -1663,3 +1663,18 @@ C2 实测把问题定性了：模型判"支持"20 次、**引文逐字命中 9/9
 - 新增 `_collect_book_text()`：从 `blocks/*.txt` 按文件名排序拼接**原文**；取不到就返回空串，`_run_recheck_v2` 据此记 `NOT_RUN` 并写 `last_recheck_summary`——**绝不拿空文本或卷摘要去核对**（摘要核引文等于没有证据）。
 - 配置：`recheck_v2_enabled`(false)、`recheck_max_calls`(300)、`recheck_max_tokens`(60000)；模型调用走 `client.chat_auto(purpose="foreshadow_recheck_v2")`。
 - 用例 `test_recheck_v2_wiring.py`（4 例：顺序读取、working_directory 回退、无 blocks 返回空、开关默认关）。
+
+### 10.56 真书首测抓到的两个"假保护"
+
+**锚点校验插错函数**：校验代码原先被插进 `_parse_response()`，那里没有正文变量，
+`NameError` 被 `except` 吞成一行 warning——于是"每章都校验"实际是"每章都没校验"，
+`anchor_stats` 全 0 而账本里锚点齐全（全是模型自述）。已移进 `analyze_chapter()`。
+守卫用例不看行为，直接断言"`verify_result_anchors` 出现在 `analyze_chapter` 而不是
+`_parse_response`，且 `chapter_content` 是该函数形参"。
+
+**独立脚本缺代理净化**：`NO_PROXY` 里的 `[::1]` 让 httpx 抛 `InvalidURL: Invalid port: ':1]'`。
+测试里由 `pytest_isolation.sanitize_proxy_env()` 处理，**脚本必须自己调**。
+
+**首测数字（2 章 8 条）**：锚点命中率 8/8；复检在 `--max-calls 4` 下核对 2 条、
+2 条均 `INSUFFICIENT`、6 条 `not_checked`、状态 `RUNNING`。样本太小，只证明链路通，
+不构成对准确率的结论——见 `docs/MEASURE-RECHECK-V2-2026-10-31.md`。
