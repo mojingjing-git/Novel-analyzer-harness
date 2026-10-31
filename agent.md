@@ -1728,3 +1728,12 @@ C2 实测把问题定性了：模型判"支持"20 次、**引文逐字命中 9/9
 - 实测（16 章 58 条候选）：batch=1 → 6 次调用 / completion 19.7k / 192s；batch=6 → **1 次调用 / completion 8.8k / 54s**；batch=12 → 1 次调用 / 12 条全答。
 - 默认批大小改 6（`foreshadow_recheck_batch_size`）；漏答的候选**补问一次**（只给漏的那几条），仍漏才记 `not_checked`，并计 `retried_batches`。
 - 用例 `test_recheck_batching.py`（3 例：6 条一次答满 / 漏答补问只给漏的 / 两次都失败才 not_checked）。
+
+### 10.63 并发复检：波次并行、预算先记后发、失败隔离
+
+- `run_recheck_v2(..., concurrency=4)`：按波次 `asyncio.gather` 并行，信号量限流；只省墙钟不省 token。
+- 预算**发出前**记账（并发下先发后记必然超支，而超支是已花的钱），额度不足按剩余截断波次。
+- `gather(return_exceptions=True)`：失败批计 `failed_batches`，候选落 `not_checked`，不许当成"通过"或"没有回收"。
+- 配置 `analysis.recheck_concurrency`（默认 4），接线在 `final_summary._run_recheck_v2`。
+- 实测 24 条候选、batch=6：并发 1 → 235s，并发 4 → 69s，均 24/24 全判。
+- 用例 `test_recheck_concurrency.py`（3 例：真并发且不超上限、预算不超支、单批失败隔离）。

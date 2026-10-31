@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 from dataclasses import dataclass, field
@@ -35,6 +36,8 @@ OPEN = "OPEN"
 
 #: 一次调用最多塞几条候选。太多会让模型串号（它只看到一堆编号）。
 DEFAULT_BATCH_SIZE = 6
+#: 同时在途的批次上限（只影响墙钟时间，不影响花费）
+DEFAULT_CONCURRENCY = 4
 
 PROMPT_TEMPLATE = """你是长篇小说的伏笔审校员。任务：判断**这条伏笔**在后文里是否已经被回收。
 
@@ -106,6 +109,8 @@ class RecheckOutcome:
     dropped_ids: list[str] = field(default_factory=list)
     #: 因为漏答而补问过的批次数（用于观察模型是否稳定答满）
     retried_batches: int = 0
+    #: 抛异常的批次数（它们的候选会落到 not_checked，不静默算通过）
+    failed_batches: int = 0
 
     def summary(self) -> dict:
         return {
@@ -121,6 +126,7 @@ class RecheckOutcome:
             "not_checked": list(self.not_checked),
             "dropped_ids": list(self.dropped_ids),
             "retried_batches": self.retried_batches,
+            "failed_batches": self.failed_batches,
         }
 
 
@@ -143,6 +149,7 @@ async def run_recheck_v2(
     call_model: Callable[[str], Awaitable[str]],
     max_calls: int = 300,
     batch_size: int = DEFAULT_BATCH_SIZE,
+    concurrency: int = DEFAULT_CONCURRENCY,
     emit: Callable[[dict], None] | None = None,
 ) -> RecheckOutcome:
     """对账本里的伏笔做一轮核对。
@@ -152,6 +159,9 @@ async def run_recheck_v2(
       否则退回 ``book_text`` 全文（该模式只在短文本/测试里能用——整本会爆上下文）
     - ``call_model``：给提示词返回模型文本（注入以便离线测试）
     - ``max_calls``：本轮调用上限；超出记 ``not_checked``，**不静默当作通过**
+    - ``concurrency``：同时在途的批次上限。整本复检是"多批一次问完"，
+      串行跑 150 批要两小时；并行只省墙钟时间，不省 token，所以要配上限
+      免得把账户打到限流
     """
     outcome = RecheckOutcome()
     candidates: list[dict] = []
@@ -309,23 +319,46 @@ async def run_recheck_v2(
             done.add(c["candidate_id"])
         return done
 
+    sem = asyncio.Semaphore(max(1, concurrency))
+
+    async def _ask(batch: list[dict]) -> tuple[list[dict], str]:
+        async with sem:
+            return batch, await call_model(_render_batch(batch))
+
     done: set[str] = set()
     for attempt in range(2):
         queue = [c for c in candidates if c["candidate_id"] not in done]
         if not queue:
             break
         if attempt == 1:
-            # 第一轮漏掉的候选单独补一次：模型偶尔只答前几条，但补问时只给它漏的那条，
+            # 第一轮漏掉的候选单独补一次：模型偶尔只答前几条，补问时只给它漏的那条，
             # 命中率高；仍漏就如实记 not_checked，不再反复花钱。
             outcome.retried_batches += 1
         step = len(queue) if attempt == 1 else max(batch_size, 1)
-        for offset in range(0, len(queue), step):
-            batch = queue[offset : offset + step]
+        batches = [queue[i : i + step] for i in range(0, len(queue), step)]
+        width = max(1, concurrency)
+        for wave_at in range(0, len(batches), width):
             if outcome.calls >= max_calls:
                 break
-            outcome.calls += 1
-            raw = await call_model(_render_batch(batch))
-            done |= _consume(batch, raw)
+            wave = batches[wave_at : wave_at + width]
+            affordable = max_calls - outcome.calls
+            if affordable <= 0:
+                break
+            wave = wave[:affordable]
+            # 先记账再发：并发下"先发后记"会超预算，而超支是**已经花掉的钱**，
+            # 事后记账会把账做平却掩盖了超支事实。
+            outcome.calls += len(wave)
+            results = await asyncio.gather(*(_ask(b) for b in wave), return_exceptions=True)
+            for result in results:
+                if isinstance(result, BaseException):
+                    # 某一批失败不拖垮其他批：它的候选留在未完成集合里，
+                    # 由补问轮或收尾如实记 not_checked
+                    outcome.failed_batches += 1
+                    continue
+                batch, raw = result
+                done |= _consume(batch, raw)
+            if emit is not None:
+                emit({"stage": "recheck", "calls": outcome.calls, "checked": len(done)})
         if outcome.calls >= max_calls:
             break
 
