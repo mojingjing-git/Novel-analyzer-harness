@@ -1678,3 +1678,12 @@ C2 实测把问题定性了：模型判"支持"20 次、**引文逐字命中 9/9
 **首测数字（2 章 8 条）**：锚点命中率 8/8；复检在 `--max-calls 4` 下核对 2 条、
 2 条均 `INSUFFICIENT`、6 条 `not_checked`、状态 `RUNNING`。样本太小，只证明链路通，
 不构成对准确率的结论——见 `docs/MEASURE-RECHECK-V2-2026-10-31.md`。
+
+### 10.57 采集契约：细节与问题分开（2026-11-01）
+
+- **撤掉** `prompt_builder.py:32` 的“`implication` 必须预测具体未来事件”——那条指令直接让模型写剧情预测。
+- schema 拆三问：`clue`（出现了什么）/ `question`（待交代什么）/ `answer_criteria`（什么算回答）；规则补“`question` 必须能被后文回答”“`answer_criteria` 不要写死结局”。
+- `Foreshadowing` 增 `question`/`answer_criteria`/`lead`；账本 `SCHEMA_VERSION` 4 → 5（旧 v4 照常读入）。
+- `anchor.mark_leads()`：两字段**都为空**才标 `lead`，不进复检队列；**刻意不用疑问词/专名词表**（那筛表达形式，会错杀真铺垫、放过假悬念）。
+- 复检 `run_recheck_v2` 跳过 `lead` 并单独报 `leads_skipped`，不计入 `not_checked`。
+- 参考事实：16 章产物里已有 51 条 `cross_block.unresolved_questions`，专项重建时可作提示。

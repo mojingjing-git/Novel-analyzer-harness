@@ -823,6 +823,8 @@ class FinalSummaryRunner:
                     fs.get("anchor_quote", "") or "",
                     int(fs.get("anchor_chapter") or 0),
                     fs.get("motif_key", "") or "",
+                    fs.get("question", "") or "",
+                    fs.get("answer_criteria", "") or "",
                 ))
                 if ftype:
                     unique_types.add(ftype)
@@ -1608,6 +1610,10 @@ class FinalSummaryRunner:
                     anchor_quote=cat.get("anchor_quote", "") or "",
                     anchor_chapter=int(cat.get("anchor_chapter") or 0),
                     entity_key=cat.get("entity_key", "") or "",
+                    question=cat.get("question", "") or "",
+                    answer_criteria=cat.get("answer_criteria", "") or "",
+                    lead=not (cat.get("question") or "").strip()
+                    and not (cat.get("answer_criteria") or "").strip(),
                 ))
                 added += 1
         logger.info(f"伏笔总表同步到账本: {added} 条新增，{len(existing_ids)} 条已存在")

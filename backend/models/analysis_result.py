@@ -41,6 +41,13 @@ class Foreshadowing:
     anchor_quote: str = ""       # 逐字取自本章正文的一句（校验后可能被清空）
     anchor_chapter: int = 0      # 锚点实际所在章（校验时反查得出）
     motif_key: str = ""          # 2-6 字稳定母题词，供实体登记用
+    # 2026-11-01 采集契约：把"细节"和"问题"分开。
+    # clue 只写原文出现了什么；question 写尚待交代的具体事项；
+    # answer_criteria 只写"后文出现什么才算回答"（不要把某个结局写死，
+    # 否则"明确取消/反转"会被误判成未回收）。
+    question: str = ""            # 尚待交代的具体事项
+    answer_criteria: str = ""     # 什么内容的出现才足以关闭这个事项
+    lead: bool = False            # 未给出 question/answer_criteria 的条目：只是线索，不进复检队列
 
 
 def _norm_importance(value) -> str:
@@ -199,6 +206,8 @@ class AnalysisResult:
                         anchor_quote=str(f.get('anchor_quote') or '').strip(),
                         anchor_chapter=int(f.get('anchor_chapter') or 0),
                         motif_key=str(f.get('motif_key') or '').strip(),
+                        question=str(f.get('question') or '').strip(),
+                        answer_criteria=str(f.get('answer_criteria') or '').strip(),
                     ))
                 except Exception as e:
                     import logging; logging.getLogger(__name__).debug(f"跳过异常伏笔: {e}")

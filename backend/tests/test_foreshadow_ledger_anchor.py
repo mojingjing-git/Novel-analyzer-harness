@@ -32,7 +32,9 @@ def _item(**kw) -> ForeshadowItem:
 
 
 def test_schema_version_bumped_to_4():
-    assert SCHEMA_VERSION == 4
+    # 版本号随契约演进继续升（v5 加 question/answer_criteria/lead）；
+    # 这里只要求"比 v3 新"，具体值由 test_acquisition_contract 钉住
+    assert SCHEMA_VERSION >= 4
 
 
 def test_item_carries_anchor_and_entity_key():

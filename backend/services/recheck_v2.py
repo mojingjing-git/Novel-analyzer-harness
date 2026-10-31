@@ -83,6 +83,7 @@ class RecheckOutcome:
     coverage: dict[str, int] = field(default_factory=dict)
     status: str = "NOT_RUN"
     status_reason: str = ""
+    leads_skipped: int = 0
 
     def summary(self) -> dict:
         return {
@@ -91,6 +92,7 @@ class RecheckOutcome:
             "coverage": dict(self.coverage),
             "status": self.status,
             "status_reason": self.status_reason,
+            "leads_skipped": self.leads_skipped,
             "not_checked": list(self.not_checked),
         }
 
@@ -120,8 +122,14 @@ async def run_recheck_v2(
     outcome = RecheckOutcome()
     candidates: list[dict] = []
 
+    leads_skipped = 0
     for item in items:
         if getattr(item, "status", "") not in ("open", "active"):
+            continue
+        if getattr(item, "lead", False):
+            # 只是线索（没给出可关闭事项）：不进复检队列，也不计入 not_checked——
+            # 它本来就不是"待核实但没查"，而是"没有可核实的问题"。
+            leads_skipped += 1
             continue
         quote = (getattr(item, "anchor_quote", "") or "").strip()
         chapter = int(getattr(item, "anchor_chapter", 0) or 0)
@@ -141,6 +149,8 @@ async def run_recheck_v2(
                 "chapter": chapter,
             }
         )
+
+    outcome.leads_skipped = leads_skipped
 
     if not candidates:
         empty = count_verdicts([], expected_candidate_ids=[], candidates_total=0)

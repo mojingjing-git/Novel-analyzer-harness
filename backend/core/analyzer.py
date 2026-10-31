@@ -251,6 +251,19 @@ class NovelAnalyzer:
             except Exception as exc:  # noqa: BLE001 - 锚点校验失败不该影响分析
                 logger.warning(f"伏笔锚点校验异常，已跳过: {exc}")
 
+            # 采集契约（2026-11-01）：没有 question/answer_criteria 的条目只是"线索"，
+            # 不是"待回答的问题"。把它标出来、不进复检队列——复检要判的是"被回答了吗"，
+            # 对一条没有问题的东西问这个，只能得到"证据不足"。
+            try:
+                from .anchor import mark_leads
+
+                marked = mark_leads(result.foreshadowing)
+                if marked:
+                    logger.info("第%s章：%s/%s 条伏笔未给出可关闭事项，标记为线索",
+                                chapter_number, marked, len(result.foreshadowing or []))
+            except Exception as exc:
+                logger.warning(f"线索标记异常，已跳过: {exc}")
+
             # 4. 文件写入由 MemoryState.flush_to_disk() 统一处理
             logger.debug(f"第{chapter_number}章 result 已在内存中")
 

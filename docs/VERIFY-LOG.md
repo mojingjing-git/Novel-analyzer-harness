@@ -61,6 +61,7 @@
 | 2026-10-31 | 尚未入库 | 阶段 2 接线（开关默认关） | business_test（**全量**） | **1551 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，748.20s；新增 `test_recheck_v2_wiring.py`(4) |
 | 2026-10-31 | 尚未入库 | 复检 V2 首轮真书实测（三侠五义 2 章） | measurement | 锚点 8/8 命中；复检核对 2/8（预算上限 4 次调用）、2 条证据不足 | — | `python scripts/measure_recheck_v2.py --chapters 2 --max-calls 4 --base-url http://127.0.0.1:3425/v1 --model wb2api/cn:hy3`；数据 `docs/MEASURE-RECHECK-V2-2026-10-31.json`；**实测抓出锚点校验插错函数的假保护** |
 | 2026-10-31 | 尚未入库 | 锚点校验位置修复后全量回归 | business_test（**全量**） | **1552 passed / exit 0** | — | 父 agent 亲跑 `python -m pytest -o addopts= -q`，750.04s；新增守卫用例 `test_verification_runs_inside_analyze_chapter` |
+| 2026-11-01 | 尚未入库 | 采集契约：细节/问题分开 + lead 降级 | business_test（**全量**） | **1561 passed / exit 0** | — | 父 agent 亲跑 `python -m pytest -o addopts= -q`，785.97s；新增 `test_acquisition_contract.py`(9)，账本 schema 4→5，两处旧 schema 断言同步 |
 | 2026-10-31 | 尚未入库 | 伏笔复检 V2 阶段 2（服务层） | business_test（**全量**） | **1547 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，846.06s；新增 `test_recheck_v2.py`(11)；含此前 citations 收敛与阶段 1 的全部改动 |
 | 2026-10-31 | 6751346+e | D-19 引文定位下沉（S-1/S-2/S-3） | business_test（**全量**） | **1505 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，747.66s。相对通过 C 批实测基线 1472 增加 33 例：S-1 键名双向核对 4 例、S-2 引文定位 10 例 + 4 个旧文件按新契约改写、S-3 应用键 5 例 |
 | 2026-10-31 | 6751346+e | D-19 验收脚本 | acceptance | **ACCEPTED 32/32** | — | `python scripts/acceptance_vnext.py`；新增的引文定位用例已并入其中（样例引文加长到 ≥10 字、span 不再必填） |

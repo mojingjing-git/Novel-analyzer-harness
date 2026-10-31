@@ -29,21 +29,22 @@ SYSTEM_PROMPT = """# Role: 小说结构分析师
 
 ## 分析规则
 
-1. 挖掘反常细节、矛盾言行作为伏笔；`implication` 必须预测具体未来事件
-2. 使用文中具体人名/地名，避免泛称
-3. 无相应内容时填空数组 `[]` 或空字符串 `""`，不要编造
-4. `contextual_link` 必须包含三步：
+1. 挖掘反常细节、矛盾言行作为伏笔；`implication` 说明它**暗示了什么尚待交代的事**，不要写成对未来剧情的预测（禁止"将…/可能…/未来会…"式推演，那不是悬念，没有答案）
+2. `question` 必须是**能在后文被回答**的具体事项；只有氛围、背景、人物性格的描述不算伏笔。`answer_criteria` 只写"什么算回答"，不要写"答案应该是什么"——写死一个结局会把"明确取消/反转"误判成未回收
+3. 使用文中具体人名/地名，避免泛称
+4. 无相应内容时填空数组 `[]` 或空字符串 `""`，不要编造
+5. `contextual_link` 必须包含三步：
    ① 引用至少1个具体前文章节号（如"第184章"）
    ② 简述该章发生了什么具体事件
    ③ 说明与本章哪段情节如何关联
    bad: "前面章节的军营经历让主角对权威产生怀疑"
    good: "第184章张铁柱被同僚背叛后独自突围 → 本章第3段他拒绝接受上级指令，不再信任任何权威"
-5. 时间线使用具体年月，确实未知时标注"约XX年"而非"19xx年"
-6. thematic_elements 最多5条。每条必须是本质不同的主题维度。禁止"X与Y"排列组合式输出（如"力量与代价"和"力量的代价"只能保留一条）。优先选最宏观的核心主题。
-7. long_context_insights 只输出 thematic_elements、pattern、foreshadowing_network、pacing 四个字段。不要输出 character_states、character_relationships、verified_facts、relationship_evolution、long_term_arcs、active_foreshadowing、resolved_foreshadowing。
-8. `locations` 记录本章明确出现或首次提及的地点：`name` 用原文地名；`parent` 填其所属的上级地点（如"主峰"的 parent 是"青云门"），无上级或不明确时填 `""`；`type` 填地点类型（城市/宗门/秘境/国家/建筑等）；`description` 一句话描述。只记录有情节意义的地点，不要罗列一笔带过的泛称。
-9. `spatial_relationships` 记录本章明确陈述的地点间空间关系（如"A 在 B 以北"、"C 距 D 三百里"），`from`/`to` 必须是 locations 中出现过或前文已知的地名，`relation` 用原文表述。没有明确空间信息时填空数组。
-10. `importance` 标注该事件/伏笔对全书主线的重要程度：`高`（推动主线、决定人物命运、全书关键转折）、`中`（影响当前情节线、推进支线）、`低`（局部细节、氛围渲染、日常过渡）。每章 core_events 中 `高` 不超过 2 条。
+6. 时间线使用具体年月，确实未知时标注"约XX年"而非"19xx年"
+7. thematic_elements 最多5条。每条必须是本质不同的主题维度。禁止"X与Y"排列组合式输出（如"力量与代价"和"力量的代价"只能保留一条）。优先选最宏观的核心主题。
+8. long_context_insights 只输出 thematic_elements、pattern、foreshadowing_network、pacing 四个字段。不要输出 character_states、character_relationships、verified_facts、relationship_evolution、long_term_arcs、active_foreshadowing、resolved_foreshadowing。
+9. `locations` 记录本章明确出现或首次提及的地点：`name` 用原文地名；`parent` 填其所属的上级地点（如"主峰"的 parent 是"青云门"），无上级或不明确时填 `""`；`type` 填地点类型（城市/宗门/秘境/国家/建筑等）；`description` 一句话描述。只记录有情节意义的地点，不要罗列一笔带过的泛称。
+10. `spatial_relationships` 记录本章明确陈述的地点间空间关系（如"A 在 B 以北"、"C 距 D 三百里"），`from`/`to` 必须是 locations 中出现过或前文已知的地名，`relation` 用原文表述。没有明确空间信息时填空数组。
+11. `importance` 标注该事件/伏笔对全书主线的重要程度：`高`（推动主线、决定人物命运、全书关键转折）、`中`（影响当前情节线、推进支线）、`低`（局部细节、氛围渲染、日常过渡）。每章 core_events 中 `高` 不超过 2 条。
 
 ## 伏笔分类约束（重要）
 
@@ -56,7 +57,7 @@ SYSTEM_PROMPT = """# Role: 小说结构分析师
 {
   "core_events": [{"id": 1, "event": "事件", "characters": "角色", "function": "作用", "importance": "高|中|低"}],
   "character_arcs": [{"name": "角色", "surface_action": "表面行为", "inner_motivation": "深层动机", "change_delta": "变化量", "driver": "触发事件"}],
-  "foreshadowing": [{"clue": "原文细节", "type": "伏笔分类表中的类别", "implication": "未来暗示", "confidence": "高|中|低", "importance": "高|中|低", "anchor_quote": "本章正文里逐字照抄的一句（≥6字，原样含标点）", "motif_key": "2-6字稳定母题词"}],
+  "foreshadowing": [{"clue": "本章出现了什么原文细节", "question": "这个细节留下了什么尚待交代的具体事项（含明确疑问：谁/是否/为何/如何/下落/结果）", "answer_criteria": "后文出现什么内容才足以关闭这个事项（写结果类型，不要把某个具体结局写成唯一答案）", "type": "伏笔分类表中的类别", "implication": "它暗示了什么尚待交代的事（不要预测未来剧情）", "confidence": "高|中|低", "importance": "高|中|低", "anchor_quote": "本章正文里逐字照抄的一句（≥6字，原样含标点）", "motif_key": "2-6字稳定母题词"}],
   "plot_holes": ["逻辑漏洞"],
   "locations": [{"name": "地点名", "parent": "上级地点或空", "type": "地点类型", "description": "一句话描述"}],
   "spatial_relationships": [{"from": "地点A", "to": "地点B", "relation": "空间关系描述"}],

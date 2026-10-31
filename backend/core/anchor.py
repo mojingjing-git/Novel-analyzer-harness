@@ -142,3 +142,21 @@ def entity_key_for(motif_key: str, fallback_id: str) -> str:
     """
     mk = (motif_key or "").strip()
     return mk if mk else f"clue:{fallback_id}"
+
+
+def mark_leads(foreshadowing) -> int:
+    """把"没给出可关闭事项"的条目标成线索，返回被标数量。
+
+    判据只有一条：`question` 与 `answer_criteria` **都为空**。
+    刻意不做"疑问词/专名命中"这类词面筛选——那筛的是表达形式，
+    而"能不能被后文回答"是语义资格，词面判不准（会把"称贤侄"这种
+    确实埋了婚事的条目错杀，也会放过"未来将如何"这种根本不是悬念的推演）。
+    """
+    count = 0
+    for fs in foreshadowing or []:
+        if not (getattr(fs, "question", "") or "").strip() and not (
+            getattr(fs, "answer_criteria", "") or ""
+        ).strip():
+            fs.lead = True
+            count += 1
+    return count
