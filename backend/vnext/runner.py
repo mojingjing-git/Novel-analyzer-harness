@@ -423,6 +423,7 @@ async def run_analysis(
     title: str | None = None,
     plans: Sequence["BlockPlan"] | None = None,
     skip_permanent: bool = False,
+    tolerate_failures: bool = False,
     concurrency: int = 1,
 ) -> AnalysisOutcome:
     """按块序跑整本。
@@ -454,6 +455,7 @@ async def run_analysis(
     completion_tokens = 0
     unknown_usage = 0
     skipped: list[str] = []
+    failed_blocks: list[str] = []
 
     wave_size = max(1, int(concurrency))
     handled = 0
@@ -511,9 +513,19 @@ async def run_analysis(
                     prior.append(None)
                     continue
                 await asyncio.to_thread(_record_failure, book_dir, plan, strategy, str(exc))
-                stop_reason = f"failed:block{index}"
-                stop_now = True
-                break
+                if tolerate_failures and not stop_now:
+                    # 非永久失败也跳过：结果记 FAILED 并留 gap，覆盖率会如实说
+                    # "这里没分析过"。默认不开——它会让"失败"从眼前消失。
+                    failed_blocks.append(plan.block_signature)
+                    prior.append(None)
+                    continue
+                if not stop_now:
+                    stop_reason = f"failed:block{index}"
+                    stop_now = True
+                    prior.append(None)
+                    # 同波里已经成功的块照常入账：它们的结果已经在盘上，
+                # 不入账只会让下一轮把它们当 stale 重新付费一遍。
+                continue
 
             run = outcome
             analysed += 1

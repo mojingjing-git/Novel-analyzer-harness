@@ -236,6 +236,7 @@ async def amain(args) -> int:
     outcome = await runner.run_analysis(
         book_dir, client=client, limits=limits, block_size=args_block_size(),
         skip_permanent=args.skip_permanent,
+        tolerate_failures=args.tolerate_failures,
         concurrency=args.concurrency,
     )
     elapsed = time.monotonic() - started
@@ -310,6 +311,7 @@ def main() -> int:
     parser.add_argument("--block-size", type=int, default=2, help="每块章节数")
     parser.add_argument("--timeout", type=int, default=900, help="单次调用超时（秒）")
     parser.add_argument("--chapters", type=int, default=0, help="只用前 N 章（0=整本）")
+    parser.add_argument("--tolerate-failures", action="store_true", help="非永久失败也跳过，留 gap 继续")
     parser.add_argument("--concurrency", type=int, default=8, help="同一波并发的块数")
     return asyncio.run(amain(parser.parse_args()))
 

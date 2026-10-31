@@ -288,7 +288,11 @@ async def analyze_block(
     )
     prompt_chars = sum(len(m["content"]) for m in messages)
 
-    result = await client.chat(messages)
+    # 走 chat_auto：它按 streaming_enabled 选流式/非流式，并且**带重试链**
+    # （温度退火、429 特化等待、指数退避、硬超时）。裸 chat 没有这些，
+    # 真书第一次 429 就会把整本停掉（2026-10-31 审查指出）。
+    _auto = getattr(client, "chat_auto", None)
+    result = await (_auto(messages) if callable(_auto) else client.chat(messages))
     raw_text = str(getattr(result, "content", "") or "")
     if not raw_text.strip():
         # 空文本几乎不是"模型没按格式答"，而是**调用本身失败了**——厂商侧拦截
@@ -369,7 +373,11 @@ def make_chat_caller(client: Any) -> Callable[[list[dict]], Awaitable[str]]:
     """把 ``LLMClient`` 适配成"给 messages 返回文本"的最小调用方。"""
 
     async def call(messages: list[dict]) -> str:
-        result = await client.chat(messages)
+        # 与旧管线一致：优先 chat_auto（按 streaming_enabled 自动选流式）。
+        # 2026-10-31 真书实测：这个模型强制自适应思考，输出预算先被思考吃掉，
+        # 非流式一旦截断就是"整段空内容"，看不出是截断还是模型没答。
+        auto = getattr(client, "chat_auto", None)
+        result = await (auto(messages) if callable(auto) else client.chat(messages))
         return str(getattr(result, "content", "") or "")
 
     return call
