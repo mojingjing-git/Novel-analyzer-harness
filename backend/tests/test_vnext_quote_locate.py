@@ -144,10 +144,20 @@ def test_fabricated_quote_is_quote_not_found() -> None:
 
 
 def test_short_quote_is_quote_too_short() -> None:
-    """8 字：短句在长段里"必然命中"，等于把闸门交给巧合。"""
-    verdict = _parse(_payload(supporting_quote="王冠早已熔成金锭"))
+    """5 字：短到无法当证据用。"""
+    verdict = _parse(_payload(supporting_quote="王冠早已熔"))
     assert verdict.verdict == INVALID
     assert verdict.reason == REASON_QUOTE_TOO_SHORT
+
+
+def test_eight_char_unique_quote_is_still_evidence() -> None:
+    """8 字但唯一：C2 复测里「地窖的门被撬开。」正是这种情况，不该被长度误杀。
+
+    短句撞巧合的风险由**出现次数**兜住，不靠长度硬挡。
+    """
+    verdict = _parse(_payload(supporting_quote="王冠早已熔成金锭"))
+    assert verdict.verdict == SUPPORTED
+    assert verdict.located_span is not None
 
 
 def test_quote_twice_without_span_is_ambiguous() -> None:

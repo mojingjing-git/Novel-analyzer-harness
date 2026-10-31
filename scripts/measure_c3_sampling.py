@@ -38,7 +38,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from backend.vnext.resolution import render_recheck_schema  # noqa: E402
+from backend.vnext.resolution import RECHECK_MODEL_EXAMPLE  # noqa: E402
 
 MAX_CALLS = 90
 MAX_TOKENS = 200_000
@@ -54,9 +54,9 @@ SYSTEM = (
 
 SCHEMA = "\n".join(
     [
-        "输出 JSON（字段名由 backend.vnext.resolution.render_recheck_schema() 渲染；"
+        "输出 JSON（字段名由 backend.vnext.resolution.RECHECK_MODEL_EXAMPLE 渲染；"
         "不许在脚本里手写——2026-10-31 就是因为手写键名，两轮 36 次调用白烧）：",
-        render_recheck_schema(),
+        RECHECK_MODEL_EXAMPLE,
         "判定口径：",
         "- SUPPORTED：片段明确指出该伏笔已回收；必须给 evidence_id 与逐字 supporting_quote"
         "（supporting_span 可选，只用于多处出现时指路）；",

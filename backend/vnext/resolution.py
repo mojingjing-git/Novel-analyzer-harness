@@ -72,9 +72,16 @@ REASON_QUOTE_NOT_FOUND = "QUOTE_NOT_FOUND"
 REASON_QUOTE_TOO_SHORT = "QUOTE_TOO_SHORT"
 REASON_AMBIGUOUS_QUOTE = "AMBIGUOUS_QUOTE"
 
-#: 引文最短长度。低于这个长度的句子容易在长段里"必然命中"（实测语料里
-#: 「这一日无事」出现 13 次），等于把闸门交给巧合。
-MIN_QUOTE_CHARS = 10
+#: 引文最短长度。
+#:
+#: 实测（2026-10-31 C2 复测）：把下限设成 10 会误杀真证据——「地窖的门被撬开。」
+#: （8 字）在那一章里唯一出现，是硬证据。所以下限降到 6；
+#: "短句在长段里必然命中"这个风险改由**出现次数**兜住：短引文只要在该证据里
+#: 出现 ≥2 次，就会走歧义判定（无 span 破歧义 → AMBIGUOUS_QUOTE），不靠长度硬挡。
+MIN_QUOTE_CHARS = 6
+
+#: 短引文（<10 字）更容易撞巧合，出现多次时必须能靠 span 定位，否则不接受。
+SHORT_QUOTE_CHARS = 10
 
 #: 接受为证据的引用匹配级别。`SEGMENTED`（省略号拼引文）与 `FUZZY`（相似即过）
 #: 一律不接受——它们会把"编一句像样的话"变成证据。
@@ -148,6 +155,23 @@ def iter_model_keys(keys: Mapping[str, object] | None = None, prefix: str = ""):
             yield from iter_model_keys(value, prefix=f"{path}.")
         else:
             yield path
+
+
+#: 给人看、也给模型照着抄的**具体**示例（占位符 `<field>` 会让模型漏填嵌套对象）。
+RECHECK_MODEL_EXAMPLE: Final[str] = """{
+  "candidate_id": "cd_0001",
+  "verdict": "SUPPORTED",
+  "answer": "沈砚在第十二章打开了铜匣。",
+  "material_insufficient_reason": "",
+  "evidence_id": "ev_1",
+  "supporting_span": [0, 20],
+  "supporting_quote": "在这里逐字抄写证据片段里的一句原文",
+  "counter_search": {
+    "performed": true,
+    "checked_evidence_ids": ["ev_1"],
+    "counter_quotes": []
+  }
+}"""
 
 
 def render_recheck_schema(*, indent: int = 2) -> str:
@@ -345,6 +369,15 @@ def parse_recheck(
                 )
             if result.ambiguous and reported is None:
                 # 出现在多处又没给 span：说不清是哪一处，宁可当"这次没答好"
+                return CandidateVerdict(
+                    candidate_id, INVALID, reason=REASON_AMBIGUOUS_QUOTE, retryable=True
+                )
+            if (
+                result.ambiguous
+                and len(quote) < SHORT_QUOTE_CHARS
+                and reported is None
+            ):
+                # 短引文 + 多处出现 + 没有 span：几乎必然是"套话命中"，不接受
                 return CandidateVerdict(
                     candidate_id, INVALID, reason=REASON_AMBIGUOUS_QUOTE, retryable=True
                 )

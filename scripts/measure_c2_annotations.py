@@ -41,7 +41,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from backend.vnext.resolution import render_recheck_schema  # noqa: E402
+from backend.vnext.resolution import RECHECK_MODEL_EXAMPLE  # noqa: E402
 sys.path.insert(0, str(ROOT / "scripts"))
 
 MAX_CALLS = 30
@@ -56,9 +56,9 @@ SYSTEM = (
 
 SCHEMA = "\n".join(
     [
-        "输出 JSON（字段名由 backend.vnext.resolution.render_recheck_schema() 渲染；"
+        "输出 JSON（字段名由 backend.vnext.resolution.RECHECK_MODEL_EXAMPLE 渲染；"
         "不许在脚本里手写——2026-10-31 就是因为手写键名，两轮 36 次调用白烧）：",
-        render_recheck_schema(),
+        RECHECK_MODEL_EXAMPLE,
         "判定口径：",
         "- SUPPORTED：片段明确指出该伏笔已回收；必须给 evidence_id 与逐字 supporting_quote"
         "（supporting_span 可选，只用于多处出现时指路）；",
@@ -124,9 +124,19 @@ async def amain(args) -> int:
             payload,
             allowed_candidate_ids={item["id"]},
             allowed_evidence_ids={"ev_1"},
-            # 偏移是相对**片段**的（模型看到的 ev_1 正文），不是相对整条消息
-            quote_within_range=lambda quote, s, e: 0 <= s < e <= len(fragment)
-            and fragment[s:e] == quote,
+            # D-19：位置由程序算——ev_1 的正文就是这一段 fragment
+            # --legacy-span：只验"引文是否落在模型自报区间"，用于归因
+            # （区分"示例让模型照填"与"程序算位置"各自的贡献）
+            quote_within_range=(
+                (lambda quote, a, b: 0 <= a < b <= len(fragment) and fragment[a:b] == quote)
+                if args.legacy_span else None
+            ),
+            evidence_text=None if args.legacy_span else (lambda eid: fragment if eid == "ev_1" else ""),
+            locate=None if args.legacy_span else (
+                lambda quote, eid: resolution.locate_quote(
+                    quote, fragment if eid == "ev_1" else "", reported=None
+                )
+            ),
         )
         expected = item["expected"]
         expected_norm = resolution.INSUFFICIENT if expected == "NOT_STATED" else expected
@@ -138,6 +148,13 @@ async def amain(args) -> int:
                 "model_verdict": payload.get("verdict"),
                 "parsed_verdict": verdict.verdict,
                 "reason": verdict.reason,
+                # 留证据，供下次回溯——上一轮没存引文，导致"11 条会不会变"无法验证
+                "evidence_id": payload.get("evidence_id"),
+                "supporting_quote": payload.get("supporting_quote"),
+                "supporting_span": payload.get("supporting_span"),
+                "located_span": list(verdict.located_span) if verdict.located_span else None,
+                "reported_span": list(verdict.reported_span) if verdict.reported_span else None,
+                "ambiguous": verdict.ambiguous,
                 "match": verdict.verdict == expected_norm,
             }
         )
@@ -194,6 +211,11 @@ async def amain(args) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--legacy-span",
+        action="store_true",
+        help="只验模型自报区间（D-19 之前的行为），用于归因分析",
+    )
     return asyncio.run(amain(parser.parse_args()))
 
 
