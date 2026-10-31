@@ -60,6 +60,9 @@
 | 2026-10-31 | 尚未入库 | 伏笔复检 V2 阶段 1（账本 v4） | business_test（**全量**） | **1536 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，781.04s；新增 `test_foreshadow_ledger_anchor.py`(8)，旧断言 `SCHEMA_VERSION==3` 同步改 4 |
 | 2026-10-31 | 尚未入库 | 阶段 2 接线（开关默认关） | business_test（**全量**） | **1551 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，748.20s；新增 `test_recheck_v2_wiring.py`(4) |
 | 2026-10-31 | 尚未入库 | 复检 V2 首轮真书实测（三侠五义 2 章） | measurement | 锚点 8/8 命中；复检核对 2/8（预算上限 4 次调用）、2 条证据不足 | — | `python scripts/measure_recheck_v2.py --chapters 2 --max-calls 4 --base-url http://127.0.0.1:3425/v1 --model wb2api/cn:hy3`；数据 `docs/MEASURE-RECHECK-V2-2026-10-31.json`；**实测抓出锚点校验插错函数的假保护** |
+| 2026-11-01 | 尚未入库 | 有界证据包 + 采集契约复测 | business_test（**全量**） | **1566 passed / exit 0** | — | 父 agent 亲跑 `python -m pytest -o addopts= -q`，1316.00s（机器较慢）；新增 `test_evidence_bundle.py`(5) |
+| 2026-11-01 | 尚未入库 | 采集契约复测（16 章重抽） | measurement | 60 条全部带 question/answer_criteria；lead 0；锚点 58/60 | — | `docs/MEASURE-ACQ-2026-11-01.md` |
+| 2026-11-01 | 尚未入库 | 有界证据包冒烟（12 条候选） | measurement | 7 次调用、6 条证据不足、0 次 token 超限 | — | 改造前 12 次调用全部 100k 超限；`docs/MEASURE-BUNDLE-SMOKE.json` |
 | 2026-10-31 | 尚未入库 | 锚点校验位置修复后全量回归 | business_test（**全量**） | **1552 passed / exit 0** | — | 父 agent 亲跑 `python -m pytest -o addopts= -q`，750.04s；新增守卫用例 `test_verification_runs_inside_analyze_chapter` |
 | 2026-11-01 | 尚未入库 | 采集契约：细节/问题分开 + lead 降级 | business_test（**全量**） | **1561 passed / exit 0** | — | 父 agent 亲跑 `python -m pytest -o addopts= -q`，785.97s；新增 `test_acquisition_contract.py`(9)，账本 schema 4→5，两处旧 schema 断言同步 |
 | 2026-10-31 | 尚未入库 | 伏笔复检 V2 阶段 2（服务层） | business_test（**全量**） | **1547 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，846.06s；新增 `test_recheck_v2.py`(11)；含此前 citations 收敛与阶段 1 的全部改动 |

@@ -86,6 +86,8 @@ def build_items(results: list[tuple[int, AnalysisResult]]) -> list[ForeshadowIte
                     fs.anchor_quote,
                     fs.anchor_chapter,
                     fs.motif_key,
+                    getattr(fs, "question", "") or "",
+                    getattr(fs, "answer_criteria", "") or "",
                 )
             )
     items = []
@@ -103,6 +105,8 @@ def build_items(results: list[tuple[int, AnalysisResult]]) -> list[ForeshadowIte
                 anchor_quote=cat.get("anchor_quote", ""),
                 anchor_chapter=cat.get("anchor_chapter", 0),
                 entity_key=entity_key_for(cat.get("motif_key", ""), str(cat.get("id", ""))),
+                question=cat.get("question", ""),
+                answer_criteria=cat.get("answer_criteria", ""),
             )
         )
     return items
@@ -119,8 +123,9 @@ async def main() -> int:
     ap.add_argument("--base-url", default="")
     ap.add_argument("--model", default="")
     ap.add_argument("--max-tokens", type=int, default=0)
-    ap.add_argument("--workdir", default=".tmp_measure_pipeline")
     ap.add_argument("--out", default="docs/MEASURE-RECHECK-V2-PIPELINE.json")
+    ap.add_argument("--skip-recheck", action="store_true", help="只测采集，不跑复检（省调用）")
+    ap.add_argument("--workdir", default=".tmp_measure_pipeline")
     ap.add_argument("--reuse", action="store_true", help="已有产物时只测量，不重跑分析")
     args = ap.parse_args()
 
@@ -193,6 +198,20 @@ async def main() -> int:
     hit = anchor["located"] / anchor["total"] if anchor["total"] else 0.0
     print(f"锚点命中率：{anchor['located']}/{anchor['total']} = {hit:.2%}（{len(results)} 章）")
 
+    # 采集质量：三问与 lead 的分布
+    fs_all = [fs for _ch, r in results for fs in r.foreshadowing]
+    acq = {
+        "foreshadows": len(fs_all),
+        "with_question": sum(1 for f in fs_all if (f.question or "").strip()),
+        "with_answer_criteria": sum(1 for f in fs_all if (f.answer_criteria or "").strip()),
+        "lead": sum(1 for f in fs_all if getattr(f, "lead", False)),
+        "with_anchor": sum(1 for f in fs_all if (f.anchor_quote or "").strip()),
+    }
+    print(
+        "采集：{foreshadows} 条 / 带 question {with_question} / 带 answer_criteria "
+        "{with_answer_criteria} / lead {lead} / 带锚点 {with_anchor}".format(**acq)
+    )
+
     items = build_items(results)
     with_anchor = sum(1 for i in items if i.anchor_quote)
     print(f"账本候选 {len(items)} 条，带锚点 {with_anchor} 条")
@@ -220,15 +239,22 @@ async def main() -> int:
             return res[0] or ""
         return ""
 
-    t1 = time.time()
-    outcome = await run_recheck_v2(
-        items,
-        book_text=book_text,
-        call_model=call_model,
-        max_calls=args.max_calls,
-        batch_size=args.batch_size,
-    )
-    print(f"复检完成：{json.dumps(outcome.summary(), ensure_ascii=False)}，用时 {time.time() - t1:.1f}s")
+    outcome = None
+    if args.skip_recheck:
+        print("跳过复检（--skip-recheck）")
+    else:
+        t1 = time.time()
+        outcome = await run_recheck_v2(
+            items,
+            book_text=book_text,
+            call_model=call_model,
+            max_calls=args.max_calls,
+            batch_size=args.batch_size,
+        )
+        print(
+            f"复检完成：{json.dumps(outcome.summary(), ensure_ascii=False)}，"
+            f"用时 {time.time() - t1:.1f}s"
+        )
 
     out = ROOT / args.out
     out.write_text(
@@ -243,7 +269,8 @@ async def main() -> int:
                 "anchor": {**anchor, "hit_rate": round(hit, 4)},
                 "ledger_candidates": len(items),
                 "candidates_with_anchor": with_anchor,
-                "recheck": outcome.summary(),
+                "acquisition": acq,
+                "recheck": outcome.summary() if outcome else {"skipped": True},
             },
             ensure_ascii=False,
             indent=2,

@@ -3,106 +3,128 @@
   "core_events": [
     {
       "id": 1,
-      "event": "包公异梦降生，被包海夫妇弃于锦屏山，为大哥包山救回抚养",
+      "event": "包员外梦异兽，包公降生遭二房包海李氏弃锦屏山，被大房包山王氏救回乳养",
       "characters": "包员外、包海、李氏、包山、王氏、包公",
-      "function": "主角身世起源，奠定贤愚对立家族格局",
-      "importance": "高"
+      "function": "交代包公早年身世与家族伦理冲突，奠定性格基础",
+      "importance": "中"
     },
     {
       "id": 2,
-      "event": "二嫂李氏两次陷害包公（毒饼、枯井），包公脱险并于枯井得古镜",
-      "characters": "李氏、包公、老周、王氏",
-      "function": "展示家族阴谋，引出古镜奇物与地下暗道",
+      "event": "包公牧羊避雨古庙遇女子，二嫂李氏毒饼落井害之，井底得古镜爬出",
+      "characters": "包公、李氏、秋香、老周、神秘女子",
+      "function": "展现早期被害与奇遇，埋下古镜与女子伏笔",
       "importance": "中"
     },
     {
       "id": 3,
-      "event": "包山延请宁老先生教包公读书，派包兴伴读",
+      "event": "包山延宁老先生设馆教包公，伴童包兴同塾",
       "characters": "包山、宁老先生、包公、包兴",
-      "function": "主角成长启蒙，建立师徒与伴童关系",
-      "importance": "中"
+      "function": "开启包公受教育主线，引入师徒关系",
+      "importance": "低"
     }
   ],
   "character_arcs": [
     {
-      "name": "包公（幼年）",
-      "surface_action": "被弃、被救、放牧避雨、遭陷害得镜、入学",
-      "inner_motivation": "生存本能与天性聪俊，无自觉志向",
-      "change_delta": "从婴儿到孩童，初历险恶，显异禀（奎星、古镜）",
-      "driver": "出生异兆与兄嫂迫害"
+      "name": "包公（童年）",
+      "surface_action": "被弃获救、牧羊避雨、落井得镜、入塾",
+      "inner_motivation": "求生与孩童好奇",
+      "change_delta": "从婴儿成长为蒙童，历险未损，始受教育",
+      "driver": "出生异象遭弃与兄嫂护养"
     },
     {
-      "name": "包山",
-      "surface_action": "救弟、换子乳养、请师",
-      "inner_motivation": "手足伦理，改换门庭",
-      "change_delta": "贤德兄长形象确立，主动培养三弟",
-      "driver": "闻知弃婴阴谋"
+      "name": "包海",
+      "surface_action": "听妻言弃侄于锦屏山",
+      "inner_motivation": "谋夺家产‘三一三十一’",
+      "change_delta": "显露自私狠毒",
+      "driver": "员外梦怪物烦心"
     },
     {
       "name": "李氏（二嫂）",
-      "surface_action": "怂恿弃婴、毒饼、骗枯井",
-      "inner_motivation": "谋夺家产（三一三十一）",
-      "change_delta": "无变化，阴谋持续",
-      "driver": "贪财灭伦"
+      "surface_action": "怂恿弃子、送毒饼、骗落井",
+      "inner_motivation": "灭侄独占家私",
+      "change_delta": "阴谋毕露",
+      "driver": "家产分割纠纷"
+    },
+    {
+      "name": "包山",
+      "surface_action": "救侄养为己出、请先生",
+      "inner_motivation": "亲属伦理责任",
+      "change_delta": "贤德展现",
+      "driver": "闻弃子事"
     },
     {
       "name": "王氏",
-      "surface_action": "听窗报信、乳哺三弟、藏镜",
-      "inner_motivation": "嫂嫂贤德护幼",
-      "change_delta": "慈贤形象稳定",
-      "driver": "怜悯孤儿"
+      "surface_action": "乳哺包公、藏古镜",
+      "inner_motivation": "慈爱护弱",
+      "change_delta": "贤内助定位明确",
+      "driver": "丈夫救侄"
     }
   ],
   "foreshadowing": [
     {
-      "clue": "包员外梦见青脸红发怪物落生包公",
+      "clue": "包员外梦青面红发怪物，随后包公降生",
       "type": "身世",
-      "implication": "暗示包公为奎星降世，后续将展露非凡断案神通与贵人命运",
-      "confidence": "中",
+      "implication": "暗示包公并非凡间常人，其命格来源尚待交代",
+      "confidence": "高",
       "importance": "高",
-      "anchor_quote": "猛然红光一闪，面前落下个怪物来，",
+      "anchor_quote": "头生双角，青面红发，巨口撩牙，",
       "anchor_chapter": 12,
-      "motif_key": "奎星梦"
+      "motif_key": "降生异象",
+      "question": "包公出生异象暗示其何种身世来源（谁/为何降生）？",
+      "answer_criteria": "后文揭示包公为某星宿下凡或具体神秘身世来源",
+      "lead": false
     },
     {
-      "clue": "枯井底得古镜，井通地沟",
+      "clue": "包公落枯井见光明扑得古镜",
       "type": "资源",
-      "implication": "古镜或为后续照妖破案宝物，暗道或再用于脱险追踪",
+      "implication": "暗示古镜为某伏线道具，其渊源与威力尚待交代",
       "confidence": "中",
       "importance": "中",
       "anchor_quote": "看时却是古镜一面。",
       "anchor_chapter": 12,
-      "motif_key": "古镜"
+      "motif_key": "古镜",
+      "question": "枯井中古镜从何而来、有何神秘作用？",
+      "answer_criteria": "后文说明古镜来历或展现其神异功能",
+      "lead": false
     },
     {
-      "clue": "李氏害包公之心",
-      "type": "阴谋",
-      "implication": "李氏后续或继续加害包公，埋下家族仇怨清算线",
-      "confidence": "高",
+      "clue": "古庙避雨包公遮护一陌生女子，雨后不见",
+      "type": "身份",
+      "implication": "暗示女子非寻常人，其身份尚待交代",
+      "confidence": "中",
       "importance": "中",
-      "anchor_quote": "原来二嫂嫂果有害我之心。",
-      "anchor_chapter": 12,
-      "motif_key": "嫂害"
-    },
-    {
-      "clue": "避雨古庙抱女子（狐）",
-      "type": "奇遇",
-      "implication": "此女子或为狐仙，日后雷部宣威报恩助包公脱难",
-      "confidence": "低",
-      "importance": "低",
       "anchor_quote": "却是一个女子，羞容满面，其惊怕之态令人可怜。",
       "anchor_chapter": 12,
-      "motif_key": "狐女"
+      "motif_key": "神秘女子",
+      "question": "古庙中避雨女子是何身份、下落为何？",
+      "answer_criteria": "后文揭示该女子姓名身份或重现相关情节",
+      "lead": false
     },
     {
-      "clue": "宁老三不教规矩",
+      "clue": "宁老先生设三不教古怪规矩",
       "type": "师徒",
-      "implication": "包公将受严格教导，成才入仕改变门庭",
-      "confidence": "高",
-      "importance": "中",
-      "anchor_quote": "教徒弟有三不教，笨了不教；",
+      "implication": "暗示先生或有特殊背景，尚待交代",
+      "confidence": "低",
+      "importance": "低",
+      "anchor_quote": "教徒弟有三不教，笨了不教",
       "anchor_chapter": 12,
-      "motif_key": "求学"
+      "motif_key": "怪先生",
+      "question": "宁老先生古怪三不教规矩背后有何隐情？",
+      "answer_criteria": "后文交代先生真实身份或教学对包公的影响",
+      "lead": false
+    },
+    {
+      "clue": "包海弃婴遇猛虎眼光，后包山见草倒卧婴孩无恙",
+      "type": "奇遇",
+      "implication": "暗示虎与包公命数相关，尚待交代",
+      "confidence": "低",
+      "importance": "低",
+      "anchor_quote": "只见草丛里有绿光一闪，原来是一只猛虎眼光射将出来。",
+      "anchor_chapter": 12,
+      "motif_key": "猛虎",
+      "question": "猛虎见婴儿为何不食反令草倒卧？",
+      "answer_criteria": "后文说明虎之因缘或包公命数护佑之理",
+      "lead": false
     }
   ],
   "anchor_stats": {
@@ -114,92 +136,97 @@
     }
   },
   "plot_holes": [
-    "包海向员外谎称公子落地即死未验尸，员外竟不疑；后包山救回亦未禀明，家族隐瞒逻辑稍松"
+    "员外命包海弃包公并谎称死，后包山请先生提‘三黑’员外未追问其来源，似连贯缺失"
   ],
   "locations": [
     {
-      "name": "包员外家",
+      "name": "包家",
       "parent": "",
-      "type": "宅邸",
-      "description": "包氏庄园，含书房后院二嫂屋枯井等"
+      "type": "家族院落",
+      "description": "包员外居所，含书房、卧穷、后园枯井"
     },
     {
       "name": "锦屏山",
       "parent": "",
       "type": "山",
-      "description": "包公被弃与放牧处，有深草鹅头峰古庙"
-    },
-    {
-      "name": "枯井",
-      "parent": "包员外家",
-      "type": "井",
-      "description": "后园枯井，与场院地沟相通"
-    },
-    {
-      "name": "场院后墙地沟",
-      "parent": "包员外家",
-      "type": "沟道",
-      "description": "包公从枯井爬出之地沟"
-    },
-    {
-      "name": "古庙",
-      "parent": "锦屏山",
-      "type": "庙宇",
-      "description": "山窝中殿宇，包公避雨遇女子"
+      "description": "包公乡里村落旁山，弃婴与牧羊处"
     },
     {
       "name": "鹅头峰",
       "parent": "锦屏山",
       "type": "山峰",
-      "description": "锦屏山下峰峦，包公放牧处"
+      "description": "锦屏山下一峰，包公牧牛羊处"
+    },
+    {
+      "name": "古庙",
+      "parent": "锦屏山",
+      "type": "建筑",
+      "description": "山窝中避雨遇女子之处"
+    },
+    {
+      "name": "后园枯井",
+      "parent": "包家",
+      "type": "井",
+      "description": "李氏骗包公下井害命之枯井"
+    },
+    {
+      "name": "场院后墙地沟",
+      "parent": "",
+      "type": "沟",
+      "description": "枯井连通包公爬出之地沟"
     }
   ],
   "spatial_relationships": [
     {
-      "from": "包员外家",
+      "from": "鹅头峰",
       "to": "锦屏山",
-      "relation": "不过五六里地"
+      "relation": "锦屏山鹅头峰下（属锦屏山）"
     },
     {
-      "from": "枯井",
+      "from": "后园枯井",
       "to": "场院后墙地沟",
-      "relation": "竟与此道相通"
+      "relation": "后园枯井竟与此道相通"
+    },
+    {
+      "from": "锦屏山",
+      "to": "包家",
+      "relation": "锦屏山不过五六里地"
     }
   ],
   "cross_block": {
-    "summary": "本章写包公出生异兆，兄嫂弃害，长兄救养，童年遭李氏毒饼枯井陷害脱险得古镜，长兄请名师教读，伴童包兴出场。",
+    "summary": "本章述包公降生异象，遭二房抛弃被大房救养，童年险遭二嫂毒害落井得古镜，后延师入学。",
     "unresolved_questions": [
-      "李氏后续是否再度陷害包公？",
-      "古镜有何神异功能？",
-      "避雨女子真实身份是否为狐仙？",
-      "包山亲生子下落如何？"
+      "古镜来源与威力",
+      "庙中女子身份",
+      "宁先生背景"
     ],
     "new_leads": [
-      "宁老先生教包公读书，包公正式启蒙",
-      "包兴自幼随侍，铺垫后期随从线"
+      "包公身世异象暗示星宿降生",
+      "猛虎避而不食婴孩"
     ],
-    "contextual_link": "第24章（前情摘要所述第23-24回）提及李保乃包公旧随从，展现包公身边随从网络；本章末段写'并派有伴童包兴，与包公同岁，一来伺候书房茶水，二来也叫他学几个字儿'，与此呼应，显示包兴自幼伴随包公，为后期包兴传话打点角色埋下身世延续线索。"
+    "contextual_link": "第19回包公审郭槐，公孙策设杏花雨刑套供使郭槐画押，包公封首相 → 本章写包公童年被二嫂陷害落井得救，展现早年磨难与伦理遭遇，与成年后铁面审奸形成角色成长呼应，说明包公自幼历劫方成公正之臣"
   },
   "updated_knowledge": {
-    "timeline": "约宋真宗时期（具体年份未知）",
+    "timeline": "约公元1000年（宋真宗时期），包公降生及童年",
     "world_building": [
-      "奎星兆梦为星宿降生异象，属奇幻设定",
-      "枯井与场外地沟相通的地下结构",
-      "宁门三不教束修规矩，名儒品行古怪",
-      "茶叶篓子装婴陋俗反映民间生育观"
+      "锦屏山为包公乡里村落旁山",
+      "枯井可通地沟的地下结构",
+      "宁老先生三不教怪规",
+      "古镜为井中发光异物",
+      "茶叶篓装婴弃野习俗"
     ]
   },
   "long_context_insights": {
     "thematic_elements": [
-      "伦理",
-      "阴谋",
+      "忠奸对立",
       "身份错位",
-      "成长",
-      "忠义"
+      "命运磨难",
+      "因果报应",
+      "成长"
     ],
-    "pattern": "跨章重复'幼弱贵子遭难被忠义亲长救护并暗藏异禀'模式（如本章包公被包山救、前情李妃被余忠救）。",
-    "foreshadowing_network": "本章奎星梦与古镜伏笔可能连接后期包公断案神力（如第4章金丸身份揭示类）；包兴伴童伏笔与前情摘要包兴传话打点呼应，形成随从线长期铺垫；李氏阴谋伏笔与全局'家族伦理冲突'主题网相扣。",
-    "pacing": "本章从出生到童年求学，时间跳跃但叙事舒缓，侧重身世铺垫与人物关系建立，节奏从容。",
+    "pattern": "跨章重复出现的叙事模式：家族内部谋产害亲与朝堂权奸谋位形成同构，均由贤者揭破",
+    "foreshadowing_network": "本章新埋包公降生异象、古镜、神秘女子伏笔，与第1章狸猫换太子身世伏笔通过‘身份谜’母题暗连；前文庞吉复仇伏笔暂未表面化但忠奸母题贯穿，未来或由成年包公主线回收。",
+    "pacing": "本章为早年回溯缓笔，以童年日常奇遇铺陈前史，与前章朝堂急审形成张弛节奏。",
     "long_term_arcs": []
   },
   "block_size": 1

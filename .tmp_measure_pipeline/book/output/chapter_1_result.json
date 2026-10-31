@@ -3,224 +3,210 @@
   "core_events": [
     {
       "id": 1,
-      "event": "刘妃与郭槐定计狸猫换太子，寇珠与陈林救太子送至南清宫抚养",
-      "characters": "刘妃、郭槐、尤氏、寇珠、陈林、李妃、八千岁",
-      "function": "开启全书核心阴谋与太子身份错位主线",
+      "event": "刘妃与郭槐定计以狸猫换出李妃所生太子，宫人寇珠遇太监陈林，二人将太子藏于妆盒救至南清宫八千岁处抚养",
+      "characters": "刘妃、郭槐、李妃、寇珠、陈林、八千岁",
+      "function": "开启全书核心阴谋与救主主线，决定太子命运",
       "importance": "高"
     },
     {
       "id": 2,
-      "event": "刘妃诬陷李妃生妖孽，李妃贬冷宫；六年后余忠替死，秦凤自焚，太子归宗",
-      "characters": "刘妃、李妃、余忠、秦凤、郭槐、太子",
-      "function": "展现阴谋残酷并保护太子秘密，铺垫后续平反",
+      "event": "六年后刘后亲子夭折，真太子被嗣见冷宫李妃，刘后拷杀寇珠；李妃被赐死，余忠替死，秦凤自焚，太子隐情未揭",
+      "characters": "刘后、郭槐、寇珠、李妃、余忠、秦凤、太子",
+      "function": "清除换太子知情人，埋下身世之谜与复仇伏笔",
       "importance": "中"
     },
     {
       "id": 3,
-      "event": "包员外妻周氏四旬怀孕，包公将降生且预示磨难",
-      "characters": "包怀、周氏、包山、包海",
-      "function": "引入另一主角包公线，平行叙事",
+      "event": "庐州包员外妻周氏年迈怀孕，包公即将降生，包家次子包海刻薄",
+      "characters": "包怀、周氏、包山、包海、王氏、李氏",
+      "function": "引入另一主线主角包公，铺设家庭环境",
       "importance": "中"
     }
   ],
   "character_arcs": [
     {
       "name": "刘妃",
-      "surface_action": "与郭槐密谋狸猫换太子，诬陷李妃，拷问寇珠，欲置李妃死地",
-      "inner_motivation": "嫉妒李妃，保住正宫之位与自身权力",
-      "change_delta": "初始反派形象确立，无变化",
-      "driver": "真宗言生太子者立正宫"
+      "surface_action": "假意恭顺，与郭槐谋害李妃，逼死寇珠，追杀李妃",
+      "inner_motivation": "嫉妒李妃，保住正宫之位与皇权",
+      "change_delta": "从普通妃子黑化为阴谋毒后",
+      "driver": "真宗许诺生太子者立正宫"
     },
     {
       "name": "寇珠",
-      "surface_action": "奉命勒死太子却交陈林救之，后被拷问触槛自尽",
-      "inner_motivation": "素怀忠义，不忍杀无辜太子",
-      "change_delta": "从顺从刘妃到舍身护主，完成牺牲弧光",
-      "driver": "刘妃命其杀太子"
+      "surface_action": "奉命勒死太子却转而求助陈林救主，受拷打触槛自尽",
+      "inner_motivation": "素怀忠义，不忍害无辜太子",
+      "change_delta": "从刘妃心腹转为舍身取义的忠仆",
+      "driver": "见太子无辜与陈林相遇"
     },
     {
       "name": "陈林",
-      "surface_action": "借采办果品遇寇珠，将太子藏妆盒瞒过刘妃送南清宫",
-      "inner_motivation": "忠诚于宋室，救储君",
-      "change_delta": "展现忠义，无变化",
-      "driver": "寇珠托付太子"
+      "surface_action": "冒死将太子装盒瞒过刘后，送南清宫",
+      "inner_motivation": "感念圣上半世乏嗣，尽忠报主",
+      "change_delta": "忠义形象确立，从容应对危机",
+      "driver": "寇珠托孤太子"
     },
     {
-      "name": "李妃/余忠",
-      "surface_action": "李妃被贬冷宫，余忠替死，秦凤送假余忠去陈州",
-      "inner_motivation": "余忠为主替死，李妃求生",
-      "change_delta": "李妃从囚禁到假死脱险，余忠牺牲",
-      "driver": "刘妃诬陷赐死"
+      "name": "李妃",
+      "surface_action": "被贬冷宫，见太子后伤感，赐死时余忠替身得脱",
+      "inner_motivation": "母子天性，冤屈难申",
+      "change_delta": "从贵妃到罪妇再到隐姓偷生",
+      "driver": "太子探视与余忠救主"
     },
     {
       "name": "包怀",
-      "surface_action": "忧烦老妻周氏怀孕",
-      "inner_motivation": "担心妻儿健康与家庭负担",
-      "change_delta": "无变化",
-      "driver": "周氏四旬怀孕"
+      "surface_action": "忧老妻周氏年迈怀孕，改村名避财主头",
+      "inner_motivation": "谦和谨慎，忧老来子辛劳",
+      "change_delta": "微，家庭长者为后文包公成长设环境",
+      "driver": "周氏怀孕"
     }
   ],
   "foreshadowing": [
     {
-      "clue": "太子被秘密换出由八千岁抚养",
-      "type": "身份",
-      "implication": "未来侠士或包公将揭穿太子乃李妃所生，恢复李妃名分",
+      "clue": "本章末叙述包公降生前文提及'自离娘胎，受了多少折磨，较比仁宗，坎坷更加百倍'",
+      "type": "命运",
+      "implication": "暗示包公未来命运多舛，比仁宗更艰难",
+      "confidence": "高",
+      "importance": "中",
+      "anchor_quote": "自离娘胎，受了多少折磨，较比仁宗，坎坷更加百倍",
+      "anchor_chapter": 1,
+      "motif_key": "包公磨难",
+      "question": "包公降生后具体将经历哪些磨难与坎坷？",
+      "answer_criteria": "后文描写包公童年或少年时期所遭逢的挫折、危险或冤屈事件",
+      "lead": false
+    },
+    {
+      "clue": "太子被救入南清宫，文中明言'就是太子也不知其中详细，谁也不敢泄漏'",
+      "type": "身世",
+      "implication": "暗示太子真实身份终将浮出水面",
       "confidence": "高",
       "importance": "高",
-      "anchor_quote": "如今八千岁的世子就是抵换的太子。",
+      "anchor_quote": "就是太子也不知其中详细，谁也不敢泄漏。",
       "anchor_chapter": 1,
-      "motif_key": "太子身份"
+      "motif_key": "太子身世",
+      "question": "太子何时以及如何得知自己非刘后亲生、乃李妃所生？",
+      "answer_criteria": "后文出现太子身世被揭露或自行查知的情节",
+      "lead": false
     },
     {
-      "clue": "包公降生前预示坎坷",
-      "type": "命运",
-      "implication": "包公幼年将历经磨难，铸就刚正不阿性格",
-      "confidence": "高",
-      "importance": "中",
-      "anchor_quote": "包公降生，自离娘胎，受了多少折磨，",
-      "anchor_chapter": 1,
-      "motif_key": "包公磨难"
-    },
-    {
-      "clue": "刘妃郭槐密谋置李妃死地",
+      "clue": "刘后与郭槐商议'密访李妃嫌隙，必须置之死地方休'，但李妃已由余忠替死被送陈州",
       "type": "阴谋",
-      "implication": "刘妃郭槐将继续追杀李妃余党，或被侠义之士阻止",
-      "confidence": "高",
+      "implication": "暗示李妃虽假死仍存后患，阴谋未完",
+      "confidence": "中",
       "importance": "中",
-      "anchor_quote": "密访李妃嫌隙，必须置之死地方休，",
+      "anchor_quote": "密访李妃嫌隙，必须置之死地方休",
       "anchor_chapter": 1,
-      "motif_key": "刘郭阴谋"
+      "motif_key": "刘后追杀",
+      "question": "刘后是否发现李妃未死并继续追害？",
+      "answer_criteria": "后文出现刘后或郭槐查访陈州、谋害李妃下落的情节",
+      "lead": false
     },
     {
-      "clue": "假余忠被送陈州隐居",
-      "type": "伏线",
-      "implication": "余忠（李妃）在陈州隐居，后文将重逢或助太子",
-      "confidence": "高",
-      "importance": "中",
-      "anchor_quote": "送至陈州家内去了，后文再表。",
-      "anchor_chapter": 1,
-      "motif_key": "李妃藏匿"
-    },
-    {
-      "clue": "寇珠尸首偷偷埋于玉宸宫后",
-      "type": "悬疑",
-      "implication": "寇珠葬处或成后来查明真相的线索",
-      "confidence": "低",
+      "clue": "包家次子包海'为人尖酸刻薄，奸险阴毒'，其妻李氏亦不端",
+      "type": "性格",
+      "implication": "暗示包公在家庭中将面临骨肉倾轧",
+      "confidence": "中",
       "importance": "低",
-      "anchor_quote": "偷偷埋在玉宸宫后。",
+      "anchor_quote": "二爷包海为人尖酸刻薄，奸险阴毒",
       "anchor_chapter": 1,
-      "motif_key": "寇珠遗骨"
+      "motif_key": "包家矛盾",
+      "question": "包海夫妻将如何对待即将出生的包公或家产分配？",
+      "answer_criteria": "后文出现包海陷害、排挤包公或家庭冲突的具体事件",
+      "lead": false
     }
   ],
   "anchor_stats": {
-    "total": 5,
-    "located": 5,
+    "total": 4,
+    "located": 4,
     "missing": 0,
     "by_kind": {
-      "EXACT": 5
+      "EXACT": 4
     }
   },
-  "plot_holes": [],
+  "plot_holes": [
+    "刘后命寇珠勒死太子丢金水桥下，后疑未死却从未打捞验证太子尸首或查问桥下异物，逻辑稍疏",
+    "余忠替死情节中李妃移下房装余忠病卧，后秦凤回明余忠病不起逐出，文本对李妃与余忠身份转换叙述含糊，似有矛盾"
+  ],
   "locations": [
     {
       "name": "玉宸宫",
-      "parent": "",
+      "parent": "皇宫",
       "type": "宫殿",
       "description": "李妃居所，太子于此被狸猫调换"
     },
     {
       "name": "金华宫",
-      "parent": "",
+      "parent": "皇宫",
       "type": "宫殿",
-      "description": "刘妃居所，换太子后成为贵妃宫"
+      "description": "刘妃居所，谋划换太子及拷问寇珠处"
     },
     {
-      "name": "冷宫",
-      "parent": "",
-      "type": "囚所",
-      "description": "李妃被贬囚禁处，余忠替死地"
+      "name": "销金亭",
+      "parent": "皇宫",
+      "type": "亭台",
+      "description": "寇珠奉命勒太子遇陈林之所"
     },
     {
       "name": "南清宫",
       "parent": "",
       "type": "王府",
-      "description": "八千岁居所，抚养换出太子"
+      "description": "八千岁贤王居所，真太子秘密抚养地"
     },
     {
-      "name": "销金亭",
-      "parent": "",
-      "type": "亭",
-      "description": "寇珠奉命勒死太子之处，遇陈林"
-    },
-    {
-      "name": "金水桥",
-      "parent": "",
-      "type": "桥",
-      "description": "原计划抛太子尸处"
+      "name": "冷宫下院",
+      "parent": "皇宫",
+      "type": "宫殿",
+      "description": "李妃被贬幽禁及余忠替死处"
     },
     {
       "name": "御花园",
-      "parent": "",
+      "parent": "皇宫",
       "type": "园林",
-      "description": "真宗赏月赐金丸地"
-    },
-    {
-      "name": "昭阳正院",
-      "parent": "",
-      "type": "宫殿",
-      "description": "刘后正宫，太子朝见"
+      "description": "真宗中秋赏月赐金丸之地"
     },
     {
       "name": "陈州",
       "parent": "",
-      "type": "州",
-      "description": "余忠假死后被送至此隐居"
+      "type": "州府",
+      "description": "余忠（假李妃）被送归籍之地"
     },
     {
       "name": "包家村",
-      "parent": "庐州府合肥县",
-      "type": "村庄",
-      "description": "包员外居所，包公将生"
-    },
-    {
-      "name": "庐州府合肥县",
-      "parent": "江南",
-      "type": "行政区划",
-      "description": "包家村上级行政"
+      "parent": "庐州府",
+      "type": "村落",
+      "description": "包员外家，包公降生之处"
     }
   ],
   "spatial_relationships": [],
   "cross_block": {
-    "summary": "宋真宗时，刘妃妒忌李妃有孕，与郭槐定狸猫换太子计。寇珠不忍，托陈林将太子送南清宫八千岁抚养。刘妃贬李妃入冷宫，后立己子为正宫。六年后刘子死，太子归宗封东宫，刘后起疑逼死寇珠，诬李妃咒诅赐死，余忠替死，秦凤自焚。另叙庐州包家村包员外妻孕，包公将降生。",
+    "summary": "第1章叙宋朝真宗时刘妃狸猫换太子，陈林寇珠救主，刘后清除异己，李妃余忠秦凤相继殒命或隐遁；末尾转至庐州包家，包公将诞，埋双线伏笔。",
     "unresolved_questions": [
-      "太子真实身份何时以何方式揭晓？",
-      "假余忠（李妃）在陈州如何隐匿生活？",
-      "包公降生后将遭何种磨难？"
+      "太子身世何时揭秘",
+      "李妃在陈州后续下落",
+      "包公降生后经何磨难"
     ],
     "new_leads": [
-      "包家村包公即将出生",
-      "余忠被送陈州后文再表"
+      "包家村包海夫妻性格恶变，预示家庭矛盾",
+      "南清宫太子成长线待续"
     ],
-    "contextual_link": ""
+    "contextual_link": "无前文章节（本书第1章故事开端）"
   },
   "updated_knowledge": {
-    "timeline": "约宋真宗时期（具体年份未知）",
+    "timeline": "约宋真宗时期（公元1000年前后），自中秋赏月至包公降生跨约数年",
     "world_building": [
-      "宋朝宫廷分玉宸宫、金华宫、冷宫、南清宫等居所",
-      "无嗣时可过继宗室子封东宫太子",
-      "宫中设钦天监、承御、总管都堂、首领太监等职"
+      "宋朝皇室有八千岁王府分封与冷宫贬妃制度",
+      "宫廷设守喜婆、添喜郎等生育职司",
+      "庐州府合肥县存在乡绅地主家族结构"
     ]
   },
   "long_context_insights": {
     "thematic_elements": [
-      "忠义",
-      "阴谋",
+      "忠奸对立",
       "身份错位",
-      "伦理"
+      "命运磨难"
     ],
-    "pattern": "本章呈现'奸臣阴谋-忠仆救主-秘养幼主'与'贤臣降生预示磨难'的双线并行古典开篇模式",
-    "foreshadowing_network": "狸猫换太子身份伏笔与刘妃后续追杀阴谋伏笔、余忠藏匿伏线紧密交织成保护太子秘密网络；包公磨难伏笔独立开启清官主线，两线未来或交汇于公案。",
-    "pacing": "章节信息量大，从宫廷阴谋到六年跨度再转包公降生，节奏明快且铺陈深远。",
+    "pattern": "宫廷阴谋换子与底层忠仆救主的双线叙事模式在开篇确立",
+    "foreshadowing_network": "太子身世与李妃存活伏笔互为支撑，指向未来宫闱真相大白；包公磨难伏笔独立开启侠义主线，二者通过'忠义'主题暗连。",
+    "pacing": "前段宫廷阴谋密集推进，后段包家降生舒缓转场，张弛有度完成开局。",
     "long_term_arcs": []
   },
   "block_size": 1

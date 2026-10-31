@@ -15,6 +15,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Iterable, Mapping, Sequence
 
+from backend.core.evidence import EvidenceIndex
 from backend.utils.json_utils import extract_json_from_text
 from backend.vnext.resolution import (
     INSUFFICIENT,
@@ -33,7 +34,7 @@ PROPOSED_RESOLVED = "PROPOSED_RESOLVED"
 OPEN = "OPEN"
 
 #: 一次调用最多塞几条候选。太多会让模型串号（它只看到一堆编号）。
-DEFAULT_BATCH_SIZE = 10
+DEFAULT_BATCH_SIZE = 1
 
 PROMPT_TEMPLATE = """你是长篇小说的伏笔审校员。任务：判断**这条伏笔**在后文里是否已经被回收。
 
@@ -106,7 +107,8 @@ def _evidence_id(chapter: int, start: int, end: int) -> str:
 async def run_recheck_v2(
     items: Sequence[Any],
     *,
-    book_text: str,
+    book_text: str = "",
+    chapters: Mapping[int, str] | None = None,
     call_model: Callable[[str], Awaitable[str]],
     max_calls: int = 300,
     batch_size: int = DEFAULT_BATCH_SIZE,
@@ -115,12 +117,14 @@ async def run_recheck_v2(
     """对账本里的伏笔做一轮核对。
 
     - ``items``：`ForeshadowItem` 列表（只处理 `status == "open"/"active"` 且有锚点的）
-    - ``book_text``：**全文**。伏笔的"回收"发生在后文，证据不能只看埋设那一章
+    - ``chapters``：按章号索引的**原文**。给了它就只取相关窗口（`EvidenceIndex`），
+      否则退回 ``book_text`` 全文（该模式只在短文本/测试里能用——整本会爆上下文）
     - ``call_model``：给提示词返回模型文本（注入以便离线测试）
     - ``max_calls``：本轮调用上限；超出记 ``not_checked``，**不静默当作通过**
     """
     outcome = RecheckOutcome()
     candidates: list[dict] = []
+    index = EvidenceIndex(chapters) if chapters else None
 
     leads_skipped = 0
     for item in items:
@@ -137,7 +141,9 @@ async def run_recheck_v2(
             # 没有锚点 = 没有证据。这类条目只能标"证据不足"，不能凭模型自述判回收。
             outcome.not_checked.append(getattr(item, "id", ""))
             continue
-        located = locate_quote(quote, book_text)
+        # 定位用**整章**（锚点可能落在章末，窗口只够展示）
+        source = index.chapter_text(chapter) if index else book_text
+        located = locate_quote(quote, source)
         if not located.found:
             outcome.not_checked.append(getattr(item, "id", ""))
             continue
@@ -158,7 +164,25 @@ async def run_recheck_v2(
         outcome.status = recheck_status(started=True, finished=True, stopped=False, counts=empty)
         return outcome
 
-    texts_by_evidence = {c["evidence_id"]: book_text for c in candidates}
+    if index is not None:
+        # 有界证据包：埋设处 + 后续命中窗口。模型看到的不是"全书"，而是"这几段"，
+        # 所以引文必须落在下面这段文本里——这就是防止模型编引文的机制。
+        texts_by_evidence: dict[str, str] = {}
+        for cand in candidates:
+            item = cand["item"]
+            bundle = index.bundle_for(
+                anchor_chapter=cand["chapter"],
+                anchor_quote=(getattr(item, "anchor_quote", "") or "").strip(),
+                hint_texts=[
+                    getattr(item, "question", "") or "",
+                    getattr(item, "description", "") or "",
+                ],
+            )
+            texts_by_evidence[cand["evidence_id"]] = bundle.text
+            cand["bundle_chapters"] = bundle.chapters
+    else:
+        texts_by_evidence = {c["evidence_id"]: book_text for c in candidates}
+
     by_id = {c["candidate_id"]: c for c in candidates}
 
     for offset in range(0, len(candidates), max(batch_size, 1)):
@@ -175,7 +199,7 @@ async def run_recheck_v2(
                 last_seen=getattr(c["item"], "last_seen_chapter", 0),
                 evidence_id=c["evidence_id"],
                 chapter=c["chapter"],
-                evidence_text=book_text,
+                evidence_text=texts_by_evidence.get(c["evidence_id"], ""),
             )
             for c in batch
         )

@@ -1687,3 +1687,11 @@ C2 实测把问题定性了：模型判"支持"20 次、**引文逐字命中 9/9
 - `anchor.mark_leads()`：两字段**都为空**才标 `lead`，不进复检队列；**刻意不用疑问词/专名词表**（那筛表达形式，会错杀真铺垫、放过假悬念）。
 - 复检 `run_recheck_v2` 跳过 `lead` 并单独报 `leads_skipped`，不计入 `not_checked`。
 - 参考事实：16 章产物里已有 51 条 `cross_block.unresolved_questions`，专项重建时可作提示。
+
+### 10.58 有界证据包：复检不再把整本原文塞进 prompt
+
+- 新增 `backend/core/evidence.py`：`EvidenceIndex(chapters)` 提供 `chapter_text`（定位用整章）、`window`（展示用，带 `…` 截断标记）、`find_mentions`（只取埋设之后）、`bundle_for`（最多 3 个窗口，`WINDOW_RADIUS=400`）。
+- `recheck_v2` 新增 `chapters` 参数，逐候选生成证据包；`DEFAULT_BATCH_SIZE` 改为 **1**（一个候选一份证据，合并提问模型只答第一条）。
+- 三个必修的坑：①定位必须用整章，用窗口会漏掉章末锚点；②`ITEM_TEMPLATE` 里的 `evidence_text` 曾仍传 `book_text`；③批大小 12 时 7 条候选只回 1 条判定。
+- 实测：12 条候选 → 7 次调用、单次约 33 秒、**不再出现 token 超限**（改造前 12 次全部 100k 超限）；6 条判 `INSUFFICIENT`（16 章语料不含回收，属正确行为）。
+- 采集侧复测：`question`/`answer_criteria` 覆盖 60/60，但 `lead` 为 0——这条护栏在当前模型下从不触发，只是护栏不是过滤器。

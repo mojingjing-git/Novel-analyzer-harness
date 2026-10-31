@@ -1,0 +1,37 @@
+{
+  "calls": 7,
+  "applied": {
+    "fs_002": "PROPOSED_RESOLVED",
+    "fs_003": "PROPOSED_RESOLVED",
+    "fs_006": "PROPOSED_RESOLVED",
+    "fs_008": "PROPOSED_RESOLVED",
+    "fs_009": "PROPOSED_RESOLVED",
+    "fs_010": "PROPOSED_RESOLVED"
+  },
+  "coverage": {
+    "candidates_total": 7,
+    "checked": 6,
+    "located": 0,
+    "supported": 0,
+    "insufficient": 6,
+    "conflict": 0,
+    "invalid": 0,
+    "invalid_by_reason": {},
+    "duplicates": 0,
+    "foreign": 0,
+    "stale": 0,
+    "not_checked": 1,
+    "expected_known": true
+  },
+  "status": "RUNNING",
+  "status_reason": "存在未核对候选",
+  "leads_skipped": 0,
+  "not_checked": [
+    "fs_001",
+    "fs_004",
+    "fs_005",
+    "fs_011",
+    "fs_012",
+    "fs_007"
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "chapters": 16,
+  "chars": 128623,
+  "concurrency": 8,
+  "block_size": 1,
+  "analysis_seconds": 869.9,
+  "analysis_payload": {
+    "stopped": false,
+    "total_analyzed": 16,
+    "errors": [],
+    "failed_chapters": [],
+    "skipped_chapters": []
+  },
+  "anchor": {
+    "total": 60,
+    "located": 58,
+    "missing": 2,
+    "hit_rate": 0.9667
+  },
+  "ledger_candidates": 60,
+  "candidates_with_anchor": 58,
+  "acquisition": {
+    "foreshadows": 60,
+    "with_question": 60,
+    "with_answer_criteria": 60,
+    "lead": 0,
+    "with_anchor": 58
+  },
+  "recheck": {
+    "skipped": true
+  }
+}
