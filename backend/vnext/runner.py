@@ -294,6 +294,8 @@ class AnalysisOutcome:
     completion_tokens: int
     unknown_usage_blocks: int
     store_fingerprint: str
+    #: 因永久错误被跳过（留 gap）的块数
+    skipped_blocks: int = 0
 
     def to_dict(self) -> dict:
         return {
@@ -305,6 +307,7 @@ class AnalysisOutcome:
             "prompt_tokens": self.prompt_tokens,
             "completion_tokens": self.completion_tokens,
             "unknown_usage_blocks": self.unknown_usage_blocks,
+            "skipped_blocks": self.skipped_blocks,
             "store_fingerprint": self.store_fingerprint,
         }
 
@@ -375,6 +378,35 @@ def _expected_context_fingerprints(
             )
     return fingerprints
 
+
+def _is_permanent(exc: BaseException) -> bool:
+    """这个错误重跑会不会变好？只看结构化判定，不猜字符串。"""
+    if getattr(exc, "permanent", False):
+        return True
+    verdict = getattr(exc, "verdict", None)
+    is_permanent = getattr(verdict, "is_permanent", None)
+    if callable(is_permanent):
+        try:
+            return bool(is_permanent())
+        except TypeError:  # 属性不是方法
+            return bool(is_permanent)
+    # 内容审核拦截：厂商把它塞在 422 的 body 里（MiniMax: `input new_sensitive (1026)`），
+    # 走 error_taxonomy 的码表未必能认出来，但 core 里已有专门嗅探器，直接复用。
+    try:
+        from backend.core import llm_client
+
+        if llm_client.moderation_hit_from_exception(exc):
+            return True
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from backend.core import error_taxonomy
+
+        return bool(error_taxonomy.classify_exception(exc).is_permanent())
+    except Exception:  # noqa: BLE001 - 判定不了就当非永久（保守：不跳）
+        return False
+
+
 async def run_analysis(
     book_dir: Path,
     *,
@@ -385,6 +417,7 @@ async def run_analysis(
     max_blocks: int | None = None,
     title: str | None = None,
     plans: Sequence["BlockPlan"] | None = None,
+    skip_permanent: bool = False,
 ) -> AnalysisOutcome:
     """按块序跑整本。顺序是硬的：每块的上下文依赖"它之前的块"，跳着跑就换了一套输入。"""
     book_dir = Path(book_dir)
@@ -409,6 +442,7 @@ async def run_analysis(
     prompt_tokens = 0
     completion_tokens = 0
     unknown_usage = 0
+    skipped: list[str] = []
 
     for index, plan in enumerate(plans):
         done = verdict.done.get(plan.block_signature)
@@ -432,6 +466,16 @@ async def run_analysis(
                 title=title or manifest.title,
             )
         except Exception as exc:  # noqa: BLE001 - 记 FAILED 再停，不吞掉类型
+            if skip_permanent and _is_permanent(exc):
+                # 永久错误（审核拦截/鉴权/欠费）不是"这次没跑好"：重跑一万次也一样。
+                # 记成 SKIPPED 并**留 gap**，让覆盖率如实说"这一段没分析过"，
+                # 而不是让整本书卡在一个块上（默认仍然停，跳过要显式开）。
+                await asyncio.to_thread(
+                    _record_failure, book_dir, plan, strategy, str(exc), "SKIPPED"
+                )
+                skipped.append(plan.block_signature)
+                prior.append(None)
+                continue
             await asyncio.to_thread(
                 _record_failure, book_dir, plan, strategy, str(exc)
             )
@@ -465,6 +509,9 @@ async def run_analysis(
             )
         prior.append(run.record.result_id)
 
+    if skipped:
+        stop_reason = ("completed_with_skips" if stop_reason == "completed"
+                       else f"{stop_reason};skipped={len(skipped)}")
     results = await asyncio.to_thread(list_results, book_dir)
     slots = rolling.slots_from_results(plans, results.values())
     coverage = rolling.build_coverage(plans, batch_size=max(1, block_size), states=slots)
@@ -476,10 +523,17 @@ async def run_analysis(
         completion_tokens=completion_tokens,
         unknown_usage_blocks=unknown_usage,
         store_fingerprint=store_fingerprint(store),
+        skipped_blocks=len(skipped),
     )
 
 
-def _record_failure(book_dir: Path, plan: "BlockPlan", strategy: "ResultStrategy", message: str) -> None:
+def _record_failure(
+    book_dir: Path,
+    plan: "BlockPlan",
+    strategy: "ResultStrategy",
+    message: str,
+    status: str = "FAILED",
+) -> None:
     """把失败也写成一条结果：否则下次进来还是"没有结果"，看不出试过。"""
     record = ResultRecord(
         result_id=make_result_id(
@@ -490,7 +544,7 @@ def _record_failure(book_dir: Path, plan: "BlockPlan", strategy: "ResultStrategy
         ),
         block_signature=plan.block_signature,
         source_chapters=(),
-        status="FAILED",
+        status=status,
         model_fingerprint=strategy.model_fingerprint,
         prompt_strategy_version=PROMPT_STRATEGY_VERSION,
         error=message,

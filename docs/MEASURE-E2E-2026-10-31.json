@@ -1,0 +1,38 @@
+{
+  "task": "E2E-三侠五义",
+  "source": "F:\\AI\\04_小说与写作\\商鞅\\三侠五义\\blocks",
+  "chapters": 64,
+  "chars": 511103,
+  "block_size": 2,
+  "blocks": 32,
+  "block_chars": {
+    "min": 11395,
+    "max": 18525
+  },
+  "first_run": {
+    "calls": 2,
+    "attempts": 2,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "total_tokens": 0,
+    "unknown_usage_calls": 2,
+    "elapsed_s": 331.1,
+    "committed_blocks": 0,
+    "stop_reason": "failed:block1;skipped=1",
+    "commit_cursor": 0,
+    "prefix_complete": false,
+    "gaps": []
+  },
+  "second_run": {
+    "calls": 1,
+    "committed_blocks": 0,
+    "commit_cursor": 0
+  },
+  "knowledge": {
+    "exists": false
+  },
+  "budget": {
+    "max_calls": 40,
+    "max_tokens": 900000
+  }
+}

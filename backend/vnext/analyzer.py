@@ -229,6 +229,16 @@ def extracted_fingerprint(extracted: Mapping[str, Any]) -> str:
     return content_hash(canonical_json(extracted))
 
 
+class BlockFailure(RuntimeError):
+    """块级失败，保留结构化判定（尤其是"是否永久"）。"""
+
+    def __init__(self, message: str, *, verdict: object = None, permanent: bool = False) -> None:
+        super().__init__(message)
+        self.verdict = verdict
+        #: 明确标为永久（审核拦截/鉴权/欠费）——上层据此决定是"停下"还是"跳过留 gap"
+        self.permanent = permanent
+
+
 async def analyze_block(
     book_dir: Path,
     plan: BlockPlan,
@@ -271,6 +281,37 @@ async def analyze_block(
 
     result = await client.chat(messages)
     raw_text = str(getattr(result, "content", "") or "")
+    if not raw_text.strip():
+        # 空文本几乎不是"模型没按格式答"，而是**调用本身失败了**——厂商侧拦截
+        # （MiniMax: 422 `input new_sensitive (1026)`）或欠费/鉴权，返回一个空结果
+        # 而不是抛异常。若这里直接拿空串去解析，就成了 `UNPARSEABLE_ARTIFACT`，
+        # 于是"永久错误"被伪装成"格式错误"，上层再也没法按永久错误处理。
+        verdict = getattr(result, "verdict", None)
+        detail = str(getattr(result, "error", "") or "")
+        permanent = False
+        is_perm = getattr(verdict, "is_permanent", None)
+        if callable(is_perm):
+            try:
+                permanent = bool(is_perm())
+            except TypeError:
+                permanent = bool(is_perm)
+        if not permanent:
+            # 文本通道按设计"永不判永久"（C-01 止血），所以审核拦截这类
+            # 只能在这里用专门嗅探器补一次，否则永久错误会被当成普通失败。
+            try:
+                from backend.core import llm_client as core_llm
+
+                permanent = bool(
+                    core_llm.moderation_hit_from_exception(result)
+                    or core_llm.is_moderation_message(f"{detail} {raw_text}")
+                )
+            except Exception:  # noqa: BLE001
+                permanent = False
+        raise BlockFailure(
+            f"模型返回空内容（error={detail or '未知'}）",
+            verdict=verdict,
+            permanent=permanent,
+        )
     parsed = parse_block_output(raw_text)
     # 多章块：先用整块文本定位 quote（章边界在原文里通常仍有换行，取第一处能落地的章）
     extracted = normalize_extracted(
