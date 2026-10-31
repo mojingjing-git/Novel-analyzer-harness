@@ -58,6 +58,7 @@
 | 2026-10-31 | 尚未入库 | 伏笔复检 V2 阶段 0（锚点字段） | business_test（**全量**） | **1528 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，764.89s；新增 `test_anchor_quote.py`(12) + `test_result_roundtrip_anchor.py`(4) |
 | 2026-10-31 | 尚未入库 | 阶段 0 文档同步 | doc_check | 通过 | — | `docs/data-contract-vnext.md` §11、`agent.md` §10.51、计划文档 §10 实施记录、CHANGELOG |
 | 2026-10-31 | 尚未入库 | 伏笔复检 V2 阶段 1（账本 v4） | business_test（**全量**） | **1536 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，781.04s；新增 `test_foreshadow_ledger_anchor.py`(8)，旧断言 `SCHEMA_VERSION==3` 同步改 4 |
+| 2026-10-31 | 尚未入库 | 阶段 2 接线（开关默认关） | business_test（**全量**） | **1551 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，748.20s；新增 `test_recheck_v2_wiring.py`(4) |
 | 2026-10-31 | 尚未入库 | 伏笔复检 V2 阶段 2（服务层） | business_test（**全量**） | **1547 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，846.06s；新增 `test_recheck_v2.py`(11)；含此前 citations 收敛与阶段 1 的全部改动 |
 | 2026-10-31 | 6751346+e | D-19 引文定位下沉（S-1/S-2/S-3） | business_test（**全量**） | **1505 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，747.66s。相对通过 C 批实测基线 1472 增加 33 例：S-1 键名双向核对 4 例、S-2 引文定位 10 例 + 4 个旧文件按新契约改写、S-3 应用键 5 例 |
 | 2026-10-31 | 6751346+e | D-19 验收脚本 | acceptance | **ACCEPTED 32/32** | — | `python scripts/acceptance_vnext.py`；新增的引文定位用例已并入其中（样例引文加长到 ≥10 字、span 不再必填） |

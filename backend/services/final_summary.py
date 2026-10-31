@@ -1387,6 +1387,68 @@ class FinalSummaryRunner:
             plans.append((group, group_text))
         return plans
 
+    def _collect_book_text(self) -> str:
+        """全文：复检的证据必须是**原文**。
+
+        旧实现拿"卷摘要拼接"当全文——那是模型写的概括，拿它去核对"引文是否逐字存在"
+        永远核不出问题，等于没有证据。这里读 blocks 下的章节正文。
+        """
+        blocks_dir = self.output_dir.parent / "blocks"
+        if not blocks_dir.is_dir() and self.config.working_directory:
+            blocks_dir = Path(self.config.working_directory) / "blocks"
+        if not blocks_dir.is_dir():
+            logger.warning("复检 V2：blocks 目录不存在，无法取得原文，本轮将全部记为未核对")
+            return ""
+        parts: List[str] = []
+        for path in sorted(blocks_dir.glob("*.txt"), key=lambda x: x.name):
+            try:
+                parts.append(path.read_text(encoding="utf-8", errors="replace"))
+            except OSError as exc:  # 单章读失败不该让整轮复检崩掉
+                logger.warning(f"复检 V2：读取 {path.name} 失败：{exc}")
+        return "\n\n".join(parts)
+
+    async def _run_recheck_v2(self, results: List[dict]) -> None:
+        """阶段 2（V2）：带证据的复检。"""
+        from backend.services.recheck_v2 import run_recheck_v2
+
+        book_text = self._collect_book_text()
+        if not book_text:
+            self.last_recheck_summary = {
+                "status": "NOT_RUN",
+                "status_reason": "取不到原文，未执行复检",
+                "calls": 0,
+            }
+            logger.warning("复检 V2：未执行（没有原文）")
+            return
+
+        max_calls = max(1, int(getattr(self.config.analysis, "recheck_max_calls", 300) or 300))
+        max_tokens = int(getattr(self.config.analysis, "recheck_max_tokens", 60000) or 60000)
+        batch_size = max(1, int(getattr(self.config.analysis, "foreshadow_recheck_batch_size", 40) or 40))
+
+        async def _call_model(prompt: str) -> str:
+            res = await self.client.chat_auto(
+                prompt=prompt, max_tokens=max_tokens, purpose="foreshadow_recheck_v2"
+            )
+            return getattr(res, "content", "") or ""
+
+        self._emit_progress({"type": "status", "message": "正在核对伏笔证据..."})
+        outcome = await run_recheck_v2(
+            self.ledger.items,
+            book_text=book_text,
+            call_model=_call_model,
+            max_calls=max_calls,
+            batch_size=batch_size,
+            emit=lambda summary: self._emit_progress(
+                {"type": "status", "message": f"伏笔复检：已核对 {summary['coverage'].get('checked', 0)} 条"}
+            ),
+        )
+        self.ledger.save(self.ledger_path)
+        self.last_recheck_summary = outcome.summary()
+        logger.info(
+            f"复检 V2 完成：{outcome.status} 调用 {outcome.calls} 次，"
+            f"覆盖 {outcome.coverage.get('checked', 0)}/{outcome.coverage.get('candidates_total', 0)}"
+        )
+
     async def _run_global_foreshadow_recheck(self, volume_summaries: List[str],
                                              foreshadow_catalog: list = None,
                                              volume_ranges: List[Tuple[int, int]] = None) -> None:
@@ -1688,8 +1750,11 @@ class FinalSummaryRunner:
                     volume_summaries.append(f"=== 第{ch_start}-{ch_end}章 ===\n{text}")
                     volume_ranges.append((ch_start, ch_end))
 
-            # 全书伏笔复检
-            await self._run_global_foreshadow_recheck(volume_summaries, foreshadow_catalog, volume_ranges)
+            # 全书伏笔复检：开关只切算法，账本/报告/接口形状不变
+            if getattr(self.config.analysis, "recheck_v2_enabled", False):
+                await self._run_recheck_v2(results)
+            else:
+                await self._run_global_foreshadow_recheck(volume_summaries, foreshadow_catalog, volume_ranges)
             if self._stop_requested:
                 # 复检可能已回收伏笔，保存账本保留进度后退出
                 self.ledger.save(self.ledger_path)

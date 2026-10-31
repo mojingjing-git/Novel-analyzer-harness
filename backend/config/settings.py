@@ -182,6 +182,7 @@ class AnalysisConfig:
     anchor_min_chars: int = 6                # 锚点最短字数；太短的长句子里必然命中
     recheck_max_calls: int = 300             # 一次复检最多调用次数（超出标 BUDGET_SKIPPED，可续跑）
     recheck_max_tokens: int = 60000          # 单次复检调用的 max_tokens；给足量才能拿到完整 JSON
+    recheck_v2_enabled: bool = False         # 阶段 2 换成带证据的复检（V2）；默认关，真书验证后再打开
     # 内容审核拦截处理：识别为审核拦截的章节重试1次后跳过并标记（不进失败集、不补跑）
     skip_moderation_blocked: bool = True
     # 知识库限制

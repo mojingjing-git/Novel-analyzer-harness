@@ -1656,3 +1656,10 @@ C2 实测把问题定性了：模型判"支持"20 次、**引文逐字命中 9/9
 - 编造引文 → `INVALID/QUOTE_NOT_FOUND` 且 `retryable` → 计 `not_checked`（下轮重问），不算"已核对"、也不算 `invalid`（后者表示候选本身有问题）。
 - 两个坑写进代码注释：`parse_recheck` 的 `locate` 第二参是 `evidence_id` 不是正文；`extract_json_from_text` 返回 JSON 文本不是对象。
 - 用例 `test_recheck_v2.py`（11 例）。
+
+### 10.55 阶段 2 接线：开关默认关
+
+- `final_summary.run()` 阶段 2 分流：`analysis.recheck_v2_enabled` 为真走 `_run_recheck_v2`，否则走旧复检。开关只切算法，账本/报告/进度事件/接口形状不变，默认 `false`。
+- 新增 `_collect_book_text()`：从 `blocks/*.txt` 按文件名排序拼接**原文**；取不到就返回空串，`_run_recheck_v2` 据此记 `NOT_RUN` 并写 `last_recheck_summary`——**绝不拿空文本或卷摘要去核对**（摘要核引文等于没有证据）。
+- 配置：`recheck_v2_enabled`(false)、`recheck_max_calls`(300)、`recheck_max_tokens`(60000)；模型调用走 `client.chat_auto(purpose="foreshadow_recheck_v2")`。
+- 用例 `test_recheck_v2_wiring.py`（4 例：顺序读取、working_directory 回退、无 blocks 返回空、开关默认关）。

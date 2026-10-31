@@ -820,3 +820,23 @@ run_recheck_v2(items, *, book_text, call_model, max_calls=300, batch_size=10, em
 1. `parse_recheck` 的 `locate` 回调**第二个参数是 `evidence_id`，不是正文**。传错时每条 SUPPORTED 都变
    `QUOTE_NOT_FOUND`，而测试会"看起来通过了错误的东西"。
 2. `extract_json_from_text` 返回的是 **JSON 文本**，不是已解析对象；直接当 dict 用会静默得到空列表。
+
+### 13.5 接进总结流程（开关默认关）
+
+`final_summary.run()` 的阶段 2 改成按 `analysis.recheck_v2_enabled` 分流：
+
+```
+if recheck_v2_enabled:  await self._run_recheck_v2(results)
+else:                   await self._run_global_foreshadow_recheck(...)
+```
+
+开关**只切算法**：账本文件、报告结构、进度事件、接口形状都不变。默认 `false`，
+真书验证通过后才考虑改默认——这样万一不对，关掉即回到旧行为，不需要回滚代码。
+
+全文取自 `blocks/*.txt`（按文件名排序），**不用卷摘要**：卷摘要是模型写的概括，
+拿它核对"引文是否逐字存在"永远核不出问题，等于没有证据。取不到原文时整轮记
+`NOT_RUN`（原因写进 `last_recheck_summary`），绝不用空文本去核对。
+
+`recheck_max_calls` / `recheck_max_tokens` / `foreshadow_recheck_batch_size`
+沿用既有配置键；调用走 `client.chat_auto(purpose="foreshadow_recheck_v2")`，
+失败由上层既有重试链处理。
