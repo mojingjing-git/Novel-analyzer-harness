@@ -381,10 +381,21 @@ def parse_recheck(
                 return CandidateVerdict(
                     candidate_id, INVALID, reason=REASON_AMBIGUOUS_QUOTE, retryable=True
                 )
-            if result.ambiguous and reported is not None and reported[1] - reported[0] >= len(quote):
-                # 定位器只拿到 (quote, evidence_id)，破不了歧义时用模型自报窗口指路：
-                # 窗口长度够装下引文就可采纳，并如实标 ambiguous
-                located = (int(reported[0]), int(reported[0]) + len(quote))
+            if result.ambiguous and reported is not None:
+                # 模型自报窗口**只能用来挑一处**，位置必须由程序重新算并回验。
+                # 2026-10-31 复审实测：模型给 [10000,10020]、原文只有 26 字时，
+                # 旧实现直接按 reported[0]+len(quote) 落了一个越界位置还判 SUPPORTED。
+                text = evidence_text(evidence_id) if evidence_text is not None else ""
+                picked = None
+                if text:
+                    inside = [
+                        p
+                        for p in count_occurrences(text, quote)
+                        if reported[0] <= p and p + len(quote) <= reported[1]
+                    ]
+                    if len(inside) == 1:
+                        picked = (inside[0], inside[0] + len(quote))
+                located = picked if picked is not None else (int(result.start), int(result.end))
             else:
                 located = (int(result.start), int(result.end))
             ambiguous = bool(result.ambiguous)

@@ -194,3 +194,24 @@ def test_legacy_mode_requires_span() -> None:
     verdict = _parse_legacy(_payload())
     assert verdict.verdict == INVALID
     assert verdict.reason == REASON_NO_QUOTE
+
+
+def test_out_of_bounds_reported_span_cannot_produce_out_of_bounds_location() -> None:
+    """2026-10-31 复审实测：模型给 [10000,10020]、原文只有 26 字时，
+    旧实现按 reported[0]+len(quote) 落了个越界位置还判 SUPPORTED。
+
+    契约：模型位置只能用来"挑一处"，最终位置必须由程序算并回验。
+    这里断言的是**不变量**——要么拒绝，要么给一个在正文范围内、切片等于引文的位置；
+    绝不允许越界位置随 SUPPORTED 一起出去。
+    """
+    verdict = _parse(_payload(supporting_quote=TWICE, supporting_span=[10000, 10020]))
+    if verdict.verdict == SUPPORTED:
+        start, end = verdict.located_span
+        assert 0 <= start < end <= len(DOUBLE)
+        assert DOUBLE[start:end] == TWICE
+    else:
+        assert verdict.reason in {
+            REASON_AMBIGUOUS_QUOTE,
+            REASON_QUOTE_NOT_FOUND,
+            REASON_QUOTE_TOO_SHORT,
+        }
