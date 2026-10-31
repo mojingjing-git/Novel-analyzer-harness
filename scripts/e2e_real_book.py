@@ -63,6 +63,31 @@ def strip_splitter_header(text: str) -> str:
     return "\n".join(body) + "\n"
 
 
+#: 盗版站点在正文里塞的水印与前言。它们不只是噪声——带 URL 的行会让厂商的
+#: 输入审核直接拦下整块（MiniMax: 422 `input new_sensitive (1026)`），
+#: 表现成"第一章永远失败"。清洗规则只删这几类行，不动正文。
+_JUNK_PATTERNS = (
+    "isyd",
+    "http",
+    "www.",
+    "本书由",
+    "本书来自",
+    "声明：",
+    "敬告：",
+    "仅供",
+    "请访问",
+    "更多精彩",
+    "版权归",
+    "24小时内删除",
+)
+
+
+def scrub_junk(text: str) -> str:
+    """去掉水印/前言类行，保留正文。"""
+    kept = [line for line in text.splitlines() if not any(j in line for j in _JUNK_PATTERNS)]
+    return "\n".join(kept).strip()
+
+
 def load_chapters() -> list[tuple[int, str]]:
     files = sorted(
         (p for p in BOOK_DIR.glob("*.txt") if p.stem.isdigit()),
@@ -70,7 +95,7 @@ def load_chapters() -> list[tuple[int, str]]:
     )
     chapters: list[tuple[int, str]] = []
     for path in files:
-        body = strip_splitter_header(path.read_text(encoding="utf-8", errors="replace"))
+        body = scrub_junk(strip_splitter_header(path.read_text(encoding="utf-8", errors="replace")))
         if len(body.strip()) < 200:  # 空壳章节不算
             continue
         chapters.append((int(path.stem), body))
@@ -111,8 +136,19 @@ class CountingClient:
         return self.calls >= max_calls or self.total_tokens >= max_tokens
 
 
+_OPTS = {"max_tokens": 8000, "block_size": 2, "limit_blocks": 0}
+
+
 def args_timeout() -> int:
-    return 900
+    return _OPTS.get("timeout", 600)
+
+
+def args_max_tokens() -> int:
+    return _OPTS["max_tokens"]
+
+
+def args_block_size() -> int:
+    return _OPTS["block_size"]
 
 
 def _load_client():
@@ -123,7 +159,14 @@ def _load_client():
     fields = {f.name for f in APIConfig.__dataclass_fields__.values()} if hasattr(APIConfig, "__dataclass_fields__") else set()
     api = raw.get("api", {})
     # 真书单块输出比合成语料大得多，300s 会撞超时（实测 block1 一次 330s 空返回）
-    api = {**api, "timeout": args_timeout()}
+    api = {
+        **api,
+        "timeout": args_timeout(),
+        # 真书一块的输出用不到十万 token。130000 会让模型"一直写到上限"，
+        # 实测单块跑 900s 仍 0 token 返回——把上限收到 8000，写不下就是超长，
+        # 让失败变快、变得可诊断。
+        "max_tokens": args_max_tokens(),
+    }
     kwargs = {k: v for k, v in api.items() if not fields or k in fields}
     return LLMClient(APIConfig(**kwargs))
 
@@ -146,6 +189,9 @@ def _knowledge_stats(book_dir: Path) -> dict:
 
 
 async def amain(args) -> int:
+    _OPTS["max_tokens"] = args.max_tokens
+    _OPTS["block_size"] = args.block_size
+    _OPTS["timeout"] = args.timeout
     from backend.vnext import blocks, project, runner
     from backend.vnext.prompt_limits import PromptLimits
 
@@ -169,7 +215,7 @@ async def amain(args) -> int:
         )
 
     manifest = project.load_manifest(book_dir)
-    plans = blocks.plan_blocks(manifest, block_size=BLOCK_SIZE)
+    plans = blocks.plan_blocks(manifest, block_size=args_block_size())
     sizes = []
     for plan in plans:
         chars = sum(len(project.read_chapter_text(book_dir, cid)) for cid in plan.chapter_ids)
@@ -185,7 +231,7 @@ async def amain(args) -> int:
     limits = PromptLimits()
     started = time.monotonic()
     outcome = await runner.run_analysis(
-        book_dir, client=client, limits=limits, block_size=BLOCK_SIZE,
+        book_dir, client=client, limits=limits, block_size=args_block_size(),
         skip_permanent=args.skip_permanent,
     )
     elapsed = time.monotonic() - started
@@ -202,7 +248,7 @@ async def amain(args) -> int:
 
     again = CountingClient(_load_client())
     outcome2 = await runner.run_analysis(
-        book_dir, client=again, limits=limits, block_size=BLOCK_SIZE
+        book_dir, client=again, limits=limits, block_size=args_block_size()
     )
     print("\n=== 第二次运行（应为零调用）===")
     print(f"调用 {again.calls}  committed={outcome2.committed_blocks}  "
@@ -256,6 +302,9 @@ def main() -> int:
         action="store_true",
         help="永久错误（审核/鉴权/欠费）记 SKIPPED 并留 gap，继续跑后面的块",
     )
+    parser.add_argument("--max-tokens", type=int, default=8000, help="单次输出上限")
+    parser.add_argument("--block-size", type=int, default=2, help="每块章节数")
+    parser.add_argument("--timeout", type=int, default=600, help="单次调用超时（秒）")
     return asyncio.run(amain(parser.parse_args()))
 
 
