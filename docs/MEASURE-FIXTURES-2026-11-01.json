@@ -9,25 +9,27 @@
     ],
     "max_windows": 3,
     "truncated": true,
+    "omitted": 1,
     "within_limit": true
   },
   {
     "case": "A_cross_chapter",
     "calls": 1,
-    "seconds": 22.1,
+    "seconds": 21.3,
     "verdicts": [
       {
         "verdict": "SUPPORTED",
         "reason": "",
         "answer": "老三",
         "located_span": [
-          20,
+          12,
           31
         ],
-        "evidence_id": "b36e071a4ab8"
+        "evidence_id": "d6ed050a6b5f"
       }
     ],
     "status": "COMPLETED",
+    "not_checked": [],
     "resolved_chapter": 9,
     "item_status": "resolved",
     "coverage": {
@@ -49,7 +51,7 @@
   {
     "case": "B_answer_at_end",
     "calls": 1,
-    "seconds": 25.8,
+    "seconds": 17.4,
     "verdicts": [
       {
         "verdict": "SUPPORTED",
@@ -59,10 +61,11 @@
           407,
           417
         ],
-        "evidence_id": "40c1a9f3def8"
+        "evidence_id": "e5164e2172c2"
       }
     ],
     "status": "COMPLETED",
+    "not_checked": [],
     "resolved_chapter": 9,
     "item_status": "resolved",
     "coverage": {
@@ -84,17 +87,18 @@
   {
     "case": "C_counter_evidence",
     "calls": 1,
-    "seconds": 31.5,
+    "seconds": 28.1,
     "verdicts": [
       {
         "verdict": "INSUFFICIENT",
         "reason": "",
-        "answer": "原文未明确交代谁先动过铜匣底下的夹层",
+        "answer": "",
         "located_span": null,
         "evidence_id": null
       }
     ],
     "status": "COMPLETED",
+    "not_checked": [],
     "resolved_chapter": null,
     "item_status": "active",
     "coverage": {

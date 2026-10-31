@@ -90,6 +90,7 @@ async def run_case(name: str, chapters: dict[int, str], llm: LLMClient) -> dict:
         "seconds": round(time.time() - t0, 1),
         "verdicts": verdicts,
         "status": outcome.status,
+        "not_checked": list(outcome.not_checked),
         "resolved_chapter": getattr(item, "resolved_chapter", None),
         "item_status": getattr(item, "status", None),
         "coverage": outcome.coverage,
@@ -109,6 +110,7 @@ def check_truncation() -> dict:
         "chapters_returned": returned,
         "max_windows": MAX_WINDOWS,
         "truncated": bundle.truncated,
+        "omitted": bundle.omitted,
         "within_limit": len(returned) <= MAX_WINDOWS + 1,
     }
 
@@ -165,13 +167,32 @@ async def main() -> int:
     b = next(r for r in results if r["case"] == "B_answer_at_end")
     c = next(r for r in results if r["case"] == "C_counter_evidence")
     for label, case in (("A", a), ("B", b)):
-        passed = any(v["verdict"] == "SUPPORTED" for v in case["verdicts"]) and case["resolved_chapter"] == 9
-        print(f"  自检 {label}: {'通过' if passed else '未通过'}")
+        cov = case.get("coverage") or {}
+        checked_ok = cov.get("checked") == 1 and not case.get("not_checked")
+        passed = (
+            any(v["verdict"] == "SUPPORTED" for v in case["verdicts"])
+            and case["resolved_chapter"] == 9
+            and checked_ok
+        )
+        print(f"  自检 {label}: {'通过' if passed else '未通过'}（核对 {cov.get('checked')} 条）")
         ok = ok and passed
-    c_passed = not any(v["verdict"] == "SUPPORTED" for v in c["verdicts"])
-    print(f"  自检 C: {'通过' if c_passed else '未通过（反证被判成回收）'}")
+
+    # C 不能"空通过"：必须真的核对过、有有效判定、且不是回收类判定
+    cov_c = c.get("coverage") or {}
+    c_verdicts = [v["verdict"] for v in c["verdicts"]]
+    c_passed = (
+        bool(c_verdicts)
+        and cov_c.get("checked") == 1
+        and not c.get("not_checked")
+        and all(v in {"INSUFFICIENT", "DIFFERENT_ANSWER", "CONTRADICTED"} for v in c_verdicts)
+    )
+    print(f"  自检 C: {'通过' if c_passed else '未通过'}（判定={c_verdicts or '无'}，核对 {cov_c.get('checked')} 条）")
     ok = ok and c_passed
-    ok = ok and truncation["truncated"] and truncation["within_limit"]
+
+    # D：截断必须由"实际遗漏"支撑
+    d_ok = truncation["truncated"] and truncation["within_limit"] and truncation.get("omitted", 0) > 0
+    print(f"  自检 D: {'通过' if d_ok else '未通过'}（遗漏 {truncation.get('omitted')} 章）")
+    ok = ok and d_ok
     return 0 if ok else 4
 
 

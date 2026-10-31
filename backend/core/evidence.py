@@ -70,6 +70,8 @@ class Bundle:
     truncated: bool = False
     #: 证据文本内每段窗口的 (章号, 起, 止)——用来把模型给的引文位置反查回章号
     spans: list[tuple[int, int, int]] = field(default_factory=list)
+    #: 有多少个后文命中章因为窗口上限而**没有展示**（0 才叫没截断）
+    omitted: int = 0
 
     @property
     def empty(self) -> bool:
@@ -173,7 +175,11 @@ class EvidenceIndex:
                 f"【第 {anchor_chapter} 章（埋设处）】")
 
         dropped = 0
-        for ch in self.find_mentions(keywords, after=anchor_chapter, limit=max_windows):
+        # 多要一个命中，才知道"有没有因为窗口上限漏掉"——否则永远报不出截断
+        hits = self.find_mentions(keywords, after=anchor_chapter, limit=max_windows + 1)
+        extra_hits = max(0, len(hits) - max_windows)
+        shown_hit_chapters: list[int] = []
+        for ch in hits[:max_windows]:
             if len(chapters) >= max_windows + 1:
                 break
             # 取窗要对准**真正命中的那个词**：用 keywords[0] 会在它没出现时退化成章首，
@@ -183,12 +189,16 @@ class EvidenceIndex:
                 dropped += 1
                 continue
             _append(ch, self.window(ch, hit_word, radius=radius), f"【第 {ch} 章】")
+            shown_hit_chapters.append(ch)
 
+        # 截断只看"实际遗漏"：命中章比窗口多、或命中章里取不到词而跳过。
+        # 原来用 len(chapters) > max_windows 判断，恰好展示满时会误报截断。
+        omitted = extra_hits + dropped
         text = "\n\n".join(blocks)
         return Bundle(
             text=text,
             chapters=chapters,
-            # 有命中章被跳过、或命中数超过能展示的上限，都算截断
-            truncated=bool(dropped) or len(chapters) > max_windows,
+            truncated=omitted > 0,
             spans=spans,
+            omitted=omitted,
         )

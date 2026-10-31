@@ -73,7 +73,7 @@ ITEM_TEMPLATE = """### 候选 candidate_id={candidate_id}
 并把**那一段的** evidence_id 原样回填——不同段是不同的证据，不要混：
 
 {segments}
-
+{truncation_note}
 """
 
 
@@ -95,6 +95,8 @@ class RecheckOutcome:
     #: 没有锚点 / 锚点在章内定位不到：这两类都不是"查了没答案"，要单列
     dropped_no_anchor: int = 0
     dropped_anchor_missing: int = 0
+    #: 因为"没有证据"而没进入候选的条目 id（它们不是"待查未查"）
+    dropped_ids: list[str] = field(default_factory=list)
 
     def summary(self) -> dict:
         return {
@@ -108,12 +110,18 @@ class RecheckOutcome:
             "dropped_no_anchor": self.dropped_no_anchor,
             "dropped_anchor_missing": self.dropped_anchor_missing,
             "not_checked": list(self.not_checked),
+            "dropped_ids": list(self.dropped_ids),
         }
 
 
-def _evidence_id(chapter: int, start: int, end: int) -> str:
-    """证据身份：章 + 区间。同一句话在同章同位置才算同一份证据。"""
-    raw = f"{chapter}\x1f{start}\x1f{end}".encode("utf-8")
+def _evidence_id(chapter: int, text: str) -> str:
+    """证据身份 = 章 + 该段正文本身。
+
+    原来用"章 + 证据包内起止"，同章两段等长窗口会算出同一个 id，
+    后写的覆盖先写的全局验证表——A 引用自己看到的原文被判 QUOTE_NOT_FOUND，
+    而引用只展示给 B 的文字反而通过。按正文哈希后，内容相同才算同一份证据。
+    """
+    raw = f"{chapter}\x1f{text}".encode("utf-8")
     return hashlib.sha256(raw).hexdigest()[:12]
 
 
@@ -155,6 +163,7 @@ async def run_recheck_v2(
             # 没有锚点 = 没有证据。这类条目只能标"证据不足"，不能凭模型自述判回收。
             outcome.dropped_no_anchor += 1
             outcome.not_checked.append(getattr(item, "id", ""))
+            outcome.dropped_ids.append(getattr(item, "id", ""))
             continue
         # 定位用**整章**（锚点可能落在章末，窗口只够展示）
         source = index.chapter_text(chapter) if index else book_text
@@ -162,12 +171,13 @@ async def run_recheck_v2(
         if not located.found:
             outcome.dropped_anchor_missing += 1
             outcome.not_checked.append(getattr(item, "id", ""))
+            outcome.dropped_ids.append(getattr(item, "id", ""))
             continue
         candidates.append(
             {
                 "item": item,
                 "candidate_id": str(getattr(item, "id", "")),
-                "evidence_id": _evidence_id(chapter, located.start, located.end),
+                "evidence_id": _evidence_id(chapter, quote),
                 "chapter": chapter,
             }
         )
@@ -178,6 +188,11 @@ async def run_recheck_v2(
         empty = count_verdicts([], expected_candidate_ids=[], candidates_total=0)
         outcome.coverage = empty.as_dict()
         outcome.status = recheck_status(started=True, finished=True, stopped=False, counts=empty)
+        dropped = outcome.dropped_no_anchor + outcome.dropped_anchor_missing
+        if dropped:
+            # 一条都没进入候选、却说自己"完成"——这正是最难被发现的那种谎
+            outcome.status = "PARTIAL"
+            outcome.status_reason = f"没有可用证据（{dropped} 条未进入候选）"
         return outcome
 
     # 证据按**段**编号：一条伏笔的埋设处在第 2 章、答案在第 9 章，若把两段当成
@@ -203,8 +218,8 @@ async def run_recheck_v2(
         )
         segments: list[dict] = []
         for chapter, start, end in bundle.spans:
-            eid = _evidence_id(chapter, start, end)
             body = bundle.text[start:end].strip()
+            eid = _evidence_id(chapter, body)
             texts_by_evidence[eid] = body
             chapter_by_evidence[eid] = chapter
             segments.append({"evidence_id": eid, "chapter": chapter, "text": body})
@@ -234,6 +249,12 @@ async def run_recheck_v2(
                 first_seen=getattr(c["item"], "first_seen_chapter", 0),
                 last_seen=getattr(c["item"], "last_seen_chapter", 0),
                 segment_count=len(c["segments"]),
+                truncation_note=(
+                    f"（注意：后文还有 {c.get('omitted', 0)} 处提到相关词但未展示，"
+                    "判「没有回收」时要考虑这一点）"
+                    if c.get("truncated")
+                    else ""
+                ),
                 segments="\n".join(
                     f'[evidence_id={seg["evidence_id"]} 第{seg["chapter"]}章]\n"""\n'
                     f'{seg["text"]}\n"""'
@@ -299,13 +320,14 @@ async def run_recheck_v2(
         if item is not None:
             _apply_state(item, state, group, chapter_of=_chapter_of)
 
+    pending = [cid for cid in outcome.not_checked if cid not in set(outcome.dropped_ids)]
     outcome.status = recheck_status(
-        started=True, finished=not outcome.not_checked, stopped=False, counts=counts
+        started=True, finished=not pending, stopped=False, counts=counts
     )
-    if outcome.not_checked:
+    if pending:
         outcome.status_reason = "存在未核对候选"
     dropped = outcome.dropped_no_anchor + outcome.dropped_anchor_missing
-    if dropped and outcome.status == COMPLETED:
+    if dropped and outcome.status == "COMPLETED":
         # 有条目因为没有证据而整条没查：这不是"完成"，只是"候选都处理完了"
         outcome.status = "PARTIAL"
         outcome.status_reason = f"部分条目无可用证据（{dropped} 条未进入候选）"

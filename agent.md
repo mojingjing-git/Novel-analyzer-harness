@@ -1713,3 +1713,11 @@ C2 实测把问题定性了：模型判"支持"20 次、**引文逐字命中 9/9
 - **检索词条化**：`_keywords_for` 从整句改为 2–4 字片段 + 频次加权；整句检索只有在原句照抄时才命中，等于没检索。
 - **`_normalize_payload`**：把模型写的逗号串归一成数组，但 id 仍逐个比对——格式问题与证据问题分开。
 - **状态语义**：有 dropped（无锚点/定位失败）时降为 `PARTIAL`，不许报 `COMPLETED`。
+
+### 10.61 组合场景：证据隔离、丢弃口径、截断语义
+
+- `evidence_id` 改按**内容**算（`sha256(章|正文)`）：同章两段等长窗口曾算出同一 id，后写覆盖前写，导致"A 引用自己的原文被判 QUOTE_NOT_FOUND，而引用只展示给 B 的文字反而通过"。
+- `truncated` 改按**实际遗漏**：命中多要一个（`limit=max_windows+1`），`omitted = 超出数 + 取不到词而跳过的章`，`truncated = omitted > 0`；并把遗漏数写进提示词。
+- 丢弃（无锚点/定位失败）单列 `dropped_ids`，不再算作 `not_checked`；状态机按"待查"算，避免"没有证据"把整轮压成 RUNNING。
+- 状态收尾的 `COMPLETED` 曾未导入 → `NameError`；已改字面量，并补空候选分支的 PARTIAL。
+- 用例 `test_recheck_evidence_isolation.py`（6 例，含同章双候选与交叉引用）；样本脚本自检收紧（C 必须有有效判定且已核对、D 必须有实际遗漏）。
