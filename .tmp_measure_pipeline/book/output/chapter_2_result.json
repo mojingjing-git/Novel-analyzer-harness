@@ -1,0 +1,218 @@
+{
+  "chapter_number": 2,
+  "core_events": [
+    {
+      "id": 1,
+      "event": "张龙、赵虎于东皋林擒获改扮私行的安乐侯庞昱",
+      "characters": "张龙、赵虎、庞昱",
+      "function": "拿下主线反派，推动包公查赈案决断",
+      "importance": "高"
+    },
+    {
+      "id": 2,
+      "event": "项福潜入公馆行刺包公，被擒后良心发现招供庞昱阴谋",
+      "characters": "项福、包公、王马张赵",
+      "function": "瓦解庞昱刺杀计划，展现包公识人，收服线索人",
+      "importance": "高"
+    },
+    {
+      "id": 3,
+      "event": "展昭留字条预警天昌镇刺客，并暗中救金玉仙于观音庵",
+      "characters": "展昭、包公、金玉仙",
+      "function": "保护钦差并解救受害者，铺垫展昭投效",
+      "importance": "中"
+    },
+    {
+      "id": 4,
+      "event": "白玉堂与展昭先后潜入苗家集，夺回苗秀父子贪墨庞昱银两",
+      "characters": "白玉堂、展昭、苗秀、苗恒义",
+      "function": "惩戒恶霸，侧面揭露庞昱侵吞资产",
+      "importance": "低"
+    },
+    {
+      "id": 5,
+      "event": "包兴偷试游仙枕入梦被判官斥，展昭字条至",
+      "characters": "包兴、展昭",
+      "function": "引出游仙枕异宝及星主伏笔，衔接预警",
+      "importance": "低"
+    }
+  ],
+  "character_arcs": [
+    {
+      "name": "展昭",
+      "surface_action": "跟踪项福、苗家集夺银一半、留字条预警、救金玉仙",
+      "inner_motivation": "行侠仗义，暗中护持清官",
+      "change_delta": "从无名下侠客到明确助包公的义士，与白玉堂互赏",
+      "driver": "见项福投庞昱及包公危局"
+    },
+    {
+      "name": "白玉堂",
+      "surface_action": "潘家楼替老者还银，夜入苗家集割耳夺银",
+      "inner_motivation": "嫉恶如仇，不屑与投靠恶侯者为伍",
+      "change_delta": "初遇项福知其投敌愤而离，后独自惩恶，展现五鼠之侠",
+      "driver": "项福坦言投安乐侯庞昱"
+    },
+    {
+      "name": "项福",
+      "surface_action": "受庞昱派遣刺杀包公，被擒后松绑招供",
+      "inner_motivation": "原效忠庞昱，后服包公正直",
+      "change_delta": "从刺客转为潜在证人，良心发现",
+      "driver": "包公以礼相待不杀反赏"
+    },
+    {
+      "name": "包公",
+      "surface_action": "得字条分派防刺，从容擒项福，差人擒庞昱",
+      "inner_motivation": "公正查案，求贤若渴",
+      "change_delta": "延续清官形象，无显著变化",
+      "driver": "展昭预警与项福自白"
+    },
+    {
+      "name": "包兴",
+      "surface_action": "偷睡游仙枕做梦遇判官，呈字帖",
+      "inner_motivation": "好奇宝物",
+      "change_delta": "知自己非星主，退守本分",
+      "driver": "梦境警示"
+    }
+  ],
+  "foreshadowing": [
+    {
+      "clue": "展昭与白玉堂互相暗赞未相识",
+      "type": "关系",
+      "implication": "未来锦毛鼠与南侠将正式结交或对抗，形成五鼠闹东京前奏",
+      "confidence": "中",
+      "importance": "中",
+      "anchor_quote": "展爷看的明白，不由暗暗称赞道：“这就是了。”",
+      "anchor_chapter": 2,
+      "motif_key": "双侠"
+    },
+    {
+      "clue": "游仙枕唯星主可睡",
+      "type": "奇遇",
+      "implication": "包公作为星主后续将使用游仙枕获得神启或预审梦境",
+      "confidence": "中",
+      "importance": "低",
+      "anchor_quote": "判官说我假充星主；将来此枕，想是星主才睡得呢。",
+      "anchor_chapter": 3,
+      "motif_key": "星主枕"
+    },
+    {
+      "clue": "字条示警救金玉仙",
+      "type": "关键事件",
+      "implication": "金玉仙获救后将成为指证庞昱抢掠民妇的关键人证",
+      "confidence": "高",
+      "importance": "中",
+      "anchor_quote": "一路观音庵，救活烈妇人。要紧，要紧！",
+      "anchor_chapter": 3,
+      "motif_key": "救烈妇"
+    },
+    {
+      "clue": "展昭屡次暗中助包公",
+      "type": "伏线",
+      "implication": "展昭后续将正式投效包公，受封御猫辅佐办案",
+      "confidence": "高",
+      "importance": "高",
+      "anchor_quote": "包公闻听，道：“原来展义士暗中帮助。前日三星镇留下字柬，必也是义士所为。”",
+      "anchor_chapter": 3,
+      "motif_key": "展昭助包"
+    }
+  ],
+  "anchor_stats": {
+    "total": 4,
+    "located": 4,
+    "missing": 0,
+    "by_kind": {
+      "EXACT": 4
+    }
+  },
+  "plot_holes": [
+    "苗秀在前文老者口中住苗家集，后在厅上自言‘在潘家集也发了个小财’，而潘家楼位于安平镇，地名矛盾；或潘家集为潘家楼所在镇别称但未明说。"
+  ],
+  "locations": [
+    {
+      "name": "安平镇",
+      "parent": "",
+      "type": "镇",
+      "description": "项福打尖、潘家楼酒楼所在，展昭初跟踪处"
+    },
+    {
+      "name": "潘家楼",
+      "parent": "安平镇",
+      "type": "酒楼",
+      "description": "安平镇路西酒楼，白玉堂替老者还银之处"
+    },
+    {
+      "name": "苗家集",
+      "parent": "",
+      "type": "集/村",
+      "description": "苗秀父子居所，白玉堂与展昭夜夺银之地"
+    },
+    {
+      "name": "天昌镇",
+      "parent": "",
+      "type": "镇",
+      "description": "包公公馆所在，防刺客及审案中心"
+    },
+    {
+      "name": "三星镇",
+      "parent": "",
+      "type": "镇",
+      "description": "包公审完案件歇马处，展昭留字条地"
+    },
+    {
+      "name": "东皋林",
+      "parent": "",
+      "type": "林",
+      "description": "庞昱改扮私行入京路径，张赵擒侯处"
+    },
+    {
+      "name": "观音庵",
+      "parent": "",
+      "type": "庵",
+      "description": "金玉仙被安置及尼姑居所，解救点"
+    },
+    {
+      "name": "太守衙门",
+      "parent": "",
+      "type": "建筑",
+      "description": "项福起初拴马处，苗恒义提及太守打发项福"
+    }
+  ],
+  "spatial_relationships": [],
+  "cross_block": {
+    "summary": "本章含第十三、十四回：展昭跟踪项福遇白玉堂，白玉堂因项福投庞昱怒离；二人先后至苗家集惩戒贪霸苗秀父子夺回庞昱银。包兴试游仙枕梦警，展昭留字预警包公防刺；包公至天昌镇分派，项福行刺被擒招供；展昭救金玉仙于观音庵，张赵东皋林擒庞昱。",
+    "unresolved_questions": [
+      "白玉堂携银去向何处，是否与陷空岛联络",
+      "项福被疏放暗拘后如何处置作证",
+      "金玉仙后续是否当堂对质庞昱",
+      "游仙枕包公何时使用"
+    ],
+    "new_leads": [
+      "庞昱命项福刺杀钦差、抢金玉仙入京的罪证",
+      "苗恒义借太守之势贪墨三百两银线索"
+    ],
+    "contextual_link": "第1章叙述刘妃狸猫换太子，包员外妻周氏怀孕包公将降生且预示磨难 → 本章包公已为钦差大人至天昌镇查赈，展昭暗中护持、包兴试游仙枕等情节，展现清官主线正式展开，呼应第1章包公磨难伏笔之成长线"
+  },
+  "updated_knowledge": {
+    "timeline": "约宋真宗时期（具体年份未知）",
+    "world_building": [
+      "陷空岛五义士（锦毛鼠白玉堂等）江湖侠客势力",
+      "游仙枕：星主方可使用的异枕，能入梦警示",
+      "钦差查赈制度与太守衙门、经承等官僚设置，包公带公孙策及王马张赵四勇士",
+      "安乐侯庞昱倚太师之势陈州放赈为非，私改扮入京"
+    ]
+  },
+  "long_context_insights": {
+    "thematic_elements": [
+      "忠义",
+      "阴谋",
+      "身份错位",
+      "伦理",
+      "侠义"
+    ],
+    "pattern": "跨章重复出现的叙事模式：忠义侠客（前章寇珠陈林，本章展昭白玉堂）暗中助清官破阴谋，恶人内部瓦解或受惩",
+    "foreshadowing_network": "第1章包公磨难伏笔与本章展昭暗助、游仙枕星主伏笔形成清官成长网络；白玉堂与展昭互赏伏笔预示五鼠与御猫未来交集；金玉仙被救伏笔将回收于庞昱案对质。",
+    "pacing": "节奏明快，双线（白玉堂展昭夺银支线、包公防刺主线）并行后汇于擒庞昱，张弛有度。",
+    "long_term_arcs": []
+  },
+  "block_size": 1
+}

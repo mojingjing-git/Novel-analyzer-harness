@@ -1,0 +1,188 @@
+{
+  "chapter_number": 10,
+  "core_events": [
+    {
+      "id": 1,
+      "event": "展昭识破丁兆蕙即救周老的渔郎，二人西湖亭结交，丁赠银四百二十两助周老复建茶楼",
+      "characters": "展昭,丁兆蕙,周老",
+      "function": "展昭拓展侠义交游，铺垫茉花村线及后续同盟",
+      "importance": "中"
+    },
+    {
+      "id": 2,
+      "event": "丁兆蕙夜入郑家楼假门偷取郑新银两（八封加二十两），展昭窗外窥视未干预",
+      "characters": "丁兆蕙,展昭,郑新",
+      "function": "济弱扶倾具象化，侧面刻画丁机变与侠盗作风",
+      "importance": "低"
+    },
+    {
+      "id": 3,
+      "event": "展昭赴松江府茉花村，与丁母及丁大爷相见，丁母暗相看拟结姻亲",
+      "characters": "展昭,丁兆蕙,丁兆兰,丁母",
+      "function": "埋下展昭与丁家小姐姻缘伏笔，巩固侠义世家同盟",
+      "importance": "中"
+    }
+  ],
+  "character_arcs": [
+    {
+      "name": "展昭",
+      "surface_action": "与丁二爷结交，自述不愿为官羁绊但感包相爷情意；旁观丁偷银；赴茉花村舞剑受礼遇",
+      "inner_motivation": "向往潇洒侠客生活，但忠义于包公而暂屈官职",
+      "change_delta": "微小：明确表达为官矛盾心理，较受封时更显疏离感",
+      "driver": "丁二爷询问官职及自述渔郎装束引发"
+    },
+    {
+      "name": "丁兆蕙",
+      "surface_action": "扮渔郎救周老，茶铺认展昭，夜偷郑银助周，邀展赴庄，试展剑识巨阙，拟妹剑激之",
+      "inner_motivation": "慕侠重义，试探展昭为人，暗中为妹物色佳偶",
+      "change_delta": "新出场，确立机智豪侠形象",
+      "driver": "奉母命进香偶遇周老，闻展昭名主动结交"
+    },
+    {
+      "name": "郑新",
+      "surface_action": "与妻对话忆前妻恩，怕老厌物京控，银被偷后叫苦",
+      "inner_motivation": "受后妻影响负心，但残存良心不安",
+      "change_delta": "延续前章逐周老出境的卑微态，未大变",
+      "driver": "妇人提及老厌物告状"
+    }
+  ],
+  "foreshadowing": [
+    {
+      "clue": "丁母呼展爷为贤侄，二爷溜往小姐绣户",
+      "type": "情感",
+      "implication": "丁家拟将小姐丁月华许配展昭，未来将成就侠侣姻缘",
+      "confidence": "中",
+      "importance": "中",
+      "anchor_quote": "",
+      "anchor_chapter": 0,
+      "motif_key": "姻缘"
+    },
+    {
+      "clue": "丁二爷称剑乃小妹的，激展昭",
+      "type": "关系",
+      "implication": "丁小姐善武携湛卢剑，后续将比剑联姻或共同对敌",
+      "confidence": "中",
+      "importance": "低",
+      "anchor_quote": "此剑乃小妹的。",
+      "anchor_chapter": 11,
+      "motif_key": "剑缘"
+    },
+    {
+      "clue": "郑新夫妇议老厌物恐京控，郑新说设法出脱",
+      "type": "关系",
+      "implication": "郑新后妻或郑新本人将设计进一步陷害或安抚周老，可能引发新冲突",
+      "confidence": "中",
+      "importance": "低",
+      "anchor_quote": "明日再设法出脱那老厌物便了。",
+      "anchor_chapter": 10,
+      "motif_key": "旧怨"
+    },
+    {
+      "clue": "丁家掌管芦花荡船运，庄丁站班",
+      "type": "势力",
+      "implication": "茉花村丁氏地方势力将在水案或江湖事务中发挥作用",
+      "confidence": "高",
+      "importance": "中",
+      "anchor_quote": "芦花荡这边俱是我弟兄掌管。",
+      "anchor_chapter": 11,
+      "motif_key": "地方势力"
+    }
+  ],
+  "anchor_stats": {
+    "total": 4,
+    "located": 3,
+    "missing": 1,
+    "by_kind": {
+      "EXACT": 3
+    }
+  },
+  "plot_holes": [],
+  "locations": [
+    {
+      "name": "松江府茉花村",
+      "parent": "松江府",
+      "type": "庄院村落",
+      "description": "丁兆兰丁兆蕙兄弟居所，广梁大门，近芦花荡，庄丁严密"
+    },
+    {
+      "name": "郑家楼",
+      "parent": "",
+      "type": "茶楼建筑",
+      "description": "郑新所开茶楼，后楼有假门藏银，周老原楼被改字号"
+    },
+    {
+      "name": "断桥亭",
+      "parent": "",
+      "type": "亭",
+      "description": "西湖边展昭丁二爷周老会面之处"
+    },
+    {
+      "name": "芦花荡",
+      "parent": "松江府",
+      "type": "水域",
+      "description": "江中以芦花荡为界，丁家弟兄掌管一边船运"
+    },
+    {
+      "name": "常州府武进县遇杰村",
+      "parent": "常州府武进县",
+      "type": "村落",
+      "description": "展昭家乡，自述籍贯"
+    },
+    {
+      "name": "灵隐寺",
+      "parent": "",
+      "type": "寺庙",
+      "description": "丁二爷奉母命进香之处，在湖畔"
+    },
+    {
+      "name": "周老茶楼（孟先生楼）",
+      "parent": "",
+      "type": "茶楼",
+      "description": "周老友孟先生托付之楼，在郑家楼前一箭之地，复业所用"
+    }
+  ],
+  "spatial_relationships": [
+    {
+      "from": "郑家楼",
+      "to": "周老茶楼（孟先生楼）",
+      "relation": "前一箭之地"
+    },
+    {
+      "from": "芦花荡",
+      "to": "松江府茉花村",
+      "relation": "丁家弟兄掌管芦花荡这边"
+    }
+  ],
+  "cross_block": {
+    "summary": "展昭西湖遇丁兆蕙，认出即救周老渔郎，结为兄弟；丁夜偷郑新银赠周老复业；展赴茉花村，丁母相看暗许姻亲。",
+    "unresolved_questions": [
+      "郑新后妻所谓老厌物京控隐患如何发展？",
+      "丁小姐绣户中二爷所言何事，婚事如何定？"
+    ],
+    "new_leads": [
+      "茉花村丁氏势力与展昭结盟",
+      "湛卢剑主为丁小姐伏笔"
+    ],
+    "contextual_link": "第22回仁宗耀武楼试展昭武艺封其为御猫四品护卫 → 本章第30回展昭向丁二爷自述“耀武楼试三绝技，敕赐御猫”并舞剑，延续其受封后侠客身份与为官矛盾的心理"
+  },
+  "updated_knowledge": {
+    "timeline": "约宋真宗时期（具体年份未知），春暮",
+    "world_building": [
+      "茉花村丁氏兄弟为镇守雄关总兵之子，掌松江府芦花荡船运，庄丁分岗站班",
+      "丁家先父遗剑有巨阙（展昭剑）与湛卢（丁小姐剑）",
+      "西湖边郑家楼茶行字号更替，周老被逐后得侠助复业"
+    ]
+  },
+  "long_context_insights": {
+    "thematic_elements": [
+      "侠义",
+      "身份错位",
+      "关系"
+    ],
+    "pattern": "侠客暗中济弱（展昭杀道救包公、丁偷银助周老）构成重复叙事，彰显江湖互助网络",
+    "foreshadowing_network": "本章丁展姻缘伏笔独立于前章宫闱案，但与前章第22回御猫受封形成身份延续；芦花荡势力伏笔扩展侠义地理版图，与开封府主线暂无交织但预设未来合力。",
+    "pacing": "偷银段落紧凑暗窥，庄内叙谈舒缓铺陈，张弛有度过渡至新地图",
+    "long_term_arcs": []
+  },
+  "block_size": 1
+}

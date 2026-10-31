@@ -1,0 +1,166 @@
+{
+  "chapter_number": 6,
+  "core_events": [
+    {
+      "id": 1,
+      "event": "展昭潜入庞太师花园破魇魔妖法，斩杀老道邢吉，携木头人回开封府，包公醒悟病愈",
+      "characters": "展昭、邢吉、包公、公孙策、包兴",
+      "function": "破除庞太师暗害，解救包公，为参奏提供实证，回收前章妖法危机",
+      "importance": "高"
+    },
+    {
+      "id": 2,
+      "event": "包公升堂审通真观道士谈明谈月及黄寡妇，查明赵国盛女被拐顶替案，判罚充军发配",
+      "characters": "包公、谈明、谈月、黄寡妇、赵国盛",
+      "function": "了结前案民事纠纷，印证魇魔案关联，彰显断案明察",
+      "importance": "中"
+    },
+    {
+      "id": 3,
+      "event": "包公金殿参奏庞太师魇魔害臣，庞吉罚俸陪罪；仁宗耀武楼试展昭武艺，封御猫四品护卫",
+      "characters": "包公、庞吉、仁宗、展昭",
+      "function": "朝堂惩戒权贵，展昭正式入仕开封府，铺垫后续侠义集结",
+      "importance": "中"
+    },
+    {
+      "id": 4,
+      "event": "包公应仁宗意请开恩科，公孙策拟条陈获准",
+      "characters": "包公、公孙策、仁宗",
+      "function": "为国求贤，铺垫未来科举选才情节",
+      "importance": "低"
+    }
+  ],
+  "character_arcs": [
+    {
+      "name": "展昭",
+      "surface_action": "破法杀道救包公，耀武楼献艺受封御猫护卫",
+      "inner_motivation": "感念包公知遇救护之恩，行侠济世",
+      "change_delta": "从浪迹江湖侠客转为御前带刀护卫，正式隶属开封府",
+      "driver": "包公昏迷被救及仁宗试艺封赏"
+    },
+    {
+      "name": "包公",
+      "surface_action": "病愈审案参奏太师，举荐展昭，请开恩科",
+      "inner_motivation": "为国为民清除奸邪，选拔人才稳固朝纲",
+      "change_delta": "从昏迷险死恢复执政，以首相之尊主动出击制约庞党",
+      "driver": "展昭送达木人证据与圣上关切"
+    },
+    {
+      "name": "庞吉",
+      "surface_action": "书房惊见人头，被参罚俸陪罪",
+      "inner_motivation": "为子报仇暗害包公，恃国戚身份周旋",
+      "change_delta": "阴谋败露受惩但未倒台，仍存怨恨",
+      "driver": "邢吉死与包公上奏"
+    }
+  ],
+  "foreshadowing": [
+    {
+      "clue": "展昭获御猫绰号，文末提惹起英雄好汉平定襄阳",
+      "type": "伏线",
+      "implication": "未来展昭等侠义异人將受封出仕，参与平定襄阳叛乱大事",
+      "confidence": "高",
+      "importance": "高",
+      "anchor_quote": "此号一传不知紧要，便惹起了多少英雄好汉，人人奇材，个个豪杰。",
+      "anchor_chapter": 7,
+      "motif_key": "御猫襄阳"
+    },
+    {
+      "clue": "包公因太后大庆请开恩科",
+      "type": "制度",
+      "implication": "朝廷将举行恩科考试，选拔的新人才或介入后续江湖朝堂事件",
+      "confidence": "中",
+      "importance": "中",
+      "anchor_quote": "况有太后入宫大庆之典礼，宜加一科，为国求贤。",
+      "anchor_chapter": 7,
+      "motif_key": "开恩科"
+    },
+    {
+      "clue": "庞太师罚俸陪罪了事",
+      "type": "政治",
+      "implication": "庞吉作为国戚势力未除，将来可能再起阴谋报复包公或展昭",
+      "confidence": "高",
+      "importance": "中",
+      "anchor_quote": "念他是椒房之戚，着从宽罚俸三年。",
+      "anchor_chapter": 7,
+      "motif_key": "太师怨"
+    }
+  ],
+  "anchor_stats": {
+    "total": 3,
+    "located": 3,
+    "missing": 0,
+    "by_kind": {
+      "EXACT": 3
+    }
+  },
+  "plot_holes": [],
+  "locations": [
+    {
+      "name": "太师府花园",
+      "parent": "",
+      "type": "园林",
+      "description": "庞吉府中设坛魇魔处，展昭破法杀邢吉并掷人头惊贼"
+    },
+    {
+      "name": "耀武楼",
+      "parent": "皇宫",
+      "type": "楼阁",
+      "description": "仁宗驾幸观展昭舞剑袖箭纵跃试艺并赐号御猫之所"
+    },
+    {
+      "name": "修文殿",
+      "parent": "皇宫",
+      "type": "宫殿",
+      "description": "天子宣召包公询问展昭武艺并嘱引见的内殿"
+    },
+    {
+      "name": "通真观",
+      "parent": "",
+      "type": "道观",
+      "description": "邢吉师徒出家拐带女子玉香，庞太师请邢吉设坛妖法处"
+    },
+    {
+      "name": "教坊司",
+      "parent": "京城",
+      "type": "机构",
+      "description": "黄寡妇判为虔婆、玉香为娼妓的发配机构"
+    }
+  ],
+  "spatial_relationships": [],
+  "cross_block": {
+    "summary": "第21回展昭破太师府魇魔杀邢吉救醒包公，包公审通真观拐带案；第22回包公参庞太师罚俸，仁宗试展昭封御猫，准开恩科。",
+    "unresolved_questions": [
+      "庞太师罚俸后是否再报复？",
+      "玉香金香后续命运如何？",
+      "恩科将选拔何等人才？"
+    ],
+    "new_leads": [
+      "御猫展昭号引出襄阳大事异人出仕",
+      "开恩科为国求贤埋下人才伏笔"
+    ],
+    "contextual_link": "第5章包公受庞太师妖法昏迷、展昭探得阴谋赶回相救 → 本章第21回展昭破法杀邢吉救醒包公，直接回收第5章展昭救包公伏笔并闭合妖法危机"
+  },
+  "updated_knowledge": {
+    "timeline": "约宋真宗时期（具体年份未知），春暮",
+    "world_building": [
+      "耀武楼：皇宫中天子试艺观武之楼",
+      "修文殿：天子召见臣工问策之殿",
+      "教坊司：处置罪妇为娼妓之机构",
+      "御前四品带刀护卫：展昭受封官职，隶开封府供职",
+      "恩科：因太后入宫大庆特加科举以拔人才"
+    ]
+  },
+  "long_context_insights": {
+    "thematic_elements": [
+      "忠义",
+      "阴谋",
+      "侠义",
+      "制度"
+    ],
+    "pattern": "奸邪用暗算妖法害忠良，忠良得侠客破局并朝堂反击，侠客终受封入仕的循环模式",
+    "foreshadowing_network": "第5章庞太师妖法阴谋伏笔在本章通过展昭杀邢吉与木人证据彻底回收，并延伸至朝堂罚俸；第2章展昭救包公伏笔于第5章延续后本章完成闭环；新添御猫号伏笔直连后文襄阳大事，开恩科伏笔独立铺垫人才线。",
+    "pacing": "危机破除与朝堂审案紧凑收束，随后封赏试艺舒缓扬威，整体张弛有度。",
+    "long_term_arcs": []
+  },
+  "block_size": 1
+}

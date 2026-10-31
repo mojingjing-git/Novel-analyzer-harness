@@ -1,0 +1,174 @@
+{
+  "chapter_number": 16,
+  "core_events": [
+    {
+      "id": 1,
+      "event": "包公审颜查散冤案，查明冯君衡换扇盗柬杀绣红，铡冯君衡，罚柳洪供养颜生毕姻",
+      "characters": "包公、颜查散、雨墨、冯君衡、柳洪、田氏",
+      "function": "了结颜查散被诬案，彰显开封府明断与御刑威严",
+      "importance": "中"
+    },
+    {
+      "id": 2,
+      "event": "白玉堂夜入开封府以飞石打赵虎酒杯，与展昭房上交手后遁走，展昭疑是苗家集那人",
+      "characters": "白玉堂、展昭、赵虎、王马张赵",
+      "function": "触发五鼠与御猫对立冲突，铺垫后续闹东京与诓捕",
+      "importance": "高"
+    },
+    {
+      "id": 3,
+      "event": "陷空岛卢方因白玉堂两月未归派蒋平韩彰徐庆寻弟，柳青求劫孙珍寿金得暗助",
+      "characters": "卢方、蒋平、韩彰、徐庆、柳青",
+      "function": "展开五义寻弟兼侠劫赃金支线，串联江湖义气",
+      "importance": "中"
+    },
+    {
+      "id": 4,
+      "event": "白玉堂居东京旅店立誓入皇宫显名诓展昭；内苑郭安欲害陈林报郭槐仇",
+      "characters": "白玉堂、郭安、何常喜",
+      "function": "埋下皇宫奇案与宫廷复仇伏笔，扩展矛盾面",
+      "importance": "中"
+    }
+  ],
+  "character_arcs": [
+    {
+      "name": "展昭",
+      "surface_action": "回开封府述茉花村联姻，夜战白玉堂不伤其分寸，提议若白玉堂因御猫来则甘拜下风不称御猫",
+      "inner_motivation": "顾全江湖朋友义气，避免无谓争斗，但职守在身难退",
+      "change_delta": "小（延续御猫身份，显谦和退让）",
+      "driver": "白玉堂夜探挑衅"
+    },
+    {
+      "name": "白玉堂",
+      "surface_action": "夜入开封府掷杯石战展昭，返旅店思忖立誓入皇宫诓展昭",
+      "inner_motivation": "不服御猫称号，欲扬名天下显陷空岛人物，报复性赌气",
+      "change_delta": "中（从苗家集割耳局部侠行转为全面挑战官方侠号）",
+      "driver": "见展昭本领不差且恨圣上赐号"
+    },
+    {
+      "name": "卢方",
+      "surface_action": "拒柳青劫金，因念五弟烦恼，后暗许三弟寻弟",
+      "inner_motivation": "重义思弟，不愿行劫但心绪不定",
+      "change_delta": "小（忧心加重）",
+      "driver": "白玉堂离庄两月无音"
+    },
+    {
+      "name": "赵虎",
+      "surface_action": "豪饮不服展昭退让，被飞石打落杯，后撅嘴不语",
+      "inner_motivation": "性烈逞强，轻视白玉堂",
+      "change_delta": "小（受挫暂抑）",
+      "driver": "白玉堂窗外飞物"
+    },
+    {
+      "name": "郭安",
+      "surface_action": "听何常喜言陈林受赏参，发狠欲害陈林",
+      "inner_motivation": "为叔郭槐报仇，惧陈林大压小",
+      "change_delta": "新出场立恶念",
+      "driver": "郭槐遭诛仇怨"
+    }
+  ],
+  "foreshadowing": [
+    {
+      "clue": "白玉堂立誓入皇宫显名诓展昭",
+      "type": "伏线",
+      "implication": "白玉堂将夜闯皇宫盗宝或闹事，致圣上交开封府拿人，引发猫鼠大斗",
+      "confidence": "高",
+      "importance": "高",
+      "anchor_quote": "他既横了心，立下此志，就不顾甚么纪律了。",
+      "anchor_chapter": 17,
+      "motif_key": "猫鼠斗"
+    },
+    {
+      "clue": "郭安欲害都堂陈林",
+      "type": "复仇",
+      "implication": "郭安将设毒计谋杀陈林，可能牵连开封府案与宫廷安稳",
+      "confidence": "中",
+      "importance": "中",
+      "anchor_quote": "恨不得他立刻倾生，方消我心头之恨。",
+      "anchor_chapter": 17,
+      "motif_key": "郭安仇"
+    },
+    {
+      "clue": "蒋平韩彰徐庆偕柳青劫孙珍寿礼金",
+      "type": "行动",
+      "implication": "三雄与柳青将劫得千两黄金赈灾，并寻白玉堂，可能遇官交锋",
+      "confidence": "高",
+      "importance": "中",
+      "anchor_quote": "一来为寻五弟，二来又可暗办此事，岂不两全其美么？",
+      "anchor_chapter": 17,
+      "motif_key": "劫寿金"
+    }
+  ],
+  "anchor_stats": {
+    "total": 3,
+    "located": 3,
+    "missing": 0,
+    "by_kind": {
+      "EXACT": 3
+    }
+  },
+  "plot_holes": [],
+  "locations": [
+    {
+      "name": "开封府",
+      "parent": "",
+      "type": "机构建筑",
+      "description": "包公断案办公之所，含公所书房大堂丹墀"
+    },
+    {
+      "name": "陷空岛卢家庄",
+      "parent": "陷空岛",
+      "type": "庄院",
+      "description": "钻天鼠卢方等五鼠结义居所，有相连庄门待客厅"
+    },
+    {
+      "name": "东京",
+      "parent": "",
+      "type": "城市",
+      "description": "北宋都城，白玉堂旅店隐匿及开封府所在"
+    },
+    {
+      "name": "万寿山",
+      "parent": "皇宫",
+      "type": "皇家园林",
+      "description": "内苑之地，总管郭安掌事"
+    }
+  ],
+  "spatial_relationships": [],
+  "cross_block": {
+    "summary": "本章前段包公断颜查散冤，铡冯君衡，结案后展昭回府述联姻，夜与白玉堂斗；后段陷空岛卢方派三弟寻白玉堂，柳青求劫寿金暗成，白玉堂立誓闹皇宫，郭安谋害陈林。",
+    "unresolved_questions": [
+      "白玉堂何时再闹皇宫？",
+      "郭安如何谋害陈林？",
+      "三雄柳青劫金寻弟可否顺利？"
+    ],
+    "new_leads": [
+      "白玉堂东京旅店隐身欲入皇宫",
+      "郭安与何常喜对话露复仇意",
+      "柳青蒙汉药断魂香劫金计"
+    ],
+    "contextual_link": "第22回仁宗耀武楼试展昭武艺封御猫四品护卫 → 本章第三十九回白玉堂夜入开封府掷石打赵虎杯、房上与展昭交手，因其不服“御猫”圣赐之号而来寻仇"
+  },
+  "updated_knowledge": {
+    "timeline": "约宋真宗时期（具体年份未知），春暮",
+    "world_building": [
+      "陷空岛卢家庄为五鼠结义基业，有双连庄门",
+      "蒙汉药断魂香为柳青师甘豹传迷药，可昏人",
+      "松景八盆可暗藏黄金千两为寿礼",
+      "皇宫内苑万寿山设总管，郭槐侄郭安任职",
+      "茉花村为展昭比剑联姻之地（丁氏）"
+    ]
+  },
+  "long_context_insights": {
+    "thematic_elements": [
+      "侠义",
+      "阴谋",
+      "制度"
+    ],
+    "pattern": "官方明审案件与江湖侠客夜斗双线交织，义结金兰与猫鼠对立反复呼应",
+    "foreshadowing_network": "第22回御猫封号伏笔在本章经白玉堂夜探正式展开猫鼠对抗线；第19回郭槐招供被诛伏笔衍生其侄郭安复仇新枝；陷空岛寻弟与柳青劫金线将衔接东京乱子，形成江湖-庙堂网络。",
+    "pacing": "颜案刚结转江湖线，缓急相济，夜斗紧凑而卢庄对话舒缓。",
+    "long_term_arcs": []
+  },
+  "block_size": 1
+}

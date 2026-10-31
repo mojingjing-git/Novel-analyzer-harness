@@ -1,0 +1,232 @@
+{
+  "chapter_number": 7,
+  "core_events": [
+    {
+      "id": 1,
+      "event": "刘洪义赠银百两及黑驴助范仲禹赴京赶恩科",
+      "characters": "刘洪义、范仲禹、白氏、金哥",
+      "function": "促成范氏进京应试，承接恩科主线引出新支线",
+      "importance": "中"
+    },
+    {
+      "id": 2,
+      "event": "范仲禹寻岳母至万全山，白氏被葛登云抢走，金哥被虎叼走为白雄所救",
+      "characters": "范仲禹、白氏、金哥、葛登云、白雄",
+      "function": "制造家庭离散危机，引入恶霸与亲族相认",
+      "importance": "中"
+    },
+    {
+      "id": 3,
+      "event": "范仲禹独虎庄索妻被乱棍打死抛尸，死而复生疯癫",
+      "characters": "范仲禹、葛登云",
+      "function": "范仲禹命运转折，埋下伸冤复原伏笔",
+      "importance": "中"
+    },
+    {
+      "id": 4,
+      "event": "屈申换驴借宿李保家，被李保夫妇谋财勒死",
+      "characters": "屈申、李保、李氏",
+      "function": "揭示李保拐银后下落并开启新命案",
+      "importance": "中"
+    }
+  ],
+  "character_arcs": [
+    {
+      "name": "范仲禹",
+      "surface_action": "赴京赶考中状元后寻亲遭变疯癫",
+      "inner_motivation": "求取功名并探视妻母尽孝",
+      "change_delta": "从寒儒状元及第到神智错乱失序",
+      "driver": "妻儿失散、遭葛登云枉杀复活"
+    },
+    {
+      "name": "白雄",
+      "surface_action": "打虎救外甥、寻姐夫未遇",
+      "inner_motivation": "护佑亲人、匡扶弱小",
+      "change_delta": "从普通樵夫转为主动介入家族冤案",
+      "driver": "救下金哥并认亲"
+    },
+    {
+      "name": "李保",
+      "surface_action": "落魄中谋杀借宿者屈申夺银",
+      "inner_motivation": "贪图钱财苟延生计",
+      "change_delta": "从包公随从彻底堕落为杀人恶徒",
+      "driver": "见钱褡子起意（前文拐银伏笔延续）"
+    },
+    {
+      "name": "刘洪义",
+      "surface_action": "赠银借驴助友赴考",
+      "inner_motivation": "重义轻财、成人之美",
+      "change_delta": "义士形象无变化",
+      "driver": "恩科文书至湖广"
+    }
+  ],
+  "foreshadowing": [
+    {
+      "clue": "葛登云用计留范生夜间乱棍打死",
+      "type": "阴谋",
+      "implication": "包公或展昭将查办独虎庄救出白氏，范仲禹有望康复认亲",
+      "confidence": "高",
+      "importance": "中",
+      "anchor_quote": "可恨葛贼暗用稳军计留下范生，",
+      "anchor_chapter": 8,
+      "motif_key": "葛贼抢妇"
+    },
+    {
+      "clue": "李保夫妇灌醉勒死屈申",
+      "type": "阴谋",
+      "implication": "屈申失踪引木厂报案，包公侦破李保谋杀案",
+      "confidence": "高",
+      "importance": "中",
+      "anchor_quote": "不多时，屈申便不动了，李保也就瘫了。",
+      "anchor_chapter": 8,
+      "motif_key": "谋财害命"
+    },
+    {
+      "clue": "屈申误换范生黑驴",
+      "type": "身份",
+      "implication": "黑驴作为范生物证错换可能串联两案致误认或追凶",
+      "confidence": "中",
+      "importance": "低",
+      "anchor_quote": "这便是昨日范生骑来的黑驴。",
+      "anchor_chapter": 8,
+      "motif_key": "黑驴错换"
+    },
+    {
+      "clue": "金哥与白雄母子认亲",
+      "type": "关系",
+      "implication": "白雄将助范家团圆并可能代外甥鸣冤",
+      "confidence": "高",
+      "importance": "中",
+      "anchor_quote": "金哥道：“如此说来，他是我的母舅，你便是我的外祖母了。”",
+      "anchor_chapter": 7,
+      "motif_key": "甥舅相逢"
+    }
+  ],
+  "anchor_stats": {
+    "total": 4,
+    "located": 4,
+    "missing": 0,
+    "by_kind": {
+      "EXACT": 4
+    }
+  },
+  "plot_holes": [
+    "范仲禹被乱棍打得气绝装入箱，途中竟死而复生跳出，生理解释薄弱"
+  ],
+  "locations": [
+    {
+      "name": "南安善村",
+      "parent": "湖广武昌府江夏县",
+      "type": "村庄",
+      "description": "范仲禹寒儒家乡，受刘洪义资助赴京"
+    },
+    {
+      "name": "万全山",
+      "parent": "",
+      "type": "山",
+      "description": "京郊寻亲地，白氏失散金哥被叼处"
+    },
+    {
+      "name": "独虎庄",
+      "parent": "",
+      "type": "村庄",
+      "description": "威烈侯葛登云霸踞抢掠妇女之所"
+    },
+    {
+      "name": "八宝村",
+      "parent": "",
+      "type": "村庄",
+      "description": "白雄与母居所，救金哥处"
+    },
+    {
+      "name": "兴隆木厂",
+      "parent": "鼓楼大街",
+      "type": "商铺",
+      "description": "屈申兄弟木业买卖，带银遇害"
+    },
+    {
+      "name": "褡裢坡",
+      "parent": "",
+      "type": "坡地",
+      "description": "李保落魄草房，谋杀屈申地"
+    },
+    {
+      "name": "船厂",
+      "parent": "",
+      "type": "船厂",
+      "description": "万全山南木商船运木料之所"
+    },
+    {
+      "name": "鼓楼大街",
+      "parent": "",
+      "type": "街道",
+      "description": "城中街道，西边有兴隆木厂"
+    }
+  ],
+  "spatial_relationships": [
+    {
+      "from": "独虎庄",
+      "to": "万全山",
+      "relation": "在万全山东南方五里"
+    },
+    {
+      "from": "八宝村",
+      "to": "万全山",
+      "relation": "在万全山西南数里"
+    },
+    {
+      "from": "船厂",
+      "to": "万全山",
+      "relation": "在万全山南"
+    },
+    {
+      "from": "褡裢坡",
+      "to": "万全山",
+      "relation": "在万全山前"
+    },
+    {
+      "from": "兴隆木厂",
+      "to": "鼓楼大街",
+      "relation": "位于鼓楼大街西边"
+    }
+  ],
+  "cross_block": {
+    "summary": "第23-24回写恩科文书至湖广，范仲禹得友助赴京中状元，寻岳母时妻被葛登云抢、子被虎叼救于舅白雄；范仲禹索妻被枉杀疯癫。另线屈申换驴借宿落魄李保家被谋杀，李保乃包公旧随从。",
+    "unresolved_questions": [
+      "白氏在独虎庄具体遭遇及能否获救",
+      "范仲禹疯癫可否治愈并复认状元",
+      "屈申尸体何时被发现并牵出李保",
+      "黑驴错换会否误导寻人"
+    ],
+    "new_leads": [
+      "葛登云独虎庄恶行待查",
+      "李保拐银后落魄杀人新案",
+      "白雄甥舅相认助范家团圆线索"
+    ],
+    "contextual_link": "第22回包公应仁宗意请开恩科，公孙策拟条陈获准（见已验证事实） → 本章第23回首句“恩科文书行至湖广，便惊动了一个饱学之人”直接承接，展现恩科制度实施引出范仲禹支线；另第1章包公上京赴考李保随行拐银逃走（文中称“李天官派了跟包公上京赴考的李保。后因包公罢职…拐去逃走”） → 本章第24回揭示李保落魄褡裢坡谋杀屈申，回收其下落伏笔"
+  },
+  "updated_knowledge": {
+    "timeline": "约宋真宗时期（具体年份未知），春暮",
+    "world_building": [
+      "独虎庄葛登云为威烈侯，倚势抢掠民间妇女",
+      "万全山周边村落散布如八宝村、独虎庄、褡裢坡",
+      "湖广武昌府江夏县南安善村寒儒赴恩科",
+      "兴隆木厂为山西商贩木业字号",
+      "恩科文书已颁至各省，寒士赴京"
+    ]
+  },
+  "long_context_insights": {
+    "thematic_elements": [
+      "侠义",
+      "阴谋",
+      "身份错位",
+      "伦理",
+      "制度"
+    ],
+    "pattern": "寒儒赴考得义助却遭恶霸陷害，再由亲族侠义救助的情节链条重复出现。",
+    "foreshadowing_network": "本章葛登云抢妇、李保谋杀伏笔与第22回恩科伏笔、第1章李保拐银伏笔相连；黑驴错换串联范屈两案可能成物证线；白雄甥舅相逢伏笔将导向范家团圆与告状，延续开封府断案网络。",
+    "pacing": "双线并行铺垫新案，节奏由舒缓馈赠转骤烈凶险，为包公后续受案蓄势。",
+    "long_term_arcs": []
+  },
+  "block_size": 1
+}

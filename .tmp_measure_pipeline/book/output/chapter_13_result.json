@@ -1,0 +1,188 @@
+{
+  "chapter_number": 13,
+  "core_events": [
+    {
+      "id": 1,
+      "event": "颜查散途中屡遇金懋叔（白玉堂），三次同食店家贵菜，金生点菜却不动箸只让颜生享，雨墨仿效反制",
+      "characters": "颜查散、雨墨、金生（白玉堂）",
+      "function": "刻画金生奇异洒脱与颜生忠厚，铺垫结拜同盟",
+      "importance": "中"
+    },
+    {
+      "id": 2,
+      "event": "金生与颜生结拜兄弟，遣人送银四百留二百，赎颜生当衣，购马匹衣服，赠余银百两",
+      "characters": "金生（白玉堂）、颜查散、雨墨",
+      "function": "白玉堂资助寒士，确立侠义同盟，推动颜生赴恩科线",
+      "importance": "高"
+    },
+    {
+      "id": 3,
+      "event": "颜生至祥符县双星桥柳洪家投亲，柳洪本欲退亲见其衣鲜改容，敷衍安置花园不见姑母",
+      "characters": "颜查散、柳洪、雨墨",
+      "function": "引出柳家势利退亲隐患，展开新矛盾",
+      "importance": "中"
+    }
+  ],
+  "character_arcs": [
+    {
+      "name": "金生（白玉堂）",
+      "surface_action": "伪装穷儒金懋叔，挥霍点菜不食，与颜生结拜，暗令仆从送银赎衣购马赠银",
+      "inner_motivation": "试探颜生气量人品，赏识书生淳朴，以侠义资助赴恩科",
+      "change_delta": "从割耳夺银的凌厉转为潇洒深沉的义士，完成对颜生的认可",
+      "driver": "路遇颜生知其奉母命投亲"
+    },
+    {
+      "name": "颜查散",
+      "surface_action": "被请吃不疑，典当衣仍随和，结拜受资助，投亲受冷遇",
+      "inner_motivation": "奉母命投亲攻书，信善不改书呆气",
+      "change_delta": "初涉江湖从懵懂到略尝世态炎凉",
+      "driver": "赴京途遇金生及至柳洪家"
+    },
+    {
+      "name": "雨墨",
+      "surface_action": "疑金生骗吃而模仿点菜，见真银转服膺受赏",
+      "inner_motivation": "护主吝财，后长见识",
+      "change_delta": "从猜忌到信服义士",
+      "driver": "金生反转送银"
+    },
+    {
+      "name": "柳洪",
+      "surface_action": "闻颜生来拒后迎，见齐整改色，安置花园避见妻女",
+      "inner_motivation": "悭吝势利，怕退亲损利，见可能发财讨好",
+      "change_delta": "暴露嫌贫爱富本性，退亲伏笔显",
+      "driver": "家人报颜生形相鲜衣怒马"
+    }
+  ],
+  "foreshadowing": [
+    {
+      "clue": "金生有人称家老爷送银四百两，自称路上自有相知应付盘费",
+      "type": "身份",
+      "implication": "后续将揭示金生即白玉堂，其江湖身份与财富将助颜生化解危机",
+      "confidence": "高",
+      "importance": "高",
+      "anchor_quote": "家老爷打发小人前来，恐爷路上缺少盘费，特送四百两银子",
+      "anchor_chapter": 14,
+      "motif_key": "身份伪装"
+    },
+    {
+      "clue": "柳洪绝意断亲，见颜生鲜衣改态",
+      "type": "关系",
+      "implication": "柳洪后续将设计退婚，引发颜生婚事波折与公案",
+      "confidence": "高",
+      "importance": "中",
+      "anchor_quote": "他就绝意的要断了这门亲事，因此连信息也不通知。",
+      "anchor_chapter": 14,
+      "motif_key": "退亲"
+    },
+    {
+      "clue": "续娶冯氏面善心毒，疼爱小姐另有用意",
+      "type": "伦理",
+      "implication": "冯氏后续可能操纵金蝉婚姻或陷害颜生",
+      "confidence": "中",
+      "importance": "低",
+      "anchor_quote": "续娶冯氏，又是个面善心毒之人。",
+      "anchor_chapter": 14,
+      "motif_key": "宅斗"
+    },
+    {
+      "clue": "金生言吾路上自有相知应付吾的盘费，吾是不用银子的",
+      "type": "势力",
+      "implication": "白玉堂江湖势力庞大，后续有其他侠士接应",
+      "confidence": "中",
+      "importance": "低",
+      "anchor_quote": "吾路上自有相知应付吾的盘费，吾是不用银子的。",
+      "anchor_chapter": 14,
+      "motif_key": "侠义"
+    }
+  ],
+  "anchor_stats": {
+    "total": 4,
+    "located": 4,
+    "missing": 0,
+    "by_kind": {
+      "EXACT": 4
+    }
+  },
+  "plot_holes": [
+    "颜生称姑父姑母多年不通音信，却奉母命投亲带书信，柳洪亦知颜家曾为县尹，双方信息断层稍显突兀",
+    "金生前两次故意不付账让颜生出银，虽为试探但彼时随从未到，银从何来存疑（后文才送银）"
+  ],
+  "locations": [
+    {
+      "name": "兴隆镇",
+      "parent": "",
+      "type": "城镇",
+      "description": "颜生与金生两次投宿的市镇，有客店分等次饭食"
+    },
+    {
+      "name": "太和店",
+      "parent": "",
+      "type": "客店",
+      "description": "大店口，备祭礼酒饭，与小店隔壁"
+    },
+    {
+      "name": "小店",
+      "parent": "",
+      "type": "客店",
+      "description": "颜生雨墨与金生结拜所在的简陋客店，隔壁为太和店"
+    },
+    {
+      "name": "祥符县",
+      "parent": "",
+      "type": "县",
+      "description": "柳洪居所所在县，颜生投亲目的地"
+    },
+    {
+      "name": "双星桥",
+      "parent": "祥符县",
+      "type": "街区/地标",
+      "description": "柳洪宅所在地，人人皆知指引门户"
+    },
+    {
+      "name": "柳洪家",
+      "parent": "双星桥",
+      "type": "宅邸",
+      "description": "殷实农户柳洪住宅，气象不凡"
+    }
+  ],
+  "spatial_relationships": [
+    {
+      "from": "小店",
+      "to": "太和店",
+      "relation": "隔壁"
+    }
+  ],
+  "cross_block": {
+    "summary": "颜查散赴京投亲途遇白玉堂伪装金懋叔，三试结拜获资，至祥符县双星桥柳洪家遭势利冷遇，埋退亲隐患。",
+    "unresolved_questions": [
+      "金懋叔真实身份是否白玉堂？",
+      "柳洪如何设计退亲？",
+      "冯氏疼爱小姐另有何用意？"
+    ],
+    "new_leads": [
+      "白玉堂义结颜生并资助，后续或将介入柳家纠纷",
+      "柳洪嫌贫爱富，颜生婚事面临危机"
+    ],
+    "contextual_link": "第22回包公参庞太师罚俸，仁宗试展昭封御猫，准开恩科 → 本章颜查散正是奉母命赴京预备明年恩科考试，且遇江湖侠客白玉堂（御猫同辈）伪装金生资助寒士，延续恩科人才线与侠义相助模式"
+  },
+  "updated_knowledge": {
+    "timeline": "约宋真宗时期（具体年份未知），春暮",
+    "world_building": [
+      "宋代民间客店分上中下等饭食，上等饭需八两银含活鲤鱼陈绍",
+      "江湖义士可遣随从远路送银并替赎当，展现隐秘接应网络",
+      "祥符县双星桥柳洪类殷实农户兼营商，重衣冠取人"
+    ]
+  },
+  "long_context_insights": {
+    "thematic_elements": [
+      "身份错位",
+      "侠义",
+      "伦理"
+    ],
+    "pattern": "侠义人物常伪装或试探寒士而后倾力相助，如白玉堂三试颜生方露真章",
+    "foreshadowing_network": "本章金生身份伏笔与前面白玉堂割耳夺银等出场相连，构成侠客暗助主线；柳洪退亲伏笔独立埋设，将牵引后续颜查散公案与婚姻危机。",
+    "pacing": "以三餐闲笔缓写人物性情，结尾突入势利亲戚转折，张弛有度推进新支线。",
+    "long_term_arcs": []
+  },
+  "block_size": 1
+}
