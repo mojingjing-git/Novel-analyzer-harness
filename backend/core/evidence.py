@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass, field
 from typing import Iterable, Mapping, Sequence
@@ -26,20 +27,38 @@ _STOPWORDS = frozenset(
 )
 
 
-def _keywords_for(*texts: str, limit: int = 4) -> list[str]:
-    """从候选自带的词里挑检索词：母题词优先，其余取较长的实词片段。"""
-    words: list[str] = []
+def _segment(text: str) -> list[str]:
+    """按标点/空白切段，只留含中文或字母的段。"""
+    parts = re.split(r"[\s，。！？；：、, .!?;:\"“”\'（）()【】\[\]—…·]+", text or "")
+    return [p for p in parts if p and re.search(r"[\u4e00-\u9fffA-Za-z]", p)]
+
+
+def _keywords_for(*texts: str, max_terms: int | None = None) -> list[str]:
+    """从锚点/问题/描述里提取**检索词条**。
+
+    这里曾经直接返回整句（"铜匣底下那层是空的"），结果只有当某一章原封不动
+    包含这整句时才算命中——等于检索没做。改成按标点切段后再取 2~4 字片段，
+    长词优先，交给 ``find_mentions`` 按命中权重排序。
+    """
+    buckets: dict[int, list[str]] = {4: [], 3: [], 2: []}
+    seen: set[str] = set()
     for text in texts:
-        for token in re.split(r"[\s，。、；：？！“”‘’（）()《》【】…—·]+", text or ""):
-            token = token.strip()
-            if len(token) >= MIN_KEYWORD_CHARS and token not in _STOPWORDS:
-                words.append(token)
-    # 去重保序；短的先排后面（长词更可能是专名）
-    seen: list[str] = []
-    for w in sorted(set(words), key=len, reverse=True):
-        if w not in seen:
-            seen.append(w)
-    return seen[:limit]
+        for seg in _segment(text):
+            for size in (4, 3, 2):
+                for i in range(0, max(1, len(seg) - size + 1)):
+                    piece = seg[i : i + size]
+                    if len(piece) < size or piece in _STOPWORDS or piece in seen:
+                        continue
+                    seen.add(piece)
+                    buckets[size].append(piece)
+    # 分层取：长词有区分度，但**不能把短词全挤掉**——"动过"这种 2 字片段
+    # 往往是唯一能在"换了说法"的回收句里命中的线索（实测就是这样拿到第 9 章的）。
+    terms: list[str] = []
+    for size in (4, 3, 2):
+        terms.extend(buckets[size])
+    # 默认不截断：检索阶段要尽可能多的线索，真正该丢的是"到处都出现"的词，
+    # 那由 find_mentions 按文档频率过滤（截断会把"动过"这类关键 2 字片段挤掉）。
+    return terms if max_terms is None else terms[:max_terms]
 
 
 @dataclass
@@ -56,6 +75,15 @@ class Bundle:
     def empty(self) -> bool:
         return not self.text
 
+    def segments(self) -> list[tuple[int, str]]:
+        """(章号, 该段正文)。
+
+        证据必须**分段**给模型：一条伏笔的埋设处在第 2 章、答案在第 9 章，
+        若把整包当成一份证据，模型只能回填埋设处那个 evidence_id，于是
+        "引文落在被点名证据里"这条门禁永远过不了（实测正是如此）。
+        """
+        return [(chapter, self.text[start:end].strip()) for chapter, start, end in self.spans]
+
 
 class EvidenceIndex:
     """按章号检索关键词并取原文窗口；建一次索引，全书复用。"""
@@ -66,20 +94,36 @@ class EvidenceIndex:
     def __len__(self) -> int:
         return len(self._chapters)
 
-    def find_mentions(self, keywords: Sequence[str], *, after: int, limit: int = 8) -> list[int]:
-        """返回提到任一关键词的章号（只取 aset``after`` 之后的，按先后排）。"""
+    def find_mentions(
+        self, keywords: Sequence[str], *, after: int, limit: int = 8
+    ) -> list[int]:
+        """返回命中关键词的章号（只在 ``after`` 之后找），按命中权重降序。
+
+        权重 = 命中词长度之和；同时过滤掉"超过三成章节都有"的常见词——
+        否则"底下""的人"这类片段会把每一章都选成候选。
+        """
         if not keywords:
             return []
-        hits: list[int] = []
-        for ch in sorted(self._chapters):
+        total = max(1, len(self._chapters))
+        weights: dict[str, float] = {}
+        for term in keywords:
+            df = sum(1 for t in self._chapters.values() if term in t)
+            if not df:
+                continue  # 一次都没出现 = 用不上
+            # 平滑加权：到处都出现的词区分度低但不该直接丢弃——小语料里"唯一线索词
+            # 恰好每章都有"很常见，全丢会导致检索直接返回空（实测踩过）。
+            weights[term] = len(term) * math.log((total + 1) / (df + 0.5))
+        if not weights:
+            return []
+        scored: list[tuple[float, int]] = []
+        for ch, text in self._chapters.items():
             if ch <= after:
                 continue
-            text = self._chapters[ch]
-            if any(k in text for k in keywords):
-                hits.append(ch)
-                if len(hits) >= limit:
-                    break
-        return hits
+            score = sum(w for term, w in weights.items() if term in text)
+            if score:
+                scored.append((score, ch))
+        scored.sort(key=lambda x: (-x[0], x[1]))
+        return [ch for _score, ch in scored[:limit]]
 
     def chapter_text(self, chapter: int) -> str:
         """整章原文。定位锚点必须用整章——窗口只够展示，不够搜索。"""

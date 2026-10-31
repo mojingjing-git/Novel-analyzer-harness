@@ -41,7 +41,9 @@ PROMPT_TEMPLATE = """你是长篇小说的伏笔审校员。任务：判断**这
 判定要求（必须遵守）：
 1. 回收 = 后文明确交代了这条伏笔指向的悬念/承诺/威胁，而不是"又提了一次"。
 2. 只依据给出的原文；原文没有交代就算"证据不足"，不要用常理推测。
-3. 必须做**反证检索**：在原文里找"是否其实没有回收"的迹象，并在 `counter_search.performed` 里如实标记 true。
+3. 必须做**反证检索**：在原文里找"是否其实没有回收"的迹象，`counter_search.performed` 标 true，
+   `checked_evidence_ids` 必须是**JSON 数组**（如 ["b36e071a4ab8"]），不要写成逗号串；
+   `counter_quotes` 也是数组，没有反证就写 []。
 4. `supporting_quote` 必须从原文**逐字照抄**不少于 6 个字，连同标点，不要改写、不要拼接、不要加省略号。
 5. `evidence_id` 原样回填该候选给出的那个值（不要自己编）。
 6. 找不到符合条件的原句，就答 `INSUFFICIENT`。
@@ -66,13 +68,14 @@ ITEM_TEMPLATE = """### 候选 candidate_id={candidate_id}
 待交代事项（question）：{question}
 判定为已回答的标准（answer_criteria）：{answer_criteria}
 首次出现：第{first_seen}章；最后提及：第{last_seen}章
-埋设处 evidence_id={evidence_id}（第{chapter}章）
 
-全文如下（引文必须逐字取自此处）：
-\"\"\"
-{evidence_text}
-\"\"\"
+以下 {segment_count} 段原文各自有 evidence_id。引文必须**逐字取自其中一段**，
+并把**那一段的** evidence_id 原样回填——不同段是不同的证据，不要混：
+
+{segments}
+
 """
+
 
 
 @dataclass
@@ -177,27 +180,42 @@ async def run_recheck_v2(
         outcome.status = recheck_status(started=True, finished=True, stopped=False, counts=empty)
         return outcome
 
-    if index is not None:
-        # 有界证据包：埋设处 + 后续命中窗口。模型看到的不是"全书"，而是"这几段"，
-        # 所以引文必须落在下面这段文本里——这就是防止模型编引文的机制。
-        texts_by_evidence: dict[str, str] = {}
-        bundles_by_evidence: dict[str, Any] = {}
-        for cand in candidates:
-            item = cand["item"]
-            bundle = index.bundle_for(
-                anchor_chapter=cand["chapter"],
-                anchor_quote=(getattr(item, "anchor_quote", "") or "").strip(),
-                hint_texts=[
-                    getattr(item, "question", "") or "",
-                    getattr(item, "description", "") or "",
-                ],
+    # 证据按**段**编号：一条伏笔的埋设处在第 2 章、答案在第 9 章，若把两段当成
+    # 一份证据，模型只能回填埋设处那个 id，"引文落在被点名证据里"这条门禁就永远过不了。
+    texts_by_evidence: dict[str, str] = {}
+    chapter_by_evidence: dict[str, int] = {}
+    for cand in candidates:
+        if index is None:
+            texts_by_evidence[cand["evidence_id"]] = book_text
+            chapter_by_evidence[cand["evidence_id"]] = cand["chapter"]
+            cand["segments"] = [
+                {"evidence_id": cand["evidence_id"], "chapter": cand["chapter"], "text": book_text}
+            ]
+            continue
+        item = cand["item"]
+        bundle = index.bundle_for(
+            anchor_chapter=cand["chapter"],
+            anchor_quote=(getattr(item, "anchor_quote", "") or "").strip(),
+            hint_texts=[
+                getattr(item, "question", "") or "",
+                getattr(item, "description", "") or "",
+            ],
+        )
+        segments: list[dict] = []
+        for chapter, start, end in bundle.spans:
+            eid = _evidence_id(chapter, start, end)
+            body = bundle.text[start:end].strip()
+            texts_by_evidence[eid] = body
+            chapter_by_evidence[eid] = chapter
+            segments.append({"evidence_id": eid, "chapter": chapter, "text": body})
+        if not segments:
+            fallback_text = index.chapter_text(cand["chapter"])
+            texts_by_evidence[cand["evidence_id"]] = fallback_text
+            chapter_by_evidence[cand["evidence_id"]] = cand["chapter"]
+            segments.append(
+                {"evidence_id": cand["evidence_id"], "chapter": cand["chapter"], "text": fallback_text}
             )
-            texts_by_evidence[cand["evidence_id"]] = bundle.text
-            bundles_by_evidence[cand["evidence_id"]] = bundle
-            cand["bundle_chapters"] = bundle.chapters
-    else:
-        texts_by_evidence = {c["evidence_id"]: book_text for c in candidates}
-        bundles_by_evidence = {}
+        cand["segments"] = segments
 
     by_id = {c["candidate_id"]: c for c in candidates}
 
@@ -215,9 +233,12 @@ async def run_recheck_v2(
                 answer_criteria=getattr(c["item"], "answer_criteria", "") or "（未提供）",
                 first_seen=getattr(c["item"], "first_seen_chapter", 0),
                 last_seen=getattr(c["item"], "last_seen_chapter", 0),
-                evidence_id=c["evidence_id"],
-                chapter=c["chapter"],
-                evidence_text=texts_by_evidence.get(c["evidence_id"], ""),
+                segment_count=len(c["segments"]),
+                segments="\n".join(
+                    f'[evidence_id={seg["evidence_id"]} 第{seg["chapter"]}章]\n"""\n'
+                    f'{seg["text"]}\n"""'
+                    for seg in c["segments"]
+                ),
             )
             for c in batch
         )
@@ -238,16 +259,17 @@ async def run_recheck_v2(
             if payload is None:
                 outcome.not_checked.append(c["candidate_id"])
                 continue
-            if not payload.get("evidence_id"):
-                # 单证据候选：模型没回填 evidence_id 时补上本候选的唯一证据。
-                # 这不放松门禁——"引文必须在被点名的那段原文里"仍由 locate 校验，
-                # 只是不让模型为了抄一串哈希而额外产生一次格式失败。
-                payload = {**payload, "evidence_id": c["evidence_id"]}
+            payload = _normalize_payload(payload)
+            allowed = [seg["evidence_id"] for seg in c["segments"]]
+            if not payload.get("evidence_id") and len(allowed) == 1:
+                # 只有一段证据时才替它补；多段时必须由模型点名是哪一段，
+                # 否则"引文落在被点名的那段里"这条门禁形同虚设。
+                payload = {**payload, "evidence_id": allowed[0]}
             outcome.verdicts.append(
                 parse_recheck(
                     payload,
                     allowed_candidate_ids=[c["candidate_id"]],
-                    allowed_evidence_ids=[c["evidence_id"]],
+                    allowed_evidence_ids=allowed,
                     # parse_recheck 的 locate 第二个参数是 evidence_id，不是正文——
                     # 传错会让每条 SUPPORTED 都变成 QUOTE_NOT_FOUND（这个坑踩过一次）
                     locate=lambda quote, eid: locate_quote(
@@ -266,14 +288,9 @@ async def run_recheck_v2(
     outcome.coverage = counts.as_dict()
 
     # 候选级 → 实体级：任一 SUPPORTED 才算回收；只有"不足/冲突"标待复核
-    def _chapter_of(evidence_id: str, offset: int | None) -> int | None:
-        bundle = bundles_by_evidence.get(evidence_id)
-        if bundle is None or offset is None:
-            return None
-        for chapter, start, end in bundle.spans:
-            if start <= offset < end:
-                return chapter
-        return None
+    def _chapter_of(evidence_id: str, _offset: int | None = None) -> int | None:
+        """引文所在段对应的章号——证据已按段编号，不必再按偏移反查。"""
+        return chapter_by_evidence.get(evidence_id)
 
     for entity_id, group in _group_by_candidate(outcome.verdicts).items():
         state, _best = reduce_entity(group)
@@ -287,9 +304,34 @@ async def run_recheck_v2(
     )
     if outcome.not_checked:
         outcome.status_reason = "存在未核对候选"
+    dropped = outcome.dropped_no_anchor + outcome.dropped_anchor_missing
+    if dropped and outcome.status == COMPLETED:
+        # 有条目因为没有证据而整条没查：这不是"完成"，只是"候选都处理完了"
+        outcome.status = "PARTIAL"
+        outcome.status_reason = f"部分条目无可用证据（{dropped} 条未进入候选）"
     if emit is not None:
         emit(outcome.summary())
     return outcome
+
+
+def _normalize_payload(payload: Mapping[str, Any]) -> Mapping[str, Any]:
+    """把模型爱写的"逗号串"归一成数组。
+
+    这不是放松门禁：`checked_evidence_ids` 仍要逐个比对是否属于本题给出的证据，
+    只是把"格式写歪"和"证据造假"分开——前者不该被记成后者。
+    """
+    fixed = dict(payload)
+    counter = fixed.get("counter_search")
+    if isinstance(counter, Mapping):
+        ids = counter.get("checked_evidence_ids")
+        if isinstance(ids, str):
+            parsed = [x.strip() for x in ids.replace("，", ",").split(",") if x.strip()]
+            counter = {**counter, "checked_evidence_ids": parsed}
+        quotes = counter.get("counter_quotes")
+        if isinstance(quotes, str):
+            counter = {**counter, "counter_quotes": [quotes] if quotes.strip() else []}
+        fixed["counter_search"] = counter
+    return fixed
 
 
 def _extract_payloads(raw: str) -> list[Mapping[str, Any]]:

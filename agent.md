@@ -1705,3 +1705,11 @@ C2 实测把问题定性了：模型判"支持"20 次、**引文逐字命中 9/9
 - `resolved_chapter` 改由引文位置反查（`Bundle.spans` 记窗口区间），不再写埋设章。
 - 覆盖报告增 `input_total` / `dropped_no_anchor` / `dropped_anchor_missing`，能追平输入与分母。
 - 用例 `test_review_round3_fixes.py`（8 例）。教训：**"证据不足"必须先证明"该找的地方找过了"**。
+
+### 10.60 四组已知答案样本：证据分段与检索词条化
+
+- 四组样本（`scripts/verify_recheck_fixtures.py`）：跨章正例、答案在章末、反证、截断，全部通过；A/B 判 SUPPORTED 且回收章=9。
+- **证据按段编号**：一条候选给多段证据，每段一个 `evidence_id`，模型回填"引文所在那段"——否则跨章回收永远过不了门禁。
+- **检索词条化**：`_keywords_for` 从整句改为 2–4 字片段 + 频次加权；整句检索只有在原句照抄时才命中，等于没检索。
+- **`_normalize_payload`**：把模型写的逗号串归一成数组，但 id 仍逐个比对——格式问题与证据问题分开。
+- **状态语义**：有 dropped（无锚点/定位失败）时降为 `PARTIAL`，不许报 `COMPLETED`。

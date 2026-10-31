@@ -62,6 +62,8 @@
 | 2026-10-31 | 尚未入库 | 复检 V2 首轮真书实测（三侠五义 2 章） | measurement | 锚点 8/8 命中；复检核对 2/8（预算上限 4 次调用）、2 条证据不足 | — | `python scripts/measure_recheck_v2.py --chapters 2 --max-calls 4 --base-url http://127.0.0.1:3425/v1 --model wb2api/cn:hy3`；数据 `docs/MEASURE-RECHECK-V2-2026-10-31.json`；**实测抓出锚点校验插错函数的假保护** |
 | 2026-11-01 | 尚未入库 | 有界证据包 + 采集契约复测 | business_test（**全量**） | **1566 passed / exit 0** | — | 父 agent 亲跑 `python -m pytest -o addopts= -q`，1316.00s（机器较慢）；新增 `test_evidence_bundle.py`(5) |
 | 2026-11-01 | 尚未入库 | 复审四：章号/入口/提示词/取窗/回收章/覆盖 | business_test（**全量**） | **1574 passed / exit 0** | — | 父 agent 亲跑 `python -m pytest -o addopts= -q`，702.01s；新增 `test_review_round3_fixes.py`(8) |
+| 2026-11-01 | 尚未入库 | 四组已知答案样本（真模型） | measurement | A/B 判 SUPPORTED 且回收章=9；C 未判回收；D 截断正确 | — | `python scripts/verify_recheck_fixtures.py --base-url http://127.0.0.1:3425/v1 --model wb2api/cn:hy3`；自检退出码 0；`docs/MEASURE-FIXTURES-2026-11-01.md` |
+| 2026-11-01 | 尚未入库 | 证据分段 + 检索词条化后全量 | business_test（**全量**） | **1574 passed / exit 0** | — | 父 agent 亲跑，711.09s |
 | 2026-11-01 | 尚未入库 | 章号来源离线复算（不调模型） | offline_check | 58/58 引文可在**正确章号**定位（旧口径仅 19/60） | — | `anchor.chapter_number_from_heading` + `split_block_into_chapters`；16 章产物 |
 | 2026-11-01 | 尚未入库 | 采集契约复测（16 章重抽） | measurement | 60 条全部带 question/answer_criteria；lead 0；锚点 58/60 | — | `docs/MEASURE-ACQ-2026-11-01.md` |
 | 2026-11-01 | 尚未入库 | 有界证据包冒烟（12 条候选） | measurement | 7 次调用、6 条证据不足、0 次 token 超限 | — | 改造前 12 次调用全部 100k 超限；`docs/MEASURE-BUNDLE-SMOKE.json` |
