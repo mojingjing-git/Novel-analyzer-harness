@@ -1695,3 +1695,13 @@ C2 实测把问题定性了：模型判"支持"20 次、**引文逐字命中 9/9
 - 三个必修的坑：①定位必须用整章，用窗口会漏掉章末锚点；②`ITEM_TEMPLATE` 里的 `evidence_text` 曾仍传 `book_text`；③批大小 12 时 7 条候选只回 1 条判定。
 - 实测：12 条候选 → 7 次调用、单次约 33 秒、**不再出现 token 超限**（改造前 12 次全部 100k 超限）；6 条判 `INSUFFICIENT`（16 章语料不含回收，属正确行为）。
 - 采集侧复测：`question`/`answer_criteria` 覆盖 60/60，但 `lead` 为 0——这条护栏在当前模型下从不触发，只是护栏不是过滤器。
+
+### 10.59 复审四：六处"跑得通但结论会错"
+
+- 章号改从**标题**解析（`anchor.chapter_number_from_heading`，中文/阿拉伯/Chapter N），不再按块内序号推算——块含两章时序号必然错位（实测 60 条错 39 条）。离线重算 58/58 可定位。
+- 总结入口修：`self.client` → `self._llm`，`chat_auto(prompt=…, purpose=…)` → `chat_auto(messages=[…])`，批大小固定 1，并改用 `chapters={章号: 正文}`（新增 `_collect_chapters()`）。
+- 提示词补 `question`/`answer_criteria`：不补则采集字段对裁决零影响。
+- 证据取窗对准**真正命中的关键词**，找不到命中词就跳过该章并标 `truncated`（原来围绕第一个关键词取窗，词不在就退化成章首，章末答案永远看不到）。
+- `resolved_chapter` 改由引文位置反查（`Bundle.spans` 记窗口区间），不再写埋设章。
+- 覆盖报告增 `input_total` / `dropped_no_anchor` / `dropped_anchor_missing`，能追平输入与分母。
+- 用例 `test_review_round3_fixes.py`（8 例）。教训：**"证据不足"必须先证明"该找的地方找过了"**。

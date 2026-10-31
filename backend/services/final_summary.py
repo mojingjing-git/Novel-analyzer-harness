@@ -1389,6 +1389,30 @@ class FinalSummaryRunner:
             plans.append((group, group_text))
         return plans
 
+    def _collect_chapters(self) -> dict:
+        """整本按**真实章号**切好的正文：{章号: 正文}。
+
+        复检的证据索引与锚点必须共用一套章号。块不等于章，按块序号算章号会让
+        落在块内第二章的锚点全部记错章（实测 60 条错 39 条）。
+        """
+        from backend.core.anchor import split_block_into_chapters
+
+        blocks_dir = self.output_dir.parent / "blocks"
+        if not blocks_dir.is_dir() and self.config.working_directory:
+            blocks_dir = Path(self.config.working_directory) / "blocks"
+        if not blocks_dir.is_dir():
+            return {}
+        chapters: dict = {}
+        for ordinal, path in enumerate(sorted(blocks_dir.glob("*.txt")), start=1):
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except OSError as exc:
+                logger.warning(f"复检 V2：读取 {path.name} 失败：{exc}")
+                continue
+            for chapter, body in split_block_into_chapters(text, ordinal).items():
+                chapters[chapter] = body
+        return chapters
+
     def _collect_book_text(self) -> str:
         """全文：复检的证据必须是**原文**。
 
@@ -1413,8 +1437,8 @@ class FinalSummaryRunner:
         """阶段 2（V2）：带证据的复检。"""
         from backend.services.recheck_v2 import run_recheck_v2
 
-        book_text = self._collect_book_text()
-        if not book_text:
+        chapters = self._collect_chapters()
+        if not chapters:
             self.last_recheck_summary = {
                 "status": "NOT_RUN",
                 "status_reason": "取不到原文，未执行复检",
@@ -1425,18 +1449,18 @@ class FinalSummaryRunner:
 
         max_calls = max(1, int(getattr(self.config.analysis, "recheck_max_calls", 300) or 300))
         max_tokens = int(getattr(self.config.analysis, "recheck_max_tokens", 60000) or 60000)
-        batch_size = max(1, int(getattr(self.config.analysis, "foreshadow_recheck_batch_size", 40) or 40))
+        batch_size = 1  # 一个候选一份证据包；合并提问会让模型只答第一条
 
         async def _call_model(prompt: str) -> str:
-            res = await self.client.chat_auto(
-                prompt=prompt, max_tokens=max_tokens, purpose="foreshadow_recheck_v2"
+            res = await self._llm.chat_auto(
+                messages=[{"role": "user", "content": prompt}], max_tokens=max_tokens
             )
             return getattr(res, "content", "") or ""
 
         self._emit_progress({"type": "status", "message": "正在核对伏笔证据..."})
         outcome = await run_recheck_v2(
             self.ledger.items,
-            book_text=book_text,
+            chapters=chapters,
             call_model=_call_model,
             max_calls=max_calls,
             batch_size=batch_size,

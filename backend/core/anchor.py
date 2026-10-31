@@ -29,19 +29,78 @@ KIND_EXACT = "EXACT"
 KIND_NORMALIZED = "NORMALIZED"
 
 
+#: 章号解析用的中文数字表
+_CN_DIGITS = {
+    "零": 0, "〇": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4,
+    "五": 5, "六": 6, "七": 7, "八": 8, "九": 9,
+}
+_CN_UNITS = {"十": 10, "百": 100, "千": 1000, "万": 10000}
+
+
+def _cn_to_int(text: str) -> int | None:
+    """把"一百零三"这类中文数字转成整数；解析不了返回 None。
+
+    只处理章节号会出现的形态（万以内 + 万位），别当通用数字库用。
+    """
+    text = text.strip()
+    if not text:
+        return None
+    if text.isdigit():
+        return int(text)
+    total = 0
+    section = 0
+    number = 0
+    for ch in text:
+        if ch in _CN_DIGITS:
+            number = _CN_DIGITS[ch]
+        elif ch in _CN_UNITS:
+            unit = _CN_UNITS[ch]
+            if unit == 10000:
+                section = (section + number) * unit
+                total += section
+                section = 0
+            else:
+                if number == 0:
+                    number = 1  # "十三"里的十
+                section += number * unit
+            number = 0
+        else:
+            return None
+    return total + section + number
+
+
+def chapter_number_from_heading(heading: str) -> int | None:
+    """从标题文本里取章号。
+
+    为什么不用"块内第几个标题"推算：块和章不是一回事。有些源文件的"块"本身
+    包含两章（例如"第13部分 至 第14部分"），按序号推算会把第二段的章号算成
+    块序号+1，于是所有落在第二段的锚点都记错章——实测 60 条里错了 39 条。
+    标题里写着真章号，就该用真的。
+    """
+    m = re.search(r"第\s*([0-9零〇一二三四五六七八九十百千万两]+)\s*[章回节]", heading)
+    if m:
+        return _cn_to_int(m.group(1))
+    m = re.search(r"Chapter\s+(\d+)", heading, re.IGNORECASE)
+    if m:
+        return int(m.group(1))
+    return None
+
+
 def build_chapter_spans(block_text: str, first_chapter: int) -> list[tuple[int, int, int]]:
     """返回块内每章的 ``(chapter_number, start, end)``。
 
     块由"按故事序拼接的若干章"组成，标题在正文里；这里用标题位置切边界。
-    找不到标题时返回单段（整块算一章，章号取 ``first_chapter``）。
+    章号优先取**标题里写的**章号（`chapter_number_from_heading`），解析不出才退回
+    ``first_chapter + 序号``。找不到标题时返回单段（整块算一章）。
     """
-    starts = [m.start() for m in CHAPTER_HEADING_RE.finditer(block_text)]
-    if len(starts) < 2:
+    matches = list(CHAPTER_HEADING_RE.finditer(block_text))
+    if len(matches) < 2:
         return [(first_chapter, 0, len(block_text))]
     spans: list[tuple[int, int, int]] = []
-    for idx, start in enumerate(starts):
-        end = starts[idx + 1] if idx + 1 < len(starts) else len(block_text)
-        spans.append((first_chapter + idx, start, end))
+    for idx, m in enumerate(matches):
+        end = matches[idx + 1].start() if idx + 1 < len(matches) else len(block_text)
+        parsed = chapter_number_from_heading(m.group(0))
+        spans.append((parsed if parsed is not None else first_chapter + idx, m.start(), end))
     return spans
 
 
@@ -160,3 +219,15 @@ def mark_leads(foreshadowing) -> int:
             fs.lead = True
             count += 1
     return count
+
+
+def split_block_into_chapters(block_text: str, first_chapter: int) -> dict[int, str]:
+    """把一个块按标题切成 {真实章号: 章正文}。
+
+    复检要按章号取原文，索引与锚点必须用**同一套章号**；这套章号来自标题，
+    不是块序号——块里可能是第 13、14 两章，按序号算会把 14 记成 3。
+    """
+    return {
+        chapter: block_text[start:end]
+        for chapter, start, end in build_chapter_spans(block_text, first_chapter)
+    }

@@ -63,6 +63,8 @@ PROMPT_TEMPLATE = """你是长篇小说的伏笔审校员。任务：判断**这
 
 ITEM_TEMPLATE = """### 候选 candidate_id={candidate_id}
 伏笔描述：{description}
+待交代事项（question）：{question}
+判定为已回答的标准（answer_criteria）：{answer_criteria}
 首次出现：第{first_seen}章；最后提及：第{last_seen}章
 埋设处 evidence_id={evidence_id}（第{chapter}章）
 
@@ -85,6 +87,11 @@ class RecheckOutcome:
     status: str = "NOT_RUN"
     status_reason: str = ""
     leads_skipped: int = 0
+    #: 输入条目总数（含被跳过的）——覆盖报告必须能从输入追到分母
+    input_total: int = 0
+    #: 没有锚点 / 锚点在章内定位不到：这两类都不是"查了没答案"，要单列
+    dropped_no_anchor: int = 0
+    dropped_anchor_missing: int = 0
 
     def summary(self) -> dict:
         return {
@@ -94,6 +101,9 @@ class RecheckOutcome:
             "status": self.status,
             "status_reason": self.status_reason,
             "leads_skipped": self.leads_skipped,
+            "input_total": self.input_total,
+            "dropped_no_anchor": self.dropped_no_anchor,
+            "dropped_anchor_missing": self.dropped_anchor_missing,
             "not_checked": list(self.not_checked),
         }
 
@@ -127,6 +137,7 @@ async def run_recheck_v2(
     index = EvidenceIndex(chapters) if chapters else None
 
     leads_skipped = 0
+    outcome.input_total = len(items)
     for item in items:
         if getattr(item, "status", "") not in ("open", "active"):
             continue
@@ -139,12 +150,14 @@ async def run_recheck_v2(
         chapter = int(getattr(item, "anchor_chapter", 0) or 0)
         if not quote or chapter <= 0:
             # 没有锚点 = 没有证据。这类条目只能标"证据不足"，不能凭模型自述判回收。
+            outcome.dropped_no_anchor += 1
             outcome.not_checked.append(getattr(item, "id", ""))
             continue
         # 定位用**整章**（锚点可能落在章末，窗口只够展示）
         source = index.chapter_text(chapter) if index else book_text
         located = locate_quote(quote, source)
         if not located.found:
+            outcome.dropped_anchor_missing += 1
             outcome.not_checked.append(getattr(item, "id", ""))
             continue
         candidates.append(
@@ -168,6 +181,7 @@ async def run_recheck_v2(
         # 有界证据包：埋设处 + 后续命中窗口。模型看到的不是"全书"，而是"这几段"，
         # 所以引文必须落在下面这段文本里——这就是防止模型编引文的机制。
         texts_by_evidence: dict[str, str] = {}
+        bundles_by_evidence: dict[str, Any] = {}
         for cand in candidates:
             item = cand["item"]
             bundle = index.bundle_for(
@@ -179,9 +193,11 @@ async def run_recheck_v2(
                 ],
             )
             texts_by_evidence[cand["evidence_id"]] = bundle.text
+            bundles_by_evidence[cand["evidence_id"]] = bundle
             cand["bundle_chapters"] = bundle.chapters
     else:
         texts_by_evidence = {c["evidence_id"]: book_text for c in candidates}
+        bundles_by_evidence = {}
 
     by_id = {c["candidate_id"]: c for c in candidates}
 
@@ -195,6 +211,8 @@ async def run_recheck_v2(
             ITEM_TEMPLATE.format(
                 candidate_id=c["candidate_id"],
                 description=getattr(c["item"], "description", ""),
+                question=getattr(c["item"], "question", "") or "（未提供）",
+                answer_criteria=getattr(c["item"], "answer_criteria", "") or "（未提供）",
                 first_seen=getattr(c["item"], "first_seen_chapter", 0),
                 last_seen=getattr(c["item"], "last_seen_chapter", 0),
                 evidence_id=c["evidence_id"],
@@ -248,12 +266,21 @@ async def run_recheck_v2(
     outcome.coverage = counts.as_dict()
 
     # 候选级 → 实体级：任一 SUPPORTED 才算回收；只有"不足/冲突"标待复核
+    def _chapter_of(evidence_id: str, offset: int | None) -> int | None:
+        bundle = bundles_by_evidence.get(evidence_id)
+        if bundle is None or offset is None:
+            return None
+        for chapter, start, end in bundle.spans:
+            if start <= offset < end:
+                return chapter
+        return None
+
     for entity_id, group in _group_by_candidate(outcome.verdicts).items():
         state, _best = reduce_entity(group)
         outcome.applied[entity_id] = state
         item = by_id.get(entity_id, {}).get("item")
         if item is not None:
-            _apply_state(item, state, group)
+            _apply_state(item, state, group, chapter_of=_chapter_of)
 
     outcome.status = recheck_status(
         started=True, finished=not outcome.not_checked, stopped=False, counts=counts
@@ -300,14 +327,30 @@ def _group_by_candidate(verdicts: Iterable[CandidateVerdict]) -> dict[str, list[
     return grouped
 
 
-def _apply_state(item: Any, state: str, group: list[CandidateVerdict]) -> None:
-    """把实体级结论写回账本条目。**只有 AUTO_RESOLVED 才置 resolved。**"""
+def _apply_state(
+    item: Any,
+    state: str,
+    group: list[CandidateVerdict],
+    *,
+    chapter_of: Callable[[str, int | None], int | None] | None = None,
+) -> None:
+    """把实体级结论写回账本条目。**只有 AUTO_RESOLVED 才置 resolved。**
+
+    `resolved_chapter` 取**引文所在章**，不是埋设章：一条伏笔在第 12 章埋、在第 900 章收，
+    写回埋设章等于把"什么时候解决的"记错，而且账面看不出来。
+    """
     supported = [v for v in group if v.verdict == "SUPPORTED"]
     if state == AUTO_RESOLVED and supported:
         best = supported[0]
+        located_chapter = None
+        if chapter_of is not None:
+            start = best.located_span[0] if best.located_span else None
+            located_chapter = chapter_of(best.evidence_id, start)
         item.status = "resolved"
         item.resolution = best.answer or ""
-        item.resolved_chapter = int(getattr(item, "anchor_chapter", 0) or 0)
+        item.resolved_chapter = int(
+            located_chapter or getattr(item, "anchor_chapter", 0) or 0
+        )
         item.source_type = "auto_recheck"
         item.needs_review = False
         return

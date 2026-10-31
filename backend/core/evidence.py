@@ -49,6 +49,8 @@ class Bundle:
     text: str
     chapters: list[int] = field(default_factory=list)
     truncated: bool = False
+    #: 证据文本内每段窗口的 (章号, 起, 止)——用来把模型给的引文位置反查回章号
+    spans: list[tuple[int, int, int]] = field(default_factory=list)
 
     @property
     def empty(self) -> bool:
@@ -109,20 +111,40 @@ class EvidenceIndex:
         keywords = _keywords_for(anchor_quote, *hint_texts)
         blocks: list[str] = []
         chapters: list[int] = []
+        spans: list[tuple[int, int, int]] = []
+        cursor = 0
 
-        anchor = self.window(anchor_chapter, anchor_quote, radius=radius)
-        if anchor:
-            blocks.append(f"【第 {anchor_chapter} 章（埋设处）】\n{anchor}")
-            chapters.append(anchor_chapter)
+        def _append(chapter: int, body: str, label: str) -> None:
+            nonlocal cursor
+            if not body:
+                return
+            chunk = f"{label}\n{body}"
+            start = cursor
+            blocks.append(chunk)
+            chapters.append(chapter)
+            spans.append((chapter, start, start + len(chunk)))
+            cursor = start + len(chunk) + 2  # "\n\n" 分隔
 
+        _append(anchor_chapter, self.window(anchor_chapter, anchor_quote, radius=radius),
+                f"【第 {anchor_chapter} 章（埋设处）】")
+
+        dropped = 0
         for ch in self.find_mentions(keywords, after=anchor_chapter, limit=max_windows):
             if len(chapters) >= max_windows + 1:
                 break
-            block = self.window(ch, keywords[0] if keywords else "", radius=radius)
-            if not block:
+            # 取窗要对准**真正命中的那个词**：用 keywords[0] 会在它没出现时退化成章首，
+            # 于是"章节被选中、答案却没进包"——实测就是这样漏掉章末答案的。
+            hit_word = next((w for w in keywords if w and w in self.chapter_text(ch)), "")
+            if not hit_word:
+                dropped += 1
                 continue
-            blocks.append(f"【第 {ch} 章】\n{block}")
-            chapters.append(ch)
+            _append(ch, self.window(ch, hit_word, radius=radius), f"【第 {ch} 章】")
 
         text = "\n\n".join(blocks)
-        return Bundle(text=text, chapters=chapters, truncated=len(chapters) > max_windows + 1)
+        return Bundle(
+            text=text,
+            chapters=chapters,
+            # 有命中章被跳过、或命中数超过能展示的上限，都算截断
+            truncated=bool(dropped) or len(chapters) > max_windows,
+            spans=spans,
+        )
