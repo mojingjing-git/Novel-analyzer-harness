@@ -159,8 +159,18 @@ def _load_client():
     fields = {f.name for f in APIConfig.__dataclass_fields__.values()} if hasattr(APIConfig, "__dataclass_fields__") else set()
     api = raw.get("api", {})
     # 真书单块输出比合成语料大得多，300s 会撞超时（实测 block1 一次 330s 空返回）
+    overrides = {
+        k: v
+        for k, v in (
+            ("base_url", _OPTS.get("base_url", "")),
+            ("api_key", _OPTS.get("api_key", "")),
+            ("model", _OPTS.get("model", "")),
+        )
+        if v
+    }
     api = {
         **api,
+        **overrides,
         "timeout": args_timeout(),
         # 真书一块的输出用不到十万 token。130000 会让模型"一直写到上限"，
         # 实测单块跑 900s 仍 0 token 返回——把上限收到 8000，写不下就是超长，
@@ -183,7 +193,7 @@ def _knowledge_stats(book_dir: Path) -> dict:
         "exists": True,
         "facts": len(getattr(reduced, "facts", []) or []),
         "characters": len(getattr(reduced, "characters", {}) or {}),
-        "blocks_in_store": len(getattr(store, "block_signatures", lambda: [])()),
+        "blocks_in_store": len(getattr(store, "block_signatures", ()) or ()),
         "meta_keys": sorted(meta)[:8] if isinstance(meta, dict) else None,
     }
 
@@ -192,6 +202,9 @@ async def amain(args) -> int:
     _OPTS["max_tokens"] = args.max_tokens
     _OPTS["block_size"] = args.block_size
     _OPTS["timeout"] = args.timeout
+    _OPTS["base_url"] = args.base_url
+    _OPTS["api_key"] = args.api_key
+    _OPTS["model"] = args.model
     from backend.vnext import blocks, project, runner
     from backend.vnext.prompt_limits import PromptLimits
 
@@ -312,6 +325,9 @@ def main() -> int:
     parser.add_argument("--timeout", type=int, default=900, help="单次调用超时（秒）")
     parser.add_argument("--chapters", type=int, default=0, help="只用前 N 章（0=整本）")
     parser.add_argument("--tolerate-failures", action="store_true", help="非永久失败也跳过，留 gap 继续")
+    parser.add_argument("--base-url", default="", help="覆盖 base_url（如本地 magpie 网关）")
+    parser.add_argument("--api-key", default="", help="覆盖 api_key")
+    parser.add_argument("--model", default="", help="覆盖 model")
     parser.add_argument("--concurrency", type=int, default=8, help="同一波并发的块数")
     return asyncio.run(amain(parser.parse_args()))
 
