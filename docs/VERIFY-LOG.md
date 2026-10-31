@@ -64,6 +64,8 @@
 | 2026-11-01 | 尚未入库 | 复审四：章号/入口/提示词/取窗/回收章/覆盖 | business_test（**全量**） | **1574 passed / exit 0** | — | 父 agent 亲跑 `python -m pytest -o addopts= -q`，702.01s；新增 `test_review_round3_fixes.py`(8) |
 | 2026-11-01 | 尚未入库 | 四组已知答案样本（真模型） | measurement | A/B 判 SUPPORTED 且回收章=9；C 未判回收；D 截断正确 | — | `python scripts/verify_recheck_fixtures.py --base-url http://127.0.0.1:3425/v1 --model wb2api/cn:hy3`；自检退出码 0；`docs/MEASURE-FIXTURES-2026-11-01.md` |
 | 2026-11-01 | 尚未入库 | 组合场景：证据隔离/丢弃口径/截断 | business_test（**全量**） | **1580 passed / exit 0** | — | 父 agent 亲跑，717.78s；新增 `test_recheck_evidence_isolation.py`(6) |
+| 2026-11-01 | 尚未入库 | 批量复检（解析器修复后实测） | measurement | batch=6 调用 6→1、completion 19.7k→8.8k、192s→54s，6/6 全答 | — | `docs/MEASURE-BATCHING.json` / `MEASURE-BATCHING-12.json` |
+| 2026-11-01 | 尚未入库 | 批量复检用例 + 全量 | business_test（**全量**） | **1583 passed / exit 0** | — | 父 agent 亲跑 758.28s；新增 `test_recheck_batching.py`(3) |
 | 2026-11-01 | 尚未入库 | 四组已知答案样本（收紧自检后重跑） | measurement | A/B SUPPORTED 回收章=9；C 判 INSUFFICIENT 且已核对 1 条；D 遗漏 1 章 | — | 自检退出码 0 |
 | 2026-11-01 | 尚未入库 | 证据分段 + 检索词条化后全量 | business_test（**全量**） | **1574 passed / exit 0** | — | 父 agent 亲跑，711.09s |
 | 2026-11-01 | 尚未入库 | 章号来源离线复算（不调模型） | offline_check | 58/58 引文可在**正确章号**定位（旧口径仅 19/60） | — | `anchor.chapter_number_from_heading` + `split_block_into_chapters`；16 章产物 |

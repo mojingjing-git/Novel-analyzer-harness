@@ -15,7 +15,7 @@
   {
     "case": "A_cross_chapter",
     "calls": 1,
-    "seconds": 21.3,
+    "seconds": 20.4,
     "verdicts": [
       {
         "verdict": "SUPPORTED",
@@ -51,7 +51,7 @@
   {
     "case": "B_answer_at_end",
     "calls": 1,
-    "seconds": 17.4,
+    "seconds": 17.6,
     "verdicts": [
       {
         "verdict": "SUPPORTED",
@@ -87,12 +87,12 @@
   {
     "case": "C_counter_evidence",
     "calls": 1,
-    "seconds": 28.1,
+    "seconds": 26.8,
     "verdicts": [
       {
         "verdict": "INSUFFICIENT",
         "reason": "",
-        "answer": "",
+        "answer": "原文未明确交代动过夹层的人是谁",
         "located_span": null,
         "evidence_id": null
       }

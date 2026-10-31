@@ -80,7 +80,9 @@ async def test_supported_with_located_quote_marks_resolved():
     )
     outcome = await run_recheck_v2([item], book_text=CHAPTER_TEXT, call_model=model)
 
+    # 一次就答满 → 不触发补问
     assert outcome.calls == 1
+    assert outcome.retried_batches == 0
     assert item.status == "resolved"
     assert item.source_type == "auto_recheck"
     assert item.needs_review is False
@@ -196,7 +198,9 @@ async def test_garbage_response_is_counted_not_swallowed():
 
     outcome = await run_recheck_v2([item], book_text=CHAPTER_TEXT, call_model=_call)
 
-    assert outcome.calls == 1
+    # 第一轮失败后会为漏掉的候选补问一次；两次都没有可用判定才算 not_checked
+    assert outcome.calls == 2
+    assert outcome.retried_batches == 1
     assert "fs_012" in outcome.not_checked
     assert item.status == "active"
 

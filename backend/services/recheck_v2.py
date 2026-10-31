@@ -34,7 +34,7 @@ PROPOSED_RESOLVED = "PROPOSED_RESOLVED"
 OPEN = "OPEN"
 
 #: 一次调用最多塞几条候选。太多会让模型串号（它只看到一堆编号）。
-DEFAULT_BATCH_SIZE = 1
+DEFAULT_BATCH_SIZE = 6
 
 PROMPT_TEMPLATE = """你是长篇小说的伏笔审校员。任务：判断**这条伏笔**在后文里是否已经被回收。
 
@@ -54,13 +54,20 @@ PROMPT_TEMPLATE = """你是长篇小说的伏笔审校员。任务：判断**这
 - `CONTRADICTED`：后文明确否定了这条伏笔暗示的方向
 - `INSUFFICIENT`：原文不足以判断（这是诚实的答案，不是失败）
 
-共 {count} 个候选。
+共 {count} 个候选，必须输出**长度 {count} 的 JSON 数组**，
+每个候选恰好一条，`candidate_id` 必须原样取自：{candidate_ids}。
+只输出 1 条会被判为不完整，那几条会记成"未核对"。
 
 待核对伏笔：
 {items}
 
-输出：纯 JSON 数组，每个候选**一条**结果：
-{schema}
+输出：纯 JSON 数组，长度必须是 {count}。形状如下（数组元素同构，candidate_id 换成各候选的真实 id）：
+[
+{schema},
+  {{
+    ... 第 2 条，直到 {count} 条 ...
+  }}
+]
 """
 
 ITEM_TEMPLATE = """### 候选 candidate_id={candidate_id}
@@ -97,6 +104,8 @@ class RecheckOutcome:
     dropped_anchor_missing: int = 0
     #: 因为"没有证据"而没进入候选的条目 id（它们不是"待查未查"）
     dropped_ids: list[str] = field(default_factory=list)
+    #: 因为漏答而补问过的批次数（用于观察模型是否稳定答满）
+    retried_batches: int = 0
 
     def summary(self) -> dict:
         return {
@@ -111,6 +120,7 @@ class RecheckOutcome:
             "dropped_anchor_missing": self.dropped_anchor_missing,
             "not_checked": list(self.not_checked),
             "dropped_ids": list(self.dropped_ids),
+            "retried_batches": self.retried_batches,
         }
 
 
@@ -234,12 +244,7 @@ async def run_recheck_v2(
 
     by_id = {c["candidate_id"]: c for c in candidates}
 
-    for offset in range(0, len(candidates), max(batch_size, 1)):
-        batch = candidates[offset : offset + max(batch_size, 1)]
-        if outcome.calls >= max_calls:
-            outcome.not_checked.extend(c["candidate_id"] for c in batch)
-            continue
-
+    def _render_batch(batch: list[dict]) -> str:
         rendered = "".join(
             ITEM_TEMPLATE.format(
                 candidate_id=c["candidate_id"],
@@ -263,22 +268,24 @@ async def run_recheck_v2(
             )
             for c in batch
         )
-        prompt = PROMPT_TEMPLATE.format(
-            count=len(batch), items=rendered, schema=render_recheck_schema()
+        return PROMPT_TEMPLATE.format(
+            count=len(batch),
+            items=rendered,
+            schema=render_recheck_schema(),
+            candidate_ids=", ".join(c["candidate_id"] for c in batch),
         )
-        outcome.calls += 1
-        raw = await call_model(prompt)
 
+    def _consume(batch: list[dict], raw: str) -> set[str]:
+        """解析一批回包，返回真正拿到判定的候选 id。"""
         got: dict[str, Mapping[str, Any]] = {}
         for payload in _extract_payloads(raw):
             cid = payload.get("candidate_id")
             if isinstance(cid, str):
                 got[cid] = payload
-
+        done: set[str] = set()
         for c in batch:
             payload = got.get(c["candidate_id"])
             if payload is None:
-                outcome.not_checked.append(c["candidate_id"])
                 continue
             payload = _normalize_payload(payload)
             allowed = [seg["evidence_id"] for seg in c["segments"]]
@@ -299,6 +306,32 @@ async def run_recheck_v2(
                     evidence_text=lambda eid: texts_by_evidence.get(eid, ""),
                 )
             )
+            done.add(c["candidate_id"])
+        return done
+
+    done: set[str] = set()
+    for attempt in range(2):
+        queue = [c for c in candidates if c["candidate_id"] not in done]
+        if not queue:
+            break
+        if attempt == 1:
+            # 第一轮漏掉的候选单独补一次：模型偶尔只答前几条，但补问时只给它漏的那条，
+            # 命中率高；仍漏就如实记 not_checked，不再反复花钱。
+            outcome.retried_batches += 1
+        step = len(queue) if attempt == 1 else max(batch_size, 1)
+        for offset in range(0, len(queue), step):
+            batch = queue[offset : offset + step]
+            if outcome.calls >= max_calls:
+                break
+            outcome.calls += 1
+            raw = await call_model(_render_batch(batch))
+            done |= _consume(batch, raw)
+        if outcome.calls >= max_calls:
+            break
+
+    outcome.not_checked.extend(
+        c["candidate_id"] for c in candidates if c["candidate_id"] not in done
+    )
 
     counts = count_verdicts(
         outcome.verdicts,
@@ -356,32 +389,96 @@ def _normalize_payload(payload: Mapping[str, Any]) -> Mapping[str, Any]:
     return fixed
 
 
+def _strip_fence(text: str) -> str:
+    """去掉 ```json 围栏；模型常把 JSON 包在代码块里。"""
+    text = text.strip()
+    if "```" not in text:
+        return text
+    parts = text.split("```")
+    # 取最长的代码块内容
+    return max(parts, key=len).lstrip("json").lstrip("JSON").strip()
+
+
+def _balanced_slice(text: str, opener: str, closer: str) -> str | None:
+    """从第一个 opener 起，按括号配平切出完整 JSON 片段（跳过字符串内的括号）。"""
+    start = text.find(opener)
+    if start < 0:
+        return None
+    depth = 0
+    in_str = False
+    escape = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_str:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == opener:
+            depth += 1
+        elif ch == closer:
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
+    return None
+
+
 def _extract_payloads(raw: str) -> list[Mapping[str, Any]]:
-    """从模型文本里挖出 JSON 数组或单对象；挖不出来就当空（会被记 not_checked）。"""
+    """从模型文本里挖出**全部**候选结果。
+
+    这里曾经把活全交给 ``extract_json_from_text``，而它只抽出**第一个**对象——
+    三条候选的数组进来，出去只有一条，看起来像"模型只答了一条"。
+    实测模型其实答全了，是解析把它吃掉。所以这里自己做括号配平扫描。
+    """
     if not raw:
         return []
-    data = extract_json_from_text(raw)
-    if isinstance(data, str):  # extract_json_from_text 返回的是 JSON 文本，不是对象
+    text = _strip_fence(raw)
+
+    data: Any = None
+    for candidate in (
+        text,
+        _balanced_slice(text, "[", "]"),
+        _balanced_slice(text, "{", "}"),
+    ):
+        if not candidate:
+            continue
         try:
-            data = json.loads(data)
+            data = json.loads(candidate)
+            break
         except (ValueError, TypeError):
-            return []
+            data = None
+    if data is None:
+        fallback = extract_json_from_text(raw)
+        if isinstance(fallback, str):
+            try:
+                data = json.loads(fallback)
+            except (ValueError, TypeError):
+                return []
+        else:
+            data = fallback
     if data is None:
         return []
-    candidates: Iterable[Any]
+
+    items: Iterable[Any]
     if isinstance(data, Mapping):
         for key in ("results", "verdicts", "items"):
             value = data.get(key)
             if isinstance(value, list):
-                candidates = value
+                items = value
                 break
         else:
-            candidates = [data]
+            items = [data]
     elif isinstance(data, list):
-        candidates = data
+        items = data
     else:
         return []
-    return [c for c in candidates if isinstance(c, Mapping)]
+    return [c for c in items if isinstance(c, Mapping)]
+
 
 
 def _group_by_candidate(verdicts: Iterable[CandidateVerdict]) -> dict[str, list[CandidateVerdict]]:

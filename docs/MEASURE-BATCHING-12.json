@@ -1,0 +1,24 @@
+[
+  {
+    "batch": 6,
+    "candidates": 12,
+    "calls": 2,
+    "verdicts": 12,
+    "prompt_tokens": 33499,
+    "completion_tokens": 16062,
+    "prompt_per_candidate": 2792,
+    "missing": 0,
+    "seconds": 87.2
+  },
+  {
+    "batch": 12,
+    "candidates": 12,
+    "calls": 1,
+    "verdicts": 12,
+    "prompt_tokens": 32911,
+    "completion_tokens": 10887,
+    "prompt_per_candidate": 2743,
+    "missing": 0,
+    "seconds": 60.3
+  }
+]

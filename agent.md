@@ -1721,3 +1721,10 @@ C2 实测把问题定性了：模型判"支持"20 次、**引文逐字命中 9/9
 - 丢弃（无锚点/定位失败）单列 `dropped_ids`，不再算作 `not_checked`；状态机按"待查"算，避免"没有证据"把整轮压成 RUNNING。
 - 状态收尾的 `COMPLETED` 曾未导入 → `NameError`；已改字面量，并补空候选分支的 PARTIAL。
 - 用例 `test_recheck_evidence_isolation.py`（6 例，含同章双候选与交叉引用）；样本脚本自检收紧（C 必须有有效判定且已核对、D 必须有实际遗漏）。
+
+### 10.62 批量复检：一次问多条，漏答补问一次
+
+- **根因纠正**：一直以为"模型一批只答一条"，实测是 `_extract_payloads` 只抽第一个 JSON 对象。改为括号配平扫描（整段 → `[...]` → `{...}` → 旧解析兜底），支持 ```json 围栏。
+- 实测（16 章 58 条候选）：batch=1 → 6 次调用 / completion 19.7k / 192s；batch=6 → **1 次调用 / completion 8.8k / 54s**；batch=12 → 1 次调用 / 12 条全答。
+- 默认批大小改 6（`foreshadow_recheck_batch_size`）；漏答的候选**补问一次**（只给漏的那几条），仍漏才记 `not_checked`，并计 `retried_batches`。
+- 用例 `test_recheck_batching.py`（3 例：6 条一次答满 / 漏答补问只给漏的 / 两次都失败才 not_checked）。

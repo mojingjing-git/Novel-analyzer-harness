@@ -1,0 +1,47 @@
+[
+  {
+    "batch": 1,
+    "candidates": 6,
+    "calls": 6,
+    "verdicts": 6,
+    "prompt_tokens": 19660,
+    "completion_tokens": 19725,
+    "prompt_per_candidate": 3277,
+    "seconds": 191.6,
+    "per_call_items": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ]
+  },
+  {
+    "batch": 3,
+    "candidates": 6,
+    "calls": 2,
+    "verdicts": 6,
+    "prompt_tokens": 17308,
+    "completion_tokens": 12151,
+    "prompt_per_candidate": 2885,
+    "seconds": 122.8,
+    "per_call_items": [
+      3,
+      3
+    ]
+  },
+  {
+    "batch": 6,
+    "candidates": 6,
+    "calls": 1,
+    "verdicts": 6,
+    "prompt_tokens": 16720,
+    "completion_tokens": 8848,
+    "prompt_per_candidate": 2787,
+    "seconds": 54.3,
+    "per_call_items": [
+      6
+    ]
+  }
+]

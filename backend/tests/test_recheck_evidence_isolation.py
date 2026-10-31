@@ -80,9 +80,32 @@ def test_same_chapter_candidates_do_not_share_evidence_ids():
     item_b = _item("fsB", "旧契上写着三年后归还城南米铺", description="旧契还款期限")
 
     async def call_model(prompt: str) -> str:
-        if "fsA" in prompt:
-            return _payload("fsA", "铜匣底下那层是空的", prompt=prompt)
-        return _payload("fsB", "旧契上写着三年后归还城南米铺", prompt=prompt)
+        quotes = {
+            "fsA": "铜匣底下那层是空的",
+            "fsB": "旧契上写着三年后归还城南米铺",
+        }
+        # 每个候选的 evidence_id 必须从**它自己那一段**取，不能拿第一个充数
+        rows = []
+        for block in prompt.split("### 候选 candidate_id=")[1:]:
+            cid = block.split()[0] if block.split() else ""
+            ids = re.findall(r"\[evidence_id=([0-9a-f]{12})", block)
+            if cid not in quotes or not ids:
+                continue
+            rows.append(
+                {
+                    "candidate_id": cid,
+                    "verdict": "SUPPORTED",
+                    "answer": "已交代",
+                    "evidence_id": ids[0],
+                    "supporting_quote": quotes[cid],
+                    "counter_search": {
+                        "performed": True,
+                        "checked_evidence_ids": ids,
+                        "counter_quotes": [],
+                    },
+                }
+            )
+        return json.dumps(rows, ensure_ascii=False)
 
     outcome = asyncio.run(
         run_recheck_v2([item_a, item_b], chapters=chapters, call_model=call_model, max_calls=4)
