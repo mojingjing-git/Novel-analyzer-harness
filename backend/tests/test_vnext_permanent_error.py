@@ -24,3 +24,16 @@ def test_moderation_text_is_detected_without_structured_verdict() -> None:
     """厂商把拦截码塞在 422 的 body 里，文本通道认不出来——专门嗅探器要兜住。"""
     exc = BlockFailure("API错误 (HTTP 422): {'error': {'message': 'input new_sensitive (1026)'}}")
     assert _is_permanent(exc) is True
+
+
+def test_billing_quota_is_permanent() -> None:
+    """2026-10-31 实测：HTTP 402 insufficient_balance 被漏判成可重试，
+    32 个块在 5 秒内各烧一次。余额不足是账户级永久错误。"""
+    exc = BlockFailure(
+        "模型返回空内容（error=API错误 (HTTP 402): insufficient_balance_error 当前已达到 Token Plan 用量上限）"
+    )
+    assert _is_permanent(exc) is True
+
+
+def test_plain_empty_content_is_not_permanent() -> None:
+    assert _is_permanent(BlockFailure("模型返回空内容（error=未知）")) is False

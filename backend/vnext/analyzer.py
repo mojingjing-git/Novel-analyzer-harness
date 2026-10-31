@@ -314,9 +314,14 @@ async def analyze_block(
             try:
                 from backend.core import llm_client as core_llm
 
+                blob = f"{detail} {raw_text}"
                 permanent = bool(
                     core_llm.moderation_hit_from_exception(result)
-                    or core_llm.is_moderation_message(f"{detail} {raw_text}")
+                    or core_llm.is_moderation_message(blob)
+                    # 余额/配额不足是**账户级**永久错误：重跑一万次也一样，
+                    # 而且每跑一次都在烧钱。2026-10-31 实测 HTTP 402
+                    # insufficient_balance 被漏判成可重试，32 块在 5 秒内各烧一次。
+                    or _looks_like_billing(blob)
                 )
             except Exception:  # noqa: BLE001
                 permanent = False
@@ -367,6 +372,26 @@ async def analyze_block(
     )
     await asyncio.to_thread(publish_result, book_dir, record)
     return BlockRun(record=record, window=window, prompt_chars=prompt_chars)
+
+
+_BILLING_HINTS = (
+    "insufficient_balance",
+    "insufficient balance",
+    "余额不足",
+    "配额",
+    "quota",
+    "payment required",
+    "HTTP 402",
+    "402",
+)
+
+
+def _looks_like_billing(text: str) -> bool:
+    """余额/配额类错误：账户级、永久、且每试一次都要花钱。"""
+    lowered = (text or "").lower()
+    return any(hint.lower() in lowered for hint in _BILLING_HINTS if hint != "402") or (
+        "402" in lowered and ("balance" in lowered or "quota" in lowered or "payment" in lowered)
+    )
 
 
 def make_chat_caller(client: Any) -> Callable[[list[dict]], Awaitable[str]]:

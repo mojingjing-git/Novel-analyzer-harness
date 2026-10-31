@@ -399,6 +399,15 @@ def _is_permanent(exc: BaseException) -> bool:
             return True
     except Exception:  # noqa: BLE001
         pass
+    # 余额/配额：账户级永久错误，且每试一次都花钱。这一条必须在最前面判，
+    # 因为它的错误文本常被包装成"模型返回空内容"，verdict 可能是空的。
+    try:
+        from backend.vnext.analyzer import _looks_like_billing
+
+        if _looks_like_billing(str(exc)):
+            return True
+    except Exception:  # noqa: BLE001
+        pass
     try:
         from backend.core import error_taxonomy
 
