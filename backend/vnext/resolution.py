@@ -20,8 +20,10 @@
 
 from __future__ import annotations
 
+import json
+
 from dataclasses import dataclass, field
-from typing import Callable, Iterable, Mapping
+from typing import Callable, Final, Iterable, Mapping
 
 # 模型只允许给出这四个结论（固定枚举，不接受近义词）
 SUPPORTED = "SUPPORTED"
@@ -93,6 +95,51 @@ class CandidateVerdict:
         只是不计入"已核对数"。
         """
         return self.verdict in (SUPPORTED, DIFFERENT_ANSWER, CONTRADICTED, INSUFFICIENT)
+
+
+#: 模型回包被读取的全部键名——**唯一来源**。
+#: 2026-10-31 事故：Prompt 与解析器各自手写字段名，两轮共 36 次调用（约 109k token）
+#: 全部因键名不一致被判 ``NO_EVIDENCE_ID`` / ``NO_SUPPORTING_QUOTE``。
+#: 现在 Prompt 由 :func:`render_recheck_schema` 渲染，而用例
+#: ``test_vnext_schema_keys`` 双向核对"常量里的键"与"解析器实际读取的键"。
+RECHECK_MODEL_KEYS: Final[Mapping[str, object]] = {
+    "candidate_id": "candidate_id",
+    "verdict": "verdict",
+    "answer": "answer",
+    "material_insufficient_reason": "material_insufficient_reason",
+    "evidence_id": "evidence_id",
+    "supporting_span": "supporting_span",
+    "supporting_quote": "supporting_quote",
+    "counter_search": {
+        "performed": "performed",
+        "checked_evidence_ids": "checked_evidence_ids",
+        "counter_quotes": "counter_quotes",
+    },
+}
+
+
+def iter_model_keys(keys: Mapping[str, object] | None = None, prefix: str = ""):
+    """按 ``a.b`` 形式逐层列出键（含嵌套）。"""
+    for name, value in (keys or RECHECK_MODEL_KEYS).items():
+        path = f"{prefix}{name}"
+        if isinstance(value, Mapping):
+            yield from iter_model_keys(value, prefix=f"{path}.")
+        else:
+            yield path
+
+
+def render_recheck_schema(*, indent: int = 2) -> str:
+    """由 :data:`RECHECK_MODEL_KEYS` 渲染出给模型看的 JSON 字段示例。
+
+    占位值只是"类型示意"，不参与解析；键名才是契约。
+    """
+    sample: dict[str, object] = {}
+    for name, value in RECHECK_MODEL_KEYS.items():
+        if isinstance(value, Mapping):
+            sample[name] = {key: f"<{key}>" for key in value}
+        else:
+            sample[name] = f"<{name}>"
+    return json.dumps(sample, ensure_ascii=False, indent=indent)
 
 
 def parse_recheck(
