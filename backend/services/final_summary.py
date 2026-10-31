@@ -28,6 +28,7 @@ from backend.config.constants import (
 from backend.core.llm_client import LLMClient
 from backend.core.style_analyzer import extract_style_profile
 from backend.utils.json_utils import safe_load_json, safe_save_json, extract_json_from_text, safe_parse_json
+from backend.core.anchor import entity_key_for
 from backend.utils.text_utils import deduplicate_foreshadows
 from backend.utils.foreshadow_ledger import ForeshadowLedger, ForeshadowItem
 
@@ -816,7 +817,13 @@ class FinalSummaryRunner:
                 ftype = fs.get("type", "") or ""
                 conf = fs.get("confidence", "中") or "中"
                 imp = fs.get("importance", "中") or "中"
-                all_clues.append((ch, clue, ftype, conf, imp))
+                # 第 6..8 位携带锚点：没有锚点，复检阶段就只能听模型自述
+                all_clues.append((
+                    ch, clue, ftype, conf, imp,
+                    fs.get("anchor_quote", "") or "",
+                    int(fs.get("anchor_chapter") or 0),
+                    fs.get("motif_key", "") or "",
+                ))
                 if ftype:
                     unique_types.add(ftype)
 
@@ -875,6 +882,9 @@ class FinalSummaryRunner:
             )
             c["_sort_key"] = score
             c["composite_score"] = score  # 保留到 catalog 条目，供前端展示
+            # 稳定实体键：优先用模型给的母题词，否则退回代表条目 id。
+            # 一旦写进账本就不再改（改号=把同一件事拆成两条）。
+            c["entity_key"] = entity_key_for(c.get("motif_key", ""), str(c.get("id", "")))
         catalog.sort(key=lambda c: c["_sort_key"], reverse=True)
         for c in catalog:
             c.pop("_sort_key", None)  # 临时排序键仍删除；composite_score 保留
@@ -1533,6 +1543,9 @@ class FinalSummaryRunner:
                     confidence=0.8, source_type='catalog_scan',
                     composite_score=cat.get("composite_score", 0),
                     importance=cat.get("importance", "中"),
+                    anchor_quote=cat.get("anchor_quote", "") or "",
+                    anchor_chapter=int(cat.get("anchor_chapter") or 0),
+                    entity_key=cat.get("entity_key", "") or "",
                 ))
                 added += 1
         logger.info(f"伏笔总表同步到账本: {added} 条新增，{len(existing_ids)} 条已存在")

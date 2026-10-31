@@ -17,7 +17,10 @@ logger = logging.getLogger(__name__)
 # v1: 初始版本
 # v2: ForeshadowItem 新增 needs_review 可选字段（向后兼容，旧 v1 JSON 仍可加载）
 # v3: ForeshadowItem 新增 composite_score + importance（向后兼容，旧 v2 JSON 仍可加载）
-SCHEMA_VERSION = 3
+# v4: ForeshadowItem 新增 anchor_quote / anchor_chapter / entity_key（向后兼容，旧 v3 JSON 仍可加载）
+#     anchor_quote 是**原文逐字引文**，复检要靠它核对；entity_key 是"这是同一件事"的稳定身份，
+#     一旦登记就持久化——指纹只用于去重，不能用来改号（改号等于把历史线索拆成两条）。
+SCHEMA_VERSION = 4
 
 # 休眠阈值
 # DORMANT_BATCH_THRESHOLD 已废弃（2026-08-13）：批次阈值相对批次数（10-20 批）不可达，
@@ -48,6 +51,9 @@ class ForeshadowItem:
     needs_review: bool = False             # 是否需要人工复核（低置信度 / 存疑时标记）
     composite_score: int = 0               # 组合因子分数（imp×100 + conf×10 + evi≤50 + span≤49）
     importance: str = "中"                 # 重要度（高/中/低，从 catalog 同步）
+    anchor_quote: str = ""                 # 建成时的原文锚点（逐字；没有则复检无法核对）
+    anchor_chapter: int = 0                # 锚点实际所在章
+    entity_key: str = ""                   # 稳定实体键（首次登记即持久）
 
     @classmethod
     def from_dict(cls, data: dict) -> 'ForeshadowItem':

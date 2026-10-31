@@ -748,3 +748,30 @@ expected_dependency = sha256(canonical({
 `analysis.anchor_quote_enabled`（默认 true）、`anchor_min_chars`（6）、
 `recheck_max_calls`（300）、`recheck_max_tokens`（60000）。
 `recheck_max_tokens` 单独给足量，是因为实测该模型 `max_tokens` 撞上限时一个字的正文都拿不到。
+
+## §12 账本 v4：锚点与稳定实体键（阶段 1，2026-10-31）
+
+### 12.1 三个新字段
+
+| 字段 | 语义 | 谁写 |
+| --- | --- | --- |
+| `anchor_quote` | 建成时的**原文逐字引文** | 采集阶段（`analyzer` 校验后）→ catalog → 账本 |
+| `anchor_chapter` | 引文实际所在章（程序反查，不是模型说的） | 同上 |
+| `entity_key` | "这是同一件事"的稳定身份 | 建条目时一次定下，**此后不改** |
+
+`SCHEMA_VERSION` 3 → 4；旧 v3 账本照常读入，缺字段补默认值，**不迁移、不重写历史**。
+
+### 12.2 为什么 `entity_key` 不能用指纹重算
+
+指纹是"内容变没变"，身份是"是不是同一件事"。用指纹当键会有一个隐性后果：
+后续章节补进一条**更早**的线索，指纹变了、键跟着变，同一件事被拆成两条，
+一条旧的一条新的——而两条都"看起来有证据"。所以键首次登记即持久，
+指纹只用于去重（`test_entity_key_is_stable_when_earlier_clue_arrives` 钉住）。
+
+派生规则：优先模型给的 `motif_key`，没有则退回 `clue:<代表条目 id>`（`anchor.entity_key_for`）。
+
+### 12.3 开关关闭时必须显式标记
+
+`anchor_quote_enabled=false` 时 `anchor_stats` 记 `{"disabled": true, "missing": n}`，
+语义是"这一章没有证据"，**不是**"证据只是没找到"。复检阶段必须区别对待：
+前者只能产出"证据不足"，不能凭模型自述判回收。

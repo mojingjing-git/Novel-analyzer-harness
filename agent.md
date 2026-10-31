@@ -1634,3 +1634,11 @@ C2 实测把问题定性了：模型判"支持"20 次、**引文逐字命中 9/9
 - `prompt_builder` schema 增两个字段 + 一条约束：逐字照抄、≥6 字、不改写不拼接；找不到原句就**不要列这条伏笔**。
 - 配置项：`anchor_quote_enabled`(true)、`anchor_min_chars`(6)、`recheck_max_calls`(300)、`recheck_max_tokens`(60000)。
 - 用例：`test_anchor_quote.py`(12) + `test_result_roundtrip_anchor.py`(4)。实测编造引文被清空、跨章拼接被拒、章号由标题反查得出。
+
+### 10.52 账本 v4：锚点与稳定实体键（阶段 1）
+
+- `ForeshadowItem` 增 `anchor_quote`/`anchor_chapter`/`entity_key`，`SCHEMA_VERSION` 3 → 4；旧 v3 账本照常读入（缺字段补默认值，不迁移）。
+- `final_summary._build_foreshadow_catalog` 的线索从 5 元组扩到 8 元组，把锚点带过 `deduplicate_foreshadows`；catalog 条目增 `entity_key`。
+- `anchor.entity_key_for(motif_key, fallback_id)`：优先母题词，否则 `clue:<id>`；**一旦写进账本不可变**——用指纹重算会把同一件事拆成两条。
+- `anchor_quote_enabled=false` 时 `anchor_stats` 记 `{"disabled": true}`，语义是"没有证据"而非"没找到证据"；`anchor_min_chars` 可配。
+- 用例：`test_foreshadow_ledger_anchor.py`（8 例，含 v3 旧账本兼容、键稳定性、未知字段过滤）；旧断言 `SCHEMA_VERSION == 3` 同步改 4。

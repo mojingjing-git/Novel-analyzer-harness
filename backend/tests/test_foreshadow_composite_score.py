@@ -35,5 +35,5 @@ def test_foreshadow_item_from_dict_backward_compat():
 
 
 def test_schema_version_bumped():
-    """SCHEMA_VERSION 升级到 3"""
-    assert SCHEMA_VERSION == 3
+    """SCHEMA_VERSION 升级到 4（v4 加锚点与 entity_key，v3 加 composite_score）"""
+    assert SCHEMA_VERSION == 4

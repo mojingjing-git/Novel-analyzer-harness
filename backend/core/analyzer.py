@@ -271,10 +271,21 @@ class NovelAnalyzer:
             try:
                 from .anchor import verify_result_anchors
 
+                a_cfg = getattr(self.config, "analysis", None)
+                enabled = bool(getattr(a_cfg, "anchor_quote_enabled", True))
+                min_chars = int(getattr(a_cfg, "anchor_min_chars", 6) or 6)
                 first_chapter = chapter_number
-                result.anchor_stats = verify_result_anchors(
-                    result, chapter_content, first_chapter
-                )
+                if enabled:
+                    result.anchor_stats = verify_result_anchors(
+                        result, chapter_content, first_chapter, min_chars
+                    )
+                else:
+                    # 关掉锚点采集时必须**明确标出来**：这一章的伏笔没有证据，
+                    # 复检阶段要按"无证据模式"对待，而不是假装证据只是没找到。
+                    n = len(getattr(result, "foreshadowing", []) or [])
+                    result.anchor_stats = {
+                        "total": n, "located": 0, "missing": n, "by_kind": {}, "disabled": True,
+                    }
                 if result.anchor_stats["total"]:
                     logger.info(
                         "伏笔锚点: %s/%s 已定位（缺 %s）",

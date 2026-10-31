@@ -57,6 +57,7 @@
 | 2026-10-30 | 尚未入库 | 打包与首启冒烟 | packaging | **构建 exit 0 / 启动存活 / crash.log 干净** | — | `python -m PyInstaller desktop.spec` → `dist/novel-analyzer.exe` 31.45 MB；隐藏窗口启动 16s 存活，`analyzer.log` 显示 `127.0.0.1:8464` 就绪、WebSocket 连接、健康检查 6/6。**首启发现并修掉 crash.log 自刷屏 bug**，重新打包复验只剩 1 行 INFO |
 | 2026-10-31 | 尚未入库 | 伏笔复检 V2 阶段 0（锚点字段） | business_test（**全量**） | **1528 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，764.89s；新增 `test_anchor_quote.py`(12) + `test_result_roundtrip_anchor.py`(4) |
 | 2026-10-31 | 尚未入库 | 阶段 0 文档同步 | doc_check | 通过 | — | `docs/data-contract-vnext.md` §11、`agent.md` §10.51、计划文档 §10 实施记录、CHANGELOG |
+| 2026-10-31 | 尚未入库 | 伏笔复检 V2 阶段 1（账本 v4） | business_test（**全量**） | **1536 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，781.04s；新增 `test_foreshadow_ledger_anchor.py`(8)，旧断言 `SCHEMA_VERSION==3` 同步改 4 |
 | 2026-10-31 | 6751346+e | D-19 引文定位下沉（S-1/S-2/S-3） | business_test（**全量**） | **1505 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，747.66s。相对通过 C 批实测基线 1472 增加 33 例：S-1 键名双向核对 4 例、S-2 引文定位 10 例 + 4 个旧文件按新契约改写、S-3 应用键 5 例 |
 | 2026-10-31 | 6751346+e | D-19 验收脚本 | acceptance | **ACCEPTED 32/32** | — | `python scripts/acceptance_vnext.py`；新增的引文定位用例已并入其中（样例引文加长到 ≥10 字、span 不再必填） |
 | 2026-10-31 | 6751346+e | D-19 文档同步 | doc_check | 通过 | — | `docs/data-contract-vnext.md` §17（七小节）、`agent.md` §10.51、`CHANGELOG.md` D-19 段落（CRLF 纯）；两个测量脚本改为渲染自 `render_recheck_schema()` |

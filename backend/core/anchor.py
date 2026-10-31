@@ -57,13 +57,13 @@ def _squeeze_index(text: str) -> tuple[str, list[int]]:
     return "".join(kept), mapping
 
 
-def locate_anchor(block_text: str, quote: str) -> tuple[int, int, str] | None:
+def locate_anchor(block_text: str, quote: str, min_chars: int = MIN_ANCHOR_CHARS) -> tuple[int, int, str] | None:
     """在块文本里定位引文，返回 ``(start, end, kind)``；定位不到返回 ``None``。
 
     先逐字找（最快也最可信），再退到"忽略空白"的规范化比较。
     """
     q = (quote or "").strip()
-    if len(q) < MIN_ANCHOR_CHARS or not block_text:
+    if len(q) < min_chars or not block_text:
         return None
 
     pos = block_text.find(q)
@@ -90,7 +90,9 @@ def _chapter_of(spans: Iterable[tuple[int, int, int]], pos: int) -> tuple[int, s
     return 0, "unknown"
 
 
-def verify_result_anchors(result, block_text: str, first_chapter: int) -> dict:
+def verify_result_anchors(
+    result, block_text: str, first_chapter: int, min_chars: int = MIN_ANCHOR_CHARS
+) -> dict:
     """就地校验一条 ``AnalysisResult`` 的伏笔锚点，返回统计。
 
     - 命中：把 ``anchor_quote`` 规范化为**原文切片**（不信模型的大小写/空白），
@@ -111,7 +113,7 @@ def verify_result_anchors(result, block_text: str, first_chapter: int) -> dict:
         if not quote:
             stats["missing"] += 1
             continue
-        hit = locate_anchor(block_text, quote)
+        hit = locate_anchor(block_text, quote, min_chars)
         if hit is None:
             item.anchor_quote = ""
             item.anchor_chapter = 0
@@ -130,3 +132,13 @@ def verify_result_anchors(result, block_text: str, first_chapter: int) -> dict:
         stats["located"] += 1
         stats["by_kind"][kind] = stats["by_kind"].get(kind, 0) + 1
     return stats
+
+
+def entity_key_for(motif_key: str, fallback_id: str) -> str:
+    """稳定实体键：优先用母题词，否则退回 ``clue:<代表条目 id>``。
+
+    这个键**一旦写进账本就不可变**。用指纹重算它会带来一个隐性后果：
+    后续章节补进来一条更早的线索，指纹一变、键跟着变，历史就被拆成了两条。
+    """
+    mk = (motif_key or "").strip()
+    return mk if mk else f"clue:{fallback_id}"

@@ -2,6 +2,14 @@
 
 ---
 
+## [Unreleased] - 2026-10-31（伏笔复检 V2 · 阶段 1：账本 v4）
+
+- 伏笔账本升级到 schema v4：每条伏笔记录**原文锚点**（`anchor_quote`/`anchor_chapter`）与**稳定实体键**（`entity_key`）
+- 旧 v3 账本照常可读，缺字段补默认值，不写迁移代码
+- `entity_key` 首次登记即持久：用指纹重算键会把同一件事拆成两条，而两条都"看起来有证据"
+- 关闭锚点采集（`anchor_quote_enabled=false`）时显式记 `disabled`，语义是"这一章没有证据"，复检不得据此判回收
+
+
 ## [Unreleased] - 2026-10-31（伏笔复检 V2 · 阶段 0：锚点字段）
 
 - 伏笔现在带**原文锚点**：`anchor_quote`（逐字照抄）、`anchor_chapter`（反查得出）、`motif_key`（稳定母题词）

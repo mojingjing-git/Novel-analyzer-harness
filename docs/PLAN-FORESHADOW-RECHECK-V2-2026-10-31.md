@@ -285,5 +285,12 @@ evidence_id = sha256(f"{book_id}|{chapter}|{content_hash}|{start}|{end}")[:12]
 - `backend/config/settings.py`：`anchor_quote_enabled`/`anchor_min_chars`/`recheck_max_calls`/`recheck_max_tokens`。
 - 用例：`backend/tests/test_anchor_quote.py`（12）、`backend/tests/test_result_roundtrip_anchor.py`（4）。
 
-**阶段 1 待办（下一步）**：把 `anchor_quote_enabled` 关掉的路径也钉住（无锚点时必须显式标"无证据模式"）；
+**阶段 1 已落地（2026-10-31）**
+- `foreshadow_ledger.ForeshadowItem` 增 `anchor_quote`/`anchor_chapter`/`entity_key`，`SCHEMA_VERSION` 3→4，旧 v3 账本兼容。
+- `final_summary._build_foreshadow_catalog`：线索 5 元组 → 8 元组，锚点穿过 `deduplicate_foreshadows`；catalog 条目带 `entity_key`；建条目时把三字段写入账本（R1 五处传递闭合）。
+- `anchor.entity_key_for()`：母题词优先，否则 `clue:<id>`；键不可变（用指纹重算会拆分历史）。
+- `anchor_quote_enabled=false` → `anchor_stats.disabled=true`；`anchor_min_chars` 可配。
+- 用例 `test_foreshadow_ledger_anchor.py`(8)。
+
+**原阶段 1 待办（已全部完成）**：把 `anchor_quote_enabled` 关掉的路径也钉住（无锚点时必须显式标"无证据模式"）；
 `analysis_summary` 与 ledger 建条目处带 `anchor_quote`/`motif_key`/`entity_key`（原 R1 五处传递的最后一环）。
