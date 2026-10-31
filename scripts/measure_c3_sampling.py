@@ -253,7 +253,12 @@ async def amain(args) -> int:
                     payload,
                     allowed_candidate_ids={candidate["candidate_id"]},
                     allowed_evidence_ids=allowed_evidence,
-                    quote_within_range=verifier,
+                    # D-19：位置由程序算，而且**按 evidence_id 取对应片段的正文**
+                    # （旧校验器只能验"在某一段里对得上"，验不了"是点名那一段"）
+                    evidence_text=lambda eid, _m=by_id: _m.get(eid, ""),
+                    locate=lambda quote, eid, _m=by_id: resolution.locate_quote(
+                        quote, _m.get(eid, "")
+                    ),
                 )
                 rows.append(
                     {
@@ -263,6 +268,10 @@ async def amain(args) -> int:
                         "model_verdict": payload.get("verdict"),
                         "parsed_verdict": verdict.verdict,
                         "reason": verdict.reason,
+                        "evidence_id": payload.get("evidence_id"),
+                        "supporting_quote": payload.get("supporting_quote"),
+                        "located_span": list(verdict.located_span) if verdict.located_span else None,
+                        "ambiguous": verdict.ambiguous,
                         "attempts": int(getattr(raw, "attempts", 1) or 1),
                     }
                 )
