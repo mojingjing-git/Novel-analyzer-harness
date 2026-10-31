@@ -1,0 +1,277 @@
+{
+  "task": "C3",
+  "design": {
+    "candidates": 3,
+    "orders": [
+      "story",
+      "reverse"
+    ],
+    "samples_per_group": 3,
+    "note": "重复采样替代隐藏候选；证据顺序按故事序/逆序对比"
+  },
+  "calls": 18,
+  "attempts": 18,
+  "prompt_tokens": 14376,
+  "completion_tokens": 53075,
+  "unknown_usage_calls": 0,
+  "elapsed_s": 353.9,
+  "budget": {
+    "max_calls": 90,
+    "max_tokens": 200000,
+    "within_budget": true
+  },
+  "unstable_groups": [
+    {
+      "candidate_id": "cd_0001",
+      "order": "story",
+      "verdicts": [
+        "INSUFFICIENT",
+        "SUPPORTED"
+      ]
+    },
+    {
+      "candidate_id": "cd_0001",
+      "order": "reverse",
+      "verdicts": [
+        "INVALID",
+        "SUPPORTED"
+      ]
+    },
+    {
+      "candidate_id": "cd_0002",
+      "order": "story",
+      "verdicts": [
+        "INVALID",
+        "SUPPORTED"
+      ]
+    },
+    {
+      "candidate_id": "cd_0002",
+      "order": "reverse",
+      "verdicts": [
+        "INVALID",
+        "SUPPORTED"
+      ]
+    },
+    {
+      "candidate_id": "cd_0003",
+      "order": "reverse",
+      "verdicts": [
+        "INVALID",
+        "SUPPORTED"
+      ]
+    }
+  ],
+  "unstable_group_count": 5,
+  "group_count": 6,
+  "by_candidate": {
+    "cd_0001": {
+      "story": [
+        "INSUFFICIENT",
+        "SUPPORTED",
+        "SUPPORTED"
+      ],
+      "reverse": [
+        "INVALID",
+        "SUPPORTED",
+        "SUPPORTED"
+      ],
+      "order_sensitive": true
+    },
+    "cd_0002": {
+      "story": [
+        "INVALID",
+        "SUPPORTED",
+        "SUPPORTED"
+      ],
+      "reverse": [
+        "INVALID",
+        "INVALID",
+        "SUPPORTED"
+      ],
+      "order_sensitive": true
+    },
+    "cd_0003": {
+      "story": [
+        "SUPPORTED",
+        "SUPPORTED",
+        "SUPPORTED"
+      ],
+      "reverse": [
+        "INVALID",
+        "SUPPORTED",
+        "SUPPORTED"
+      ],
+      "order_sensitive": true
+    }
+  },
+  "verdict_histogram": {
+    "INSUFFICIENT": 1,
+    "INVALID": 5,
+    "SUPPORTED": 12
+  },
+  "rows": [
+    {
+      "candidate_id": "cd_0001",
+      "order": "story",
+      "sample": 1,
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "SUPPORTED",
+      "reason": "",
+      "attempts": 1
+    },
+    {
+      "candidate_id": "cd_0001",
+      "order": "story",
+      "sample": 2,
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "SUPPORTED",
+      "reason": "",
+      "attempts": 1
+    },
+    {
+      "candidate_id": "cd_0001",
+      "order": "story",
+      "sample": 3,
+      "model_verdict": "INSUFFICIENT",
+      "parsed_verdict": "INSUFFICIENT",
+      "reason": "",
+      "attempts": 1
+    },
+    {
+      "candidate_id": "cd_0001",
+      "order": "reverse",
+      "sample": 1,
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "INVALID",
+      "reason": "QUOTE_OUT_OF_RANGE",
+      "attempts": 1
+    },
+    {
+      "candidate_id": "cd_0001",
+      "order": "reverse",
+      "sample": 2,
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "SUPPORTED",
+      "reason": "",
+      "attempts": 1
+    },
+    {
+      "candidate_id": "cd_0001",
+      "order": "reverse",
+      "sample": 3,
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "SUPPORTED",
+      "reason": "",
+      "attempts": 1
+    },
+    {
+      "candidate_id": "cd_0002",
+      "order": "story",
+      "sample": 1,
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "INVALID",
+      "reason": "QUOTE_OUT_OF_RANGE",
+      "attempts": 1
+    },
+    {
+      "candidate_id": "cd_0002",
+      "order": "story",
+      "sample": 2,
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "SUPPORTED",
+      "reason": "",
+      "attempts": 1
+    },
+    {
+      "candidate_id": "cd_0002",
+      "order": "story",
+      "sample": 3,
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "SUPPORTED",
+      "reason": "",
+      "attempts": 1
+    },
+    {
+      "candidate_id": "cd_0002",
+      "order": "reverse",
+      "sample": 1,
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "INVALID",
+      "reason": "QUOTE_OUT_OF_RANGE",
+      "attempts": 1
+    },
+    {
+      "candidate_id": "cd_0002",
+      "order": "reverse",
+      "sample": 2,
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "SUPPORTED",
+      "reason": "",
+      "attempts": 1
+    },
+    {
+      "candidate_id": "cd_0002",
+      "order": "reverse",
+      "sample": 3,
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "INVALID",
+      "reason": "QUOTE_OUT_OF_RANGE",
+      "attempts": 1
+    },
+    {
+      "candidate_id": "cd_0003",
+      "order": "story",
+      "sample": 1,
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "SUPPORTED",
+      "reason": "",
+      "attempts": 1
+    },
+    {
+      "candidate_id": "cd_0003",
+      "order": "story",
+      "sample": 2,
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "SUPPORTED",
+      "reason": "",
+      "attempts": 1
+    },
+    {
+      "candidate_id": "cd_0003",
+      "order": "story",
+      "sample": 3,
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "SUPPORTED",
+      "reason": "",
+      "attempts": 1
+    },
+    {
+      "candidate_id": "cd_0003",
+      "order": "reverse",
+      "sample": 1,
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "INVALID",
+      "reason": "QUOTE_OUT_OF_RANGE",
+      "attempts": 1
+    },
+    {
+      "candidate_id": "cd_0003",
+      "order": "reverse",
+      "sample": 2,
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "SUPPORTED",
+      "reason": "",
+      "attempts": 1
+    },
+    {
+      "candidate_id": "cd_0003",
+      "order": "reverse",
+      "sample": 3,
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "SUPPORTED",
+      "reason": "",
+      "attempts": 1
+    }
+  ]
+}

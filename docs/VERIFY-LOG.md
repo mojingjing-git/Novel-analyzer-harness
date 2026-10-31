@@ -72,6 +72,10 @@
 | 2026-10-31 | 尚未入库 | B1a 文档同步 | doc_check | 通过 | 未记录 | `agent.md` §10.51；`CHANGELOG.md` B1a 段落；vnext 相关集 512 passed、验收 32/32 |
 | 2026-10-31 | 尚未入库 | 全量后端测试（B1b 顺序跑整本 + B2 删除 + B3 详情页） | business_test（**全量**） | **1485 passed / exit 0** | — | 父 agent 亲自跑 `python -m pytest -o addopts= -q`，738.32s。相对 B1a 基线 1472 增加 13 例：`test_vnext_runner_analysis.py`（6）+ `test_vnext_delete.py`（7） |
 | 2026-10-31 | 尚未入库 | 前端构建（vnext 详情页） | frontend_build | `npm run build` 通过 | — | 新增 `VnextDetailPage.vue` + `/vnext/:bookId` 路由 + `api.vnextDeleteBook`；仅 chunk 体积提示，无类型错误 |
+| 2026-10-31 | 尚未入库 | C1 真实模型跑整本（22 章 / 6 块） | measurement（**真实 API**） | **6 次调用 / 49,877 token / 244s** | — | `python scripts/measure_c1_pipeline.py`：`stop_reason=completed`、`cursor=6`、`prefix_complete=True`、未知用量 0；第二次运行 **0 次调用**。报告 `docs/MEASURE-C1-2026-10-31.json` |
+| 2026-10-31 | 尚未入库 | C2 标注集评测（30 条） | measurement（**真实 API**） | 召回 **0.45** / 误报 **0.00** / 精确匹配 **0.633** | — | 30 次调用 / 45,231 token / 226s。11 次失分全部是 `QUOTE_OUT_OF_RANGE`（判定正确、偏移错）。标注集 30/30 引文经父 agent 独立复验为逐字子串。报告 `docs/MEASURE-C2-2026-10-31.json` |
+| 2026-10-31 | 尚未入库 | C3 重复采样 + 证据顺序（18 次） | measurement（**真实 API**） | 12 SUPPORTED / 5 INVALID / 1 INSUFFICIENT | — | 18 次调用 / 67,451 token / 354s。不稳定组 5/6 剔除解析失败后为 12:1，判定稳定；逆序 INVALID 显著更多（4/6 vs 1/6）|
+| 2026-10-31 | 尚未入库 | C 批结论与契约缺陷记录 | doc_check | 通过 | 未记录 | 新建 `docs/MEASURE-C2-C3-2026-10-31.md`：三条契约级发现（Prompt 键名无机制保证、校验器看不到 `evidence_id`、偏移基准隐含）+ 建议 D-19（模型只给引文、偏移由程序算）|
 
 ---
 

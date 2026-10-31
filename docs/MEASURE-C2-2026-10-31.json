@@ -1,0 +1,306 @@
+{
+  "task": "C2",
+  "annotations_file": "annotations-C2-2026-10-31.json",
+  "items": 30,
+  "mapping": {
+    "NOT_STATED": "INSUFFICIENT",
+    "DIFFERENT_ANSWER": "标注集里没有对应类别，出现即计入其它"
+  },
+  "calls": 30,
+  "attempts": 30,
+  "prompt_tokens": 16744,
+  "completion_tokens": 28487,
+  "total_tokens": 45231,
+  "unknown_usage_calls": 0,
+  "elapsed_s": 226.3,
+  "budget": {
+    "max_calls": 30,
+    "max_tokens": 200000,
+    "within_budget": false
+  },
+  "metrics": {
+    "recall_on_supported": 0.45,
+    "false_positive_rate_on_non_supported": 0.0,
+    "quote_located_rate_among_supported": 1.0,
+    "exact_match_rate": 0.6333333333333333,
+    "note": "30 条样本，不给置信区间；标注者是模型，人工复核范围见 docs/MEASURE-C2-2026-10-31.md"
+  },
+  "confusion": {
+    "SUPPORTED->INVALID": 11,
+    "SUPPORTED->SUPPORTED": 9,
+    "NOT_STATED->INSUFFICIENT": 5,
+    "CONTRADICTED->CONTRADICTED": 5
+  },
+  "rows": [
+    {
+      "id": "c2-001",
+      "chapter": 1,
+      "expected": "SUPPORTED",
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "INVALID",
+      "reason": "QUOTE_OUT_OF_RANGE",
+      "match": false
+    },
+    {
+      "id": "c2-002",
+      "chapter": 1,
+      "expected": "SUPPORTED",
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "SUPPORTED",
+      "reason": "",
+      "match": true
+    },
+    {
+      "id": "c2-003",
+      "chapter": 1,
+      "expected": "NOT_STATED",
+      "model_verdict": "INSUFFICIENT",
+      "parsed_verdict": "INSUFFICIENT",
+      "reason": "",
+      "match": true
+    },
+    {
+      "id": "c2-004",
+      "chapter": 3,
+      "expected": "SUPPORTED",
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "SUPPORTED",
+      "reason": "",
+      "match": true
+    },
+    {
+      "id": "c2-005",
+      "chapter": 3,
+      "expected": "SUPPORTED",
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "INVALID",
+      "reason": "QUOTE_OUT_OF_RANGE",
+      "match": false
+    },
+    {
+      "id": "c2-006",
+      "chapter": 3,
+      "expected": "CONTRADICTED",
+      "model_verdict": "CONTRADICTED",
+      "parsed_verdict": "CONTRADICTED",
+      "reason": "",
+      "match": true
+    },
+    {
+      "id": "c2-007",
+      "chapter": 8,
+      "expected": "SUPPORTED",
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "INVALID",
+      "reason": "QUOTE_OUT_OF_RANGE",
+      "match": false
+    },
+    {
+      "id": "c2-008",
+      "chapter": 8,
+      "expected": "SUPPORTED",
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "INVALID",
+      "reason": "QUOTE_OUT_OF_RANGE",
+      "match": false
+    },
+    {
+      "id": "c2-009",
+      "chapter": 8,
+      "expected": "CONTRADICTED",
+      "model_verdict": "CONTRADICTED",
+      "parsed_verdict": "CONTRADICTED",
+      "reason": "",
+      "match": true
+    },
+    {
+      "id": "c2-010",
+      "chapter": 9,
+      "expected": "SUPPORTED",
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "SUPPORTED",
+      "reason": "",
+      "match": true
+    },
+    {
+      "id": "c2-011",
+      "chapter": 9,
+      "expected": "SUPPORTED",
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "INVALID",
+      "reason": "MISSING_FIELD",
+      "match": false
+    },
+    {
+      "id": "c2-012",
+      "chapter": 9,
+      "expected": "NOT_STATED",
+      "model_verdict": "INSUFFICIENT",
+      "parsed_verdict": "INSUFFICIENT",
+      "reason": "",
+      "match": true
+    },
+    {
+      "id": "c2-013",
+      "chapter": 12,
+      "expected": "SUPPORTED",
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "INVALID",
+      "reason": "QUOTE_OUT_OF_RANGE",
+      "match": false
+    },
+    {
+      "id": "c2-014",
+      "chapter": 12,
+      "expected": "SUPPORTED",
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "SUPPORTED",
+      "reason": "",
+      "match": true
+    },
+    {
+      "id": "c2-015",
+      "chapter": 12,
+      "expected": "SUPPORTED",
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "SUPPORTED",
+      "reason": "",
+      "match": true
+    },
+    {
+      "id": "c2-016",
+      "chapter": 14,
+      "expected": "SUPPORTED",
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "INVALID",
+      "reason": "QUOTE_OUT_OF_RANGE",
+      "match": false
+    },
+    {
+      "id": "c2-017",
+      "chapter": 14,
+      "expected": "SUPPORTED",
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "INVALID",
+      "reason": "QUOTE_OUT_OF_RANGE",
+      "match": false
+    },
+    {
+      "id": "c2-018",
+      "chapter": 14,
+      "expected": "NOT_STATED",
+      "model_verdict": "INSUFFICIENT",
+      "parsed_verdict": "INSUFFICIENT",
+      "reason": "",
+      "match": true
+    },
+    {
+      "id": "c2-019",
+      "chapter": 15,
+      "expected": "SUPPORTED",
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "SUPPORTED",
+      "reason": "",
+      "match": true
+    },
+    {
+      "id": "c2-020",
+      "chapter": 15,
+      "expected": "SUPPORTED",
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "INVALID",
+      "reason": "QUOTE_OUT_OF_RANGE",
+      "match": false
+    },
+    {
+      "id": "c2-021",
+      "chapter": 15,
+      "expected": "CONTRADICTED",
+      "model_verdict": "CONTRADICTED",
+      "parsed_verdict": "CONTRADICTED",
+      "reason": "",
+      "match": true
+    },
+    {
+      "id": "c2-022",
+      "chapter": 19,
+      "expected": "SUPPORTED",
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "SUPPORTED",
+      "reason": "",
+      "match": true
+    },
+    {
+      "id": "c2-023",
+      "chapter": 19,
+      "expected": "NOT_STATED",
+      "model_verdict": "INSUFFICIENT",
+      "parsed_verdict": "INSUFFICIENT",
+      "reason": "",
+      "match": true
+    },
+    {
+      "id": "c2-024",
+      "chapter": 19,
+      "expected": "CONTRADICTED",
+      "model_verdict": "CONTRADICTED",
+      "parsed_verdict": "CONTRADICTED",
+      "reason": "",
+      "match": true
+    },
+    {
+      "id": "c2-025",
+      "chapter": 20,
+      "expected": "SUPPORTED",
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "SUPPORTED",
+      "reason": "",
+      "match": true
+    },
+    {
+      "id": "c2-026",
+      "chapter": 20,
+      "expected": "SUPPORTED",
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "INVALID",
+      "reason": "QUOTE_OUT_OF_RANGE",
+      "match": false
+    },
+    {
+      "id": "c2-027",
+      "chapter": 20,
+      "expected": "CONTRADICTED",
+      "model_verdict": "CONTRADICTED",
+      "parsed_verdict": "CONTRADICTED",
+      "reason": "",
+      "match": true
+    },
+    {
+      "id": "c2-028",
+      "chapter": 22,
+      "expected": "SUPPORTED",
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "INVALID",
+      "reason": "QUOTE_OUT_OF_RANGE",
+      "match": false
+    },
+    {
+      "id": "c2-029",
+      "chapter": 22,
+      "expected": "SUPPORTED",
+      "model_verdict": "SUPPORTED",
+      "parsed_verdict": "SUPPORTED",
+      "reason": "",
+      "match": true
+    },
+    {
+      "id": "c2-030",
+      "chapter": 22,
+      "expected": "NOT_STATED",
+      "model_verdict": "INSUFFICIENT",
+      "parsed_verdict": "INSUFFICIENT",
+      "reason": "",
+      "match": true
+    }
+  ]
+}

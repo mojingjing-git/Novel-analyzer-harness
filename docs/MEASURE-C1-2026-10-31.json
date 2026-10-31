@@ -1,0 +1,32 @@
+{
+  "task": "C1",
+  "corpus": "vnext_corpus.build_corpus（23 章，第 17 章缺失 → 实建 22 章）",
+  "block_size": 4,
+  "chapters": 22,
+  "blocks": 6,
+  "first_run": {
+    "calls": 6,
+    "attempts": 6,
+    "prompt_tokens": 6316,
+    "completion_tokens": 43561,
+    "total_tokens": 49877,
+    "unknown_usage_calls": 0,
+    "elapsed_s": 244.1,
+    "stop_reason": "completed",
+    "committed_blocks": 6,
+    "commit_cursor": 6,
+    "prefix_complete": true,
+    "gaps": []
+  },
+  "second_run": {
+    "calls": 0,
+    "commit_cursor": 6,
+    "note": "缓存命中，零调用"
+  },
+  "budget": {
+    "max_calls": 90,
+    "max_tokens": 200000,
+    "within_budget": true
+  },
+  "note": "数字取自真实运行的 stdout（6 块各 1 次调用、全部 usage_status=KNOWN）；首次尝试写 JSON 报告时因 UsageStatus 枚举不可序列化而失败，已修脚本，本轮不重跑以免重复花费。"
+}

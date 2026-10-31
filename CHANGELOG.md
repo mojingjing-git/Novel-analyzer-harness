@@ -2,6 +2,31 @@
 
 ---
 
+## [Unreleased] - 2026-10-31（C 批：真实模型实测）
+
+### 新增测量脚本
+
+- `scripts/measure_c1_pipeline.py`：合成语料（22 章 / 6 块）用真实模型整本跑一遍，只测管道与 token 量级
+- `scripts/measure_c2_annotations.py`：用 30 条标注集评事实核查的召回与误报
+- `scripts/measure_c3_sampling.py`：同候选重复采样 + 证据顺序打乱，看判定会不会翻
+
+### 实测结论（样本小，不给置信区间）
+
+- **C1**：6 次调用 / 49,877 token / 244s 跑完 22 章，`prefix_complete=True`；第二次运行 0 次调用。输出占 token 87%
+- **C2**：召回 0.45、**误报 0.00**、精确匹配 0.633。11 次失分全是 `QUOTE_OUT_OF_RANGE` —— 判定对、偏移错
+- **C3**：18 次调用里 12 SUPPORTED / 5 INVALID / 1 INSUFFICIENT；剔除解析失败后判定稳定；逆序更容易算错偏移
+
+### 三条契约级发现
+
+- Prompt 的 JSON 键名与解析器没有机制保证一致（两轮共 36 次调用白烧在键名上）
+- `quote_within_range(quote, start, end)` 拿不到 `evidence_id`，无法验证引文属于哪段证据
+- 偏移基准隐含（相对片段还是整条消息），调用方各自解释就会各错一次
+
+### 建议（未实施，记为 D-19）
+
+让模型只给逐字引文，偏移由程序 `str.find` 计算并校验：零额外调用，且保留引文必须命中的反伪造闸门。
+
+
 ## [Unreleased] - 2026-10-31（vnext B 批：顺序跑整本、删除项目、项目详情页）
 
 ### 分析入口（B1b）
