@@ -1642,3 +1642,9 @@ C2 实测把问题定性了：模型判"支持"20 次、**引文逐字命中 9/9
 - `anchor.entity_key_for(motif_key, fallback_id)`：优先母题词，否则 `clue:<id>`；**一旦写进账本不可变**——用指纹重算会把同一件事拆成两条。
 - `anchor_quote_enabled=false` 时 `anchor_stats` 记 `{"disabled": true}`，语义是"没有证据"而非"没找到证据"；`anchor_min_chars` 可配。
 - 用例：`test_foreshadow_ledger_anchor.py`（8 例，含 v3 旧账本兼容、键稳定性、未知字段过滤）；旧断言 `SCHEMA_VERSION == 3` 同步改 4。
+
+### 10.53 引用校验收敛为单一实现（阶段 2 前置）
+
+- 实现搬到 `backend/core/citations.py`（`verify_citation`/`_normalize`/`_to_raw_offset`/`summarize_checks`/五级匹配常量）。
+- `backend/vnext/citations.py` 变转发层，只留 `verify_fact`/`verify_facts_against_book` 两个依赖 vnext 类型的包装。
+- 理由：两套定位语义漂移时，同一引文一处对一处错，而且"两边各自都通过测试"会把问题掩盖掉。

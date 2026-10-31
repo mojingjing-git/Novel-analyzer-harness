@@ -775,3 +775,12 @@ expected_dependency = sha256(canonical({
 `anchor_quote_enabled=false` 时 `anchor_stats` 记 `{"disabled": true, "missing": n}`，
 语义是"这一章没有证据"，**不是**"证据只是没找到"。复检阶段必须区别对待：
 前者只能产出"证据不足"，不能凭模型自述判回收。
+
+### 12.4 引用校验的单一实现
+
+`backend/core/citations.py` 现在持有唯一实现（`verify_citation` / `_normalize` / `_to_raw_offset` /
+`summarize_checks` / 五级匹配常量）。`backend/vnext/citations.py` 改为**转发层**，只保留依赖
+`FactRecord`/`SourceRef` 的两个包装（`verify_fact` / `verify_facts_against_book`）。
+
+理由：两套定位语义一旦漂移，同一个引文在一个地方算对、在另一个地方算错，而错误还会被
+"两边各自都通过测试"掩盖。校验器是复检的地基，地基只能有一份。
