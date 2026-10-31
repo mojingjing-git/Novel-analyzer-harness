@@ -20,6 +20,9 @@
 
 from __future__ import annotations
 
+from . import citations
+
+import hashlib
 import json
 
 from dataclasses import dataclass, field
@@ -64,6 +67,18 @@ REASON_MALFORMED = "MALFORMED_PAYLOAD"
 REASON_NO_EVIDENCE = "NO_EVIDENCE_ID"
 REASON_NO_QUOTE = "NO_SUPPORTING_QUOTE"
 REASON_NO_VERIFIER = "NO_QUOTE_VERIFIER"
+# 2026-10-31 D-19：偏移不再由模型负责
+REASON_QUOTE_NOT_FOUND = "QUOTE_NOT_FOUND"
+REASON_QUOTE_TOO_SHORT = "QUOTE_TOO_SHORT"
+REASON_AMBIGUOUS_QUOTE = "AMBIGUOUS_QUOTE"
+
+#: 引文最短长度。低于这个长度的句子容易在长段里"必然命中"（实测语料里
+#: 「这一日无事」出现 13 次），等于把闸门交给巧合。
+MIN_QUOTE_CHARS = 10
+
+#: 接受为证据的引用匹配级别。`SEGMENTED`（省略号拼引文）与 `FUZZY`（相似即过）
+#: 一律不接受——它们会把"编一句像样的话"变成证据。
+ACCEPTED_CITATION_KINDS = frozenset({"EXACT", "NORMALIZED", "RELOCATED"})
 
 
 @dataclass(frozen=True)
@@ -80,6 +95,13 @@ class CandidateVerdict:
     #: 解析失败（枚举不认识、字段缺失、payload 不是对象）可重跑；语义结论不可重跑。
     #: 区分这两者是为了不让"模型这次没按格式答"变成"这个候选被判无效"。
     retryable: bool = False
+    #: 程序定位出的位置（唯一权威）；`supporting_span` 只是模型自报，存 `reported_span`
+    located_span: tuple[int, int] | None = None
+    reported_span: tuple[int, int] | None = None
+    #: 引文在该证据里出现多次且靠 span 才定位到其中一处
+    ambiguous: bool = False
+    #: sha256(引文)[:12]：用于账本去重键，避免"位置微调"被当成新结论
+    quote_hash: str = ""
 
     @property
     def checked(self) -> bool:
@@ -142,12 +164,105 @@ def render_recheck_schema(*, indent: int = 2) -> str:
     return json.dumps(sample, ensure_ascii=False, indent=indent)
 
 
+@dataclass(frozen=True)
+class LocateResult:
+    """一次引文定位的结果。"""
+
+    found: bool
+    start: int | None = None
+    end: int | None = None
+    occurrences: int = 0
+    ambiguous: bool = False
+    kind: str = ""
+
+
+def count_occurrences(text: str, quote: str) -> list[int]:
+    """列出引文在文本里的**全部**起点（含重叠）。
+
+    ``"哈哈哈".count("哈哈") == 1``，但实际有 2 个位置——所以不能用 ``str.count``。
+    """
+    positions: list[int] = []
+    pos = text.find(quote)
+    while pos >= 0:
+        positions.append(pos)
+        pos = text.find(quote, pos + 1)
+    return positions
+
+
+def _normalized(text: str) -> str:
+    """尽量复用 citations 的规范化口径，避免第二套语义。"""
+    normalize = getattr(citations, "_normalize", None)
+    return normalize(text) if callable(normalize) else text
+
+
+def locate_quote(
+    quote: str, text: str, *, reported: tuple[int, int] | None = None
+) -> LocateResult:
+    """在**指定证据的正文**里定位引文，返回权威位置。
+
+    - 只接受 ``EXACT/NORMALIZED/RELOCATED``；
+    - 定位后按级别回验（严等或双侧规范化相等），不通过就当没找到；
+    - 多处出现时用 ``reported`` 破歧义：窗口内恰含一次就采纳它，否则标 ambiguous。
+    """
+    if not quote or not text:
+        return LocateResult(False)
+    if len(quote) < MIN_QUOTE_CHARS:
+        return LocateResult(False)
+
+    # 1) 先做最硬的一步：逐字查找。C2/C3 的实测引文 30/30 都是逐字子串，
+    #    绝大多数情况在这里就结束了，不必依赖映射。
+    positions = count_occurrences(text, quote)
+    if positions:
+        return _from_positions(positions, len(quote), "EXACT", reported)
+
+    # 2) 逐字找不到时才退到 citations 的容忍匹配（NORMALIZED/RELOCATED），
+    #    并且必须回验：切片与引文规范化后相等才算数。
+    check = citations.verify_citation(quote_text=quote, chapter_text=text)
+    if not check.located or check.match_kind not in ACCEPTED_CITATION_KINDS:
+        return LocateResult(False, kind=check.match_kind or "")
+    n_start, n_end = check.corrected_start, check.corrected_end
+    if not (isinstance(n_start, int) and isinstance(n_end, int) and 0 <= n_start < n_end <= len(text)):
+        return LocateResult(False, kind=check.match_kind)
+    if _normalized(text[n_start:n_end]) != _normalized(quote):
+        return LocateResult(False, kind=check.match_kind)
+    return LocateResult(True, n_start, n_end, occurrences=1, kind=check.match_kind)
+
+
+def _from_positions(
+    positions: list[int], length: int, kind: str, reported: tuple[int, int] | None
+) -> LocateResult:
+    """多处出现时用模型自报窗口破歧义；破不了就标 ambiguous。"""
+    if len(positions) == 1:
+        return LocateResult(True, positions[0], positions[0] + length, occurrences=1, kind=kind)
+    if reported is not None:
+        inside = [p for p in positions if reported[0] <= p and p + length <= reported[1]]
+        if len(inside) == 1:
+            return LocateResult(
+                True, inside[0], inside[0] + length, occurrences=len(positions), ambiguous=True, kind=kind
+            )
+    return LocateResult(
+        True, positions[0], positions[0] + length,
+        occurrences=len(positions), ambiguous=True, kind=kind,
+    )
+
+
+def _reported_span(raw: object) -> tuple[int, int] | None:
+    """模型自报位置：形状非法就当没给（不判失败）。"""
+    if isinstance(raw, (list, tuple)) and len(raw) == 2:
+        a, b = raw
+        if isinstance(a, int) and isinstance(b, int) and not isinstance(a, bool) and 0 <= a < b:
+            return (a, b)
+    return None
+
+
 def parse_recheck(
     payload: Mapping[str, object],
     *,
     allowed_candidate_ids: Iterable[str],
     allowed_evidence_ids: Iterable[str],
     quote_within_range: Callable[[str, int, int], bool] | None = None,
+    locate: Callable[[str, str], LocateResult] | None = None,
+    evidence_text: Callable[[str], str] | None = None,
 ) -> CandidateVerdict:
     """把模型返回的一条核对结果变成受校验的裁决。
 
@@ -208,21 +323,49 @@ def parse_recheck(
         if evidence_id not in set(allowed_evidence_ids):
             return CandidateVerdict(candidate_id, INVALID, reason=REASON_FOREIGN_ID)
 
-        span = payload.get("supporting_span")
-        if not (isinstance(span, (list, tuple)) and len(span) == 2):
-            return CandidateVerdict(candidate_id, INVALID, reason=REASON_NO_QUOTE)
-        start, end = span[0], span[1]
-        if not (isinstance(start, int) and isinstance(end, int) and 0 <= start < end):
-            return CandidateVerdict(candidate_id, INVALID, reason=REASON_QUOTE_OUT_OF_RANGE)
-
         quote = payload.get("supporting_quote")
         if not isinstance(quote, str) or not quote.strip():
-            return CandidateVerdict(candidate_id, INVALID, reason=REASON_NO_QUOTE)
-        if quote_within_range is None:
-            # 没有校验器就无法确认引文真在原文里；此时放行等于把校验让给模型自评
+            return CandidateVerdict(candidate_id, INVALID, reason=REASON_NO_QUOTE, retryable=True)
+        quote = quote.strip()
+        if len(quote) < MIN_QUOTE_CHARS:
+            return CandidateVerdict(
+                candidate_id, INVALID, reason=REASON_QUOTE_TOO_SHORT, retryable=True
+            )
+        reported = _reported_span(payload.get("supporting_span"))
+
+        located: tuple[int, int] | None = None
+        ambiguous = False
+        if locate is not None:
+            # 调用方注入的定位器**真的被调用**：签名带上 evidence_id，
+            # 才能验"这段引文属于点名的那一段"（旧校验器做不到这件事）。
+            result = locate(quote, evidence_id)
+            if not result.found:
+                return CandidateVerdict(
+                    candidate_id, INVALID, reason=REASON_QUOTE_NOT_FOUND, retryable=True
+                )
+            if result.ambiguous and reported is None:
+                # 出现在多处又没给 span：说不清是哪一处，宁可当"这次没答好"
+                return CandidateVerdict(
+                    candidate_id, INVALID, reason=REASON_AMBIGUOUS_QUOTE, retryable=True
+                )
+            if result.ambiguous and reported is not None and reported[1] - reported[0] >= len(quote):
+                # 定位器只拿到 (quote, evidence_id)，破不了歧义时用模型自报窗口指路：
+                # 窗口长度够装下引文就可采纳，并如实标 ambiguous
+                located = (int(reported[0]), int(reported[0]) + len(quote))
+            else:
+                located = (int(result.start), int(result.end))
+            ambiguous = bool(result.ambiguous)
+        elif quote_within_range is not None:
+            # 退化模式：只给旧校验器时沿用改前行为（span 必填、逐字对上）
+            if reported is None:
+                return CandidateVerdict(candidate_id, INVALID, reason=REASON_NO_QUOTE, retryable=True)
+            if not quote_within_range(quote, reported[0], reported[1]):
+                return CandidateVerdict(
+                    candidate_id, INVALID, reason=REASON_QUOTE_OUT_OF_RANGE, retryable=True
+                )
+            located = reported
+        else:
             return CandidateVerdict(candidate_id, INVALID, reason=REASON_NO_VERIFIER)
-        if not quote_within_range(quote, int(start), int(end)):
-            return CandidateVerdict(candidate_id, INVALID, reason=REASON_QUOTE_OUT_OF_RANGE)
 
         # "查过反证"不能只凭 performed=True 一句话：它声明查了哪些 ID，这些 ID 必须
         # 属于本任务。否则模型写一个 outside_this_task 就能把这道门糊过去。
@@ -241,7 +384,12 @@ def parse_recheck(
         return CandidateVerdict(
             candidate_id, raw_verdict, answer=answer,
             evidence_id=evidence_id,
-            supporting_span=(int(start), int(end)),
+            # supporting_span 只存模型自报值；权威位置是 located_span（程序算的）
+            supporting_span=reported,
+            located_span=located,
+            reported_span=reported,
+            ambiguous=ambiguous,
+            quote_hash=hashlib.sha256(quote.encode("utf-8")).hexdigest()[:12],
             counter_search_performed=True,
         )
 
@@ -393,7 +541,7 @@ def count_verdicts(
             by_reason[reason] = by_reason.get(reason, 0) + 1
         if verdict.checked:
             checked += 1
-        if verdict.supporting_span is not None:
+        if verdict.located_span is not None:
             located += 1
 
     if expected is None:

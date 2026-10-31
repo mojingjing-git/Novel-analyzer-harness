@@ -24,6 +24,7 @@ from backend.vnext.resolution import (
     REASON_FOREIGN_ID,
     REASON_MATERIAL_INSUFFICIENT,
     REASON_NO_COUNTER_SEARCH,
+    REASON_NO_QUOTE,
     REASON_QUOTE_OUT_OF_RANGE,
     REASON_UNKNOWN_VERDICT,
     RUNNING,
@@ -31,6 +32,7 @@ from backend.vnext.resolution import (
     SUPPORTED,
     CandidateVerdict,
     count_verdicts,
+    locate_quote,
     parse_recheck,
     recheck_status,
     reduce_entity,
@@ -39,14 +41,20 @@ from backend.vnext.resolution import (
 CANDIDATES = {"cd_1"}
 EVIDENCE = {"ev_1"}
 
+#: D-19（2026-10-31）：偏移由程序算，不再由模型负责。所以引文必须是真实正文里的
+#: 一句话（≥ ``resolution.MIN_QUOTE_CHARS`` 字），否则 QUOTE_TOO_SHORT 会先抢跑。
+TEXT = "书页泛黄。王冠早已熔成金锭，此事千真万确。此后无人再提。"
+QUOTE = "王冠早已熔成金锭，此事千真万确"
+SPAN = (TEXT.index(QUOTE), TEXT.index(QUOTE) + len(QUOTE))
+
 
 def _payload(**over):
     base = {
         "candidate_id": "cd_1",
         "evidence_id": "ev_1",
         "verdict": "SUPPORTED",
-        "supporting_quote": "王冠早已熔成金锭",
-        "supporting_span": [10, 20],
+        "supporting_quote": QUOTE,
+        "supporting_span": list(SPAN),
         "answer": "王冠已被熔毁",
         "counter_search": {"performed": True, "checked_evidence_ids": ["ev_1"], "counter_quotes": []},
         "material_insufficient_reason": None,
@@ -55,13 +63,24 @@ def _payload(**over):
     return base
 
 
-def _parse(payload, *, verifier=None):
-    # 2026-10-30 复审：SUPPORTED 必须有可定位证据，且校验器在场才算核过
+def _parse(payload, *, locate=None):
+    """新契约的主路径：给 ``locate`` 回调 + 正文，位置由程序算。"""
     return parse_recheck(
         payload,
         allowed_candidate_ids=CANDIDATES,
         allowed_evidence_ids=EVIDENCE,
-        quote_within_range=verifier if verifier is not None else (lambda q, s, e: True),
+        locate=locate if locate is not None else (lambda q, eid: locate_quote(q, TEXT, reported=None)),
+        evidence_text=lambda eid: TEXT,
+    )
+
+
+def _parse_legacy(payload, *, within=None):
+    """退化模式：只给旧的 ``quote_within_range``（span 仍必填且要逐字对上）。"""
+    return parse_recheck(
+        payload,
+        allowed_candidate_ids=CANDIDATES,
+        allowed_evidence_ids=EVIDENCE,
+        quote_within_range=within if within is not None else (lambda q, s, e: True),
     )
 
 
@@ -75,14 +94,17 @@ def test_supported_passes_all_gates() -> None:
     assert verdict.verdict == SUPPORTED
     assert verdict.answer == "王冠已被熔毁"
     assert verdict.counter_search_performed is True
-    # 证据三件套必须齐备：ID、区间、引文
+    # 证据三件套：ID、引文、**程序算出的**位置（D-19 之后 located_span 才是权威）
     assert verdict.evidence_id == "ev_1"
-    assert verdict.supporting_span == (10, 20)
+    assert verdict.located_span == SPAN
 
 
 def test_supported_with_valid_span_and_quote() -> None:
-    verdict = _parse(_payload(supporting_span=[10, 20], supporting_quote="王冠早已熔成金锭"))
-    assert verdict.supporting_span == (10, 20)
+    """模型自报的 span 恰好正确：通过，且自报与程序定位一致。"""
+    verdict = _parse(_payload(supporting_span=list(SPAN), supporting_quote=QUOTE))
+    assert verdict.verdict == SUPPORTED
+    assert verdict.located_span == SPAN
+    assert verdict.reported_span == SPAN
 
 
 # ---------------------------------------------------------------------------
@@ -161,19 +183,27 @@ def test_empty_answer_blocks_supported() -> None:
 
 
 def test_quote_outside_range_is_invalid() -> None:
-    verdict = parse_recheck(
-        _payload(supporting_span=[100, 120], supporting_quote="王冠早已熔成金锭"),
-        allowed_candidate_ids=CANDIDATES,
-        allowed_evidence_ids=EVIDENCE,
-        quote_within_range=lambda quote, start, end: False,
+    """退化模式（只给旧 ``quote_within_range``）：``QUOTE_OUT_OF_RANGE`` 现在只在这里出现。"""
+    verdict = _parse_legacy(
+        _payload(supporting_span=[100, 120]),
+        within=lambda quote, start, end: False,
     )
     assert verdict.verdict == INVALID
     assert verdict.reason == REASON_QUOTE_OUT_OF_RANGE
 
 
-def test_inverted_span_is_invalid() -> None:
-    verdict = _parse(_payload(supporting_span=[20, 10]))
+def test_legacy_mode_still_requires_span() -> None:
+    """退化模式保留旧语义：没有 span 就没有可校验的窗口 → NO_SUPPORTING_QUOTE。"""
+    verdict = _parse_legacy(_payload(supporting_span=None))
     assert verdict.verdict == INVALID
+    assert verdict.reason == REASON_NO_QUOTE
+
+
+def test_malformed_reported_span_is_ignored() -> None:
+    """span 形状非法不再判失败：新契约里它只是"破歧义"的辅助信息，位置由程序算。"""
+    verdict = _parse(_payload(supporting_span=[20, 10]))
+    assert verdict.verdict == SUPPORTED
+    assert verdict.located_span == SPAN
 
 
 # ---------------------------------------------------------------------------

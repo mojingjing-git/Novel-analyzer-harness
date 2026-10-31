@@ -38,7 +38,13 @@ def _unit(manifest) -> RecheckUnit:
     )
 
 
-def _good_payload(start: int = 0, end: int = 8) -> dict:
+def _good_payload(start: int = 1, end: int = 12) -> dict:
+    """一份"处处合规"的模型回包。
+
+    引文取 ``CHAPTER[start + 3 : end + 3]``（与 ``_verifier`` 同一口径，模拟章节头偏移），
+    默认区间 1..12 对应 11 个字：D-19 起引文短于 ``resolution.MIN_QUOTE_CHARS``(10)
+    会被判 ``QUOTE_TOO_SHORT``，所以桩数据必须给足长度。
+    """
     return {
         "candidate_id": "cd_1",
         "verdict": "SUPPORTED",

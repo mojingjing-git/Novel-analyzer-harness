@@ -171,7 +171,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         good = parse_recheck(
             {"candidate_id": "cd_2", "verdict": "SUPPORTED", "answer": "已回收",
-             "evidence_id": "ev_1", "supporting_span": [0, 5], "supporting_quote": "原文片段",
+             # D-19：引文要够长（>= MIN_QUOTE_CHARS=10），否则 QUOTE_TOO_SHORT 先抢跑
+             "evidence_id": "ev_1", "supporting_span": [0, 12], "supporting_quote": "证据齐备的原文片段在这里",
              "counter_search": {"performed": True, "checked_evidence_ids": ["ev_1"]}},
             allowed_candidate_ids={"cd_2"}, allowed_evidence_ids={"ev_1", "ev_2"},
             quote_within_range=lambda q, s, e: True,
@@ -227,7 +228,7 @@ def main(argv: list[str] | None = None) -> int:
         from backend.vnext.runner import load_ledger, run_recheck, save_ledger
 
         real_text = project.read_chapter_text(book_dir, manifest.chapters[0].chapter_id)
-        span = (0, 8)
+        span = (0, 20)  # D-19：引文至少 10 字，取够 20 字
         real_quote = real_text[span[0] : span[1]]
         unit = _Unit(
             entity_id="fs_real",
