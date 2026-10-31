@@ -11,6 +11,7 @@ import pytest
 
 from backend.vnext import blocks, project
 from backend.vnext.analyzer import (
+    BlockFailure,
     PROMPT_STRATEGY_VERSION,
     analyze_block,
     build_messages,
@@ -152,9 +153,13 @@ def _window_fp(book_dir, plan) -> str:
 
 async def test_malformed_output_raises_and_writes_nothing(book) -> None:
     client = FakeClient("我觉得这一章写得不错，但没有 JSON。")
-    with pytest.raises(VnextFormatError) as exc:
+    # 2026-10-31：解析失败改成抛 BlockFailure 并带上原文片段——只报
+    # "UNPARSEABLE_ARTIFACT" 时，现场什么都看不到（真书上正是这样把审核拦截
+    # 伪装成格式错误）。原文要能落进 raw，供人看第一眼就明白发生了什么。
+    with pytest.raises(BlockFailure) as exc:
         await _run(book, client)
-    assert exc.value.code.value == "UNPARSEABLE_ARTIFACT"
+    assert "解析失败" in str(exc.value)
+    assert exc.value.raw  # 原文留证
     assert list_results(book[0]) == {}
 
 

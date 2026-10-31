@@ -407,6 +407,11 @@ def _is_permanent(exc: BaseException) -> bool:
         return False
 
 
+def _clone_store(store):
+    """深拷贝知识库：并发块之间不允许共享可变状态。"""
+    return KnowledgeStore.from_dict(store.to_dict())
+
+
 async def run_analysis(
     book_dir: Path,
     *,
@@ -418,8 +423,14 @@ async def run_analysis(
     title: str | None = None,
     plans: Sequence["BlockPlan"] | None = None,
     skip_permanent: bool = False,
+    concurrency: int = 1,
 ) -> AnalysisOutcome:
-    """按块序跑整本。顺序是硬的：每块的上下文依赖"它之前的块"，跳着跑就换了一套输入。"""
+    """按块序跑整本。
+
+    顺序是硬的：每块的上下文依赖"它之前的块"。
+    ``concurrency > 1`` 时按波推进：同一波内的块共享**同一份**前情快照并发跑，
+    波与波之间仍按故事序——并发不改变任何一块看到的输入，只改变等待时间。
+    """
     book_dir = Path(book_dir)
     manifest = await asyncio.to_thread(project.load_manifest, book_dir)
     plans = list(plans) if plans is not None else plan_blocks(manifest, block_size=block_size)
@@ -444,70 +455,91 @@ async def run_analysis(
     unknown_usage = 0
     skipped: list[str] = []
 
-    for index, plan in enumerate(plans):
-        done = verdict.done.get(plan.block_signature)
-        if done is not None:
-            # 跳过判据必须是 classify.done（验过依赖），不是 is_block_fresh（只验源）
-            prior.append(done.result_id)
-            committed += 1
-            continue
-        if max_blocks is not None and analysed >= max_blocks:
-            stop_reason = "block_limit"
+    wave_size = max(1, int(concurrency))
+    handled = 0
+    stop_now = False
+    while handled < len(plans) and not stop_now:
+        # 先跳过已完成的块（判据必须是 classify.done：它验过依赖，不只是"源没变"），
+        # 再把剩下要跑的块凑成这一波。
+        wave: list[tuple[int, object]] = []
+        while handled < len(plans) and len(wave) < wave_size:
+            plan = plans[handled]
+            done = verdict.done.get(plan.block_signature)
+            if done is not None:
+                prior.append(done.result_id)
+                committed += 1
+                handled += 1
+                continue
+            if max_blocks is not None and analysed >= max_blocks:
+                stop_reason = "block_limit"
+                stop_now = True
+                break
+            wave.append((handled, plan))
+            handled += 1
+        if stop_now or not wave:
             break
-        try:
-            run = await analyze_block(
+        # 同一波用**同一份**前情快照：并发不能看见彼此的中间产物，否则"输入"取决于
+        # 谁的响应先到，指纹也会跟着抖。库按块序合并，保证与串行跑出同一结果。
+        prior_snapshot = list(prior)
+        base_store = store
+
+        async def _one(index: int, plan) -> object:
+            return await analyze_block(
                 book_dir,
                 plan,
                 client=client,
                 limits=limits,
                 strategy=strategy,
-                prior_result_ids=list(prior),
-                store=store,
+                prior_result_ids=prior_snapshot,
+                # 每块都用快照的独立副本：同一个 store 被并发读改写会串味
+                store=_clone_store(base_store),
                 title=title or manifest.title,
             )
-        except Exception as exc:  # noqa: BLE001 - 记 FAILED 再停，不吞掉类型
-            if skip_permanent and _is_permanent(exc):
-                # 永久错误（审核拦截/鉴权/欠费）不是"这次没跑好"：重跑一万次也一样。
-                # 记成 SKIPPED 并**留 gap**，让覆盖率如实说"这一段没分析过"，
-                # 而不是让整本书卡在一个块上（默认仍然停，跳过要显式开）。
-                await asyncio.to_thread(
-                    _record_failure, book_dir, plan, strategy, str(exc), "SKIPPED"
+
+        outcomes = await asyncio.gather(
+            *(_one(i, plan) for i, plan in wave), return_exceptions=True
+        )
+
+        for (index, plan), outcome in zip(wave, outcomes):
+            if isinstance(outcome, BaseException):
+                exc = outcome
+                if skip_permanent and _is_permanent(exc):
+                    await asyncio.to_thread(
+                        _record_failure, book_dir, plan, strategy, str(exc), "SKIPPED"
+                    )
+                    skipped.append(plan.block_signature)
+                    prior.append(None)
+                    continue
+                await asyncio.to_thread(_record_failure, book_dir, plan, strategy, str(exc))
+                stop_reason = f"failed:block{index}"
+                stop_now = True
+                break
+
+            run = outcome
+            analysed += 1
+            committed += 1
+            if run.record.usage_status == "KNOWN":
+                prompt_tokens += run.record.prompt_tokens or 0
+                completion_tokens += run.record.completion_tokens or 0
+            else:
+                unknown_usage += 1
+
+            with project._lock_for(book_dir):  # noqa: SLF001 - 同包内复用书锁
+                facts, chars = records_from_extracted(run.record.extracted)
+                store.add_block(
+                    block_signature=plan.block_signature,
+                    facts=facts,
+                    character_records=chars,
                 )
-                skipped.append(plan.block_signature)
-                prior.append(None)
-                continue
-            await asyncio.to_thread(
-                _record_failure, book_dir, plan, strategy, str(exc)
-            )
-            stop_reason = f"failed:block{index}"
-            break
-
-        analysed += 1
-        committed += 1
-        if run.record.usage_status == "KNOWN":
-            prompt_tokens += run.record.prompt_tokens or 0
-            completion_tokens += run.record.completion_tokens or 0
-        else:
-            unknown_usage += 1
-
-        # 库的读改写与 publish 同一把书锁：两路并发 publish 会丢事实，
-        # 而"丢事实"与"没分析过"在界面上长得一样。
-        with project._lock_for(book_dir):  # noqa: SLF001 - 同包内复用书锁
-            facts, chars = records_from_extracted(run.record.extracted)
-            store.add_block(
-                block_signature=plan.block_signature,
-                facts=facts,
-                character_records=chars,
-            )
-            save_store(
-                knowledge_path(book_dir),
-                store,
-                meta={
-                    "source_snapshot_id": manifest.source_snapshot_id,
-                    "ordered_result_ids": [r for r in prior if r] + [run.record.result_id],
-                },
-            )
-        prior.append(run.record.result_id)
+                save_store(
+                    knowledge_path(book_dir),
+                    store,
+                    meta={
+                        "source_snapshot_id": manifest.source_snapshot_id,
+                        "ordered_result_ids": [r for r in prior if r] + [run.record.result_id],
+                    },
+                )
+            prior.append(run.record.result_id)
 
     if skipped:
         stop_reason = ("completed_with_skips" if stop_reason == "completed"

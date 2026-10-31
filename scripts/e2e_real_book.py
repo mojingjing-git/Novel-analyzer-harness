@@ -136,15 +136,15 @@ class CountingClient:
         return self.calls >= max_calls or self.total_tokens >= max_tokens
 
 
-_OPTS = {"max_tokens": 8000, "block_size": 2, "limit_blocks": 0}
+_OPTS = {"max_tokens": 64000, "block_size": 2, "chapters": 0, "timeout": 900, "concurrency": 8}
 
 
 def args_timeout() -> int:
-    return _OPTS.get("timeout", 600)
+    return _OPTS.get("timeout", 900)
 
 
 def args_max_tokens() -> int:
-    return _OPTS["max_tokens"]
+    return _OPTS.get("max_tokens", 64000)
 
 
 def args_block_size() -> int:
@@ -196,6 +196,9 @@ async def amain(args) -> int:
     from backend.vnext.prompt_limits import PromptLimits
 
     chapters = load_chapters()
+    if args.chapters:
+        chapters = chapters[: args.chapters]
+        print(f"[子集] 只取前 {len(chapters)} 章")
     if not chapters:
         print(f"没有可用的章节文件：{BOOK_DIR}")
         return 2
@@ -205,7 +208,7 @@ async def amain(args) -> int:
     data_root = ROOT / "workspace_vnext"
     data_root.mkdir(parents=True, exist_ok=True)
     title = "三侠五义"
-    book_id = "sxy"
+    book_id = f"sxy{args.chapters}" if args.chapters else "sxy"
     book_dir = data_root / book_id
     if book_dir.exists():
         print(f"复用已有项目: {book_dir}")
@@ -233,6 +236,7 @@ async def amain(args) -> int:
     outcome = await runner.run_analysis(
         book_dir, client=client, limits=limits, block_size=args_block_size(),
         skip_permanent=args.skip_permanent,
+        concurrency=args.concurrency,
     )
     elapsed = time.monotonic() - started
 
@@ -302,9 +306,11 @@ def main() -> int:
         action="store_true",
         help="永久错误（审核/鉴权/欠费）记 SKIPPED 并留 gap，继续跑后面的块",
     )
-    parser.add_argument("--max-tokens", type=int, default=8000, help="单次输出上限")
+    parser.add_argument("--max-tokens", type=int, default=64000, help="单次输出上限（含思考预算）")
     parser.add_argument("--block-size", type=int, default=2, help="每块章节数")
-    parser.add_argument("--timeout", type=int, default=600, help="单次调用超时（秒）")
+    parser.add_argument("--timeout", type=int, default=900, help="单次调用超时（秒）")
+    parser.add_argument("--chapters", type=int, default=0, help="只用前 N 章（0=整本）")
+    parser.add_argument("--concurrency", type=int, default=8, help="同一波并发的块数")
     return asyncio.run(amain(parser.parse_args()))
 
 

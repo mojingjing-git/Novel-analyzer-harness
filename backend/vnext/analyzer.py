@@ -232,9 +232,18 @@ def extracted_fingerprint(extracted: Mapping[str, Any]) -> str:
 class BlockFailure(RuntimeError):
     """块级失败，保留结构化判定（尤其是"是否永久"）。"""
 
-    def __init__(self, message: str, *, verdict: object = None, permanent: bool = False) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        verdict: object = None,
+        permanent: bool = False,
+        raw: str = "",
+    ) -> None:
         super().__init__(message)
         self.verdict = verdict
+        #: 原始输出（解析失败时留下前 4000 字），否则只能看到"UNPARSEABLE_ARTIFACT"
+        self.raw = raw
         #: 明确标为永久（审核拦截/鉴权/欠费）——上层据此决定是"停下"还是"跳过留 gap"
         self.permanent = permanent
 
@@ -312,7 +321,12 @@ async def analyze_block(
             verdict=verdict,
             permanent=permanent,
         )
-    parsed = parse_block_output(raw_text)
+    try:
+        parsed = parse_block_output(raw_text)
+    except Exception as exc:  # noqa: BLE001
+        raise BlockFailure(
+            f"输出解析失败（{exc}）", verdict=getattr(result, "verdict", None), raw=raw_text[:4000]
+        ) from exc
     # 多章块：先用整块文本定位 quote（章边界在原文里通常仍有换行，取第一处能落地的章）
     extracted = normalize_extracted(
         parsed,

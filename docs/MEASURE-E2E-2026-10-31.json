@@ -4,21 +4,21 @@
   "chapters": 64,
   "chars": 510806,
   "block_size": 2,
-  "blocks": 64,
+  "blocks": 32,
   "block_chars": {
-    "min": 4582,
-    "max": 9962
+    "min": 11290,
+    "max": 18525
   },
   "first_run": {
-    "calls": 4,
-    "attempts": 4,
-    "prompt_tokens": 4405,
-    "completion_tokens": 16000,
-    "total_tokens": 20405,
-    "unknown_usage_calls": 3,
-    "elapsed_s": 90.8,
+    "calls": 8,
+    "attempts": 8,
+    "prompt_tokens": 81923,
+    "completion_tokens": 448000,
+    "total_tokens": 529923,
+    "unknown_usage_calls": 1,
+    "elapsed_s": 422.2,
     "committed_blocks": 0,
-    "stop_reason": "failed:block3;skipped=3",
+    "stop_reason": "failed:block1;skipped=1",
     "commit_cursor": 0,
     "prefix_complete": false,
     "gaps": []
