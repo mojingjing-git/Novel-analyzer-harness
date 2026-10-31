@@ -1622,3 +1622,15 @@ C2 实测把问题定性了：模型判"支持"20 次、**引文逐字命中 9/9
    子智能体复现报出，`file:line` 精准。
 2. 定位回验一开始用严等，会把 `NORMALIZED/RELOCATED` 全打成失败——正好抹掉要救的那类。
 3. `locate` 一开始只是"开关"，没真被调用；测出后改为真正注入。
+
+### 10.51 伏笔锚点字段落地（阶段 0，2026-10-31）
+
+伏笔复检要"查证据"，第一件事是让证据在采集时就存在。这一批只动三处字段 + 一个校验器，不碰管线。
+
+- `Foreshadowing` 增 `anchor_quote`/`anchor_chapter`/`motif_key`；`AnalysisResult` 增 `anchor_stats`（**必须是 dataclass 字段**，动态属性不会进 `to_dict`，重启后统计消失）。
+- 新增 `backend/core/anchor.py`：`build_chapter_spans()` 用块内章节标题切边界（**块 ≠ 章**，把块首章当引文所在章是错的）；`locate_anchor()` 先逐字、再忽略空白的规范化，且**回验切片**；`verify_result_anchors()` 就地改写成原文切片、写 `anchor_chapter`、跨章边界判缺、返回 `{total, located, missing, by_kind}`。
+- `analyzer.py` 在 `AnalysisResult.from_dict` 之后调用，异常只 warning——一条伏笔缺锚点不该让整章失败。
+- `text_utils.deduplicate_foreshadows` 支持 6..8 位的 `anchor_quote/anchor_chapter/motif_key` 并把代表条目的锚点带出（全链路传递，否则等于没加）。
+- `prompt_builder` schema 增两个字段 + 一条约束：逐字照抄、≥6 字、不改写不拼接；找不到原句就**不要列这条伏笔**。
+- 配置项：`anchor_quote_enabled`(true)、`anchor_min_chars`(6)、`recheck_max_calls`(300)、`recheck_max_tokens`(60000)。
+- 用例：`test_anchor_quote.py`(12) + `test_result_roundtrip_anchor.py`(4)。实测编造引文被清空、跨章拼接被拒、章号由标题反查得出。

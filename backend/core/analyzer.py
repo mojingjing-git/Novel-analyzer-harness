@@ -266,6 +266,24 @@ class NovelAnalyzer:
         try:
             # 转换为AnalysisResult
             result = AnalysisResult.from_dict(data)
+            # 伏笔锚点就地校验：落盘前把"逐字引文"钉回原文坐标。
+            # 定位不到就置空并计数——一条伏笔缺锚点不该让整章失败。
+            try:
+                from .anchor import verify_result_anchors
+
+                first_chapter = chapter_number
+                result.anchor_stats = verify_result_anchors(
+                    result, chapter_content, first_chapter
+                )
+                if result.anchor_stats["total"]:
+                    logger.info(
+                        "伏笔锚点: %s/%s 已定位（缺 %s）",
+                        result.anchor_stats["located"],
+                        result.anchor_stats["total"],
+                        result.anchor_stats["missing"],
+                    )
+            except Exception as exc:  # noqa: BLE001 - 锚点校验失败不该影响分析
+                logger.warning(f"伏笔锚点校验异常，已跳过: {exc}")
             result.chapter_number = chapter_number
             return result
 

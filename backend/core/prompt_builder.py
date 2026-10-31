@@ -47,6 +47,8 @@ SYSTEM_PROMPT = """# Role: 小说结构分析师
 
 ## 伏笔分类约束（重要）
 
+`foreshadowing` 每条必须给 `anchor_quote`：**从本章正文里逐字照抄**一句能支撑这条伏笔的话，长度不少于 6 个字，连同标点一起原样抄，不要改写、不要拼接、不要加省略号。若本章找不到这样的原句，就不要列这条伏笔。`motif_key` 给一个 2-6 字的稳定母题词（同一伏笔在后续章节复用同一个词）。
+
 `foreshadowing` 的 `type` 字段必须从下列 50 类中选**一个**，禁止自创类型。找不到完全匹配时选最接近的类别，实在无法归类才选"其他"。这是全书统一分类，同义/近义必须归到同一类。
 
 ## Output Schema (纯JSON，无markdown包裹)
@@ -54,7 +56,7 @@ SYSTEM_PROMPT = """# Role: 小说结构分析师
 {
   "core_events": [{"id": 1, "event": "事件", "characters": "角色", "function": "作用", "importance": "高|中|低"}],
   "character_arcs": [{"name": "角色", "surface_action": "表面行为", "inner_motivation": "深层动机", "change_delta": "变化量", "driver": "触发事件"}],
-  "foreshadowing": [{"clue": "原文细节", "type": "伏笔分类表中的类别", "implication": "未来暗示", "confidence": "高|中|低", "importance": "高|中|低"}],
+  "foreshadowing": [{"clue": "原文细节", "type": "伏笔分类表中的类别", "implication": "未来暗示", "confidence": "高|中|低", "importance": "高|中|低", "anchor_quote": "本章正文里逐字照抄的一句（≥6字，原样含标点）", "motif_key": "2-6字稳定母题词"}],
   "plot_holes": ["逻辑漏洞"],
   "locations": [{"name": "地点名", "parent": "上级地点或空", "type": "地点类型", "description": "一句话描述"}],
   "spatial_relationships": [{"from": "地点A", "to": "地点B", "relation": "空间关系描述"}],

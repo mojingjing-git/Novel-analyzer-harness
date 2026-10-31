@@ -711,3 +711,40 @@ expected_dependency = sha256(canonical({
 渲染 Prompt 里的字段示例；`test_vnext_schema_keys.py` 做**双向核对**（渲染键集合 == 常量；
 解析器源码实际读取的键 == 常量）。2026-10-31 的 36 次调用 / 109k token 事故就是
 "两边各写一份字段名"造成的。
+
+## §11 锚点字段落地（阶段 0，2026-10-31）
+
+### 11.1 三处字段、一条铁律
+
+`Foreshadowing` 增 `anchor_quote` / `anchor_chapter` / `motif_key`；`AnalysisResult` 增 `anchor_stats`。
+铁律：**锚点必须在落盘前校验**（`analyzer` 手上有正文），否则等复检才发现锚点是编的，
+这本书的钱已经花完了。
+
+### 11.2 校验规则（`backend/core/anchor.py`）
+
+| 情形 | 处理 |
+| --- | --- |
+| 逐字命中 | 采用；`anchor_quote` 改写为**原文切片**（不信模型的空白/标点） |
+| 仅空白差异 | 规范化后命中，回验通过才采用 |
+| 少于 6 字 | 判缺（`MIN_ANCHOR_CHARS`）——太短的句子在任何长段里都命中 |
+| 跨章边界 | 判缺——引文跨章说明模型在拼接 |
+| 定位不到 | 清空 `anchor_quote`、`anchor_chapter=0`，计 `missing`，**不抛错** |
+
+章归属用**块内标题反查**（`CHAPTER_HEADING_RE`）：块 ≠ 章，把块首章当成引文所在章是错的。
+块内无标题时退回"整块算首章"，此时 `anchor_stats` 仍照记，可信度由调用方自行判断。
+
+### 11.3 为什么要 `anchor_stats` 是 dataclass 字段
+
+动态属性不会被 `to_dict` 序列化，重启后统计凭空消失——那正好是"看起来加了保护、其实没有"。
+`test_result_roundtrip_anchor.py::test_anchor_stats_is_a_real_dataclass_field_and_roundtrips` 钉住这条。
+
+### 11.4 旧数据兼容
+
+旧结果没有锚点字段：`from_dict` 补默认值（空串/0/空 dict），**不报错、不写迁移脚本**。
+仅当 `anchor_quote` 非空才做校验，所以旧产物读出来仍然是"无证据"状态，语义正确。
+
+### 11.5 配置项
+
+`analysis.anchor_quote_enabled`（默认 true）、`anchor_min_chars`（6）、
+`recheck_max_calls`（300）、`recheck_max_tokens`（60000）。
+`recheck_max_tokens` 单独给足量，是因为实测该模型 `max_tokens` 撞上限时一个字的正文都拿不到。

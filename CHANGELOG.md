@@ -2,6 +2,15 @@
 
 ---
 
+## [Unreleased] - 2026-10-31（伏笔复检 V2 · 阶段 0：锚点字段）
+
+- 伏笔现在带**原文锚点**：`anchor_quote`（逐字照抄）、`anchor_chapter`（反查得出）、`motif_key`（稳定母题词）
+- 新增 `backend/core/anchor.py` 在**落盘前**校验锚点：逐字命中 → 忽略空白的规范化 → 回验切片；少于 6 字、跨章拼接、定位不到一律判缺并计入 `anchor_stats`，不影响本章分析
+- `AnalysisResult.anchor_stats` 是真正的 dataclass 字段（动态属性不会进 `to_dict`，重启后统计会消失）
+- `deduplicate_foreshadows` 把代表条目的锚点带进伏笔目录：字段要全链路传递，否则等于没加
+- Prompt 增加硬约束：找不到原句就不要列这条伏笔
+
+
 ## [Unreleased] - 2026-10-31（C3 复测：INVALID 5 → 0，逆序不再失分）
 
 C3 第一次复测仍出现 `QUOTE_OUT_OF_RANGE`，原因是**脚本没接上定位**（还在用旧校验器），

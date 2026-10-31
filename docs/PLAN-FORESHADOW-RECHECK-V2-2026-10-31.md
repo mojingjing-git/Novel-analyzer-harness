@@ -273,3 +273,17 @@ evidence_id = sha256(f"{book_id}|{chapter}|{content_hash}|{start}|{end}")[:12]
   给 `[10000,10020]` 而原文 26 字时输出越界位置且判 SUPPORTED。已修为"模型位置只能挑一处、
   位置一律程序算 + 切片回验"，回归用例断言不变量（要么拒绝，要么给正文范围内的正确切片）。
   提交 `8f9d191`；vnext 552 passed。**该修复需在阶段 2 一并移植进 `shared/citation.py`。**
+
+## §10 实施记录（阶段 0，2026-10-31）
+
+**已落地**
+- `backend/models/analysis_result.py`：`Foreshadowing` 增 `anchor_quote`/`anchor_chapter`/`motif_key`；`AnalysisResult` 增 `anchor_stats`（dataclass 字段，能进 `to_dict`）；`from_dict` 显式解析（旧数据补默认值，不迁移）。
+- `backend/core/anchor.py`（新）：`CHAPTER_HEADING_RE`/`MIN_ANCHOR_CHARS=6`/`build_chapter_spans`/`locate_anchor`（逐字 → 忽略空白规范化 → **回验切片**）/`verify_result_anchors`（写回原文切片、反查章号、跨章判缺、返回统计）。
+- `backend/core/analyzer.py`：`from_dict` 之后调用校验，异常仅 warning（一条伏笔缺锚点不该让整章失败）。
+- `backend/utils/text_utils.py`：`deduplicate_foreshadows` 支持第 6..8 位 `anchor_quote/anchor_chapter/motif_key`，并把代表条目的锚点带进 catalog（全链路传递）。
+- `backend/core/prompt_builder.py`：schema 增两字段 + 约束（逐字照抄、≥6 字、不改写不拼接、找不到原句就不列这条伏笔）。
+- `backend/config/settings.py`：`anchor_quote_enabled`/`anchor_min_chars`/`recheck_max_calls`/`recheck_max_tokens`。
+- 用例：`backend/tests/test_anchor_quote.py`（12）、`backend/tests/test_result_roundtrip_anchor.py`（4）。
+
+**阶段 1 待办（下一步）**：把 `anchor_quote_enabled` 关掉的路径也钉住（无锚点时必须显式标"无证据模式"）；
+`analysis_summary` 与 ledger 建条目处带 `anchor_quote`/`motif_key`/`entity_key`（原 R1 五处传递的最后一环）。

@@ -243,8 +243,13 @@ def deduplicate_foreshadows(
             continue
         if not clue_text or not str(clue_text).strip():
             continue
+        # 可选第 6..8 位：anchor_quote / anchor_chapter / motif_key（伏笔复检 V2）
+        extra = list(item[5:8]) if len(item) > 5 else []
         entries.append({
             'chapter': chapter,
+            'anchor_quote': str(extra[0]).strip() if len(extra) > 0 and extra[0] else "",
+            'anchor_chapter': int(extra[1]) if len(extra) > 1 and extra[1] else 0,
+            'motif_key': str(extra[2]).strip() if len(extra) > 2 and extra[2] else "",
             'clue': str(clue_text).strip(),
             'keywords': _extract_keywords(str(clue_text)),
             'normalized': _normalize_for_dedup(str(clue_text)),
@@ -331,6 +336,10 @@ def deduplicate_foreshadows(
             'type': best_type,
             'confidence': best_conf['confidence'],
             'importance': best_imp['importance'],
+            # 代表条目的锚点原样带出：没有锚点，后面复检就只能听模型自述
+            'anchor_quote': rep.get('anchor_quote', ''),
+            'anchor_chapter': rep.get('anchor_chapter', 0),
+            'motif_key': rep.get('motif_key', ''),
         })
 
     return catalog

@@ -177,6 +177,11 @@ class AnalysisConfig:
     summary_concurrency: int = 2      # 最终总结并发数（默认 2，避免高并发触发 API 超时）
     summary_batch_size: int = 30      # 最终总结每批章节数
     foreshadow_recheck_batch_size: int = DEFAULT_FORESHADOW_RECHECK_BATCH_SIZE  # 全书伏笔复检批大小；调大减少调用次数（省 cache 命中价前缀），单批过大可能稀释注意力
+    # 伏笔复检 V2（2026-10-31）：锚点采集与复检预算
+    anchor_quote_enabled: bool = True        # 逐章采集 anchor_quote（关闭则复检退化为无证据模式）
+    anchor_min_chars: int = 6                # 锚点最短字数；太短的长句子里必然命中
+    recheck_max_calls: int = 300             # 一次复检最多调用次数（超出标 BUDGET_SKIPPED，可续跑）
+    recheck_max_tokens: int = 60000          # 单次复检调用的 max_tokens；给足量才能拿到完整 JSON
     # 内容审核拦截处理：识别为审核拦截的章节重试1次后跳过并标记（不进失败集、不补跑）
     skip_moderation_blocked: bool = True
     # 知识库限制

@@ -36,6 +36,11 @@ class Foreshadowing:
     implication: str = ""
     confidence: str = "中"  # "高"/"中"/"低"
     importance: str = "中"  # 高/中/低（时间线重要度过滤；旧数据缺省按中）
+    # 2026-10-31 伏笔复检 V2：原文锚点。没有锚点就等于没有证据，
+    # 复检只能靠模型自述"我支持"——那正是旧实现判错了还看不出来的原因。
+    anchor_quote: str = ""       # 逐字取自本章正文的一句（校验后可能被清空）
+    anchor_chapter: int = 0      # 锚点实际所在章（校验时反查得出）
+    motif_key: str = ""          # 2-6 字稳定母题词，供实体登记用
 
 
 def _norm_importance(value) -> str:
@@ -98,6 +103,9 @@ class AnalysisResult:
     core_events: List[CoreEvent] = field(default_factory=list)
     character_arcs: List[CharacterArc] = field(default_factory=list)
     foreshadowing: List[Foreshadowing] = field(default_factory=list)
+    #: 锚点采集统计：total/located/missing。**必须是 dataclass 字段**——
+    #: 动态赋值不会被 to_dict 序列化，重启后统计就没了（复审 R1）。
+    anchor_stats: dict = field(default_factory=lambda: {"total": 0, "located": 0, "missing": 0})
     plot_holes: List[str] = field(default_factory=lambda: ["无明显逻辑漏洞"])
     locations: List[Location] = field(default_factory=list)  # 新增：地点（旧 result.json 无此字段，默认空）
     spatial_relationships: List[SpatialRel] = field(default_factory=list)  # 新增：空间关系
@@ -187,7 +195,10 @@ class AnalysisResult:
                         type=ftype,
                         implication=implication,
                         confidence=confidence,
-                        importance=_norm_importance(f.get("importance"))
+                        importance=_norm_importance(f.get("importance")),
+                        anchor_quote=str(f.get('anchor_quote') or '').strip(),
+                        anchor_chapter=int(f.get('anchor_chapter') or 0),
+                        motif_key=str(f.get('motif_key') or '').strip(),
                     ))
                 except Exception as e:
                     import logging; logging.getLogger(__name__).debug(f"跳过异常伏笔: {e}")
@@ -267,6 +278,7 @@ class AnalysisResult:
             core_events=core_events,
             character_arcs=character_arcs,
             foreshadowing=foreshadowing,
+            anchor_stats=dict(data.get('anchor_stats') or {"total": 0, "located": 0, "missing": 0}),
             plot_holes=cls._normalize_string_list(data.get('plot_holes', ["无明显逻辑漏洞"])),
             locations=locations,
             spatial_relationships=spatial_relationships,
