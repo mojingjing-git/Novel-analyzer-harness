@@ -113,6 +113,9 @@ class RecheckOutcome:
     retried_batches: int = 0
     #: 抛异常的批次数（它们的候选会落到 not_checked，不静默算通过）
     failed_batches: int = 0
+    #: 锚点章号被修正过的条目（记录下来的章号 → 引文真正所在章）。
+    #: 章号只是提示：书里同一个章号可能重复出现，采集记的那一份未必是引文所在。
+    resolved_chapters: dict[str, int] = field(default_factory=dict)
 
     def summary(self) -> dict:
         return {
@@ -170,6 +173,7 @@ def dump_recheck_detail(
         "not_checked": list(outcome.not_checked),
         "dropped_ids": list(outcome.dropped_ids),
         "applied": dict(outcome.applied),
+        "resolved_chapters": dict(outcome.resolved_chapters),
         "verdicts": [v.to_dict() for v in outcome.verdicts],
     }
 
@@ -215,6 +219,30 @@ async def run_recheck_v2(
     candidates: list[dict] = []
     index = EvidenceIndex(chapters) if chapters else None
 
+    # 全书文本 + 章偏移：章号只是**提示**，不是身份。
+    #
+    # 源文件里行首出现的"第N回"（正文引用回次）会被标题正则当成章节边界，
+    # 于是同一个章号可能出现在多个块里——实测《大奉打更人》922 个源文件切出的
+    # 合并块 spans 是 [229, 230, 1, 2] 这种形态，章号 1、2 在书里反复出现。
+    # 采集侧记的 anchor_chapter 因此可能指向"另一份同号章"的文本：
+    # 实测 1669 条带锚点的候选里，1303 条（78%）因此被记成"锚点找不到"，
+    # 复检等于只查了两成。
+    #
+    # 修法：先用 anchor_chapter 找；找不到就在全书范围内找那句引文，
+    # 再反查它属于哪一章，用那一章做证据包。伏笔埋设在前面，
+    # 全书首次出现就是埋设处。
+    global_text = ""
+    chapter_spans: list[tuple[int, int, int]] = []
+    if index is not None:
+        parts: list[str] = []
+        cursor = 0
+        for ch in sorted(chapters):
+            body = index.chapter_text(ch)
+            chapter_spans.append((ch, cursor, cursor + len(body)))
+            parts.append(body)
+            cursor += len(body) + 2
+        global_text = "\n\n".join(parts)
+
     leads_skipped = 0
     outcome.input_total = len(items)
     for item in items:
@@ -236,6 +264,20 @@ async def run_recheck_v2(
         # 定位用**整章**（锚点可能落在章末，窗口只够展示）
         source = index.chapter_text(chapter) if index else book_text
         located = locate_quote(quote, source)
+        if not located.found and global_text:
+            # 章号指错了：在全书里再找一次，反查它真正属于哪一章
+            found = locate_quote(quote, global_text)
+            if found.found:
+                owner = next(
+                    (ch for ch, start, end in chapter_spans if start <= found.start < end),
+                    None,
+                )
+                if owner is not None and owner != chapter:
+                    retry = locate_quote(quote, index.chapter_text(owner))
+                    if retry.found:
+                        located = retry
+                        chapter = owner
+                        outcome.resolved_chapters[getattr(item, "id", "")] = owner
         if not located.found:
             outcome.dropped_anchor_missing += 1
             outcome.not_checked.append(getattr(item, "id", ""))
