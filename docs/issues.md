@@ -110,6 +110,25 @@ vnext 侧的 `backend/vnext/foreshadow.py` 用 `cutoff_view(cutoff_ordinal=)` �
 把"判定方说已回收、复核方说没交代"降级为待复核；以及 0 成本的章号闭包做前置筛。
 这两条都还没有实现，等决策。
 
+### vnext 文档与实现不一致
+
+`docs/data-contract-vnext.md` 与代码有 6 处出入（逐条带 file:line 的盘点见
+[research/vnext-audit-2026-11-02.md](./research/vnext-audit-2026-11-02.md)）：
+
+1. **账本路径**：文档写 `ledger/foreshadow.json`；代码是 `book_dir/recheck_ledger.json`
+   （`backend/vnext/runner.py` 的 `LEDGER_FILE_NAME`）——路径与文件名都不一致。
+2. **文档 §2 的 `derived/` 目录描述的是目标形态，不是现状**：它列的
+   `final_summary_report.md` / `foreshadow_audit.md` / `style.md` / `aggregated/*.json`
+   在 vnext 里一个都没实现。
+3. **文档提到 `commit()`，代码里只有私有的 `_commit_state`**（`backend/vnext/consistency.py`）——
+   docstring 讲的判据是"commit() 有没有正常返回"，但实现没有这个公开函数名。
+4. **文档 §8 错误码表缺 `NOT_FOUND`**：`backend/vnext/constants.py` 有这个码，
+   `backend/api/routes_vnext.py:42` 把它映射成 404。
+5. **账本版本号对不上**：`backend/vnext/__init__.py:4` 写"伏笔账本 v3"，1.x 的
+   `SCHEMA_VERSION` 已经是 5（`backend/utils/foreshadow_ledger.py:24`）。
+6. **数据根互不相干**：文档说 `workspace_vnext/` 是独立数据根、由 `config_vnext.json` 管；
+   而 `backend/config/settings.py:233` 只有通用的 `workspace_dir`——两者没有任何联动。
+
 ### 账户级熔断两条管线都没有
 
 欠费或账号整体不可用时，整轮任务会继续往下派发、继续烧钱。vnext 里
@@ -160,7 +179,7 @@ vnext 前端页面按一套字段名读数据，后端返回的是另一套，�
 
 | 端点 | 后端返回 | 前端读取 | 页面表现 |
 |---|---|---|---|
-| `POST /api/vnext/projects` | `total_chapters`（`backend/vnext/vnext_service.py:297`） | `chapter_count`（`frontend/src/pages/VnextPage.vue:154`） | 显示"已创建《X》（undefined 章）" |
+| `POST /api/vnext/projects` | `total_chapters`（`backend/vnext/vnext_service.py:297`） | `chapter_count`（`frontend/src/pages/VnextPage.vue:154`） | 显示"已创建《X》（undefined 章）"——**已修**：`vnext_service.py:78` 现在补了 `chapter_count` |
 | `GET /api/vnext/books/{id}/blocks` | `state`（取值 `done` / `stale:<原因>` / `missing:<原因>`） | `block.status`（`frontend/src/pages/VnextDetailPage.vue:30-38`） | 块状态列为空 |
 | `GET /api/vnext/queue` | 条目缺 `total_chapters` / `block_size` / `updated_at`（`backend/api/routes_vnext.py:92-105` 手工构造） | 声明了 `total_chapters`（`frontend/src/api/client.ts:364`） | 该字段缺失；POST / DELETE 路径的同一队列是有这些字段的 |
 

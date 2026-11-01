@@ -33,29 +33,59 @@
 
 | 冲突点 | 1.x 的做法 | vnext 的做法 | 建议 |
 |---|---|---|---|
-| **章切分口径** | 块 = 章（`block_size` 合并），章号 = 块序号 | 按块内标题反查回号（`split_block_into_chapters` / `build_chapter_spans`） | 取 vnext，但**必须解决回号重复**：源文件里行首的"第N回"会被标题正则当成边界，实测《大奉打更人》合并块 spans 形如 `[229, 230, 1, 2]`——同一章号在书里反复出现。2.0 的正文身份应是 `(章号, 引文)` 而不是章号 |
-| 快照与覆盖 | 标量上界（`last_updated_chapter`） | 排他快照 `exclusive_before` + 有序归约 | 取 vnext |
-| 伏笔终态 | dormant 判死（`final_summary.py:1488` 没有 active 就直接返回） | `cutoff_view(cutoff_ordinal=)` | 取 vnext；且复检要用**带证据**那条（`recheck_v2`），不是旧的无阻断路径 |
-| 共现与关系 | 同一章出现就判定两人有关系（`memory_state.py:388-394`） | 共现与语义关系分表 | 取 vnext |
-| 已知事实来源 | `verified_facts` 原样入账，无法溯源 | `SourceRef` 溯源 | 取 vnext |
-| 错误分类与重试 | 分散在 `llm_client` 四处判定 | `ErrorClass` 11 类 + `ErrorScope` 4 值 + 单点重试决策 | 取 vnext，并接到 1.x 的派发链 |
+| **章切分口径** | `book_service.py:175-177` 一文件=一章；块=章 | `backend/core/anchor.py:89` `build_chapter_spans` 按标题反查回号 | 取 vnext，但**必须解决回号重复**：源文件里行首的"第N回"会被标题正则当成边界，实测《大奉打更人》合并块 spans 形如 `[229, 230, 1, 2]`——同一章号在书里反复出现。2.0 的正文身份应是 `(章号, 引文)` 而不是章号 |
+| **快照与覆盖** | 标量上界（`pipeline.py:448,1069` 的 `last_updated_chapter`） | 排他快照 `exclusive_before`（`vnext/knowledge.py:148-198,341`） | 取 vnext |
+| **共现与关系** | 同章两两配对直接写成关系（`memory_state.py:388-394`） | 共现与语义关系分表（`vnext/graph.py`：`CooccurrenceEdge` vs `SemanticRelationship`，"共现不是关系"） | 取 vnext |
+| **伏笔终态** | dormant 判死（`foreshadow_ledger.py:142`；`final_summary.py:1487-1489` 因 active=0 直接跳过全书复检） | `cutoff_view`（`vnext/foreshadow.py`）按故事位置出候选、**不判死** | 取 vnext；复检用**带证据**那条（`recheck_v2`），不是旧的无阻断路径 |
+| **账本** | `foreshadow_ledger.json`，`SCHEMA_VERSION = 5`（`foreshadow_ledger.py:24`） | 自有 `recheck_ledger.json` + `tasks.json`（`vnext/runner.py`） | 合并成一套，取 v5 的形状 |
+| **已知事实来源** | `verified_facts` 原样入账，无法溯源 | `SourceRef` 溯源 | 取 vnext |
+| **错误分类** | `backend/core/error_taxonomy.py` 一套枚举与置信度 | `backend/core/error_types.py` 的 `ErrorVerdict`/`ErrorScope` 4 值，判据只认结构化通道 | 取 vnext，并把 1.x 的 `llm_client` 四处重试决策收敛到单点 |
+| **提示词限额** | 5 项来自 config（`analyzer.py:74-79`），**4 项硬编码**（`prompt_builder.py:103-106`：`max_relationships=15`/`max_verified_facts=15`/`max_themes=8`/`max_content_chars=30000`） | 9 项统一在 `vnext/prompt_limits.py` 的不可变 dataclass | 取 vnext |
+| **证据 id** | `backend/core/evidence.py:84` | `backend/vnext/fingerprint.py` 的 `evidence_id`（内容哈希口径） | **两套同名实现**，合并时必须选一个 |
+| **裁剪时机** | 落盘前裁剪（`memory_state.py:414`）——"库里有什么取决于当初配了多大窗口" | 窗口是**读取时**的动作（`vnext/prompt_view.py`），裁剪时如实报告丢了什么 | 取 vnext |
+| 引用定位 | — | — | **已统一**（`vnext/citations.py` 已收敛到 `backend/core/citations.py`）✅ |
 
 ### C. 两侧都没有的功能
 
-1. **报告四栏**（未回收 / 自动已回收 / 证据不足 / 待确认）：改造已算出但没接进报告与前端。
-2. **判定质量门禁**：0 成本的"答案引用证据窗口外章号"（实测命中 11/208，人工确认 11/11 都是答非所问）；
+1. **总结/最终报告链路**：vnext 全库无 `final_report` 生成（只有 `vnext/budget.py:34,225` 的预算项），
+   1.x 的 `final_summary.py` 有 1969 行四阶段。**这条不是接线，是新写。**
+2. **伏笔总表 + 50 类分类**：vnext 只有 occurrence/entity/candidate 三层，无总表、无分类。
+3. **队列执行器**：vnext 的 `queue.py` 只有状态读写（`normalize_after_restart`/`apply_progress`），
+   **没有执行器**；1.x 有 `queue_service.py` / `queue_manager.py`。
+4. **分析启动入口**：vnext 的 9 个端点（`routes_vnext.py:72-213`）无启动、无总结、无报告。
+5. **判定质量门禁**：0 成本的"答案引用证据窗口外章号"（实测命中 11/208，人工确认 11/11 都是答非所问）；
    以及"同款模型盲答复核"（弱模型复核会误伤，精确率约 80%）。两条都还没实现。
-3. **人工标注定标集**：判定质量至今没有可回归的标注基线（现有 `annotations-C2` 是 30 条引文样本，不是判定标注）。
-4. **产物 schema 版本化**：输出 JSON 的 schema 仍在演化，跨版本升级后依赖旧字段的脚本会坏。
-5. **配置面分离**：1.x 与 vnext 的配置项混在同一个 `config.json` / `AppConfig` 里，没有分区。
-6. **`blocks` 目录只放正文**：切分报告（`split_report.txt`）被当成第 922 章参与分析与复检（两轮都如此，是既有行为）。
+6. **人工标注定标集**：判定质量至今没有可回归的标注基线（现有 `annotations-C2` 是 30 条引文样本，不是判定标注）。
+7. **产物 schema 版本化**：输出 JSON 的 schema 仍在演化，跨版本升级后依赖旧字段的脚本会坏。
+8. **配置面合并**：`settings.py` 里 vnext 相关几乎为零（只有通用的 `workspace_dir`），
+   vnext 自带 `config_vnext.json`，且**与 `config.json` 的 `workspace_dir` 没有任何联动**——两套配置各管各的。
+9. **`blocks` 目录只放正文**：切分报告（`split_report.txt`）被当成第 922 章参与分析与复检（两轮都如此，是既有行为）。
+10. **风格分析 / 聚合产物**：vnext 无 `style_analyzer`、无 `aggregate_utils` 的等价物。
 
 ### D. 前端
 
-- vnext 页面与后端字段名不一致（`docs/issues.md` 已列 3 处接口 + 2 处类型声明）：
-  `total_chapters` vs `chapter_count`、`state` vs `block.status`、队列条目缺 `total_chapters`/`block_size`/`updated_at`。
+- vnext 页面与后端字段名不一致（`docs/issues.md` 已列；其中"总章数"一条已由
+  `vnext_service.py:78` 修好，剩下 blocks 的 `state`/`status`、queue 的 `total_chapters` 仍在）：
+  `frontend/src/pages/VnextDetailPage.vue:30` 读 `b.status === 'done'`，
+  后端给的是 `state`（`vnext_service.py:319-330`）→ 块状态列空白；
+  `frontend/src/api/client.ts:386-395` 声明的 `total_chapters`，`routes_vnext.py:92-105` 不返回它。
 - 前端没有"2.0"视图：现在的 `LaneView` / `QueuePage` / `SummaryPage` 混着两条管线的概念。
 - `summary` 自研 Markdown 渲染器 + `v-html`：报告内容里的 HTML 不转义，而报告来自模型输出。
+
+### E. vnext 模块的调用方分布（2.0 接线工作量的直接依据）
+
+| 类别 | 模块 | 数量 |
+|---|---|---|
+| 有生产调用方 | artifacts、blocks、constants、project、queue、registry、results、**resolution** | 8 / 25（其中 7 个只被 vnext 自己的 API 层调用，**只有 resolution 进了 1.x 生产路径**）|
+| 仅 `scripts/` 调用（实现完整、有验收脚本，但无产品入口） | budget、citations、context、foreshadow、knowledge、prompt_limits、prompt_view、recheck_plan、rolling、runner、tasks | 11 |
+| 无任何外部调用 | analyzer、breaker、concurrency、consistency、fingerprint、graph | 6 |
+
+最后那 6 个**不是死代码，是建好了还没人用的地基**——`breaker`（熔断）、`consistency`（原子提交）、
+`graph`（共现/关系分表）、`fingerprint`（指纹口径）、`concurrency`（结算只认真结束），
+正是 2.0 最该接上的部分。
+
+详细盘点（含每条的 file:line 与 grep 证据）见
+[research/vnext-audit-2026-11-02.md](./research/vnext-audit-2026-11-02.md)。
 
 ## 3. 2.0 的形态（建议）
 
