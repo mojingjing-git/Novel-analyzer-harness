@@ -136,7 +136,18 @@ def _line_bounds(text: str) -> list[tuple[int, int, str]]:
     return out
 
 
-def _looks_like_heading(line: str) -> bool:
+def _looks_like_heading(line: str, *, prev_blank: bool) -> bool:
+    """这一行是不是章节标题。
+
+    两种"强信号"，满足其一即可（形态不同，不能只认一种）：
+
+    - **A：前面是空行或文件首**——网络小说形态（"第1章 名字"独占一行，前后留白）；
+    - **B：行内有全角空格分隔的多个片段**——古籍回目形态
+      （"第一回　甄士隐梦幻识通灵　葫芦僧判断冤屈案"，回目与正文之间**没有空行**，
+      A 不成立，只能靠 B）。
+
+    通用信号（两种形态都要过）：行长 ≤ 40、行尾无句末标点、不含引用谓词。
+    """
     stripped = line.strip()
     if not stripped or len(stripped) > MAX_HEADING_LEN:
         return False
@@ -144,7 +155,12 @@ def _looks_like_heading(line: str) -> bool:
         return False
     if any(hint in stripped for hint in REFERENCE_HINTS):
         return False
-    return bool(CHAPTER_HEADING_RE.match(stripped) or VOLUME_HEADING_RE.match(stripped))
+    if not (CHAPTER_HEADING_RE.match(stripped) or VOLUME_HEADING_RE.match(stripped)):
+        return False
+    if prev_blank:
+        return True
+    # 强信号 B：全角空格分隔的回目对句
+    return len([p for p in stripped.split("　") if p.strip()]) >= 2
 
 
 def split_chapters(
@@ -176,7 +192,7 @@ def split_chapters(
     for start, end, body in lines:
         stripped = body.strip()
         is_blank = not stripped
-        if not is_blank and prev_line_blank and _looks_like_heading(stripped):
+        if not is_blank and _looks_like_heading(stripped, prev_blank=prev_line_blank):
             vol_match = VOLUME_HEADING_RE.match(stripped)
             chap_match = CHAPTER_HEADING_RE.match(stripped)
             if vol_match and not chap_match:
