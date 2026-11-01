@@ -25,7 +25,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from backend.config.settings import ConfigManager  # noqa: E402
-from backend.core.anchor import entity_key_for  # noqa: E402
+from backend.core.anchor import entity_key_for, split_block_into_chapters  # noqa: E402
 from backend.core.pipeline import AnalysisPipeline  # noqa: E402
 from backend.models.analysis_result import AnalysisResult  # noqa: E402
 from backend.services.recheck_v2 import run_recheck_v2  # noqa: E402
@@ -124,6 +124,23 @@ async def main() -> int:
     ap.add_argument("--model", default="")
     ap.add_argument("--max-tokens", type=int, default=0)
     ap.add_argument("--out", default="docs/MEASURE-RECHECK-V2-PIPELINE.json")
+    ap.add_argument(
+        "--out-verdicts",
+        default="",
+        help="逐条判定明细落盘路径；留空则写 docs/data/verdicts-<时间戳>.json",
+    )
+    ap.add_argument(
+        "--recheck-concurrency",
+        type=int,
+        default=0,
+        help="复检在途批次数上限；0 表示跟随 --concurrency",
+    )
+    ap.add_argument(
+        "--recheck-max-tokens",
+        type=int,
+        default=0,
+        help="复检单次调用的输出上限；0 表示用配置里的 analysis.recheck_max_tokens",
+    )
     ap.add_argument("--skip-recheck", action="store_true", help="只测采集，不跑复检（省调用）")
     ap.add_argument("--workdir", default=".tmp_measure_pipeline")
     ap.add_argument("--reuse", action="store_true", help="已有产物时只测量，不重跑分析")
@@ -225,10 +242,23 @@ async def main() -> int:
     with_anchor = sum(1 for i in items if i.anchor_quote)
     print(f"账本候选 {len(items)} 条，带锚点 {with_anchor} 条")
 
-    book_text = "\n\n".join(
-        (book_dir / "blocks" / f"{i:04d}.txt").read_text(encoding="utf-8")
-        for i in range(1, n + 1)
-        if (book_dir / "blocks" / f"{i:04d}.txt").exists()
+    # 按**回**索引的原文：生产路径（`final_summary._collect_chapters`）就是用
+    # `split_block_into_chapters` 从块内标题反查章号，再有界取窗。两件事必须对齐：
+    # 1. 只传整本 `book_text` 时，一个候选的证据包就是全书正文——批 6 条等于把同一本
+    #    12 万字塞进 prompt 六遍，既烧钱又把"证据范围"放大到整本，判定自然偏乐观；
+    # 2. 章号若按"块序号"算（而不是标题里写的回号），锚点几乎全落空：实测 48 条里
+    #    44 条被记成 `dropped_anchor_missing`，复检等于什么都没查。
+    chapters: dict[int, str] = {}
+    for ordinal, path in enumerate(sorted((book_dir / "blocks").glob("*.txt")), start=1):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        chapters.update(split_block_into_chapters(text, ordinal))
+    print(
+        f"按标题切出 {len(chapters)} 章（回号 "
+        f"{min(chapters) if chapters else 0}..{max(chapters) if chapters else 0}），"
+        f"{sum(len(t) for t in chapters.values()):,} 字"
     )
 
     llm = pipeline._analyzer.llm_client if getattr(pipeline, "_analyzer", None) else None
@@ -237,10 +267,12 @@ async def main() -> int:
 
         llm = LLMClient(cfg.api)
 
+    recheck_max_tokens = args.recheck_max_tokens or int(cfg.analysis.recheck_max_tokens)
+
     async def call_model(prompt: str) -> str:
         res = await llm.chat_auto(
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=int(cfg.analysis.recheck_max_tokens),
+            max_tokens=recheck_max_tokens,
         )
         if hasattr(res, "content"):
             return res.content or ""
@@ -252,13 +284,16 @@ async def main() -> int:
     if args.skip_recheck:
         print("跳过复检（--skip-recheck）")
     else:
+        recheck_concurrency = args.recheck_concurrency or cfg.analysis.concurrency
+        print(f"复检并发={recheck_concurrency}，批大小={args.batch_size}，调用上限={args.max_calls}")
         t1 = time.time()
         outcome = await run_recheck_v2(
             items,
-            book_text=book_text,
+            chapters=chapters,
             call_model=call_model,
             max_calls=args.max_calls,
             batch_size=args.batch_size,
+            concurrency=recheck_concurrency,
         )
         print(
             f"复检完成：{json.dumps(outcome.summary(), ensure_ascii=False)}，"
@@ -278,8 +313,9 @@ async def main() -> int:
                 "anchor": {**anchor, "hit_rate": round(hit, 4)},
                 "ledger_candidates": len(items),
                 "candidates_with_anchor": with_anchor,
+                "evidence_chapters": len(chapters),
                 "acquisition": acq,
-                "recheck": outcome.summary() if outcome else {"skipped": True},
+                "recheck": outcome.detail() if outcome else {"skipped": True},
             },
             ensure_ascii=False,
             indent=2,
@@ -287,6 +323,40 @@ async def main() -> int:
         encoding="utf-8",
     )
     print(f"已写入 {out}")
+
+    if outcome is not None:
+        # 明细单独落一份：审计要看的是"每条候选的 verdict/answer/引文/位置"，
+        # 而不是计数；混在大报告里读起来费劲，也容易被别的测量覆盖掉。
+        stamp = time.strftime("%Y%m%d-%H%M")
+        verdicts_path = (
+            ROOT / args.out_verdicts
+            if args.out_verdicts
+            else ROOT / "docs" / "data" / f"verdicts-{stamp}.json"
+        )
+        verdicts_path.parent.mkdir(parents=True, exist_ok=True)
+        verdicts_path.write_text(
+            json.dumps(
+                {
+                    "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    "model": cfg.api.model,
+                    "base_url": cfg.api.base_url,
+                    "chapters": len(results),
+                    "evidence_mode": "bounded",
+                    "batch_size": args.batch_size,
+                    "concurrency": args.recheck_concurrency or cfg.analysis.concurrency,
+                    "max_calls": args.max_calls,
+                    "status": outcome.status,
+                    "status_reason": outcome.status_reason,
+                    "coverage": dict(outcome.coverage),
+                    "candidates_total": outcome.coverage.get("candidates_total", 0),
+                    "verdicts": [v.to_dict() for v in outcome.verdicts],
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        print(f"逐条判定写入 {verdicts_path}")
     return 0
 
 

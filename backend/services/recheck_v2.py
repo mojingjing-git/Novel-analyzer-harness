@@ -130,6 +130,16 @@ class RecheckOutcome:
             "failed_batches": self.failed_batches,
         }
 
+    def detail(self) -> dict:
+        """汇总计数 + **逐条明细**。
+
+        ``summary()`` 只给计数，够做进度与看板；但"这条 SUPPORTED 是拿哪句话判的"
+        追不出来，判定质量就只能靠推断。明细单独走这个出口，而不是塞进
+        ``summary()``：``summary()`` 会进进度事件（每次 emit 广播）和报告快照，
+        48 条候选的全文引文挂在里面会把它们撑坏。
+        """
+        return {**self.summary(), "verdicts": [v.to_dict() for v in self.verdicts]}
+
 
 def _evidence_id(chapter: int, text: str) -> str:
     """证据身份 = 章 + 该段正文本身。

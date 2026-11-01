@@ -461,6 +461,9 @@ def parse_recheck(
             reported_span=reported,
             ambiguous=ambiguous,
             quote_hash=hashlib.sha256(quote.encode("utf-8")).hexdigest()[:12],
+            # 引文原文必须跟着结论一起落盘：只留哈希，事后审计就只剩"它说答上了"，
+            # 查不了"它拿哪句话答的"——而那正是判定质量唯一可复核的入口。
+            quote=quote,
             counter_search_performed=True,
         )
 
