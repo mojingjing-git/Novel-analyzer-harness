@@ -21,6 +21,7 @@ from backend.config.constants import (
     FORESHADOW_CATEGORY_SCHEMA_VERSION,
     FORESHADOW_TYPE_MAP_FILE,
     RECHECK_FULLTEXT_BUDGET_CHARS,
+    normalize_foreshadow_type,
 )
 from backend.core.llm_client import LLMClient
 from backend.core.style_analyzer import extract_style_profile
@@ -864,11 +865,16 @@ class FinalSummaryRunner:
             if not self._imp_at_least(conf, a.foreshadow_min_confidence):
                 skipped_confidence += 1
                 continue
-            # category 解析：type 合法直接用；否则查映射；仍无则 fallback
+            # category 解析：type 合法直接用；否则查映射；仍无则先用通用别名表归一
+            # （模型自造的复合词，如"身份揭示""修炼线索"）；最后才落兜底。
             if ftype in valid_names:
                 category = ftype
             else:
-                category = type_to_category.get(ftype, FORESHADOW_CATEGORY_FALLBACK)
+                category = type_to_category.get(ftype)
+                if category is None:
+                    category = normalize_foreshadow_type(ftype, valid_names)
+                if category is None:
+                    category = FORESHADOW_CATEGORY_FALLBACK
             if category not in set(a.foreshadow_kept_categories):
                 skipped_category += 1
                 continue
