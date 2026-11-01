@@ -1,4 +1,4 @@
-"""Step2：流式 Token 进度回调工厂的等价性回归（第三批清理，2026-10-14）
+"""流式 Token 进度回调工厂的等价性回归
 
 被测对象 `backend/core/stream_progress.py::make_stream_progress_callback`，以及它在
 三条**生产路径**上的实际接线：
@@ -8,7 +8,7 @@
   （薄适配器，计时仍在**拿到并发槽之后**创建）
 - 风格提取：`backend/core/style_analyzer.py::call_llm_semantic`（context=summary_phase_3，unit_idx=0）
 
-覆盖点（对应计划 §5）：
+覆盖点：
 
 - 事件字段/顺序/await：`broadcast_token_delta` 被 await，delta 键顺序与取值一致；
 - 过滤：只有 content / usage 广播，reasoning / error 不新增广播；
@@ -19,7 +19,7 @@
 - 三条真实入口：含总结并发槽等待位置与失败重试不重置计时。
 
 全部使用受控时钟（monkeypatch `time.monotonic`）、mock LLM 与隔离 Hub，
-遵循 Step0 的导入前隔离；不触真实 LLM、不读写真实文件。
+遵循导入前隔离；不触真实 LLM、不读写真实文件。
 """
 
 from __future__ import annotations
@@ -275,7 +275,7 @@ class FakeLLMClient:
         if status == "ok":
             return LLMResult(True, payload, "", (10, 20), UsageStatus.KNOWN,
                              call_stats={"attempts": self._attempt})
-        # U4：chat_auto 返回 LLMResult（失败也照样消耗了本次调用的 token）
+        # chat_auto 返回 LLMResult（失败也照样消耗了本次调用的 token）
         return LLMResult(False, "", payload, (10, 20), UsageStatus.KNOWN,
                          call_stats={"attempts": self._attempt, "failed_tokens": 5})
 
@@ -391,7 +391,7 @@ SUMMARY_ENTRIES = [
     ("_call_llm_summary", "summary_phase_1", 0),
     ("_call_llm_final", "summary_phase_4", 0),
     ("_call_llm_reconciliation", "summary_phase_1", 5),
-    # 注意：全书复检实际用的是 summary_phase_2（既有行为，本步不改）
+    # 注意：全书复检实际用的是 summary_phase_2（既有行为，不在本用例范围内）
     ("_call_llm_global_recheck", "summary_phase_2", 2),
 ]
 

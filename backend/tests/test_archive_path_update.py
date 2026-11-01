@@ -1,11 +1,11 @@
-"""P5d（2026-08-27）_archive_item 路径更新修复：
+"""_archive_item 路径更新契约：
 
-bug: shutil.move 把书目录搬到 base_dir/分析结果/ 但没更新 item.workspace_dir
-后果: _books 缓存旧路径（已搬走），get_book_path 命中后 path.exists() False
+背景: shutil.move 把书目录搬到 base_dir/分析结果/ 后必须同步更新 item.workspace_dir，
+      否则 _books 缓存旧路径（已搬走），get_book_path 命中后 path.exists() False
       → 报"书目不存在" 即使归档后书目录实际存在
-真实案例: 《大王饶命》分析完成后自动归档，auto_summary 找目录失败
+      （真实场景: 《大王饶命》分析完成后自动归档，auto_summary 找目录失败）
 
-修法: _archive_item 搬走成功后更新 item.workspace_dir + item.blocks_dir，
+契约: _archive_item 搬走成功后更新 item.workspace_dir + item.blocks_dir，
       同步调 save_queue 持久化。
 """
 import os
@@ -48,7 +48,7 @@ def test_archive_item_updates_workspace_dir():
         from backend.services.queue_service import get_service
         svc = get_service()
         original_config_manager = svc.config_manager
-        # Step0/R0：快照进程级队列/书目缓存，测试结束后恢复（避免污染其他用例）
+        # 快照进程级队列/书目缓存，测试结束后恢复（避免污染其他用例）
         original_items = svc.queue._items
         original_books = dict(book_service._books)
         original_manual_books = dict(book_service._manual_books)
@@ -61,7 +61,7 @@ def test_archive_item_updates_workspace_dir():
             config = _Config()
         svc.config_manager = _MockCfg()
         try:
-            # Step0/R0 守卫：save_queue 的落盘目标必须是被隔离的运行根，
+            # 守卫：save_queue 的落盘目标必须是被隔离的运行根，
             # 不能是真实仓库 queue_state.json
             assert queue_service_module.QUEUE_STATE_FILE.parent == (
                 Path(os.environ["NOVEL_ROOT"]).resolve()
@@ -93,7 +93,7 @@ def test_archive_item_updates_workspace_dir():
 
 
 def test_archive_then_get_book_path_finds_new_location():
-    """归档后 book_service.get_book_path 用 book_id 能找到新位置（之前找不到旧路径）"""
+    """归档后 book_service.get_book_path 用 book_id 能找到新位置"""
     from backend.services import book_service
     from backend.services import queue_service as queue_service_module
     from backend.services.book_service import refresh_books, get_book_path
@@ -114,7 +114,7 @@ def test_archive_then_get_book_path_finds_new_location():
         # mock queue with this item
         svc = get_service()
         original_config_manager = svc.config_manager
-        # Step0/R0：快照队列/书目缓存，避免 _items 替换与 _books 重建污染其他用例
+        # 快照队列/书目缓存，避免 _items 替换与 _books 重建污染其他用例
         original_items = svc.queue._items
         original_books = dict(book_service._books)
         original_manual_books = dict(book_service._manual_books)
@@ -139,7 +139,7 @@ def test_archive_then_get_book_path_finds_new_location():
         svc.queue._items = [item]
 
         try:
-            # Step0/R0 守卫：归档触发的 save_queue 必须落在隔离运行根，
+            # 守卫：归档触发的 save_queue 必须落在隔离运行根，
             # 不能覆写真实仓库 queue_state.json
             assert queue_service_module.QUEUE_STATE_FILE.parent == (
                 Path(os.environ["NOVEL_ROOT"]).resolve()

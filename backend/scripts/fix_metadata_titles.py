@@ -1,5 +1,5 @@
 """
-一次性修复脚本（2026-09-04）：
+修复脚本：
 扫所有 workspace 下的 blocks/metadata.json，如果 title 是错值（含句末标点 / 含"作者/著" /
 超过 30 字符），用 _clean_book_name(parent_dir.name) 覆盖。
 """

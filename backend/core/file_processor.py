@@ -1,8 +1,7 @@
 """
 文件处理器
 负责扫描、读取和管理小说章节文件
-（自旧项目 core/file_processor.py 原样移植；同步 IO 保留，
-pipeline 中通过 asyncio.to_thread 包装调用）
+（同步 IO 保留，pipeline 中通过 asyncio.to_thread 包装调用）
 """
 
 import re
@@ -117,8 +116,7 @@ class FileProcessor:
         """
         合并多章为一个文本块（用于块化分析）。
 
-        2026-08-07 优化（P0-4）：签名由 (start_chapter, block_size) 改为接收
-        **实际存在的章号列表**。原实现按 range(start, start+block_size) 连号读取，
+        签名接收**实际存在的章号列表**。若按 range(start, start+block_size) 连号读取，
         与 pipeline 按"实际章号"切块不一致——目录断号时（如只有 1/3/5.txt）
         中间的章会被静默跳过、永远不分析。
 

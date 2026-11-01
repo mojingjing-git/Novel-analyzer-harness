@@ -1,11 +1,11 @@
-"""P2 收口（G6）：主导格式窄化不得吞掉混排的真实章节行，也不得被高频噪声带偏。
+"""主导格式窄化不得吞掉混排的真实章节行，也不得被高频噪声带偏。
 统一入口 preview_split/save_split 走 _compile_pattern；此处直接测编译产物。
 
-实现说明（控制器裁决 #3 落地）：
+实现说明：
 - splitter_service 的实际模块级函数是 _chapter_regex_for_mode(options, lines)
   （无 _compile_pattern 导出名），测试按实际签名调用；
 - 原样例合并式行「第三卷 第N卷起首」在现有 CHAPTER_PATTERNS 中本就无对应候选
-  （任何模式下得分均为 0，不经过本次门槛逻辑），故混排样例统一改用现实中最常见的
+  （任何模式下得分均为 0，不经过该门槛逻辑），故混排样例统一使用现实中最常见的
   合并式行「第三卷 第N章」——对应既有候选「第一卷第一章」
   （^第X卷\\s*第Y[章节回]），可真实驱动次级并入路径。
 """
@@ -34,7 +34,7 @@ def splitter_save(src, out):
 
 
 def test_mixed_volume_chapter_lines_are_included():
-    """第X章为主 + 第三卷第X章混排：合并式行必须作为切分边界（此前被吞）"""
+    """第X章为主 + 第三卷第X章混排：合并式行必须作为切分边界（不得被吞）"""
     lines = []
     mixed = []
     num = 0
@@ -83,7 +83,7 @@ def test_real_world_split_mixed_book(tmp_path):
 
 
 def test_noise_list_dominant_not_included():
-    """编号列表作为次级格式且比值低于 15% 时不得并入（防 P2-11 过度切分回归）：
+    """编号列表作为次级格式且比值低于 15% 时不得并入（防过度切分回归）：
     主导 60 章，数字点编号仅 8 次 < max(2, int(60*0.15))=9 → 排除"""
     lines = []
     for i in range(1, 61):

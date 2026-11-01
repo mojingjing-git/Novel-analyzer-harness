@@ -120,7 +120,7 @@ async def main() -> int:
     ap.add_argument("--base-url", default="")
     ap.add_argument("--model", default="")
     ap.add_argument("--max-tokens", type=int, default=8000)
-    ap.add_argument("--out", default="docs/MEASURE-FIXTURES-2026-11-01.json")
+    ap.add_argument("--out", default="docs/data/MEASURE-FIXTURES-2026-11-01.json")
     args = ap.parse_args()
 
     try:

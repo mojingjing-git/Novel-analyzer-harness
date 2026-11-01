@@ -27,8 +27,8 @@ def test_moderation_text_is_detected_without_structured_verdict() -> None:
 
 
 def test_billing_quota_is_permanent() -> None:
-    """2026-10-31 实测：HTTP 402 insufficient_balance 被漏判成可重试，
-    32 个块在 5 秒内各烧一次。余额不足是账户级永久错误。"""
+    """HTTP 402 insufficient_balance 必须判成永久错误：
+    余额不足是账户级永久错误，不得让 32 个块在 5 秒内各烧一次。"""
     exc = BlockFailure(
         "模型返回空内容（error=API错误 (HTTP 402): insufficient_balance_error 当前已达到 Token Plan 用量上限）"
     )

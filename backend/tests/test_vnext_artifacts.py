@@ -1,4 +1,4 @@
-"""vnext 产物门禁与原子写（PLAN v2 §4 S2-1 / S2-5，§1.1-4 拒绝路径）。"""
+"""vnext 产物门禁与原子写（含拒绝路径）。"""
 
 from __future__ import annotations
 

@@ -1,10 +1,10 @@
-"""单块分析（B1a）：把"库里有什么 + 这几章正文"变成一条可校验的块结果。
+"""单块分析：把"库里有什么 + 这几章正文"变成一条可校验的块结果。
 
-四条硬约束，全是复审踩出来的：
+四条硬约束：
 
 1. **全程 async**。``llm_client.chat`` 是 async 且返回 ``LLMResult``；同步 IO 走
    ``asyncio.to_thread``。在 FastAPI 处理函数里 ``asyncio.run`` 会直接炸。
-2. **``extracted`` 必须带 ``SourceRef``**（契约 §16.1）。没有来源的事实重放时会丢，
+2. **``extracted`` 必须带 ``SourceRef``**（契约见 docs/data-contract-vnext.md）。没有来源的事实重放时会丢，
    于是"续跑"得到空库——那等于换了一套输入。
 3. **上下文指纹进依赖**。真正进 Prompt 的是裁剪后的窗口，所以指纹取
    ``PromptWindow.fingerprint()``（含限额与 dropped），不是快照的。
@@ -290,7 +290,7 @@ async def analyze_block(
 
     # 走 chat_auto：它按 streaming_enabled 选流式/非流式，并且**带重试链**
     # （温度退火、429 特化等待、指数退避、硬超时）。裸 chat 没有这些，
-    # 真书第一次 429 就会把整本停掉（2026-10-31 审查指出）。
+    # 真书第一次 429 就会把整本停掉。
     _auto = getattr(client, "chat_auto", None)
     result = await (_auto(messages) if callable(_auto) else client.chat(messages))
     raw_text = str(getattr(result, "content", "") or "")
@@ -309,7 +309,7 @@ async def analyze_block(
             except TypeError:
                 permanent = bool(is_perm)
         if not permanent:
-            # 文本通道按设计"永不判永久"（C-01 止血），所以审核拦截这类
+            # 文本通道按设计"永不判永久"，所以审核拦截这类
             # 只能在这里用专门嗅探器补一次，否则永久错误会被当成普通失败。
             try:
                 from backend.core import llm_client as core_llm
@@ -319,8 +319,8 @@ async def analyze_block(
                     core_llm.moderation_hit_from_exception(result)
                     or core_llm.is_moderation_message(blob)
                     # 余额/配额不足是**账户级**永久错误：重跑一万次也一样，
-                    # 而且每跑一次都在烧钱。2026-10-31 实测 HTTP 402
-                    # insufficient_balance 被漏判成可重试，32 块在 5 秒内各烧一次。
+                    # 而且每跑一次都在烧钱：实测 HTTP 402 insufficient_balance
+                    # 被漏判成可重试时，32 块在 5 秒内各烧一次。
                     or _looks_like_billing(blob)
                 )
             except Exception:  # noqa: BLE001
@@ -399,7 +399,7 @@ def make_chat_caller(client: Any) -> Callable[[list[dict]], Awaitable[str]]:
 
     async def call(messages: list[dict]) -> str:
         # 与旧管线一致：优先 chat_auto（按 streaming_enabled 自动选流式）。
-        # 2026-10-31 真书实测：这个模型强制自适应思考，输出预算先被思考吃掉，
+        # 这个模型强制自适应思考，输出预算先被思考吃掉，
         # 非流式一旦截断就是"整段空内容"，看不出是截断还是模型没答。
         auto = getattr(client, "chat_auto", None)
         result = await (auto(messages) if callable(auto) else client.chat(messages))

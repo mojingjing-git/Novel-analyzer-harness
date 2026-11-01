@@ -24,7 +24,7 @@ DEFAULT_MAX_FORESHADOW_ENTRIES_IN_PROMPT = 5
 DEFAULT_BATCH_SUMMARY_MIN_WORDS = 2000  # 分卷摘要最低字数建议
 DEFAULT_FINAL_REPORT_MIN_WORDS = 5000  # 最终报告最低字数建议
 
-# 最终报告上下文预算保护（QUA-1）：卷摘要拼接总字符数超过阈值时做分层压缩
+# 最终报告上下文预算保护：卷摘要拼接总字符数超过阈值时做分层压缩
 DEFAULT_VOLUME_COMPRESS_THRESHOLD = 80000  # 卷摘要总字符数阈值（超过则触发压缩）
 DEFAULT_VOLUME_COMPRESS_GROUP = 5          # 每 N 卷为一组（首尾各 1 组保留全文，中间组截断到 1/2）
 
@@ -51,7 +51,7 @@ DEFAULT_SUMMARY_TIMEOUT = 600      # 最终总结 API 超时时间（秒）—�
 MAX_RETRIES = 5                    # 预留：APIConfig.max_retries 当前仅用于失败日志标注（record_failure 的 "尝试 n/m"），未接入重试循环；重试由 temperature_max_retries / backoff_max_retries 控制
 DEFAULT_TEMPERATURE = 0.1          # 默认温度（温度退火起始值）
 DEFAULT_TEMPERATURE_STEP = 0.05    # 温度退火每次降低量
-# 注：TEMPERATURE_SEQUENCE 已于 2026-08-07 移除（P1-9）——该字段从未被重试逻辑
+# 注：本模块不定义 TEMPERATURE_SEQUENCE——该字段从未被重试逻辑
 # 读取（温度退火实际使用 temperature_step 算术递减），属误导性死配置；
 # config.json 中残留的 temperature_sequence 键会被忽略并提示删除。
 
@@ -174,7 +174,7 @@ MAX_WORLD_BUILDING = 200        # world_building 最大条目
 MAX_VERIFIED_FACTS = 200        # verified_facts 最大条目
 MAX_LONG_TERM_ARCS = 200        # long_term_arcs 最大条目
 MAX_THEMATIC_ELEMENTS = 100     # thematic_elements 最大条目
-# i18n 接口预留（2026-09-02 L2）：仅作为 future i18n 的接口字段
+# i18n 接口预留：仅作为 future i18n 的接口字段
 # 当前不影响任何 UI 行为；未来 i18n 启用时此字段驱动 vue-i18n locale 选择
 DEFAULT_LANGUAGE = "zh-CN"
 # 注：未来启用语言切换 UI 时再补 SUPPORTED_LANGUAGES = ("zh-CN", "en")

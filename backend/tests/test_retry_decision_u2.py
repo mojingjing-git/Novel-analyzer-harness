@@ -1,10 +1,10 @@
-"""U2 验收：重试决策单点化（``_decide_retry``）与"文本通道永不判停"契约。
+"""重试决策单点化（``_decide_retry``）与"文本通道永不判停"契约。
 
 本文件锁住三件事：
 
 1. 文本通道（``classify_message``）给出的 AUTH/BILLING 只是 ``limited_retry``——
    不得成为永久熔断依据；只有结构化通道（``classify_exception``，异常对象还在场）
-   才允许 ``stop``。这是 ``ClassVerdict.is_permanent()`` 的语义（C-01）。
+   才允许 ``stop``。这是 ``ClassVerdict.is_permanent()`` 的语义。
 2. ``chat()`` / ``chat_stream()`` 在异常现场算出的结构化结论会传回重试循环，
    所以"结构化 401/402/400 首次即停"在端到端仍然成立，而不是被字符串化降级掉的死路径。
 3. 四处重复决断收敛成 ``LLMClient._decide_retry`` 之后，退避公式与失败登记口径逐相位不变
@@ -72,7 +72,7 @@ def test_text_channel_never_permanent(msg):
     assert verdict.confidence != "structured"
     assert verdict.is_permanent() is False
     assert verdict.action != "stop"
-    # 旧实现（RETRY_POLICY[cls] == "stop"）在这里会返回 "stop"——C-01 的漏判点
+    # 纯文本通道给出的 stop 判定不能来自 RETRY_POLICY[cls] == "stop"
     action, back = _error_action(msg, 0)
     assert action == "continue"
     assert back.is_permanent() is False
@@ -145,7 +145,7 @@ def test_decide_retry_backoff_passes_wait_time_through():
 def test_decide_retry_stop_appends_hint_only_for_non_auth():
     """stop 分支：非 AUTH 追加 _STOP_HINTS，AUTH 不追加（日志措辞不变）。
 
-    U5 起 ``_decide_retry`` 的 verdict 形参是"结果对象上的形态"（ErrorVerdict），
+    ``_decide_retry`` 的 verdict 形参是"结果对象上的形态"（ErrorVerdict），
     与 chat()/chat_stream() 写进 LLMResult / StreamChunk 的完全一致；故这里用
     _to_error_verdict 把异常现场的结构化结论转成同一形态再传入，而不是直接塞
     策略层的 ClassVerdict（那会在真实调用路径上出现类型错位）。
@@ -229,7 +229,7 @@ async def test_e2e_structured_billing_stops_first_attempt():
     assert not result.success
     assert result.call_stats["attempts"] == 1
     assert "余额不足" in result.error
-    # U4：结论随结果对象返回，不再只有字符串
+    # 结论随结果对象返回（含判定要素），而不是只有字符串
     assert result.verdict is not None
     assert result.verdict.confidence is Confidence.STRUCTURED
     assert result.verdict.action == "stop"
@@ -244,14 +244,14 @@ async def test_e2e_stream_structured_auth_stops_first_attempt():
     result = await client.chat_stream_with_retry([{"role": "user", "content": "x"}])
     assert not result.success
     assert result.call_stats["attempts"] == 1
-    # U5：流式失败结果同样带回完整判定（此前恒为 None，消费方拿不到）
+    # 流式失败结果同样带回完整判定（消费方可直接读取）
     assert result.verdict is not None
     assert result.verdict.confidence is Confidence.STRUCTURED
     assert result.verdict.action == "stop"
 
 
 async def test_stream_error_chunk_carries_full_verdict():
-    """§2.5：流式错误块自己携带完整契约（含 scope），不是只在终结结果上补齐。"""
+    """流式错误块自己携带完整契约（含 scope），不是只在终结结果上补齐。"""
     exc = _sdk_error("insufficient balance", 402,
                      {"error": {"type": "insufficient_balance_error"}})
     client = _client_with_mock_sdk(exc)

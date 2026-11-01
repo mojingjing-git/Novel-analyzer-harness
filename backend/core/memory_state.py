@@ -1,8 +1,8 @@
 """
 内存状态容器（asyncio 版）
 持有所有 AnalysisResult 和增量维护的 KnowledgeBase，避免重复磁盘IO
-（自旧项目 core/memory_state.py 移植：threading.Lock → asyncio.Lock，
- 涉锁方法改为 async；flush/restore 逻辑与磁盘格式零改动，block_size 续跑校验保留）
+（threading.Lock → asyncio.Lock，涉锁方法改为 async；
+flush/restore 逻辑与磁盘格式零改动，block_size 续跑校验保留）
 """
 
 import asyncio
@@ -55,7 +55,7 @@ class MemoryState:
     async def add_result(self, result: AnalysisResult) -> None:
         """存储结果并增量更新 KB（协程安全）
 
-        P2 收口：get_kb_snapshot 已线程池化，工作线程会并发深拷贝 results/kb。
+        get_kb_snapshot 在线程池中执行，工作线程会并发深拷贝 results/kb。
         插入与合并全程持 threading 锁与读侧互斥——merge 本身毫秒级，即便工作
         线程正持锁做 to_dict，事件循环最多等它做完（有界短暂），远好于偶发
         RuntimeError 导致静默丢块。锁序恒为 threading→asyncio，无死锁环。"""
@@ -68,7 +68,7 @@ class MemoryState:
             self._skipped_chapters.pop(result.chapter_number, None)
             async with self._kb_lock:
                 self._merge_one(result)
-                # 子集缓存失效策略（2026-08-07 优化）：仅当新结果的章号落在已缓存
+                # 子集缓存失效策略：仅当新结果的章号落在已缓存
                 # limit 区间内才失效（该结果无法被"按章号区间增量扩展"覆盖）；
                 # 区间外的新结果（正常顺序分析）可直接增量扩展，避免每块全量重建 KB。
                 if (self._snapshot_cache_limit is not None
@@ -84,7 +84,7 @@ class MemoryState:
         self._skipped_chapters[chapter_number] = reason
 
     def failed_chapters_in(self, valid_block_ids: set) -> List[int]:
-        """当前分析范围内的失败章号（P2 修复：restore 会加载历史场次的失败标记，
+        """当前分析范围内的失败章号（restore 会加载历史场次的失败标记，
         最终报告必须按本次 valid_block_ids 过滤，否则重跑小区间会误报旧场失败）。"""
         return [c for c in self._failed_chapters if c in valid_block_ids]
 
@@ -94,11 +94,11 @@ class MemoryState:
         chapter_limit 为 None 或 >= 最大章号时返回当前 KB 深拷贝，
         否则返回"仅包含章号 <= chapter_limit 结果"的子集 KB。
 
-        正确性约束（2026-08-07 修复）：子集缓存只允许在请求 limit 等于或大于
+        正确性约束：子集缓存只允许在请求 limit 等于或大于
         缓存 limit 时复用/扩展；绝不能用覆盖更大章号的缓存回答更小的 limit，
-        否则并发分析中低章号块会"读到未来章节知识"（原实现 bug，P0-1）。
+        否则并发分析中低章号块会"读到未来章节知识"。
 
-        P2 收口：整函数持 _snapshot_lock——to_thread 化后本方法在工作线程执行，
+        整函数持 _snapshot_lock——本方法经 to_thread 在工作线程执行，
         必须与 add_result 的写侧互斥，否则 to_dict 深遍历期间 results/kb 被
         并发修改会抛 "dictionary changed size during iteration"。"""
         with self._snapshot_lock:
@@ -141,9 +141,9 @@ class MemoryState:
     def _apply_rolling_to_snapshot(self, kb: KnowledgeBase) -> KnowledgeBase:
         """把滚动总结数据注入快照副本（只改传入副本，绝不写回 self.kb / 缓存对象）。
 
-        P1 修复（2026-08-24 审计）：此前 rolling_structured 只经 knowledge_base.
-        build_temp_knowledge 注入导出/预览路径，分析主链路 get_kb_snapshot 的
-        快照里恒为空 {} —— 后台 rolling 任务产出的主线概要对 prompt 零生效。
+        rolling_structured 由 knowledge_base.build_temp_knowledge 注入导出/预览路径，
+        分析主链路 get_kb_snapshot 的快照里恒为空 {} —— 后台 rolling 任务产出的
+        主线概要对 prompt 零生效。
         说明：dict.get 在 GIL 下原子，最坏读到略旧的一版 rolling，可接受；
         不取 _rolling_lock 是因为那是 asyncio.Lock，本方法为同步上下文。
         """
@@ -181,7 +181,7 @@ class MemoryState:
                         await asyncio.to_thread(failed_path.unlink)
                     except OSError:
                         pass
-                # 同理清理该章陈旧的 skipped 标记（P2：此前只清 failed）
+                # 同理清理该章陈旧的 skipped 标记
                 skipped_path = output_dir / f"chapter_{ch}_skipped.json"
                 if skipped_path.exists():
                     try:
@@ -210,7 +210,7 @@ class MemoryState:
                 logger.warning(f"落盘失败标记 {ch} 失败: {e}")
 
         # 写入 skipped 标记（审核拦截块）：持久化后重启续跑不再对同一批块
-        # 重新支付完整 LLM 重试链费用（P2 2026-08-24）
+        # 重新支付完整 LLM 重试链费用
         for ch, reason in list(self._skipped_chapters.items()):
             skipped_path = output_dir / f"chapter_{ch}_skipped.json"
             try:
@@ -227,10 +227,10 @@ class MemoryState:
     def _write_json_file(filepath: Path, data: dict) -> None:
         """原子写单个章节结果 JSON（先写临时文件再 rename 替换，供 to_thread 调用）。
 
-        H2a 修复：原实现 open('w') 先截断再写，进程在写入中途被杀（崩溃/强关/断电）会
-        留下半截/空的 chapter_N_result.json；恢复时 json.load 抛异常，该章被误判为损坏。
-        改用已导入的 safe_save_json（临时文件 + os.replace 原子替换），与 rolling/failed
-        标记的写法保持一致，写入中途崩溃最多丢失临时文件、不会污染正式结果文件。"""
+        用已导入的 safe_save_json（临时文件 + os.replace 原子替换），与 rolling/failed
+        标记的写法保持一致，写入中途崩溃最多丢失临时文件、不会污染正式结果文件。
+        （open('w') 先截断再写的话，进程在写入中途被杀（崩溃/强关/断电）会
+        留下半截/空的 chapter_N_result.json；恢复时 json.load 抛异常，该章被误判为损坏。）"""
         safe_save_json(data, filepath, ensure_ascii=False)
 
     async def restore_from_disk(self, output_dir: Path, block_size: Optional[int] = None) -> int:
@@ -329,7 +329,7 @@ class MemoryState:
         """增量合并一个结果到 self.kb（须在 _kb_lock 内调用）"""
         # 乱序保护：只有按章号推进（>= 当前最大）的合并才更新"进度类"字段，
         # 低章号迟到结果只合并非进度内容（事实/角色/世界等），
-        # 避免并发完成顺序不定时 timeline/摘要被旧章倒灌（MINOR-6）
+        # 避免并发完成顺序不定时 timeline/摘要被旧章倒灌
         in_order = result.chapter_number >= self._kb_last_chapter
         self._merge_result_into(
             result, self.kb,

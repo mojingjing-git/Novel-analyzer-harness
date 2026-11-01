@@ -1,11 +1,9 @@
 """
-测试 redact 工具（PR-1 修复，2026-09-10）
+测试 redact 工具
 
 覆盖：OpenAI sk-... / Anthropic sk-ant-... / Authorization Bearer / x-api-key header
 反向测试 3 个：短串不误伤 / 已脱敏不重复 / Retry-After 不误伤
 边界：空字符串 / 非字符串 / 多个 key 共存 / Unicode
-
-Refs: _plan_v3.md PR-1 步骤 5
 """
 import sys
 from pathlib import Path
@@ -78,7 +76,7 @@ class TestRedactNegative:
         result = redact(text)
         assert "sk-***" in result
         assert "sk-abcdefghij1234567890abcd" not in result
-        # 关键：原来的 "sk-***" 应保留（不是被改写成别的）
+        # 关键：已脱敏的 "sk-***" 应保留（不是被改写成别的）
         assert result.count("sk-***") == 1 or result.count("sk-***") >= 1
 
     def test_retry_after_not_redacted(self):

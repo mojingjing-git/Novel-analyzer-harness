@@ -313,7 +313,7 @@ def test_cutoff_is_exclusive_one_to_ten_take_five() -> None:
 def test_future_evidence_does_not_erase_past_view() -> None:
     """前缀不变性：追加第 12 章的出现记录，**不能**让同一个早期视图变空。
 
-    2026-10-30 复审推翻了原先的"整条排除"：过去的内容没有变，过去能查询到的视图就不该变。
+    追加记录不推翻先前结论：过去的内容没有变，过去能查询到的视图就不该变。
     截止点之后的记录不进视图，但它不抹掉实体在截止点之前的出现——属性按可见记录重算。
     """
     before = _view([_occ(E1, 3), _occ(E2, 2)], cutoff_ordinal=11)

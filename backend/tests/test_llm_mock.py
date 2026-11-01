@@ -14,14 +14,14 @@ from backend.core.llm_client import LLMClient
 
 
 def ok_result(content="", tokens=(10, 20)):
-    """构造成功结果（U4：非流式调用返回 LLMResult 对象，不再是元组）"""
+    """构造成功结果（非流式调用返回 LLMResult 对象，不是元组）"""
     return LLMResult(True, content, "", tokens, UsageStatus.KNOWN)
 
 
 def fail_result(error, tokens=None):
     """构造失败结果。
 
-    U4 契约：拿不到 usage 时 tokens 必须是 None + usage_status=UNKNOWN，
+    契约：拿不到 usage 时 tokens 必须是 None + usage_status=UNKNOWN，
     不允许再写 (0, 0)——(0,0) 是"真的用了 0 token"，会把成本统计搅浑。
     """
     usage = UsageStatus.KNOWN if tokens is not None else UsageStatus.UNKNOWN
@@ -88,9 +88,8 @@ async def test_temperature_annealing():
 
 
 async def test_text_auth_error_no_longer_stops():
-    """旧契约改写（U2 / C-01）：纯文本形态的 AUTH 不再永久熔断
+    """纯文本形态的 AUTH 不永久熔断
 
-    旧断言 client.chat.call_count == 1 依赖"文本通道也能 stop"——那正是 C-01 要止血的漏判：
     真实 401 一旦被 chat() 字符串化成"认证失败，请检查API Key"，重试循环就只剩文本通道可用，
     而 classify_message 的置信永远是 text、action 上限 limited_retry。现在文本 AUTH 走完
     温度退火 + 指数退避全链（3+2=5 次），只登记 RetryNeeded，不判 fatal。
@@ -151,7 +150,7 @@ async def test_chat_cancelled_by_stop():
     result = await asyncio.wait_for(chat_task, timeout=2)
     assert not result.success
     assert "停止" in result.error
-    # 旧的 assert tokens == (0, 0) 已改写：没拿到 usage 就是 None + UNKNOWN
+    # 没拿到 usage 时 tokens 为 None + UNKNOWN
     assert result.tokens is None
     assert result.usage_status is UsageStatus.UNKNOWN
     print("✅ test_chat_cancelled_by_stop passed")

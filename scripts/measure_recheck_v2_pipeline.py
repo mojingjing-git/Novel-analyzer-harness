@@ -133,6 +133,15 @@ async def main() -> int:
         import pytest_isolation
 
         pytest_isolation.sanitize_proxy_env()
+        # sanitize 只把 `[::1]` 规范化成 `::1`，但 httpx 解析 `::1` 仍会抛
+        # `Invalid port ':1]'`；这些脚本都打本机网关，直接把代理变量清空最省事。
+        import os
+
+        for key in list(os.environ):
+            if "proxy" in key.lower():
+                os.environ.pop(key, None)
+        os.environ["NO_PROXY"] = "localhost,127.0.0.1"
+        os.environ["no_proxy"] = "localhost,127.0.0.1"
     except Exception as exc:
         print(f"代理净化跳过：{exc}", file=sys.stderr)
 

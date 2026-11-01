@@ -1,4 +1,4 @@
-"""P2：网关以 OpenAI 协议暴露 claude-* 时，预检应探测出正确协议并就地纠正"""
+"""网关以 OpenAI 协议暴露 claude-* 时，预检应探测出正确协议并就地纠正"""
 import asyncio
 import sys
 from pathlib import Path
@@ -67,8 +67,8 @@ def test_both_protocols_fail_returns_false(monkeypatch):
 
 
 def test_models_ok_with_claude_prefix_heals_to_openai(monkeypatch):
-    """终审 M1：/models 可用的聚合网关（OpenAI 面）+ claude-* 模型
-    ——此前 models 早退绕过纠正，整书仍会 404"""
+    """/models 可用的聚合网关（OpenAI 面）+ claude-* 模型
+    ——models 早退绕过纠正时，整书仍会 404"""
     async def fake_list_models(base_url, api_key, provider):
         # auto 解析走 OpenAI /models 分支：成功
         return ["claude-3-5-sonnet"]
@@ -96,7 +96,7 @@ def test_non_claude_model_not_touched(monkeypatch):
 
 
 def test_official_anthropic_direct_not_healed(monkeypatch):
-    """复审 Critical：官方 Anthropic 直连（auto + anthropic URL）不得被改写为 openai"""
+    """官方 Anthropic 直连（auto + anthropic URL）不得被改写为 openai"""
     async def fake_list_models(base_url, api_key, provider):
         return ["claude-3-5-sonnet"]   # Anthropic 面 /models 成功
     monkeypatch.setattr(
@@ -110,7 +110,7 @@ def test_official_anthropic_direct_not_healed(monkeypatch):
 
 
 def test_heal_persists_via_config_manager(monkeypatch, tmp_path):
-    """复审 Important：纠正值必须写入 config_manager 并落盘，
+    """纠正值必须写入 config_manager 并落盘，
     否则总结链路 config_manager.load() 重读磁盘后丢失"""
     saved = {}
     class FakeCM:

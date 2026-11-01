@@ -119,7 +119,7 @@ def build_coverage(
             slots.append(BlockSlot(index=index, block_signature=plan.block_signature))
         elif given.block_signature != plan.block_signature:
             # 签名不符 = 这份完成状态属于**另一个块**（源改过、块边界变了）。
-            # 2026-10-30 复审：原实现把签名"纠正"成新的却保留 DONE 与 result_id，
+            # 签名不能"纠正"成新的却保留 DONE 与 result_id，
             # 等于把旧块的结果挂在新块下面，还宣称前缀完整。
             # 正确处置是降为未完成，并留下原因，交给上层决定重跑还是重建。
             slots.append(

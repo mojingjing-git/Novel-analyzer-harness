@@ -22,7 +22,7 @@ def test_key_missing_opening_quote():
 
 
 def test_value_missing_opening_quote_ideographic_comma():
-    """值漏开引号且以、开头：ast 曾报 invalid character '、'(U+3001)"""
+    """值漏开引号且以、开头：ast 会报 invalid character '、'(U+3001)"""
     broken = '{"a":1,"b":、伏笔线索"}'
     data, detail = parse_json_robust(broken)
     assert data is not None
@@ -31,7 +31,7 @@ def test_value_missing_opening_quote_ideographic_comma():
 
 
 def test_value_missing_opening_quote_fullwidth_paren():
-    """值漏开引号且以（开头：ast 曾报 invalid character '（'(U+FF08)"""
+    """值漏开引号且以（开头：ast 会报 invalid character '（'(U+FF08)"""
     broken = '{"a":1,"b":（重要内容）"}'
     data, detail = parse_json_robust(broken)
     assert data is not None
@@ -62,13 +62,13 @@ def test_empty_text_detail():
 
 
 def test_python_dict_style_still_works():
-    """原有 json5/ast 兼容能力不回退：单引号 Python 字典格式"""
+    """json5/ast 兼容能力不回退：单引号 Python 字典格式"""
     data, detail = parse_json_robust("{'a': 'x', 'b': 1}")
     assert data is not None
     assert data["a"] == "x"
 
 
-# === 2026-08-22 增补：全角标点状态机归一 ===
+# === 全角标点状态机归一 ===
 
 
 class TestNormalizeFullwidth:
@@ -155,10 +155,10 @@ class TestNormalizeFullwidth:
 
 
 class TestParseJsonRobustWithFullwidth:
-    """parse_json_robust 现在能直接处理全角标点（策略0 归一化后，策略1 json.loads 成功）"""
+    """parse_json_robust 直接处理全角标点（策略0 归一化后，策略1 json.loads 成功）"""
 
     def test_fullwidth_comma_json_parses_directly(self):
-        # 之前要等 json_repair 才能恢复，现在策略0 + 策略1 直接通过
+        # 策略0 + 策略1 直接通过，无需 json_repair 兜底
         text = '{"canonical_name": "宁安县"，"type": "县城"}'
         data, detail = parse_json_robust(text)
         assert data is not None
@@ -182,7 +182,7 @@ class TestParseJsonRobustWithFullwidth:
         assert data["event"] == "太子跳下凡间，袖子被云挂了一下"
 
     def test_real_llm_output_pattern(self):
-        # 模拟 minimaxi/M2.7 实际 LLM 输出（之前会卡 ast.literal_eval）
+        # 模拟 minimaxi/M2.7 实际 LLM 输出（否则会卡 ast.literal_eval）
         text = (
             "{\n"
             '  "locations": [\n'
@@ -204,23 +204,23 @@ class TestParseJsonRobustWithFullwidth:
         assert data["locations"][0]["description"] == "谢怜故国"
 
 
-# === P2 增补：全策略 dict 守卫 + safe_save_json 唯一 tmp 名 ===
+# === 全策略 dict 守卫 + safe_save_json 唯一 tmp 名 ===
 
 
 def test_parse_robust_never_returns_non_dict():
-    """P2：契约是仅返回 dict——顶层数组/字符串必须判失败而不是带病返回"""
+    """契约是仅返回 dict——顶层数组/字符串必须判失败而不是带病返回"""
     for bad in ('[1,2,3]', '"hello"', "['a','b']", 'null', '123'):
         result, err = parse_json_robust(bad)
         assert result is None, f"{bad!r} 不应返回 {result!r}"
 
 def test_strategy8_single_quoted_array_rejected():
-    """策略8 此前把单引号数组修复成功后当 dict 返回"""
+    """单引号数组不得被修复成功后当 dict 返回"""
     result, _ = parse_json_robust("['a','b']")
     assert result is None
 
 
 def test_safe_save_json_unique_tmp_concurrent(tmp_path):
-    """P2：固定 .tmp 名并发写同一目标会交错/PermissionError；唯一名下应全部成功"""
+    """固定 .tmp 名并发写同一目标会交错/PermissionError；唯一名下应全部成功"""
     import threading
     from backend.utils.json_utils import safe_save_json
     target = tmp_path / "t.json"

@@ -1,9 +1,6 @@
 """
 最终总结服务（asyncio 版）
 分批调用 LLM 对分析结果进行全书脉络总结，集成伏笔账本管理。
-（从旧项目 workers/final_summary_worker.py 移植：QThread→async 类，
- Qt 信号→on_progress/on_token_stats 回调，ThreadPoolExecutor→asyncio.Semaphore+Task，
- threading.Lock→asyncio.Lock；prompt 与账本逻辑逐字保持不变）
 """
 
 import json
@@ -254,7 +251,7 @@ GLOBAL_RECHECK_USER_TEMPLATE = """以下是《{book_name}》的全书各卷摘�
 # ==================== 辅助函数 ====================
 
 # 常见的非书名文本（metadata 推断错误时会抓到这些）
-# 2026-09-04：从 detect_book_name 闭包提为模块级，供 fix_metadata_titles.py 等外部脚本 import
+# 供 backend/scripts/fix_metadata_titles.py 等外部脚本 import
 _NON_TITLE_PREFIXES = (
     "内容简介", "作品简介", "小说简介", "简介", "作者", "目录", "楔子",
     "序章", "前言", "序言", "卷首语", "第一章", "第1章", "第 1 章",
@@ -263,7 +260,7 @@ _NON_TITLE_PREFIXES = (
 
 
 def _clean_book_name(name: str) -> str:
-    """剥离书名号 / 尾部括号备注（2026-09-04 从 detect_book_name 闭包提为模块级）"""
+    """剥离书名号 / 尾部括号备注"""
     name = name.strip()
     # 先去掉尾部括号备注，如 "（精校版全本）"
     name = re.sub(r"\s*[（(].*?[）)]\s*$", "", name)
@@ -274,7 +271,7 @@ def _clean_book_name(name: str) -> str:
 
 
 def _looks_valid_book_name(title: str) -> bool:
-    """判断 title 是否像合法书名（2026-09-04 加 2 段兜底过滤）"""
+    """判断 title 是否像合法书名"""
     if not title or len(title) < 2 or len(title) > 60:
         return False
     # 如果 title 主要由等号/横线/星号/下划线/空格/竖线组成，视为无效
@@ -286,11 +283,11 @@ def _looks_valid_book_name(title: str) -> bool:
     t = title.strip()
     if any(t.startswith(p) or t == p for p in _NON_TITLE_PREFIXES):
         return False
-    # 新增（修法兜底 #1，2026-09-04）：含中文句末标点视为正文句子
+    # 含中文句末标点视为正文句子
     # 真实案例：《轮回乐园》splitter 把 "夜晚时分，一座繁华中透露着浮躁的二线城市。" 当书名
     if any(p in t for p in ("。", "？", "！")):
         return False
-    # 新增（修法兜底 #2，2026-09-04）：含 "作者" / "著" 视为 splitter 误把作者信息拼入
+    # 含 "作者" / "著" 视为 splitter 误把作者信息拼入
     # 真实案例：《进化的46亿重奏》title = "进化的四十六亿重奏 作者：相位行者"（含"作者"但不含句末标点）
     # _NON_TITLE_PREFIXES 只检查 t.startswith("作者")，这条是 t="进化的..."，不命中
     if "作者" in t or "著" in t:
@@ -305,9 +302,6 @@ def detect_book_name(output_dir: Path) -> Optional[str]:
     2. 其次使用 blocks 所在目录名（书目目录名），去掉《》和括号备注。
     3. 不再扫描 blocks 内 .txt 文件名，避免 split_report.txt 等报告文件被误判为书名。
 
-    2026-09-04：把 _clean / _looks_valid 闭包提到模块级（_clean_book_name /
-    _looks_valid_book_name），并在 _looks_valid_book_name 加 2 段兜底过滤
-    （含中文句末标点 / "作者"/"著" 视为正文句子，自动 fallback 到目录名）。
     """
     blocks_dir = output_dir.parent / "blocks"
     if not blocks_dir.exists():
@@ -566,7 +560,7 @@ class FinalSummaryRunner:
         self._stop_requested = True
         self._llm.request_stop()
         # 风格链路在 style_analyzer.call_llm_semantic 里自建独立 LLMClient，
-        # request_stop() 传不过去；只能 cancel 承载它的任务（P1 2026-08-24）
+        # request_stop() 传不过去；只能 cancel 承载它的任务
         t = self._style_task
         if t is not None and not t.done():
             t.cancel()
@@ -615,7 +609,7 @@ class FinalSummaryRunner:
         self._llm_sem.release()
 
     async def _call_llm_summary(self, prompt: str, batch_idx: int = 0) -> Optional[str]:
-        """第一次调用：产出 Markdown 卷摘要（H16 Phase 3 改 chat_auto + on_progress broadcast）"""
+        """第一次调用：产出 Markdown 卷摘要（chat_auto + on_progress broadcast）"""
         messages = [
             {"role": "system", "content": BATCH_SYSTEM_PROMPT},
             {"role": "user", "content": prompt}
@@ -636,7 +630,7 @@ class FinalSummaryRunner:
         return None
 
     async def _call_llm_final(self, prompt: str, batch_idx: int = 0) -> Optional[str]:
-        """最终报告调用（H16 Phase 3 改 chat_auto + on_progress broadcast）"""
+        """最终报告调用（chat_auto + on_progress broadcast）"""
         messages = [
             {"role": "system", "content": FINAL_SYSTEM_PROMPT},
             {"role": "user", "content": prompt}
@@ -657,7 +651,7 @@ class FinalSummaryRunner:
         return None
 
     async def _call_llm_reconciliation(self, prompt: str, batch_idx: int = 0) -> Optional[dict]:
-        """第二次调用（H16 Phase 3 改 chat_auto + on_progress broadcast）"""
+        """第二次调用（chat_auto + on_progress broadcast）"""
         messages = [
             {"role": "system", "content": RECONCILIATION_SYSTEM_PROMPT},
             {"role": "user", "content": prompt}
@@ -680,7 +674,7 @@ class FinalSummaryRunner:
         return extract_foreshadow_json(llm_result.content)
 
     async def _call_llm_global_recheck(self, prompt: str, batch_idx: int = 0) -> Optional[dict]:
-        """全书复检调用（H16 Phase 3 改 chat_auto + on_progress broadcast）"""
+        """全书复检调用（chat_auto + on_progress broadcast）"""
         messages = [
             {"role": "system", "content": GLOBAL_RECHECK_SYSTEM_PROMPT},
             {"role": "user", "content": prompt}
@@ -792,12 +786,12 @@ class FinalSummaryRunner:
         从逐章分析结果的 foreshadowing 字段构建伏笔总表。
 
         流程：
-        1. 收集所有 unique type + 5 元组线索 (ch, clue, type, conf, importance)
+        1. 收集所有 unique type + 线索元组（ch, clue, type, conf, importance, 锚点引文, 锚点章, 母题词, 伏笔问题, 回收标准）
         2. 解析 category：type 已是 50 类之一则直接用；否则查 per-book 映射文件兜底
            （旧书在 prompt 约束落地前产出的自由式 type，靠映射文件归一；新书源头已约束）
         3. 过滤：importance >= min_importance AND confidence >= min_confidence AND category ∈ kept_categories
-        4. 去重（text_utils.deduplicate_foreshadows，6 元组）
-        5. 综合排序：importance * 100 + confidence * 10 + evidence_count
+        4. 去重（text_utils.deduplicate_foreshadows，按 (ch, clue, type, confidence, importance) 解析并透传 importance）
+        5. 综合排序：importance * 100 + confidence * 10 + evidence_count(≤50) + span(≤49)
         6. 分层截断：importance=高 取到 max_high 上限，中 取到 max_mid 上限
         """
         a = self.config.analysis
@@ -840,7 +834,10 @@ class FinalSummaryRunner:
         skipped_importance = 0
         skipped_confidence = 0
         skipped_category = 0
-        for ch, clue, ftype, conf, imp in all_clues:
+        # 第 6..10 位是锚点与三问字段（anchor_quote / anchor_chapter / motif_key /
+        # question / answer_criteria）。用 *extra 接住，绝不写成固定 5 位解包：
+        # 那样只要书里有伏笔就抛 ValueError，整个总结阶段直接崩。
+        for ch, clue, ftype, conf, imp, *extra in all_clues:
             # importance 阈值
             if not self._imp_at_least(imp, a.foreshadow_min_importance):
                 skipped_importance += 1
@@ -857,7 +854,9 @@ class FinalSummaryRunner:
             if category not in set(a.foreshadow_kept_categories):
                 skipped_category += 1
                 continue
-            categorized.append((ch, clue, ftype, conf, imp, category))
+            # 第 6..10 位原样透传：deduplicate_foreshadows 从 item[5:10] 读锚点与三问，
+            # 把 category 塞在第 6 位会被它当成 anchor_quote（旧版本的静默错位）。
+            categorized.append((ch, clue, ftype, conf, imp, *extra))
 
         logger.info(
             f"伏笔过滤：原 {len(all_clues)} 条 → "
@@ -865,7 +864,7 @@ class FinalSummaryRunner:
             f"confidence 丢 {skipped_confidence}, category 丢 {skipped_category}）"
         )
 
-        # 去重（5 元组 + importance 透传）
+        # 去重（按 ch/clue/type/confidence/importance 解析，透传 importance）
         catalog = deduplicate_foreshadows(categorized)
 
         # 综合排序：importance * 100 + confidence * 10 + evidence_count(≤50) + span(≤49)
@@ -961,7 +960,7 @@ class FinalSummaryRunner:
     def _build_active_foreshadows_block(self, ch_start: int, ch_end: int, foreshadow_catalog: list = None) -> str:
         """构建【当前伏笔清单】文本块，使用伏笔总表的原始 clue"""
         if foreshadow_catalog:
-            # 从伏笔总表取截至本批的条目；P1-7：仅保留账本中仍为 active 的条目——
+            # 从伏笔总表取截至本批的条目；仅保留账本中仍为 active 的条目——
             # 已回收伏笔不再进入后续批次的 reconciliation，避免反复重审（token 浪费）
             # 与"翻案"式状态抖动。
             ledger_map = {i.id: i for i in self.ledger.items}
@@ -1077,8 +1076,8 @@ class FinalSummaryRunner:
 
         return "\n".join(parts)
 
-    # 最终报告上下文预算保护（QUA-1）
-    # 阈值与组大小改为读取 self.config.analysis.volume_compress_threshold / volume_compress_group（用户在设置中可调）
+    # 最终报告上下文预算保护
+    # 阈值与组大小读取 self.config.analysis.volume_compress_threshold / volume_compress_group（用户在设置中可调）
 
     def _compress_volume_summaries(self, volume_summaries: List[str]) -> str:
         """
@@ -1106,12 +1105,13 @@ class FinalSummaryRunner:
                 parts.append("\n\n".join(trimmed))
         return "\n\n".join(parts)
 
-    # ==================== 卷摘要断点续跑（2026-08-07） ====================
+    # ==================== 卷摘要断点续跑 ====================
     # checkpoint 目录：{output_dir}/final_summary_checkpoint/
     #   volume_{idx}.md    批次卷摘要（一完成即写，不等 reconciliation）
     #   recon_{idx}.json   批次 reconciliation 结果（完成后写；失败不写→下次补）
-    #   manifest.json      批次元数据（batch_size + start/end 校验用）
-    # 恢复规则：batch_size 或批次 ch 范围与当前不一致时视为无效，忽略旧断点。
+    #   manifest.json      批次元数据（batch_size + results_fingerprint + 各批 start/end）
+    # 恢复规则：manifest 损坏 / batch_size 变化 / 章节数据指纹变化 → 清空断点目录重新生成；
+    # 单批次 ch 范围与当前不一致 → 只跳过该批次。
 
     @property
     def _checkpoint_dir(self) -> Path:
@@ -1152,9 +1152,8 @@ class FinalSummaryRunner:
         vf = cp / f"volume_{idx}.md"
         rf = cp / f"recon_{idx}.json"
         async with self._checkpoint_lock:
-            # 本次新生成的内容无条件覆盖残留文件（原 not vf.exists() 守卫曾让
-            # batch_size 变化后新摘要写不进盘，manifest 却登记旧分卷方案的旧内容，
-            # 过期卷摘要静默毒化最终报告——P1 2026-08-24）。
+            # 本次新生成的内容无条件覆盖残留文件，避免 manifest 登记到过期的
+            # 卷摘要后静默毒化最终报告。
             # 恢复场景安全：已恢复批次不会重新生成，不会走到这里覆写。
             if summary_text is not None:
                 await asyncio.to_thread(vf.write_text, summary_text, encoding="utf-8")
@@ -1316,7 +1315,7 @@ class FinalSummaryRunner:
     def _apply_reconciliation(self, batch_idx: int, ch_start: int, ch_end: int, foreshadow_data: Optional[dict]) -> None:
         """应用 LLM 的 reconciliation 结果到账本。
 
-        P0-2：休眠判定不在此处执行——批次并发完成导致 last_seen_batch 非单调，
+        休眠判定不在此处执行——批次并发完成导致 last_seen_batch 非单调，
         即时判定结果随完成顺序漂移；统一由 run() 在全部批次完成后按 batch_idx
         升序、以各批真实 ch_end 为"当前进度"执行 reconcile_and_update。
         """
@@ -1347,9 +1346,8 @@ class FinalSummaryRunner:
                         existing.needs_review = True
                         existing.notes.append(f"回收置信度={confidence}，建议人工复核（批次{batch_idx}）")
                     logger.info(f"LLM标记伏笔回收: {foreshadow_id} (第{existing.resolved_chapter}章)")
-            # BUG-A 修复（2026-08-13）：未回收分支不再推进 last_seen_chapter/batch。
-            # 旧实现把"本批未标记回收"当成"本批出现过"，无条件把 last_seen 推到批末 ch_end，
-            # 导致休眠判定的章距条件永远 ≈0，休眠机制形同虚设（《奥术神座》0 休眠实锤）。
+            # 未回收分支不推进 last_seen_chapter/batch：把"本批未标记回收"当成
+            # "本批出现过"会让休眠判定的章距条件永远 ≈0，休眠机制形同虚设。
             # last_seen 语义 = 伏笔最后出现的真实章节，只由 catalog 证据章维护；
             # "本批未回收"只说明伏笔存活，不说明它出现了。
 
@@ -1357,7 +1355,7 @@ class FinalSummaryRunner:
                               volume_summaries: List[str],
                               volume_ranges: List[Tuple[int, int]] = None) -> List[Tuple[list, str]]:
         """规划复检上下文：返回 [(伏笔子集, 该子集使用的卷摘要文本)]。
-        未超预算 → [(全部, 全文)]（2026-08-07 决策的原行为，KV cache 友好）；
+        未超预算 → [(全部, 全文)]（KV cache 友好）；
         超预算 → 按 first_seen 升序切 ≤3 个连续组，每组砍掉"ch_end < 组内最早埋设章"的卷
         （召回无损：回收必发生在埋设之后）；砍后仍超预算的组丢弃并记 error，不调用 LLM。"""
         budget = RECHECK_FULLTEXT_BUDGET_CHARS
@@ -1416,8 +1414,8 @@ class FinalSummaryRunner:
     def _collect_book_text(self) -> str:
         """全文：复检的证据必须是**原文**。
 
-        旧实现拿"卷摘要拼接"当全文——那是模型写的概括，拿它去核对"引文是否逐字存在"
-        永远核不出问题，等于没有证据。这里读 blocks 下的章节正文。
+        读 blocks 下的章节正文，而不是模型写的卷摘要概括——用概括去核对
+        "引文是否逐字存在"永远核不出问题，等于没有证据。
         """
         blocks_dir = self.output_dir.parent / "blocks"
         if not blocks_dir.is_dir() and self.config.working_directory:
@@ -1434,7 +1432,7 @@ class FinalSummaryRunner:
         return "\n\n".join(parts)
 
     async def _run_recheck_v2(self, results: List[dict]) -> None:
-        """阶段 2（V2）：带证据的复检。"""
+        """阶段 2：带证据的复检。"""
         from backend.services.recheck_v2 import run_recheck_v2
 
         chapters = self._collect_chapters()
@@ -1509,9 +1507,9 @@ class FinalSummaryRunner:
         recheck_batch_size = max(1, int(self.config.analysis.foreshadow_recheck_batch_size or 40))
         total_rechecked = 0
 
-        # 复检上下文策略（2026-08-07 用户决策）：默认维持原逻辑——每个子批携带
-        # 全量卷摘要，不做任何裁剪（KV cache 厂商只有第一份全文付全价）。
-        # 2026-08-17 补充：仅当全量卷摘要超 RECHECK_FULLTEXT_BUDGET_CHARS 时，
+        # 复检上下文策略：默认让每个子批携带全量卷摘要，不做任何裁剪
+        # （KV cache 厂商只有第一份全文付全价）。
+        # 仅当全量卷摘要超 RECHECK_FULLTEXT_BUDGET_CHARS 时，
         # 由 _plan_recheck_batches 按埋设章砍"埋设前的卷"（召回无损）或整组跳过，
         # 防止超模型上下文走完整重试链烧钱。
 
@@ -1532,11 +1530,9 @@ class FinalSummaryRunner:
                 )
                 recheck_batches.append((batch_items, recheck_prompt))
 
-        # H17 P3 V2 修复（2026-08-26）：phase 事件后移到 recheck_batches 构造后，
-        # 补 total_batches 字段。修复前 phase 事件在 batches 之前就发了，
-        # 前端 LaneView 兼容层 applySummaryProgress 看到 totalBatches=0 直接跳过
-        # recheck 合成，910001-910999 id 范围是死代码 → 阶段 2/4 全书伏笔复检
-        # （可能跑很久）时 LaneView 全空。
+        # phase 事件必须等 recheck_batches 构造完成后再发，并带上 total_batches 字段，
+        # 否则前端 LaneView 兼容层 applySummaryProgress 看到 totalBatches=0 会跳过
+        # recheck 合成，阶段 2/4 全书伏笔复检（可能跑很久）时 LaneView 全空。
         self._emit_progress({
             "type": "phase", "phase": "recheck", "phase_label": "全书伏笔复检",
             "total_batches": len(recheck_batches),
@@ -1586,7 +1582,7 @@ class FinalSummaryRunner:
             try:
                 batch_resolved = await coro
                 total_rechecked += batch_resolved
-                # 阶段2 续跑（2026-08-09）：每完成一批立即落盘 ledger。
+                # 每完成一批立即落盘 ledger。
                 # 崩溃/停止后重启时 recheck_items 只取 active 伏笔，
                 # 已回收的自动排除 → 只对剩余伏笔重新复检，不再重复付费。
                 if batch_resolved > 0:
@@ -1603,8 +1599,7 @@ class FinalSummaryRunner:
         """执行完整总结流程。返回最终报告文本；用户停止返回 None；失败抛 RuntimeError"""
         t_start = time.time()
 
-        # Phase 0 归一化已独立为独立功能，不再作为总结的强制前置条件
-        # 归一化结果仅用于地图可视化 & Phase 0b 空间归一化，不影响最终总结生成
+        # 归一化是独立功能，产物仅用于地图可视化与空间归一化，不参与最终总结生成
         output_subdir = self.output_dir / "output"
         if not output_subdir.is_dir():
             output_subdir = self.output_dir
@@ -1615,8 +1610,8 @@ class FinalSummaryRunner:
             raise RuntimeError("未找到有效的章节分析结果")
         total_chapters = len(results)
         total_batches = (total_chapters + self.batch_size - 1) // self.batch_size
-        # 账本总章数用真实末章号（BUG-C：旧实现存的是块数 len(results)，
-        # 块大小>1 时 total_chapters 与"章"的语义错位，休眠/审计分母失真）
+        # 账本总章数用真实末章号：用块数 len(results) 会让块大小>1 时
+        # total_chapters 与"章"的语义错位，休眠/审计分母失真
         self.ledger.total_chapters = results[-1]['ch'] if results else 0
         self.ledger.batch_size_snapshot = self.batch_size
         logger.info(f"加载{total_chapters}块，分为{total_batches}批，每批{self.batch_size}章")
@@ -1685,8 +1680,8 @@ class FinalSummaryRunner:
         async def process_batch_collect(idx: int, ch_start: int, ch_end: int, prompt: str):
             """并发采集：卷摘要 + reconciliation（断点恢复的批次跳过对应 LLM 调用）
 
-            2026-08-23：去掉外层局部 Sem，改为全局 self._llm_sem（由 _call_llm_* 内部 acquire/release）。
-            这样 summary 与 reconciliation 两次 LLM 调用各自独立占槽，
+            使用全局 self._llm_sem（由 _call_llm_* 内部 acquire/release），
+            summary 与 reconciliation 两次 LLM 调用各自独立占槽：
             - checkpoint 落盘 IO 不再抱死 Sem 槽
             - 任意时刻总在飞 LLM 数 ≤ self.concurrency（与阶段 2/3/4 共享同一上限）
             """
@@ -1741,10 +1736,10 @@ class FinalSummaryRunner:
         style_task = asyncio.create_task(self._run_style_extraction())
         self._style_task = style_task
 
-        # P2 收口（2026-08-24）：消费循环到风格结果回收之间任何异常（"所有批次
-        # 均失败"的 RuntimeError、复检抛错等）都不再遗留孤儿 style_task 继续
-        # 烧 token。正常路径 finally 时任务已被 await（done=True），cancel 为
-        # no-op；下方两条停止路径的显式回收保留（幂等双保险）。
+        # 消费循环到风格结果回收之间任何异常（"所有批次均失败"的 RuntimeError、
+        # 复检抛错等）都不能遗留孤儿 style_task 继续烧 token。正常路径 finally 时
+        # 任务已被 await（done=True），cancel 为 no-op；
+        # 下方两条停止路径的显式回收保留（幂等双保险）。
         try:
             for coro in asyncio.as_completed(tasks):
                 try:
@@ -1798,9 +1793,9 @@ class FinalSummaryRunner:
                 self._emit_progress({"type": "status", "message": "已停止"})
                 return None
 
-            # 休眠判定统一收尾（BUG-D 修复：必须在复检之后执行——复检只审 active 伏笔，
-            # 若先休眠，本可被复检回收的伏笔会被冻结成 dormant 绕过复检，造成
-            # "已回收但标签未更新"（《奥术神座》报告第一类 ~60 条）。）
+            # 休眠判定统一收尾，必须在复检之后执行——复检只审 active 伏笔，
+            # 若先休眠，本可被复检回收的伏笔会被冻结成 dormant 绕过复检，
+            # 造成"已回收但标签未更新"。
             # 按批次升序、以各批真实 ch_end 为"当前进度"执行 reconcile，保证休眠名单确定。
             if not self._stop_requested:
                 for idx, _ch_start, ch_end, _prompt in sorted(batch_tasks, key=lambda t: t[0]):
@@ -1855,7 +1850,7 @@ class FinalSummaryRunner:
         await asyncio.to_thread(audit_path.write_text, audit_text, encoding='utf-8')
 
         elapsed = time.time() - t_start
-        # 2026-08-23：4 阶段 + 风格共用 self._llm_sem，记录 peak in-flight 便于验证未超 API 上限
+        # 4 阶段 + 风格共用 self._llm_sem，记录 peak in-flight 便于验证未超 API 上限
         logger.info(f"final_summary 完成：peak in-flight = {self._peak_inflight} / concurrency = {self.concurrency}")
         if self._peak_inflight > self.concurrency:
             logger.error(f"BUG：peak in-flight {self._peak_inflight} 超 concurrency {self.concurrency}！")

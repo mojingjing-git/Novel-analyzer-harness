@@ -1,4 +1,4 @@
-"""vnext 项目：建项目 / 读项目 / 清单提交（PLAN v2 §4 S2-2、S2-3、S2-4）。"""
+"""vnext 项目：建项目 / 读项目 / 清单提交。"""
 
 from __future__ import annotations
 

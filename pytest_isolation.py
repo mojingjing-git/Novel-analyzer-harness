@@ -1,4 +1,4 @@
-"""pytest 运行根隔离原语（第三批清理 Step0/R0，2026-10-14）
+"""pytest 运行根隔离原语（会话级隔离根 + 代理环境净化）
 
 为什么单独成模块：rootdir 下有两个 ``conftest.py``（仓库根与 ``tests/``），
 ``import conftest`` 会随收集范围不同而解析到不同模块对象，测试无法稳定访问隔离原语。
@@ -34,13 +34,13 @@ from pathlib import Path
 SECRET_ENV_KEYS = ("LLM_API_KEY", "MINIMAX_API_KEY", "NOVEL_ANALYZER_SESSION_TOKEN")
 SYNTHETIC_MODEL = "test-model"
 
-# vnext 数据空间标识（S2）。这里刻意写成字面量而不是 import backend.*：
+# vnext 数据空间标识。这里刻意写成字面量而不是 import backend.*：
 # 本模块必须在任何 backend.* import 之前运行，且底层 docstring 已说明原因。
 # 与 backend/vnext/constants.py 的一致性由 backend/tests/test_vnext_constants_alignment.py 断言。
 VNEXT_FORMAT_ID = "novel-analyzer-vnext"
 VNEXT_SCHEMA_VERSION = 1
 
-# S0（PLAN v2 §S0-4、REPORT-review C-17）：代理环境净化。
+# 代理环境净化。
 # 不删除可用代理，只把「本进程内会让 httpx 构造期抛异常」的写法改成等价可解析写法。
 PROXY_ENV_KEYS = (
     "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
@@ -126,7 +126,7 @@ def _proxy_url_is_parseable(value: str) -> bool:
 def sanitize_proxy_env() -> dict[str, str]:
     """在测试进程内修正会让 HTTP 客户端构造期抛异常的代理写法。
 
-    只改本进程 ``os.environ``，不触碰宿主全局环境（PLAN v2 §S0-4、§1.3）。
+    只改本进程 ``os.environ``，不触碰宿主全局环境。
     可解析的代理原样保留，因此依赖代理的 CI 不受影响。
     """
     changes: dict[str, str] = {}
@@ -213,7 +213,7 @@ def install(repo_root: Path) -> Path:
         encoding="utf-8",
     )
 
-    # 3b) vnext 数据空间（S2）：与旧空间同批隔离，避免测试写到开发者的真实
+    # 3b) vnext 数据空间：与其他数据空间一并隔离，避免测试写到开发者的真实
     #     workspace_vnext/。合成文件保持"空但合法"，不伪造任何分析产物——
     #     需要产物的用例必须自己用临时目录生成。
     (ISOLATION_ROOT / "workspace_vnext").mkdir(parents=True, exist_ok=True)

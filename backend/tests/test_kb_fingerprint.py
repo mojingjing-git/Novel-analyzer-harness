@@ -1,5 +1,5 @@
-"""P2 收口：KB 近邻增量必须校验 ≤best_limit 基线区间的文件指纹——
-基线内容被重写后，陈旧 KB 不得固化到新缓存 key（曾可达最终 knowledge.json）。"""
+"""KB 近邻增量必须校验 ≤best_limit 基线区间的文件指纹——
+基线内容被重写后，陈旧 KB 不得固化到新缓存 key（否则会污染最终 knowledge.json）。"""
 import json
 import os
 import sys
@@ -46,9 +46,9 @@ def test_near_neighbor_rebuilds_when_baseline_content_changed(tmp_path):
 
 
 def test_near_neighbor_returns_copy_not_shared_object(tmp_path):
-    """无新文件分支此前把同一 KB 对象别名存入新 key。
+    """无新文件分支不能把同一 KB 对象别名存入新 key。
 
-    白盒断言（brief Step 1 备注允许）：近邻产物不得与缓存基线条目共享同一
+    白盒断言：近邻产物不得与缓存基线条目共享同一
     可变对象；且变异近邻产物不得污染基线缓存条目。"""
     from backend.core.knowledge_base import _temp_kb_cache
 

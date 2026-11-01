@@ -1,5 +1,5 @@
-"""P1 修复验证（2026-08-24）：APIError.body 为非 dict truthy 值时
-审核嗅探不得崩溃（原实现 body.get("code") AttributeError 穿透重试链）。"""
+"""APIError.body 为非 dict truthy 值时
+审核嗅探不得崩溃（body.get("code") 会抛 AttributeError 并穿透重试链）。"""
 import sys
 from pathlib import Path
 from types import SimpleNamespace

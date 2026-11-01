@@ -1,6 +1,6 @@
-"""D-19（2026-10-31）：偏移由程序算，模型只负责"抄对句子"。
+"""偏移由程序算，模型只负责"抄对句子"。
 
-这一组用例钉住 §10.5 第 7/8 条：
+这一组用例钉住以下两条：
 
 * 给了 ``locate`` 回调 → 用 ``locate_quote(quote, 正文, reported=span)`` 定位并回验，
   ``supporting_span`` 从"必填字段"降级为"破歧义的提示"；
@@ -8,7 +8,7 @@
 * 两个都不给 → ``NO_QUOTE_VERIFIER``，不能让模型自己给自己打分。
 
 最关键的一条是 :func:`test_span_is_ignored_when_quote_not_inside_it`：
-模型把偏移算错（但句子抄对了）时必须**仍然通过**——这正是本次改动的收益。
+模型把偏移算错（但句子抄对了）时必须**仍然通过**。
 """
 
 from __future__ import annotations
@@ -82,7 +82,7 @@ def _parse_legacy(payload, *, within=None):
 
 
 def test_quote_without_span_is_supported_and_located() -> None:
-    """``supporting_span`` 不再是必需字段。"""
+    """``supporting_span`` 不是必需字段。"""
     verdict = _parse(_payload())
     assert verdict.verdict == SUPPORTED
     assert verdict.located_span == QUOTE_SPAN
@@ -107,9 +107,9 @@ def test_quote_twice_with_span_pointing_second_is_supported() -> None:
 
 
 def test_span_is_ignored_when_quote_not_inside_it() -> None:
-    """本次改动的核心收益：模型把偏移算错、句子抄对 → 仍然 SUPPORTED。
+    """模型把偏移算错、句子抄对 → 仍然 SUPPORTED。
 
-    改前这条会被 ``QUOTE_OUT_OF_RANGE`` 判死，哪怕引文逐字都在原文里。
+    span 越界不得判死，哪怕引文逐字都在原文里。
     """
     verdict = _parse(_payload(supporting_span=[0, 2]))
     assert verdict.verdict == SUPPORTED
@@ -197,8 +197,8 @@ def test_legacy_mode_requires_span() -> None:
 
 
 def test_out_of_bounds_reported_span_cannot_produce_out_of_bounds_location() -> None:
-    """2026-10-31 复审实测：模型给 [10000,10020]、原文只有 26 字时，
-    旧实现按 reported[0]+len(quote) 落了个越界位置还判 SUPPORTED。
+    """模型给 [10000,10020]、原文只有 26 字时，
+    不得按 reported[0]+len(quote) 落一个越界位置还判 SUPPORTED。
 
     契约：模型位置只能用来"挑一处"，最终位置必须由程序算并回验。
     这里断言的是**不变量**——要么拒绝，要么给一个在正文范围内、切片等于引文的位置；

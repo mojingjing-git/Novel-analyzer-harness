@@ -1,13 +1,11 @@
 """
-测试 /api/analysis/logs 端点的 session token 鉴权（PR-1 修复，2026-09-10，D 方案）
+测试 /api/analysis/logs 端点的 session token 鉴权（D 方案）
 
 覆盖：
 - 开发模式（未设 NOVEL_ANALYZER_SESSION_TOKEN 环境变量）→ 200 放行
 - 桌面模式（已设环境变量）+ 无 X-Session-Token header → 403
 - 桌面模式 + 错误 token → 403
 - 桌面模式 + 正确 token → 200
-
-Refs: _plan_v3.md PR-1 步骤 5
 """
 import os
 import sys

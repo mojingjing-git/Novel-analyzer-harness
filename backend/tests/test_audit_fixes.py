@@ -1,9 +1,9 @@
 """
-审计修复回归测试（2026-08-10 全量审计后的修复项）
-- #1 routes_prompt: read_block 传章号列表 + chapter_limit 用真实章号
-- #2 memory_state: flush_to_disk 迭代 _failed_chapters 快照（并发插入不再崩）
-- #6 memory_state: 增量 KB 乱序合并不覆盖 timeline
-- #8 settings: env API key 不回写 config.json
+审计项测试
+- routes_prompt: read_block 传章号列表 + chapter_limit 用真实章号
+- memory_state: flush_to_disk 迭代 _failed_chapters 快照（并发插入不会崩）
+- memory_state: 增量 KB 乱序合并不覆盖 timeline
+- settings: env API key 不回写 config.json
 """
 import asyncio
 import json
@@ -51,7 +51,7 @@ async def test_flush_failed_chapters_snapshot(tmp_path, monkeypatch):
         return orig(data, path)
 
     monkeypatch.setattr("backend.core.memory_state.safe_save_json", fake_save)
-    await state.flush_to_disk(tmp_path)  # 不应抛异常（旧实现：dictionary changed size during iteration）
+    await state.flush_to_disk(tmp_path)  # 不应抛异常（并发插入时 dict 尺寸变化）
     assert (tmp_path / "chapter_1_failed.json").exists()
     # 并发插入的新键本次 flush 不写入（快照语义），下一次 flush 补写
     await state.flush_to_disk(tmp_path)

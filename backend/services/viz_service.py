@@ -210,10 +210,10 @@ def graph_data(
 def map_data(output_dir: Path) -> Dict[str, Any]:
     """地图数据：地点层级 + 空间关系
 
-    2026-08-22 重构：严格要求归一化文件存在。
+    严格要求归一化文件存在。
     - 有 normalized 文件 + 任一 chapter 含 _normalized_ref → 返回归一化数据
     - 否则返回 needs_normalization=True + 空数组，由前端 MapPage 引导用户归一化
-    - 删除了旧版 raw chapter 聚合兜底（避免用户误以为"不归一化也能看地图"）
+    - 不做 raw chapter 聚合兜底（避免用户误以为"不归一化也能看地图"）
     """
     output_subdir = output_dir / "output"
     if not output_subdir.is_dir():

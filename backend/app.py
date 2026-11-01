@@ -62,14 +62,12 @@ _file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name
 
 
 class _SensitiveFieldsFilter(logging.Filter):
-    """对所有落到 analyzer.log 的 record 做敏感字段二次过滤（PR-1 修复，2026-09-10）。
+    """对所有落到 analyzer.log 的 record 做敏感字段二次过滤。
 
-    - 复用 `backend.core.llm_failure_logger.redact`（与 PR-1 步骤 2 同源）
+    - 复用 `backend.core.llm_failure_logger.redact`
     - 处理 `record.msg`（f-string 已格式化）和 `record.args`（% 格式化参数）
     - **fail-open**：filter 内部任何异常都放行原文（不丢日志）
     - 永远 return True（不丢 record，只改写 msg/args 内容）
-
-    Refs: _plan_v3.md PR-1 步骤 3
     """
     def filter(self, record: logging.LogRecord) -> bool:
         try:
@@ -93,8 +91,7 @@ logging.getLogger().addHandler(_file_handler)
 def _check_dependency_health() -> dict:
     """启动时检查关键依赖是否真的能 import
 
-    真实事故复现（analyzer.log:451-457, 2026-08-26 06:46-6:47）：
-    json_repair 未安装 8 次, 9 级容错链到策略 7 静默跳过, 解析降级
+    json_repair 未安装时, 9 级容错链会静默跳过, 解析降级
     但未崩溃。本函数目标: 把这种"未装"显式化, 避免再次发生。
 
     Returns:
@@ -135,8 +132,8 @@ def _check_dependency_health() -> dict:
 
 
 def create_app() -> FastAPI:
-    # P2-12：@app.on_event("startup") 已被 FastAPI 弃用（DeprecationWarning），
-    # 迁移到 lifespan 上下文管理器（行为等价）。
+    # @app.on_event("startup") 已被 FastAPI 弃用（DeprecationWarning），
+    # 因此用 lifespan 上下文管理器（行为等价）。
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         install_log_forwarder()  # 内部使用 asyncio.create_task，需在事件循环中调用
@@ -157,10 +154,9 @@ def create_app() -> FastAPI:
         except Exception as e:
             logger.debug(f"设置 asyncio 异常处理器失败: {e}")
 
-        # 启动期自动扫描工作区（H1 修复）：
-        # 原实现在 AnalysisService.__init__ 里同步扫描，而 __init__ 由首个触发
-        # get_service() 的 async 请求在事件循环内调用，导致整个事件循环被同步 IO 冻结
-        # （网络盘多书时卡数秒~数十秒，UI 表现为"点一下没反应/进度卡住"）。
+        # 启动期自动扫描工作区：
+        # 扫描是同步 IO（网络盘多书时可能耗时数秒~数十秒），必须在事件循环之外
+        # 执行，否则整个事件循环被冻结（UI 表现为"点一下没反应/进度卡住"）。
         # 此处放到 lifespan 启动阶段、用 asyncio.to_thread 离线程执行，请求到来前队列已就绪，
         # 且扫描期间事件循环不被阻塞。扫描异常在此被吞掉并记录，不影响服务启动。
         try:

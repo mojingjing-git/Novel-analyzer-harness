@@ -1,5 +1,5 @@
 """
-H16 (2026-08-26) 流式 LLM 调用测试
+流式 LLM 调用测试
 
 覆盖：
 - LLMClient._parse_openai_stream_event / _parse_anthropic_stream_event 单元解析
@@ -455,7 +455,7 @@ class TestChatStreamWithRetry:
         assert len(sleep_calls) >= 2
 
     async def test_last_error_resets_between_attempts(self):
-        """P0-2 修复：last_error 在每 attempt 失败时被显式覆盖，下一 attempt 不会因
+        """last_error 在每 attempt 失败时被显式覆盖，下一 attempt 不会因
         'last_error != "未知错误"' 恒真而丢弃成功结果"""
         client = LLMClient(make_config(temperature_max_retries=3, backoff_max_retries=0))
 
@@ -482,7 +482,7 @@ class TestChatStreamWithRetry:
         assert call_count[0] == 2
 
     async def test_partial_content_preserved_on_total_failure(self):
-        """P1-a (2026-08-26) 修复：流式中断后 partial content 必须保留到 final_content
+        """流式中断后 partial content 必须保留到 final_content
         失败路径（认证/审核/退避耗尽）返回的 result.content 是下游 recon_partial
         容错链的唯一输入；如果 _run_stream_attempt 拼好的内容没回写到 final_content，
         下游拿到的永远是空串，整条残缺 JSON 兜底链就断了。
@@ -504,8 +504,8 @@ class TestChatStreamWithRetry:
 
         # 整体失败（最后一条 error chunk）
         assert result.success is False
-        # P1-a 核心断言：partial content 必须保留
-        # 修复前 final_content 永远是 ""，修复后是最后 attempt 的拼接结果
+        # 核心断言：partial content 必须保留
+        # final_content 应是最后 attempt 的拼接结果，而不是空串
         assert result.content == partial_text_1
         assert result.content != ""
         print("✅ test_partial_content_preserved_on_total_failure passed")
@@ -514,12 +514,12 @@ class TestChatStreamWithRetry:
 # ============================ probe_thinking_params Pydantic 兼容 ============================
 
 class TestProbeThinkingParamsPydanticUsage:
-    """2026-08-26 修复回归：probe_thinking_params 必须能处理 OpenAI SDK 的
+    """probe_thinking_params 必须能处理 OpenAI SDK 的
     Pydantic CompletionUsage/CompletionTokensDetails，不能因为 .get() 缺失而炸。
 
     真实 OpenAI SDK v1.x 返回的 usage.completion_tokens_details 是 Pydantic v2
-    model，调用 .get() 会 AttributeError。原代码 (usage.get(...) or {}).get(...)
-    在 Pydantic 形态下挂掉，导致 7 个候选里只有"完全禁用思考"（completion_tokens_details
+    model，调用 .get() 会 AttributeError。因此 (usage.get(...) or {}).get(...)
+    在 Pydantic 形态下会挂掉，导致 7 个候选里只有"完全禁用思考"（completion_tokens_details
     为 None 走 or {} 路径）的 2 个能跑通，其他都误判为"无效"。"""
 
     async def test_pydantic_completion_tokens_details(self):

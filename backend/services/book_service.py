@@ -22,8 +22,8 @@ _books: Dict[str, Path] = {}
 # 手动注册的书目（通过 register_scan_dir 添加），refresh 时保留
 _manual_books: Dict[str, Path] = {}
 
-# P2 修复（2026-08-24）：miss 后的事件循环内同步全量扫描会把网络盘延迟放大成
-# 秒级 UI/WS 冻结（同类问题项目已在 H1 定性必修）。策略：
+# miss 后的事件循环内同步全量扫描会把网络盘延迟放大成
+# 秒级 UI/WS 冻结。策略：
 # 冷启动（映射空）保留一次阻塞刷新；此后 miss 仅后台单飞刷新 + 立即返回 None。
 _refreshing = False
 _refresh_lock = threading.Lock()

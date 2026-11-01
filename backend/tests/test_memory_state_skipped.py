@@ -1,4 +1,4 @@
-"""P2 收口：_skipped_chapters 必须随 checkpoint 持久化——否则重启续跑会对
+"""_skipped_chapters 必须随 checkpoint 持久化——否则重启续跑会对
 同一批审核拦截块重新支付完整 LLM 重试链费用。"""
 import asyncio
 import sys

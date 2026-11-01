@@ -1,7 +1,7 @@
 """
 JSON工具函数
 提供安全的JSON提取和保存功能
-（自旧项目 utils/json_utils.py 原样移植）
+
 """
 
 import json
@@ -83,7 +83,7 @@ def extract_json_from_text(text: str) -> Optional[str]:
                 if depth == 0:
                     return text[start:i + 1]
 
-    # 策略5: 回退到原来的rfind方式（但不保证正确解析）
+    # 策略5: 回退到 rfind 方式（但不保证正确解析）
     end = text.rfind('}')
     if start != -1 and end != -1 and end > start:
         return text[start:end + 1]
@@ -178,13 +178,13 @@ def parse_json_robust(text: str):
     """
     安全解析 JSON 并返回诊断信息（LLM 输出容错链 + 漏引号定向修复）
 
-    策略顺序说明（2026-08-07 优化）：
+    策略顺序说明：
     漏引号定向修复（策略4）必须放在 json5/ast/json_repair 等 lenient 解析器之前。
     实测 json_repair 会把 `{"b":、伏笔线索"}` 静默"修复"成 `{"b":"伏笔线索"}`
     （丢全角字符）；lenient 解析器先跑会"错误成功"，定向修复永远轮不到。
     修复正则只在合法 JSON 不可能出现的模式上匹配，提前执行安全。
 
-    2026-08-22 增补：策略0 全角标点归一（状态机）放在策略4 漏引号修复之后。
+    策略0 全角标点归一（状态机）放在策略4 漏引号修复之后。
     - 顺序关键：必须先补回缺失的引号（让 string 边界合法），再让状态机归一（只动 string 外的标点）
     - 如果先归一再补引号，状态机会把 `"b":（重要内容）"}` 错认为 `（` 在 string 外而错误归一为 `(`，
       导致补完引号后值变成 `"(重要内容）"`（一半半角一半全角）
@@ -207,7 +207,7 @@ def parse_json_robust(text: str):
         parsed = json.loads(text)
         if isinstance(parsed, dict):
             return parsed, None
-        # P2 修复：顶层数组/标量此前会带病返回，下游 .get() AttributeError；
+        # 顶层数组/标量不得带病返回，否则下游 .get() AttributeError；
         # 保留首次真实 JSONDecodeError 为诊断主因（若前面没失败过才记录类型错误）
         first_error = first_error or f"顶层类型为 {type(parsed).__name__}（需为对象）"
     except json.JSONDecodeError as e:
@@ -226,7 +226,7 @@ def parse_json_robust(text: str):
             pass
 
     # 策略3: 移除尾部注释（// 风格）
-    # B7 修复：在与切片相同的基准字符串上 search（防止行号偏移）
+    # 在与切片相同的基准字符串上 search（防止行号偏移）
     base = trimmed
     comment_match = re.search(r'(}\s*)//.*$', base, re.MULTILINE | re.DOTALL)
     if comment_match:
@@ -246,7 +246,7 @@ def parse_json_robust(text: str):
             break
         repaired = next_repaired
         try:
-            # P2 修复：repaired 可能是顶层数组（漏引号数组同样存在），守卫后落入后续策略
+            # repaired 可能是顶层数组（漏引号数组同样存在），守卫后落入后续策略
             parsed = json.loads(repaired)
             if isinstance(parsed, dict):
                 return parsed, "已自动修复JSON（漏引号）后解析成功"
@@ -260,9 +260,9 @@ def parse_json_robust(text: str):
         except Exception:
             pass
 
-    # 策略0 (2026-08-22 增补): 全角标点归一（状态机，只动 string 外的全角标点）
+    # 策略0: 全角标点归一（状态机，只动 string 外的全角标点）
     # 位置：策略4 漏引号修复之后 → 此时 string 边界已合法，状态机不会误伤 string 内容
-    # 修复文本的命名误导（"策略0"）：实际是策略顺序中的第 5 步，为不破坏既有注释/日志编号而保留
+    # 编号沿用「策略0」以保持日志编号一致；实际执行顺序为策略顺序中的第 5 步
     repaired = _normalize_fullwidth_outside_strings(repaired)
 
     # 策略5: json5 — 处理单引号、尾逗号、注释、Python bool/None
@@ -328,7 +328,7 @@ def safe_save_json(data: Any, file_path: Path, ensure_ascii: bool = False) -> bo
         是否成功
     """
     try:
-        # P2 修复：固定 .tmp 名在两线程同存同一目标时共用一个临时文件，
+        # 固定 .tmp 名在两线程同存同一目标时共用一个临时文件，
         # 内容交错或 Windows 下 replace 撞句柄 PermissionError；进程内唯一名消除该类竞态。
         # （代价：进程硬崩可能残留随机名 tmp，属可接受权衡）
         temp_path = file_path.with_suffix(f'.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp')
@@ -337,7 +337,7 @@ def safe_save_json(data: Any, file_path: Path, ensure_ascii: bool = False) -> bo
             json.dump(data, f, ensure_ascii=ensure_ascii, indent=2, default=str)
 
         # 原子替换
-        # P2 补充：唯一 tmp 名消除了临时文件互踩，但 Windows 下多线程同刻对同一目标
+        # 唯一 tmp 名消除了临时文件互踩，但 Windows 下多线程同刻对同一目标
         # replace 时，目标文件可能正处于另一线程的 delete-pending 窗口而报 PermissionError
         # （实测 WinError 5）；短退避重试是该竞态的标准缓解。
         # 重试耗尽则抛最后一次异常，交由外层统一记录日志并清理临时文件。

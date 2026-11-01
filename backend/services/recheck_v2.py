@@ -1,16 +1,17 @@
 """伏笔复检 V2：把"这条伏笔回收了吗"当成一次**带证据的核对**，而不是一次自述。
 
-与旧实现的区别只有一句话：**模型不能说"我支持"，除非它能指出原文哪一句。**
+核心区别只有一句话：**模型不能说"我支持"，除非它能指出原文哪一句。**
 程序负责定位、负责计数、负责在证据不足时如实说"不知道"——判错要能被看出来。
 
 判定核（枚举、门禁顺序、九条判据）复用 `backend/vnext/resolution.py`：
-那里的每一条都被三轮复审压过，重写一遍只会引入新的偏差。本模块只做 1.x 侧的胶水：
+那里的每一条都经过反复推敲，重写一遍只会引入新的偏差。本模块只做 1.x 侧的胶水：
 账本条目 → 候选 → 提示词 → 调用 → 落回账本。
 """
 
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import hashlib
 import json
 from dataclasses import dataclass, field
@@ -133,7 +134,7 @@ class RecheckOutcome:
 def _evidence_id(chapter: int, text: str) -> str:
     """证据身份 = 章 + 该段正文本身。
 
-    原来用"章 + 证据包内起止"，同章两段等长窗口会算出同一个 id，
+    用"章 + 证据包内起止"会让同章两段等长窗口算出同一个 id，
     后写的覆盖先写的全局验证表——A 引用自己看到的原文被判 QUOTE_NOT_FOUND，
     而引用只展示给 B 的文字反而通过。按正文哈希后，内容相同才算同一份证据。
     """
@@ -165,7 +166,7 @@ async def run_recheck_v2(
       免得把账户打到限流
     - ``limiter``：外部传入的并发信号量。总结阶段把它自己的 `_llm_sem` 传进来，
       于是"复检 + 卷摘要 + 风格"共用**同一个**在途上限，而不是各算各的
-      （原来两处各建 Semaphore，峰值能到 2× 配置值）
+      （各建各的 Semaphore 会让峰值达到 2× 配置值）
     """
     outcome = RecheckOutcome()
     candidates: list[dict] = []
@@ -468,9 +469,9 @@ def _balanced_slice(text: str, opener: str, closer: str) -> str | None:
 def _extract_payloads(raw: str) -> list[Mapping[str, Any]]:
     """从模型文本里挖出**全部**候选结果。
 
-    这里曾经把活全交给 ``extract_json_from_text``，而它只抽出**第一个**对象——
-    三条候选的数组进来，出去只有一条，看起来像"模型只答了一条"。
-    实测模型其实答全了，是解析把它吃掉。所以这里自己做括号配平扫描。
+    不能只依赖 ``extract_json_from_text``：它只抽出**第一个**对象——
+    三条候选的数组进来，出去只有一条，看起来像"模型只答了一条"，
+    实测模型其实答全了，是解析把它吃掉。因此这里自己做括号配平扫描。
     """
     if not raw:
         return []

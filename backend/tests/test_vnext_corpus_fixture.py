@@ -1,4 +1,4 @@
-"""S0 自检：合成语料夹具必须覆盖 PLAN v2 §S0-5 列出的全部边界。"""
+"""自检：合成语料夹具必须覆盖列出的全部边界。"""
 
 from __future__ import annotations
 

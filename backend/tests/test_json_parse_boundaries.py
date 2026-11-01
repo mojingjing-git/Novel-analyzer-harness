@@ -1,9 +1,7 @@
-"""Step3: JSON parse entry-point boundary matrix (third cleanup batch, 2026-10-15)
+"""JSON parse entry-point boundary matrix
 
-This file is the deliverable for Step3's "build the current failure/acceptance
-matrix first" requirement. R3 round-1 review rejected the first version for
-copying analyzer's validator closure into the test and for omitting the style
-entry entirely. This version uses only real production entry points.
+This file builds the current failure/acceptance matrix first, using only real
+production entry points (no logic is copied out of the implementation).
 
 Coverage is deliberately explicit about what is and is not a runtime matrix:
 
@@ -31,7 +29,7 @@ Coverage is deliberately explicit about what is and is not a runtime matrix:
 
 No source-string assertions and no copied logic.
 
-Facts locked by this matrix (Step3 audit conclusions):
+Facts locked by this matrix:
 
 - `safe_parse_json` / `parse_json_robust` return `dict` or `None` only, and
   NEVER a list. Therefore the `isinstance(data, list)` branch inside
@@ -160,7 +158,7 @@ class _CapturingLLM:
             ok, err = validate_response(payload)
             self.captured.setdefault("validations", []).append((ok, err))
             if not ok:
-                # U4：chat_auto 返回 LLMResult（验证失败但本次调用确实烧了 token）
+                # chat_auto 返回 LLMResult（验证失败但本次调用确实烧了 token）
                 return LLMResult(False, "", err, (10, 20), UsageStatus.KNOWN,
                                  call_stats={"attempts": self.n, "failed_tokens": 5})
         return LLMResult(True, payload, "", (10, 20), UsageStatus.KNOWN,
@@ -619,7 +617,7 @@ async def test_style_entry_real_call_matrix(monkeypatch, name):
     Current behavior includes unhandled TypeErrors for non-dict JSON: the style
     entry calls `_validate_semantic_result(json.loads(...))` directly, so a list
     or a number reaches the field loop and raises. These are recorded as-is
-    (Step3 does not change production), not smoothed over.
+    (production behaviour is not changed), not smoothed over.
     """
     try:
         result = await _call_style(monkeypatch, STYLE_CASES[name])
@@ -855,11 +853,11 @@ def test_foreshadow_empty_string_response():
 
 
 def test_foreshadow_list_branch_removed_is_behavior_preserving():
-    """The `isinstance(data, list)` branch was removed in Step3.
+    """The `isinstance(data, list)` branch is unreachable.
 
-    It was provably unreachable (no helper can return a list), so removing it
-    must not change any observable result. This pins that the dict guard and
-    the schema conversion still behave identically.
+    No helper can return a list, so that branch must not change any observable
+    result. This pins that the dict guard and the schema conversion still
+    behave identically.
     """
     # the dict guard still fires for anything that is not a dict
     for text in ["42", '"hello"', "not json at all", ""]:
@@ -946,7 +944,7 @@ def test_empty_dict_divergence_between_parse_first_sites():
 #
 # It is NOT covered by a runtime test in this file: driving those three sites
 # needs a full pipeline run with a MemoryState and an output directory, which is
-# out of Step3's scope. The claim is therefore a READ-ONLY SOURCE AUDIT and is
+# out of this file's scope. The claim is therefore a READ-ONLY SOURCE AUDIT and is
 # deliberately not asserted by a test, because asserting `not {}` would only
 # restate Python truthiness rather than observe production behavior.
 
@@ -954,10 +952,8 @@ def test_empty_dict_divergence_between_parse_first_sites():
 # ---------------------------------------------------------------------------
 # 8) Mock-lifecycle guard
 #
-# R3 round-2 review found that earlier versions of this file reassigned
-# `LLMClient.chat_stream` and `style_analyzer.LLMClient` directly, leaking the
-# fakes into the rest of the process. Every mock in this file now goes through
-# the `monkeypatch` fixture, and the test below proves the production objects
+# Every mock in this file goes through the `monkeypatch` fixture, so no fake is
+# installed on production objects; the test below proves the production objects
 # are still the originals after the whole file has run.
 # ---------------------------------------------------------------------------
 

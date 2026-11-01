@@ -1,7 +1,6 @@
 # vnext 数据契约（novel-analyzer-vnext / schema_version = 1）
 
-> 状态：**S2 交付物**，2026-10-30 起草并随实现同步。
-> 上游依据：`docs/PLAN-v2-long-novel-reliability-2026-10-30.md` §1.1、§2、§4 S2。
+> 本文描述 vnext 数据空间的语义契约与 1.x 侧复检契约；实现细节以代码为准。
 > 本文与代码的对应关系：常量与错误码在 `backend/vnext/constants.py`，指纹算法在
 > `backend/vnext/fingerprint.py`，格式门禁与原子写在 `backend/vnext/artifacts.py`。
 > **代码是实现的权威，本文是语义的权威**；两者冲突时以本文修订代码，不得反向解释文档。
@@ -143,7 +142,7 @@
 | `content_hash` | str | ✓ | 规范文本的 sha256（64 hex） |
 | `source_file` | str | ✓ | 原始导入文件名（追溯用，不参与身份） |
 
-**为什么 `chapter_id` 不含正文哈希**：§2.1-7 要求"改动早期来源 → 依赖产物标
+**为什么 `chapter_id` 不含正文哈希**：依赖链规则要求"改动早期来源 → 依赖产物标
 `STALE_INPUT`"。若 ID 随正文变化，改动就变成"删掉一章 + 新增一章"，依赖关系
 断开，`STALE_INPUT` 无从标记。所以 ID 绑定**位置身份**，正文变化只改
 `content_hash`。
@@ -193,7 +192,7 @@
 | `usage` | ✓ | `{prompt_tokens, completion_tokens, usage_status}`；未知写 `null` + `UNKNOWN` |
 | `created_at` | ✓ | 不参与指纹 |
 
-**`status` 的五种取值必须分开**（PLAN §1.2）：审核跳过是 `SKIPPED`（不是成功，也不是
+**`status` 的五种取值必须分开**：审核跳过是 `SKIPPED`（不是成功，也不是
 模型失败）；用户取消是 `CANCELLED`；账户级错误导致整本停摆是 `BLOCKED`。
 
 ### 3.5 派生产物（`derived/`）
@@ -223,18 +222,17 @@
 
 ---
 
-## 4. 数据域（后续批次接入，S2 只定形状）
+## 4. 数据域
 
-S2 只交付"入口 + 来源 + 登记"，以下数据域的**完整语义**在后续批次实现，这里先固定
-形状，避免 S3–S7 各自发明字段：
+以下数据域只固定**形状**，避免各数据域各自发明字段；各域的完整语义由其构造器所在实现定义：
 
-- **知识库**（S3）：`fact_records`（`fact_id` / 陈述 / 来源 / `verification_state` /
+- **知识库**：`fact_records`（`fact_id` / 陈述 / 来源 / `verification_state` /
   冲突引用）、人物状态、`cooccurrence_edges`、`semantic_relationships` 四者分表。
   `UNVERIFIED` 与 `EVIDENCE_LOCATED` 是**两个不同状态**，后者不等于"语义已核实"。
-- **伏笔**（S5/S6）：`occurrence` → `entity` → `candidate` 三层；`resolution_state`
+- **伏笔**：`occurrence` → `entity` → `candidate` 三层；`resolution_state`
   与 `recency_state` 正交；`recheck_status` 与 `resolution_state` 正交。
 
-**S2 的边界很明确**：只保证"这些文件带合法格式标记、能被登记、能被拒绝"，不保证
+**边界很明确**：只保证"这些文件带合法格式标记、能被登记、能被拒绝"，不保证
 它们的内容语义正确。
 
 ---
@@ -327,7 +325,7 @@ HTTP 映射：`UNSUPPORTED_*` → 409（客户端不该重试）；其余 → 42
 
 ---
 
-## 附录 A：旧产物清单（实测，`workspace/` 下真实存在的文件）
+## 附录 A：旧产物清单（`workspace/` 下的实际文件）
 
 用于验证"拒绝矩阵"覆盖完整。这些文件**全部**缺少 `format_id` 与
 `schema_version`，因此都会命中 `UNSUPPORTED_ARTIFACT_FORMAT`。
@@ -348,35 +346,14 @@ HTTP 映射：`UNSUPPORTED_*` → 409（客户端不该重试）；其余 → 42
 | `output/final_summary_checkpoint/` | `manifest.json` + `volume_N.md` | `final_summary._save_checkpoint_batch` |
 | `backups/` | `knowledge_YYYYmmdd_HHMMSS.json` | `knowledge_base._create_backup` |
 
-## 附录 B：读写入口与本批处理
+## 附录 C：命名与标识约定
 
-S2 只把**入口**接上格式门禁，不逐域重写消费者（那是 S3–S9 的事）。本表是接线的
-清单，也是后续批次的工作底稿。
-
-| # | 入口 | 位置 | 读写 | 现状 | S2 处置 |
-| --- | --- | --- | --- | --- | --- |
-| 1 | 书目发现判定 | `backend/services/book_service.py:32` | 读 | 看目录有无 `blocks/`/`output/`（形状猜测） | 改为读 `manifest.json` 判格式 |
-| 2 | 候选根收集 | `backend/services/book_service.py:37-76` | 读 | 队列/`working_directory`/`workspace_path`/`分析结果` | 只扫 `workspace_vnext/` |
-| 3 | 书目刷新 | `backend/services/book_service.py:79-94` | 读 | `iterdir` 全扫 | 走 `books_vnext.json` |
-| 4 | 断点恢复 | `backend/core/memory_state.py:236-262` | 读 | `glob chapter_*_result.json` 判已完成 | 改为 manifest `active_results` + 依赖校验 |
-| 5 | 失败/跳过标记 | `backend/core/memory_state.py:294`、`:308` | 读 | `glob` 标记文件 | 并入结果 `status` |
-| 6 | 队列状态 | `backend/services/queue_manager.py:36` | 读 | `PROJECT_ROOT/queue_state.json` | 换 `queue_state_vnext.json` + 格式校验 |
-| 7 | 队列载入/保存 | `backend/services/queue_service.py:42`、`:183` | 读/写 | 直接读写 | 同上 |
-| 8 | rolling 载入 | `backend/core/knowledge_base.py:279` | 读 | `output/rolling_summary.json` | 归入新知识域（S4） |
-| 9 | 结果落盘 | `backend/core/memory_state.py:172` | 写 | `chapter_N_result.json` | 换 `results/<result_id>.json` |
-| 10 | 切章落盘 | `backend/services/splitter_service.py:1155-1179` | 写 | `blocks/*` | 换 `source/`（S2-2） |
-| 11 | 项目创建 | `backend/services/splitter_service.py:1249` | 写 | `workspace/<书名>/blocks` | 换 `workspace_vnext/<book>/` + manifest |
-| 12 | 汇总聚合 | `backend/utils/aggregate_utils.py:637-717` | 写 | 11 个裸 `open('w')` | 换原子写 + `derived/` |
-| 13 | 总结 checkpoint | `backend/services/final_summary.py:1105-1191` | 读/写 | manifest + `volume_N.md` | 换 `cache/tasks.json`（S7） |
-| 14 | 报告读取 | `backend/api/routes_books.py:53`、`:89`、`:106`、`:124` | 读 | 直接读文件 | 加格式门禁或改读新产物 |
-| 15 | 归一化产物 | `backend/api/routes_location_normalization.py:30-31` | 读 | `output/locations_normalized.json` | 同上 |
-| 16 | 可视化数据 | `backend/services/viz_service.py:222-223` | 读 | 同上 | 同上 |
-| 17 | 风格产物 | `backend/services/style_service.py:53`、`backend/api/routes_analysis.py:264` | 读/写 | `style.md` | 换 `derived/style.md` + `.meta.json` |
-| 18 | 导出 | `backend/utils/export_utils.py:41` | 写 | `analysis_summary.md` | 换 `derived/` |
-
-> **本轮已完成（原计划排在 S3–S9，复审后归回 S2）**：第 2（书目发现）、4（断点恢复）、
-> 9（结果落盘）、10（切章落盘）、11（项目创建）行。其余 13 行仍是"按域重写消费者"，
-> 留在 S3–S9；在那之前它们是**未接线**状态，不是"已兼容"。
+| 约定 | 内容 |
+| --- | --- |
+| 独立配置与索引文件名 | `config_vnext.json`（运行配置）、`books_vnext.json`（书目索引）、`queue_state_vnext.json`（队列状态），集中定义在代码常量中 |
+| `chapter_id` 的组成 | 绑定 `(book_id, ordinal)`，**不含正文哈希**——正文改动不改章身份，改动才能沿依赖传播 |
+| 空依赖的指纹 | 空依赖也必须算出确定指纹，不允许字段缺失：缺字段等价于"没算过"，与"依赖为空"必须可区分 |
+| Markdown 派生产物的指纹 | 旁挂 `.meta.json` 保存；Markdown 无法承载结构化字段，把 JSON 塞进注释会让产物不再是纯 Markdown |
 
 ## §10 依赖链：局部失效的准确边界
 
@@ -401,7 +378,7 @@ expected_dependency = sha256(canonical({
 
 不传 `strategy` 时退化为"只比块签名与状态"，仅供早期扫描/预览——**不能**用于判定"可以跳过"。
 
-## §11 S2 基础入口（本轮补齐）
+## §10.1 基础入口
 
 | 能力 | 入口 | 说明 |
 | --- | --- | --- |
@@ -411,16 +388,7 @@ expected_dependency = sha256(canonical({
 | 断点恢复（读） | `GET /api/vnext/books/{id}/blocks` | 返回每块 `done` / `stale:<原因>` / `missing:<原因>` |
 | 断点恢复（写） | `POST /api/vnext/queue/restore` | 按当前源重算进度；算不出的书写明"项目不可用，进度未校验" |
 
-## 附录 C：本批实现决定（不属契约，供审查）
-| 决定 | 理由 |
-| --- | --- |
-| 配置文件名 `config_vnext.json`、书目索引 `books_vnext.json` 由本批确定 | 计划只要求"独立"，未给名字；集中定义在 `constants.py`，改名只改一处 |
-| `chapter_id` 绑定 `(book_id, ordinal)` 而不含正文哈希 | 否则改一个字就变成"换了一章"，`STALE_INPUT` 无法沿依赖传播 |
-| 空依赖也要算出确定指纹，不允许字段缺失 | 缺字段等价于"没算过"，而"没算过"与"依赖为空"在处理上必须可区分 |
-| `.md` 派生产物用旁挂 `.meta.json` 存指纹 | Markdown 无法承载结构化字段；把 JSON 塞进注释会让产物不再是纯 Markdown |
-| S2 不实现 `MISSING_REQUIRED_FIELD` 及之后步骤的通用框架 | 各数据域的必需字段在 S3–S7 落地时才知道；先建通用框架会把错误形状固化 |
-
-## §12 知识与窗口（S3 定稿）
+## §12 知识与窗口
 
 ### 12.1 三层职责
 
@@ -442,17 +410,17 @@ expected_dependency = sha256(canonical({
 
 - `CooccurrenceEdge`（同章邻近）与 `SemanticRelationship`（有互动证据）**分表**，`merge_edges` 收到语义边直接 `TypeError`——"永不合表"由类型守住，不靠调用方自觉。
 - 语义边准入：`interaction is True`（严格同一性）+ 来源区间合法 + `relation` 非空；`a == b` 丢弃；名字对归一（`甲-乙` ≡ `乙-甲`）。
-- **已知限制（本层不解决）**：名字匹配是裸子串，`甲` 在 `甲三` 中出现也算一次，共现可能虚高；消歧属实体归并（S5/S6）。同一对在同章多次共现只保留一条边（位置取首次），因为图展示与判定只需要"是否邻近"。
+- **已知限制（本层不解决）**：名字匹配是裸子串，`甲` 在 `甲三` 中出现也算一次，共现可能虚高；消歧属实体归并。同一对在同章多次共现只保留一条边（位置取首次），因为图展示与判定只需要"是否邻近"。
 
-### 12.4 三条口径（本批裁决）
+### 12.4 三条口径
 
 1. `PromptLimits` 的非法值报错文案统一为 `{field} 必须是正整数，收到 {value!r}`，`path` 填 `prompt_limits.<field>`；
 2. 未知配置键**忽略**（配置可能来自更新版本），但顶层非 `Mapping` 直接拒收；
 3. `PromptLimits` 是**内部设置**，本期不新增任何用户可见开关——文档不得宣称它可在界面调整。
 
-## §13 覆盖、实体身份与裁决（S4–S6 定稿）
+## §13 覆盖、实体身份与裁决
 
-### 13.1 覆盖视图（`rolling.py`）
+### 13.1 覆盖视图
 
 | 字段 | 含义 | 不能混淆的点 |
 | --- | --- | --- |
@@ -467,15 +435,27 @@ expected_dependency = sha256(canonical({
 **不变量**：`PENDING_RETRY` 暂停推进；`TERMINAL_SKIPPED` 推进但留 gap；
 `DONE` 要求签名一致（签名不符的结果属于另一个块，忽略）。
 
-### 13.2 伏笔实体（`foreshadow.py`）
+### 13.2 伏笔实体
 
 - `occurrence_id` = 完整 64 hex（`book_id + chapter_id + content_hash + start + end + kind`）；12 位只用于展示。
 - `entity_id` = `fs_` + 16 hex，只依赖 `(book_id, seed_occurrence_id)`，seed 取**来源最早**的出现 ⇒ 补入更早证据不改号。
 - `candidate_id` = `cd_` + 16 hex，依赖 `(entity_id, volume_start_ordinal, batch_index)` ⇒ 同一轮重放不产生新身份。
-- `cutoff_view` 的顺序固定：筛可见来源 → **整条排除**（实体只要有一条越过截止点就整个不出现）→ 算属性 → `min_mentions` 过滤 → 排序（`-mentions, -importance, first_seen, entity_id`）→ 截断。
+- `cutoff_view` 的顺序固定：筛可见来源 → 截止点之后的出现记录**不进视图** → 实体属性（次数/首末次/跨度）只按**可见记录**重算 → `min_mentions` 过滤 → 排序（`-mentions, -importance, first_seen, entity_id`）→ 截断。
+  - 由此保证**前缀不变性**：截止点推进时，过去的可见记录不改变，已出现过实体的属性也不因"后面还有出现"而被抹掉。
 - **本层不做相似度合并**：两个悬念是否同一实体由调用方给的 `entity_id` 决定。"谁藏了王冠"与"王冠在哪里"不会被文本相似度误合并。
 
-### 13.3 裁决（`resolution.py`）
+#### 13.2.1 三处口径
+
+1. **视图按可见记录重算，而不是整条排除**。实体横跨 1–10 章而截止点为第 5 章时，它仍出现在视图中
+   （只带前 4 次出现），实体级属性（类型、重要度、代表描述）也只按这 4 次算——否则"过去没变、
+   过去能查到的视图却变了"。
+2. **`entity_id` 在首次登记时确定，之后不再重算**：``seed_occurrence_id`` 只是记录"当时最早的那次出现"。
+   补入更早证据时，`seed_occurrence_id` 会前移，但 `entity_id` 必须**沿用旧值**——否则
+   "补一条早期证据"就等于"换了一个悬念"，历史裁决全部失联。
+3. **去重键是 `(entity_id, occurrence_id)`**：`occurrence_id` 的公式不含 `entity_id`（同一处原文
+   确实只是同一处原文），所以同一锚点被两个实体引用时 ID 必然相同；靠二元组区分，不靠改公式。
+
+### 13.3 裁决
 
 - 模型只许给四枚举；**小写、近义词、缺失值一律 `INVALID`**（宽容解析会让下游以为已核对）。
 - `SUPPORTED` 的门禁：答案非空 + 无反证引文 + 反证已执行 + 无材料不足 + 引文落在给定范围内 + ID 属于本任务。
@@ -485,50 +465,29 @@ expected_dependency = sha256(canonical({
 - 任务状态有序互斥：`NOT_RUN → RUNNING → STOPPED → PARTIAL → COMPLETED`；
   **空候选跑过 = `COMPLETED` 且计数 0**，**缺覆盖汇总 = `PARTIAL`**。
 
-### 13.4 上下文取材（`context.py`）
+### 13.4 上下文取材
 
 - 先扩到句读边界（`。！？；…\n`），再按 `PRE_TARGET/POST_TARGET` 补足，最后受 `HARD_MAX_CHARS` 约束。
 - **到章节尽头不是截断**；**撞硬上限才是截断**（`truncated=True`, `reason=HARD_BUDGET`），下游必须据此判证据不足。
 - 硬上限下**保证引用本身完整**（引用被切掉就没法核对）；引用本身超过上限时标 `QUOTE_EXCEEDS_HARD_MAX`。
 
-#### 13.2.1 三处实现口径（实现过程中发现规格有张力，此处定稿）
+### 13.5 裁决门禁与状态继承
 
-1. ~~**"整条排除"优先于"截止点之前可见"**~~ —— **已撤回，见 §13.3 第 1 条**（原口径破坏前缀不变性）
-
-   （原内容保留供追溯）：一个实体若横跨 1–10 章，而 `cutoff_ordinal=5`，
-   它在这个视图里**整个不出现**（而不是"只显示第 1–4 章那几次出现"）。理由：实体级属性
-   （类型、重要度、代表描述）是对全部出现记录算的，只给一部分会把属性算成半成品。
-   因此"1..10 取 5 → 只有 1–4"只适用于**每章一个实体**的构造，不能理解为"同一实体可被切片"。
-2. **`entity_id` 在首次登记时确定，之后不再重算**：``seed_occurrence_id`` 只是记录"当时最早的那次出现"。
-   补入更早证据时，`seed_occurrence_id` 会前移，但 `entity_id` 必须**沿用旧值**——否则
-   "补一条早期证据"就等于"换了一个悬念"，历史裁决全部失联。
-3. **去重键是 `(entity_id, occurrence_id)`**：`occurrence_id` 的公式不含 `entity_id`（同一处原文
-   确实只是同一处原文），所以同一锚点被两个实体引用时 ID 必然相同；靠二元组区分，不靠改公式。
-
-### 13.3 复审二（2026-10-30）：§13 的两条口径被推翻
-
-外部复审复现了 7 个会直接产生错误结论的缺口。以下四条改的是**语义**，不是实现细节：
-
-1. **撤回 §13.2.1 第 1 条（实体整条排除）**。它破坏前缀不变性：实体在第 3 章出现、第 12 章也出现时，
-   `cutoff=11` 的视图里它消失；而"第 12 章还没写"时的同一视图里它在。**过去没变，过去能查到的视图却变了。**
-   正确口径：截止点之后的出现记录**不进视图**，但实体的次数/首末次/跨度一律**只按可见记录重算**。
-   §13.2.1 第 2、3 条（`entity_id` 首次确定不重算、去重键为二元组）仍然成立。
-2. **`SUPPORTED` 必须有可定位证据**。原先 `evidence_id`/`supporting_span`/`supporting_quote` 全缺也能过，
-   于是"模型觉得答对了"直接变成 `AUTO_RESOLVED`。现在四件套缺一不可，且**必须有校验器**
-   （没有校验器 = 无人核对引文，判 `NO_QUOTE_VERIFIER`）。
-3. **`INVALID` 与 `INSUFFICIENT` 的边界**：响应不可用（枚举写错、字段缺失、payload 非对象）→ `INVALID`
-   且 `retryable=True`，**计入"未核对"，可重跑**；原文没给出足够证据（没查反证、材料不足、
+1. **`SUPPORTED` 必须有可定位证据**。`evidence_id` / `supporting_span` / `supporting_quote` / 校验器
+   四件套缺一不可；缺校验器即无人核对引文，判 `NO_QUOTE_VERIFIER`。模型"觉得答对了"
+   不得直接变成 `AUTO_RESOLVED`。
+2. **`INVALID` 与 `INSUFFICIENT` 的边界**：响应不可用（枚举写错、字段缺失、payload 非对象）→ `INVALID`，
+   `retryable=True`，**计入"未核对"**，可重跑；原文没给出足够证据（没查反证、材料不足、
    说支持却列反证）→ `INSUFFICIENT`，**计入"已核对"**。把后者打成 `INVALID` 会让实体退回 `OPEN`，
    等于把"没查"读成"没问题"。
-4. **覆盖计数按候选集合核对，不按返回行数**。同一候选答两次时行数求和照样守恒，但其中一行
-   根本没被采用。新增 `duplicates` / `foreign` 两类计数与 `integrity_error()`：
-   出现这两类时该轮复检**不得标记 `COMPLETED`**（降为 `PARTIAL`）。
+3. **覆盖计数按候选集合核对，不按返回行数**。同一候选答两次时行数求和照样守恒，但其中一行
+   根本没被采用。`duplicates` / `foreign` 两类计数与 `integrity_error()` 报出这两类时，
+   该轮复检**不得标记 `COMPLETED`**（降为 `PARTIAL`）。
+4. **状态继承**：块签名不符时不得继承 `DONE` 与旧 `result_id`（否则等于把旧块结果挂在新块下面
+   还宣称前缀完整），降为 `PENDING` 并记 `SIGNATURE_CHANGED`。
 
-另一条改的是**状态继承**：块签名不符时不得继承 `DONE` 与旧 `result_id`（原先"纠正签名"后照旧继承，
-等于把旧块结果挂在新块下面还宣称前缀完整），现降为 `PENDING` 并记 `SIGNATURE_CHANGED`。
 
-
-## §14 预算、账本与执行入口（S7 定稿）
+## §14 预算、账本与执行入口
 
 ### 14.1 预留必须有身份
 
@@ -568,9 +527,9 @@ expected_dependency = sha256(canonical({
 `runner.run_recheck` 每完成一个单元就调用一次 `persist`。崩溃后重启时，
 "已经花了钱的那几次"必须留在账上，否则预算会被重复花掉。
 
-## §15 发布与结算的四条硬规则（S8 重做，2026-10-31）
+## §15 发布与结算的四条硬规则
 
-复审三指出四条会导致**数据丢失**的封装缺陷。它们共同的性质是：看起来保护了，实际保护不了。
+四条规则针对同一类**数据丢失**风险：看起来保护了，实际保护不了。
 
 ### 15.1 提交是否成立，看持久化状态，不看回调有没有返回
 
@@ -605,10 +564,10 @@ expected_dependency = sha256(canonical({
 并在失败时抛 `PublishFailed(outcome)`——`outcome.committed=True` 说明数据其实一致（只是流程有异常），
 `kept_for_safety=True` 说明文件被保守保留。入口级故障用例见 `backend/tests/test_vnext_publish_faults.py`。
 
-**仍未覆盖**（诚实边界）：进程强杀后的恢复验证需要子进程 + 真中断，本批用异常注入替代，
+**仍未覆盖**（诚实边界）：进程强杀后的恢复验证需要子进程 + 真中断，目前用异常注入替代，
 不能等同于"崩溃注入"。
 
-## §16 结果内容、知识库落盘与指纹闭环（B0）
+## §16 结果内容、知识库落盘与指纹闭环
 
 ### 16.1 `extracted` 是定死的 schema，不是自由字典
 
@@ -645,7 +604,7 @@ expected_dependency = sha256(canonical({
 **当前库**算出后传入。不传则退化为只比前序结果与三版本——留这个口子是为了扫描预览，
 **不能拿它决定是否跳过**。
 
-## §17 分析入口的三条约束（B1b）
+## §17 分析入口的三条约束
 
 **17.1 按块序，失败即停。** `run_analysis` 顺序跑块；某块失败写 `FAILED` 结果后**停止**。继续往后跑没有收益：后续块的期望上下文包含"前序结果"，前序失败 → 依赖断 → 跑出来的结果也用不上，只是多花钱。
 
@@ -655,17 +614,16 @@ expected_dependency = sha256(canonical({
 
 **删除的顺序（B2）**：`os.replace` → 摘队列 → `rmtree(ignore_errors=True)`。改名是原子的，一旦成功这本书立刻从列表消失；后续失败只留 `.trash-*` 垃圾，不会留下"没有 manifest 的目录"（那会被判成旧版本目录，界面上再也删不掉）。
 
-## §17 引文定位：模型给原话，程序给位置（D-19）
+## §18 引文定位：模型给原话，程序给位置
 
-**背景（实测）**：C2 的 30 条标注里，模型判"支持"20 次、引文逐字命中 9/9，但有 **11 次**
+**已知现状**：C2 的 30 条标注里，模型判"支持"20 次、引文逐字命中 9/9，但有 **11 次**
 因为自报的 `supporting_span` 对不上而被判 `INVALID`。C3 同类 5/18。**不是判定错，是数不出偏移。**
 
-### 17.1 判据（九条，全部满足才是 SUPPORTED）
+### 18.1 判据（九条，全部满足才是 SUPPORTED）
 
-见 `docs/PLAN-D19-quote-locate-2026-10-31.md` §10.5，实现即 `resolution.parse_recheck`。
-要点：`supporting_span` **不再是必需字段**；位置由程序算，写进 `located_span`。
+实现即 `resolution.parse_recheck`。要点：`supporting_span` **不再是必需字段**；位置由程序算，写进 `located_span`。
 
-### 17.2 定位只接受三种匹配级别
+### 18.2 定位只接受三种匹配级别
 
 `citations.verify_citation` 有六级，但作为**证据门禁**只接受：
 
@@ -681,12 +639,12 @@ expected_dependency = sha256(canonical({
 定位后必须回验：`EXACT` 严等；其余用**双侧规范化**相等（`_to_raw_offset` 会把夹在中间的
 标点带进切片，严等会把合法结果打成失败）。
 
-### 17.3 引文最短 10 字
+### 18.3 引文最短 10 字
 
 `MIN_QUOTE_CHARS = 10`。实测语料里「这一日无事」出现 13 次——短句在长段里几乎必然命中，
 不设下限等于把闸门交给巧合。
 
-### 17.4 歧义：用 span 指路，指不了就判 INVALID
+### 18.4 歧义：用 span 指路，指不了就判 INVALID
 
 引文在同一证据里出现 ≥2 次时：
 
@@ -694,33 +652,32 @@ expected_dependency = sha256(canonical({
 - 没给或指不到 → `INVALID/AMBIGUOUS_QUOTE`（**不是** `INSUFFICIENT`：后者属 `REUSABLE`，
   `recheck_plan` 会直接复用缓存，歧义会被永久粘住）。
 
-### 17.5 退化模式
+### 18.5 退化模式
 
 只传旧 `quote_within_range(quote, start, end)` 时行为与 D-19 之前完全一致
 （`supporting_span` 必填、必须逐字对上、失败码 `QUOTE_OUT_OF_RANGE`）。保留它是为了
 让旧调用方不被一次性推翻，但**新代码不该用它**——它拿不到 `evidence_id`。
 
-### 17.6 账本应用键：`entity|candidate|verdict|evidence_id|quote_hash`
+### 18.6 账本应用键：`entity|candidate|verdict|evidence_id|quote_hash`
 
 **位置不进键**：位置是派生物，模型报错、程序算对之后不该产生第二条应用记录。
 **引文哈希要进键**：换了原话就是换了一条论据，必须重新记账。
 
-### 17.7 键名只有一个来源
+### 18.7 键名只有一个来源
 
 `resolution.RECHECK_MODEL_KEYS` 是模型回包字段名的唯一定义；`render_recheck_schema()`
 渲染 Prompt 里的字段示例；`test_vnext_schema_keys.py` 做**双向核对**（渲染键集合 == 常量；
-解析器源码实际读取的键 == 常量）。2026-10-31 的 36 次调用 / 109k token 事故就是
-"两边各写一份字段名"造成的。
+解析器源码实际读取的键 == 常量）。字段名必须单一来源——两边各写一份会让解析器与 Prompt 对不上。
 
-## §11 锚点字段落地（阶段 0，2026-10-31）
+## §23 锚点字段与落盘校验
 
-### 11.1 三处字段、一条铁律
+### 23.1 三处字段、一条铁律
 
 `Foreshadowing` 增 `anchor_quote` / `anchor_chapter` / `motif_key`；`AnalysisResult` 增 `anchor_stats`。
 铁律：**锚点必须在落盘前校验**（`analyzer` 手上有正文），否则等复检才发现锚点是编的，
 这本书的钱已经花完了。
 
-### 11.2 校验规则（`backend/core/anchor.py`）
+### 23.2 校验规则（`backend/core/anchor.py`）
 
 | 情形 | 处理 |
 | --- | --- |
@@ -733,25 +690,25 @@ expected_dependency = sha256(canonical({
 章归属用**块内标题反查**（`CHAPTER_HEADING_RE`）：块 ≠ 章，把块首章当成引文所在章是错的。
 块内无标题时退回"整块算首章"，此时 `anchor_stats` 仍照记，可信度由调用方自行判断。
 
-### 11.3 为什么要 `anchor_stats` 是 dataclass 字段
+### 23.3 为什么要 `anchor_stats` 是 dataclass 字段
 
 动态属性不会被 `to_dict` 序列化，重启后统计凭空消失——那正好是"看起来加了保护、其实没有"。
 `test_result_roundtrip_anchor.py::test_anchor_stats_is_a_real_dataclass_field_and_roundtrips` 钉住这条。
 
-### 11.4 旧数据兼容
+### 23.4 旧数据兼容
 
 旧结果没有锚点字段：`from_dict` 补默认值（空串/0/空 dict），**不报错、不写迁移脚本**。
 仅当 `anchor_quote` 非空才做校验，所以旧产物读出来仍然是"无证据"状态，语义正确。
 
-### 11.5 配置项
+### 23.5 配置项
 
 `analysis.anchor_quote_enabled`（默认 true）、`anchor_min_chars`（6）、
 `recheck_max_calls`（300）、`recheck_max_tokens`（60000）。
-`recheck_max_tokens` 单独给足量，是因为实测该模型 `max_tokens` 撞上限时一个字的正文都拿不到。
+`recheck_max_tokens` 单独给足量，是因为该模型 `max_tokens` 撞上限时一个字的正文都拿不到。
 
-## §12 账本 v4：锚点与稳定实体键（阶段 1，2026-10-31）
+## §24 账本结构：锚点与稳定实体键
 
-### 12.1 三个新字段
+### 24.1 三个新字段
 
 | 字段 | 语义 | 谁写 |
 | --- | --- | --- |
@@ -761,7 +718,7 @@ expected_dependency = sha256(canonical({
 
 `SCHEMA_VERSION` 3 → 4；旧 v3 账本照常读入，缺字段补默认值，**不迁移、不重写历史**。
 
-### 12.2 为什么 `entity_key` 不能用指纹重算
+### 24.2 为什么 `entity_key` 不能用指纹重算
 
 指纹是"内容变没变"，身份是"是不是同一件事"。用指纹当键会有一个隐性后果：
 后续章节补进一条**更早**的线索，指纹变了、键跟着变，同一件事被拆成两条，
@@ -770,13 +727,13 @@ expected_dependency = sha256(canonical({
 
 派生规则：优先模型给的 `motif_key`，没有则退回 `clue:<代表条目 id>`（`anchor.entity_key_for`）。
 
-### 12.3 开关关闭时必须显式标记
+### 24.3 开关关闭时必须显式标记
 
 `anchor_quote_enabled=false` 时 `anchor_stats` 记 `{"disabled": true, "missing": n}`，
 语义是"这一章没有证据"，**不是**"证据只是没找到"。复检阶段必须区别对待：
 前者只能产出"证据不足"，不能凭模型自述判回收。
 
-### 12.4 引用校验的单一实现
+### 24.4 引用校验的单一实现
 
 `backend/core/citations.py` 现在持有唯一实现（`verify_citation` / `_normalize` / `_to_raw_offset` /
 `summarize_checks` / 五级匹配常量）。`backend/vnext/citations.py` 改为**转发层**，只保留依赖
@@ -785,9 +742,9 @@ expected_dependency = sha256(canonical({
 理由：两套定位语义一旦漂移，同一个引文在一个地方算对、在另一个地方算错，而错误还会被
 "两边各自都通过测试"掩盖。校验器是复检的地基，地基只能有一份。
 
-## §13 复检服务层 `recheck_v2`（阶段 2，2026-10-31）
+## §25 复检服务层 `recheck_v2`
 
-### 13.1 形状
+### 25.1 形状
 
 `backend/services/recheck_v2.py`：
 
@@ -798,9 +755,9 @@ run_recheck_v2(items, *, book_text, call_model, max_calls=300, batch_size=10, em
 - `items`：账本条目（只处理 `status` 为 `active`/`open` 且**有锚点**的）
 - `book_text`：**全文**。回收发生在后文，证据不能只看埋设那一章
 - `call_model`：注入的模型调用（异步），便于离线测试与换模型
-- 判定核复用 `backend/vnext/resolution.py`：枚举、门禁顺序、覆盖守恒都在那边被三轮复审压过
+- 判定核复用 `backend/vnext/resolution.py`：枚举、门禁顺序、覆盖守恒统一在那里实现
 
-### 13.2 三条硬边界
+### 25.2 三条硬边界
 
 | 情形 | 处理 |
 | --- | --- |
@@ -808,20 +765,20 @@ run_recheck_v2(items, *, book_text, call_model, max_calls=300, batch_size=10, em
 | 锚点在全文里定位不到 | 同上（锚点是采集时校验过的，定位不到说明正文变了） |
 | 预算用尽 | 剩余候选全记 `not_checked`，`status != COMPLETED` |
 
-### 13.3 编造引文与"不可用响应"
+### 25.3 编造引文与"不可用响应"
 
 模型说 `SUPPORTED` 但 `supporting_quote` 在全文里找不到 → `INVALID/QUOTE_NOT_FOUND`，
 且 `retryable=True` → 计入 `not_checked`（下一轮重问），**不计入 `invalid`**，
 更不会被当成"已核对通过"。这个区分有用：`invalid` 表示"这条候选本身有问题"，
 `not_checked` 表示"这次没问出结果"。
 
-### 13.4 两个踩过的坑
+### 25.4 两个踩过的坑
 
 1. `parse_recheck` 的 `locate` 回调**第二个参数是 `evidence_id`，不是正文**。传错时每条 SUPPORTED 都变
    `QUOTE_NOT_FOUND`，而测试会"看起来通过了错误的东西"。
 2. `extract_json_from_text` 返回的是 **JSON 文本**，不是已解析对象；直接当 dict 用会静默得到空列表。
 
-### 13.5 接进总结流程（开关默认关）
+### 25.5 接进总结流程（开关默认关）
 
 `final_summary.run()` 的阶段 2 改成按 `analysis.recheck_v2_enabled` 分流：
 
@@ -841,9 +798,9 @@ else:                   await self._run_global_foreshadow_recheck(...)
 沿用既有配置键；调用走 `client.chat_auto(purpose="foreshadow_recheck_v2")`，
 失败由上层既有重试链处理。
 
-## §17 采集契约：把“细节”和“问题”分开（2026-11-01）
+## §26 采集契约：把“细节”和“问题”分开
 
-### 17.1 为什么改
+### 26.1 为什么改
 
 旧契约 `prompt_builder.py:32` 要求 `implication` **“必须预测具体未来事件”**，模型于是稳定产出
 剧情预测（“未来将成就侠侣姻缘”）。那不是悬念——它没有答案，只有“应验/没应验”。
@@ -852,7 +809,7 @@ else:                   await self._run_global_foreshadow_recheck(...)
 注意：**不能**从“没有疑问词”推出“没有可解决的问题”。婚事、承诺、威胁都可以有可核对的结果；
 含未来词也无法区分“原文明确提出的计划”与“模型杜撰”。
 
-### 17.2 三问分工
+### 26.2 三问分工
 
 | 字段 | 含义 | 反例 |
 | --- | --- | --- |
@@ -863,7 +820,7 @@ else:                   await self._run_global_foreshadow_recheck(...)
 `answer_criteria` 写成“二人最终成婚”是错的：明确交代“婚事取消”也是回答了问题，
 按那个判据会被记成“未回收”。
 
-### 17.3 线索降级（`lead`）
+### 26.3 线索降级（`lead`）
 
 判据只有一条：`question` 与 `answer_criteria` **都为空** → `lead=True`。
 `lead` 条目不进复检队列，也不计入 `not_checked`——它不是“待核实但没查”，
@@ -873,7 +830,7 @@ else:                   await self._run_global_foreshadow_recheck(...)
 “疑问词/专名命中”筛的是表达形式，会错杀真铺垫（`称贤侄`确实埋了婚事）、
 放过假悬念（`未来将如何`含疑问词但不是问题）。
 
-### 17.4 覆盖披露取代“负证据”
+### 26.4 覆盖披露取代“负证据”
 
 摘要没有提及，**不能证明全书没有交代**——摘要本身就会省略。因此：
 
@@ -882,30 +839,29 @@ else:                   await self._run_global_foreshadow_recheck(...)
 - 材料没找到时记 `INSUFFICIENT`，原因写“本次检索范围内未发现支持回收的证据”，
   并披露检索范围、截断与预算跳过
 
-## §18 复审四：六处"跑得通但结论会错"的实现缺陷（2026-11-01）
+## §27 证据不足的前提
 
-| # | 缺陷 | 后果 | 修法 |
-| --- | --- | --- | --- |
-| 1 | 章号按**块内标题序号**推算 | 块含两章时，第二段锚点章号错位；实测 60 条错 39 条，96.7% 命中率是虚的 | 改从标题解析真章号（`chapter_number_from_heading`，支持中文/阿拉伯/Chapter N）；离线重算后 58/58 正确 |
-| 2 | 总结入口用 `self.client`，且 `chat_auto(prompt=…, purpose=…)` | 生产路径直接 `AttributeError`/`TypeError`，新方案根本跑不起来 | 改 `self._llm.chat_auto(messages=[…])`；批大小固定 1 |
-| 3 | 提示词没带 `question`/`answer_criteria` | 采集填了 100%，裁决完全看不见——新字段等于白加 | `ITEM_TEMPLATE` 增两行；用例断言提示词里出现判据原文 |
-| 4 | 选章按"任一关键词命中"，取窗却总围绕第一个关键词 | 第一个词不在则该章退化成章首，答案在章末就永远进不了包 | 取窗对准**真正命中的那个词**；找不到命中词就跳过该章并标 `truncated` |
-| 5 | `resolved_chapter` 写的是埋设章 | "第 12 章埋、第 900 章收"会记成第 12 章，事后无法分辨 | `Bundle.spans` 记窗口区间，按引文位置反查章号写回 |
-| 6 | 覆盖报告分母只有候选数 | 输入 12 条、分母 7 条，差额去哪了看不出来 | `input_total` / `dropped_no_anchor` / `dropped_anchor_missing` 三个字段单列 |
+任何"证据不足"的结论，都必须先证明"该找的地方找过了"。取章号、选章、取窗、
+回填回收章这几处一旦出错，检索可能根本没查到该查的章，于是"证据不足"变成
+"没查"的同义词。
 
-**为什么"6 条全是证据不足"不能被当成正确行为**：那 6 条是建立在错位的章号之上的，
-检索可能根本没查到该查的章。任何"证据不足"的结论，都必须先证明"该找的地方找过了"。
+因此：
 
-**依据**：现有引文与原文足够离线修复，不需要重新调用模型——重算后 58 条引文
-全部能在正确章号定位。
+- 章号一律**从标题解析**（`chapter_number_from_heading`，支持中文/阿拉伯/`Chapter N`），
+  不按块内序号推算；
+- 取窗对准**真正命中的那个检索词**，找不到命中词时跳过该章并标 `truncated`，
+  不允许退化成章首；
+- 回收章由**引文位置反查**得到，不写埋设章；
+- 覆盖报告同时给出 `input_total` / `dropped_no_anchor` / `dropped_anchor_missing`，
+  输入与分母的差额必须可见。
 
-## §19 证据按段编号与四组已知答案样本（2026-11-01）
+## §19 证据按段编号
 
 ### 19.1 证据是"段"，不是"候选"
 
 一条伏笔的埋设处在第 2 章、答案在第 9 章。若给模型的只有一个 `evidence_id`（埋设处），
 模型判 SUPPORTED 时引用第 9 章那句必然对不上 → 门禁把它记成"引文找不到/反证不可核实"，
-于是**跨章回收永远判不出来**（实测就是这样：四组样本全判 INSUFFICIENT）。
+于是**跨章回收永远判不出来**。
 
 现在每段窗口各自一个 `evidence_id`，模型必须回填"引文所在那一段"的 id；
 `resolved_chapter` 直接取该段的章号。
@@ -926,18 +882,18 @@ else:                   await self._run_global_foreshadow_recheck(...)
 有条目因无锚点/锚点定位不到而未进入候选时，状态必须是 `PARTIAL`，
 理由写明"部分条目无可用证据（N 条未进入候选）"，不能报 `COMPLETED`。
 
-## §20 组合场景的三条硬规矩（2026-11-01）
+## §20 组合场景的三条硬规矩
 
 单候选样本永远碰不到下面三种情况，而真书里同一章埋好几条伏笔是常态。
 
 ### 20.1 证据身份按**内容**算，不按区间
 
-原实现 `evidence_id = sha256(章|包内起|包内止)`：同章两段等长窗口算出同一个 id，
+如果证据身份按**区间**算（`sha256(章|包内起|包内止)`），同章两段等长窗口会算出同一个 id，
 后写的覆盖先写的全局验证表。后果不是难看，是**判错**——
 A 引用自己看到的原文被判 `QUOTE_NOT_FOUND`，而 A 引用只展示给 B 的文字反而
 `SUPPORTED → AUTO_RESOLVED`。
 
-现在 `evidence_id = sha256(章|该段正文)`：内容相同才算同一份证据，
+按内容算（`evidence_id = sha256(章|该段正文)`）：内容相同才算同一份证据，
 不同窗口天然不同 id，候选之间也就不会互相覆盖。
 
 ### 20.2 丢弃 ≠ 待查
@@ -955,7 +911,7 @@ A 引用自己看到的原文被判 `QUOTE_NOT_FOUND`，而 A 引用只展示给
 `truncated = omitted > 0`。这个事实也写进提示词——模型判"没有回收"时要知道
 还有多少处没看到。
 
-## §21 批量复检：多条候选一次问完（2026-11-01）
+## §21 批量复检：多条候选一次问完
 
 ### 21.1 为什么原来一条一次
 
@@ -966,7 +922,7 @@ A 引用自己看到的原文被判 `QUOTE_NOT_FOUND`，而 A 引用只展示给
 `_extract_payloads` 改为自己做括号配平扫描（先整段 `json.loads`，再切 `[...]`/`{...}`，
 最后才退回旧解析），并支持 ```json 围栏。
 
-### 21.2 实测经济性（三侠五义前 16 章、58 条候选、取前 6/12 条）
+### 21.2 经济性基线（三侠五义前 16 章、58 条候选、取前 6/12 条）
 
 | 批大小 | 调用 | 判定 | prompt | 每候选 prompt | completion | 用时 |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -984,7 +940,7 @@ prompt 侧只降约 15%（证据窗口仍是主要开销）。
 （只给它们，命中率高）；仍漏才记 `not_checked`，并计 `retried_batches`。
 默认批大小 6（`analysis.foreshadow_recheck_batch_size`）。
 
-## §22 并发复检：波次并行（2026-11-01）
+## §22 并发复检：波次并行
 
 ### 22.1 只省墙钟，不省 token
 
@@ -992,7 +948,7 @@ prompt 侧只降约 15%（证据窗口仍是主要开销）。
 并行只是把"等待模型"的时间叠起来，**花费一分不省**，所以并发上限要压着配：
 默认 `analysis.recheck_concurrency = 4`。
 
-实测（16 章 58 条候选取 24 条，batch=6）：
+基线（16 章 58 条候选取 24 条，batch=6）：
 
 | 并发 | 调用 | 判定 | 用时 |
 | --- | --- | --- | --- |

@@ -1,5 +1,5 @@
 """
-修法 A + 修法兜底（2026-09-04）测试
+书名推断测试
 - splitter 写 metadata.json.title 用 infer_book_name 结果
 - _looks_valid_book_name 拒"句末标点"和"作者/著"两种错值
 - detect_book_name 错值 fallback 到目录名

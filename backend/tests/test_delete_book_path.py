@@ -1,4 +1,4 @@
-"""P1 修复验证（2026-08-24）：越界队列项（workspace_dir 在工作区之外）删除时
+"""越界队列项（workspace_dir 在工作区之外）删除时
 必须使用显式路径，而不是把名字重新解析回工作区（同名误删 / 无名 500）。"""
 import sys
 from pathlib import Path
@@ -24,7 +24,7 @@ def test_explicit_outside_path_is_used(tmp_path, monkeypatch):
 
 
 def test_workspace_same_name_not_deleted_when_explicit_given(tmp_path, monkeypatch):
-    """工作区存在同名书 + 提供显式路径 → 只删显式路径那本（原实现删错）"""
+    """工作区存在同名书 + 提供显式路径 → 只删显式路径那本"""
     ws = tmp_path / "ws"
     (ws / "同名书").mkdir(parents=True)
     outside = tmp_path / "scan_dir" / "同名书"
@@ -41,7 +41,7 @@ def test_workspace_same_name_not_deleted_when_explicit_given(tmp_path, monkeypat
 
 
 def test_default_behavior_still_resolves_workspace(tmp_path, monkeypatch):
-    """不传 novel_path 时保持旧行为：按名字解析到工作区"""
+    """不传 novel_path 时的默认行为：按名字解析到工作区"""
     ws = tmp_path / "ws"
     book = ws / "书A"
     book.mkdir(parents=True)

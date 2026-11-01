@@ -1,12 +1,12 @@
-"""P5c（2026-08-27）双层书名号回归：
+"""双层书名号：
 
-之前 regex `[《<]([^》>]{1,80})[》>]` 在双层书名号 `《《xxx》》` 上匹配错：
+regex `[《<]([^》>]{1,80})[》>]` 在双层书名号 `《《xxx》》` 上会匹配错：
 - 输入: 《《xxx》》
-- 旧匹配: 《《xxx》（少一个外层 》）
-- 新匹配: 《xxx》（最内层内容）
+- 错误匹配: 《《xxx》（少一个外层 》）
+- 正确匹配: 《xxx》（最内层内容）
 
 真实场景: 用户上传 `《《大王饶命》》（精校版）.txt` 后:
-- 旧 infer_book_name 返回 `《《大王饶命》`（少外层）
+- 错误 infer_book_name 返回 `《《大王饶命》`（少外层）
 - splitter 用这个名建目录 workspace/《《大王饶命》/
 - queue_item.name = subdir.name = `《《大王饶命》`
 - 后续分析/总结按 item.name 找目录，但目录名跟"逻辑书名"对不上
@@ -31,7 +31,7 @@ from backend.services.splitter_service import infer_book_name
 @pytest.mark.parametrize("filename,expected", [
     # 真实用户 bug 案例
     ("《《大王饶命》》（精校版）.txt", "《大王饶命》"),
-    # 单层（不回归）
+    # 单层
     ("《从姑获鸟开始》（精校版）.txt", "《从姑获鸟开始》"),
     ("《超级能源强国》（精校版）.txt", "《超级能源强国》"),
     # 双层不带后缀

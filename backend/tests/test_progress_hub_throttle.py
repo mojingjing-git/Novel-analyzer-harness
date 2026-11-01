@@ -1,5 +1,5 @@
 """
-H16 (2026-08-26) ProgressHub ThrottledBroadcaster 测试
+ProgressHub ThrottledBroadcaster 测试
 
 覆盖：
 - 同 channel key 在 150ms 内合并（多次 emit 只发一次）

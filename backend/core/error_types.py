@@ -1,8 +1,6 @@
 """错误判定的共享类型（error_types）
 
 最底层叶子模块：只放"共享枚举 + 纯数据类型"，不含 IO / 策略 / 协议逻辑。
-设计规格：docs/DESIGN-D01-verdict-transport-2026-10-30.md §3；
-契约清单：docs/PLAN-v2-long-novel-reliability-2026-10-30.md §2.5。
 
 模块职责
 --------
@@ -54,13 +52,12 @@ __all__ = [
 class ErrorClass(str, Enum):
     """错误类别（11 类）
 
-    取值集合与 backend/core/error_taxonomy.py 历史上定义的那套**逐一保持一致**
-    （成员名与字符串值都相同）。2026-10-30（S1/U6b）起，本模块是该枚举的**唯一定义处**：
-    ``error_taxonomy`` 已改为 ``from .error_types import ErrorClass`` 并 re-export，
+    本模块是该枚举的**唯一定义处**：``error_taxonomy`` 用
+    ``from .error_types import ErrorClass`` 并 re-export，
     两边是同一个类对象。这样 ``is`` 身份比较在跨模块场景才成立——两份同值 str-Enum
     会让 ``==`` 为真而 ``is`` 为假，判定被静默判错。
 
-    为何当初不在本模块反向 import：本模块是最底层叶子，``error_taxonomy`` 要返回本模块的
+    为何不在本模块反向 import：本模块是最底层叶子，``error_taxonomy`` 要返回本模块的
     ``ErrorVerdict``，即 error_taxonomy → error_types 单向；反向 import 会形成循环。
     两者取值一致性由 backend/tests/test_error_types.py 断言守护。
     """
@@ -79,7 +76,7 @@ class ErrorClass(str, Enum):
 
 
 class Confidence(Enum):
-    """判定置信度（§3.1）
+    """判定置信度
 
     - STRUCTURED：命中结构化码 / 码串扫描等可信通道
     - TEXT：文本兜底判定
@@ -96,7 +93,7 @@ class Confidence(Enum):
 
 
 class SourceChannel(Enum):
-    """判定来源通道（§3.1 / §6）——用于可信度判断与审计
+    """判定来源通道——用于可信度判断与审计
 
     - SDK_ATTRIBUTE：SDK 结构化属性（异常对象的 code / status / body）
     - ERROR_ENVELOPE：约定的错误 envelope（确认来自响应体错误结构，而非正文）
@@ -113,7 +110,7 @@ class SourceChannel(Enum):
 
 
 class ErrorScope(Enum):
-    """错误作用域（§3.5）——**恰好四个值**
+    """错误作用域——**恰好四个值**
 
     - ACCOUNT_GLOBAL：账户/端点级——绑定 endpoint + 不含密钥的凭据指纹
       （如 api_key 前 6 位 + sha256 前 8 位）；只有它能触发熔断
@@ -131,7 +128,7 @@ class ErrorScope(Enum):
 
 
 class UsageStatus(Enum):
-    """Token 用量是否已知（§4）
+    """Token 用量是否已知
 
     - KNOWN：拿到了 usage（可含流式中断前已知的部分）
     - UNKNOWN：未拿到 usage（断连 / 超时 / 解析失败）——此时 tokens 必须为 None
@@ -244,7 +241,7 @@ def _parse_tokens(raw: Any) -> Optional[Tuple[int, int]]:
 
 @dataclass(frozen=True)
 class ErrorVerdict:
-    """错误判定结论（§3.2 完整传输契约）
+    """错误判定结论（完整传输契约）
 
     字段：
     - cls：错误类别
@@ -255,7 +252,7 @@ class ErrorVerdict:
     - action：stop / backoff / retry_after / continue，来自唯一的策略函数；
       消费方只读取，**不得**自行重新推导
     - scope：ACCOUNT_GLOBAL / REQUEST_LOCAL / TRANSIENT / UNKNOWN
-    - retry_after：秒；来源见 §3.5（SDK_ATTRIBUTE 优先，ERROR_ENVELOPE 次之）
+    - retry_after：秒；来源为 SDK_ATTRIBUTE 优先，ERROR_ENVELOPE 次之
     - message：展示用，**不参与任何判定**
 
     默认值说明：provider_code / http_status / retry_after 缺省为 None；
@@ -282,7 +279,7 @@ class ErrorVerdict:
 
         这是判断永久停止的**唯一谓词**（语义与 error_taxonomy.ClassVerdict.is_permanent()
         一致）：文本通道的判定恒为 False——纯文本错误永远不能登记为致命块，
-        避免把可自愈的失败误判成"重试成功率恒为零"（C-01 防线）。
+        避免把可自愈的失败误判成"重试成功率恒为零"。
         """
         confidence = self.confidence
         if not isinstance(confidence, Confidence):
@@ -332,19 +329,19 @@ class ErrorVerdict:
 
 @dataclass(frozen=True)
 class LLMResult:
-    """一次模型调用的结果（§3.3）
+    """一次模型调用的结果
 
     字段：
     - success：是否成功
     - content：成功时的正文
     - error：展示用错误串，**不承载判定**
-    - tokens：Optional[(prompt_tokens, completion_tokens)]；None = 未知（§4）
+    - tokens：Optional[(prompt_tokens, completion_tokens)]；None = 未知
     - usage_status：KNOWN / UNKNOWN；tokens 为 None 时必须是 UNKNOWN
     - call_stats：调用统计（如 {"attempts": N, "failed_tokens": M}）
     - verdict：错误判定结论；成功时为 None
     - attempts：尝试次数
 
-    **不实现 __iter__**，不提供位置式解包——旧元组形状在 S1 一次性删除。
+    **不实现 __iter__**，不提供位置式解包。
     """
 
     success: bool
@@ -355,16 +352,16 @@ class LLMResult:
     call_stats: dict = field(default_factory=dict)
     verdict: Optional[ErrorVerdict] = None
     attempts: int = 1
-    #: 本次调用里**此前若干次尝试**已实际消耗、但其产出未被采用的用量（T45）。
+    #: 本次调用里**先前若干次尝试**已实际消耗、但其产出未被采用的用量。
     #: 与 ``tokens`` 分开：``tokens`` 只表达"最终这次尝试的用量"，拿不到就是 None。
-    #: 早先把它填进 ``tokens`` 会让"本次未知"冒充"本次已知"，费用统计随之失真。
+    #: 把它填进 ``tokens`` 会让"本次未知"冒充"本次已知"，费用统计随之失真。
     prior_known_tokens: Optional[Tuple[int, int]] = None
 
     def __post_init__(self) -> None:
         """一致性校验：tokens 为 None 时 usage_status 必须是 UNKNOWN
 
         反方向（tokens 有值而 usage_status=UNKNOWN）表示"只知道部分"，
-        §4 允许流式部分消费后中断这样表达，故不报错。
+        允许流式部分消费后中断这样表达，故不报错。
         """
         if self.tokens is None and _enum_value(self.usage_status) != "UNKNOWN":
             raise ValueError(

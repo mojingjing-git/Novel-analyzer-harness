@@ -1,4 +1,4 @@
-# 打包文档（PyInstaller v0.1.0+）
+# 打包文档（PyInstaller）
 
 本文档说明如何把 Novel Analyzer 打成单文件 Windows exe。
 
@@ -38,7 +38,7 @@ build_exe.bat
 | `build/` | PyInstaller 中间产物（不入库） |
 | `dist/` | PyInstaller 产物（不入库，单独走 `gh release`） |
 
-## 关键设计（2026-09-12 v0.1.0）
+## 关键设计
 
 ### 数据落 EXE 同级（不走 `%APPDATA%`）
 
@@ -106,17 +106,17 @@ Get-Process -Name novel-analyzer | Stop-Process -Force
 
 **解决**：到 https://developer.microsoft.com/microsoft-edge/webview2/ 下载「Evergreen Standalone Installer」安装一次（~100MB）。
 
-## 体积优化历史
+## 体积与构建取舍
 
-| 优化项 | 节省 |
+| 取舍 | 影响 |
 |---|---|
-| excludes 大量未用 stdlib/三方库（tkinter / matplotlib / numpy / pandas / scipy / PIL / IPython / pytest / black / flake8 / mypy） | -50 MB |
-| 不上 UPX | 0（避免 +30% 杀软误报） |
-| collect_submodules 自动收集（避免 hiddenimports 漏包导致的重打） | 修 bug 性质 |
+| excludes 大量未用 stdlib / 三方库（tkinter / matplotlib / numpy / pandas / scipy / PIL / IPython / pytest / black / flake8 / mypy） | 减小约 50 MB |
+| 不上 UPX | 体积不变，换来更低的杀软误报率 |
+| `collect_submodules` 自动收集 | 避免漏包导致重打，收益是修 bug 性质 |
 
 ## 未来优化方向
 
 - **应用图标**：`desktop.spec` 设 `icon='assets/icon.ico'`（需要做 ico 文件）
 - **代码签名**：申请证书 + spec 加 `codesign_identity`（减少杀软误报）
 - **Nuitka 替代 PyInstaller**：编译为 C，更快更小（首次配置复杂）
-- **macOS / Linux**：pywebview 跨平台需要单独打包（不在 v0.1.0 范围）
+- **macOS / Linux**：pywebview 跨平台需要单独打包（暂不做）

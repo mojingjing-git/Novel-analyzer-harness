@@ -1,4 +1,4 @@
-"""S7 复检规划与覆盖汇总（PLAN v2 §4 S7-3/7/9）。"""
+"""复检规划与覆盖汇总。"""
 
 from __future__ import annotations
 

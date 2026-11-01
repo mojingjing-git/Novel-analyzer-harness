@@ -1,4 +1,4 @@
-"""vnext 数据空间路由（PLAN v2 §4 S2 接线入口）。
+"""vnext 数据空间路由。
 
 口径与 1.x 路由的区别：
 
@@ -36,7 +36,7 @@ _HTTP_BY_CODE = {
     ErrorCode.REVISION_CONFLICT: 409,
     ErrorCode.STALE_INPUT: 409,
     # 缺必需字段是「请求不合法」(422)，不是「资源不存在」(404)。
-    # 之前统一 404 会让「缺少 title」看起来像「项目没找到」。
+    # 统一用 404 会让「缺少 title」看起来像「项目没找到」。
     ErrorCode.MISSING_REQUIRED_FIELD: 422,
     ErrorCode.NOT_FOUND: 404,
     ErrorCode.INVALID_FIELD_VALUE: 422,
@@ -181,7 +181,7 @@ async def get_blocks(book_id: str):
 
 @router.post("/queue/restore")
 async def restore_queue():
-    """启动后修复：遗留 running 回落 pending。幂等，可重复调用。"""
+    """启动后回正：遗留 running 回落 pending。幂等，可重复调用。"""
     try:
         state = vnext_service.restore_queue_after_restart()
     except VnextFormatError as exc:

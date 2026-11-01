@@ -75,7 +75,7 @@ async def prompt_preview(req: PromptPreviewRequest):
             chapter_content = "[正文内容] (文件读取为空)"
             chapter_total_chars = 0
 
-    # 构建 KB：chapter_limit 用"本块之前的真实章号"（旧实现误用块序号，断号/块化>1 时 KB 范围错位）
+    # 构建 KB：chapter_limit 用"本块之前的真实章号"（不能用块序号，断号/块化>1 时 KB 范围错位）
     kb = KnowledgeBase()
     try:
         kb = KnowledgeBaseManager.build_temp_knowledge(output_dir, chapter_limit=max(0, ch_idx - 1))

@@ -1,5 +1,5 @@
-"""P2：聚合主文件必须走 safe_save_json 原子写（open('w') 直写在并发 GET 下
-会产出截断 JSON 使后续读取 500）。用源码契约锁 + 行为回归双重验证。"""
+"""聚合主文件必须走 safe_save_json 原子写（open('w') 直写在并发 GET 下
+会产出截断 JSON 使后续读取 500）。用源码契约锁 + 行为双重验证。"""
 import inspect
 import json
 import re
@@ -36,7 +36,7 @@ def test_aggregate_main_file_uses_safe_save_json(tmp_path):
 
 
 def test_aggregate_main_file_output_parseable(tmp_path):
-    """行为回归：真实目录跑一次完整聚合，产物存在、JSON 可解析且章节键正确"""
+    """行为验证：真实目录跑一次完整聚合，产物存在、JSON 可解析且章节键正确"""
     from backend.utils.aggregate_utils import JSONAggregator
 
     # __init__ 只存目录；把真实章节文件放进该目录即可触发内部 discover+load 流程

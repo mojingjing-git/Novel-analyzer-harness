@@ -1,4 +1,4 @@
-"""P2：①公式注入消毒 ②零可识别 JSON 时明确报错而非 IndexError"""
+"""①公式注入消毒 ②零可识别 JSON 时明确报错而非 IndexError"""
 import json
 import sys
 from pathlib import Path

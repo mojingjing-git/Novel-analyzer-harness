@@ -1,6 +1,6 @@
 """vnext 产物读写：格式门禁 + 原子写。
 
-两条硬规则（PLAN v2 §4 S2）：
+两条硬规则：
 
 1. **没有格式标记就拒绝**。缺 ``format_id`` / ``schema_version`` 的文件不是
    "可以猜一猜的旧文件"，而是"不属于本版本"。这里不提供任何降级解析、
@@ -10,7 +10,7 @@
 
 为什么不用 ``backend/utils/json_utils.safe_save_json``：那个函数是旧格式的写入器，
 它带 ``json_repair`` 兜底与"失败返回 default"的语义。在 vnext 里"写失败"必须抛出，
-让调用方不能把"没写进去"当成"写成功了"——这正是 S2 要堵的口子。
+让调用方不能把"没写进去"当成"写成功了"。
 """
 
 from __future__ import annotations

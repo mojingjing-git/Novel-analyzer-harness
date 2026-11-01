@@ -1,8 +1,7 @@
 """WS 事件翻译层（pipeline → ProgressHub）
-自 queue_service.py 拆出（2026-08-31 职责拆分）：把 AnalysisPipeline 的
-on_progress/on_token_stats 回调从编排层的嵌套闭包改为显式工厂。
+用显式工厂承载 AnalysisPipeline 的 on_progress/on_token_stats 回调。
 
-捕获面（复审确认恰好完整）：hub（广播）、item（写 completed_chapters、
+捕获面：hub（广播）、item（写 completed_chapters、
 读 start_time）、stats（每章统计 + token 累计）、seen_characters（发现流求差）。
 save_queue 不在此层——其调用点都在 AnalysisService 方法里。
 """
@@ -15,7 +14,7 @@ from ..ws_events import (
     block_done_event, block_start_event, discovery_event,
 )
 
-# H17 (2026-08-26) 发现流提取
+# 发现流提取
 # 停用词表：过滤"众人/他们/旁白"等指代词，避免"新人物"列表噪音
 # 上线后从 api_failures / 用户反馈迭代词表；独立常量好改
 _DISCOVERY_STOP_WORDS = frozenset({
@@ -111,7 +110,7 @@ def make_pipeline_callbacks(hub, item, stats, seen_characters):
     - status=start → 转发 block_start（带 range 文本）
     - done/failed/skipped → 转发 block_done + 每章统计 + discovery（仅成功块）
       skipped 也必须转发：否则前端已登记的 start 车道收不到 done，
-      activeBlocks 永久泄漏（车道堆叠修复）
+      activeBlocks 永久泄漏
     on_token_stats：累积分类 token 统计 + 转发
     """
 
@@ -128,7 +127,7 @@ def make_pipeline_callbacks(hub, item, stats, seen_characters):
             eta_str = _compute_eta(item.start_time, current, total, time.time())
             await hub.progress(current, total, eta=eta_str)
 
-        # H17: block_start 转发（带章范围文本 message 复用现有"开始分析第X-Y章..."）
+        # block_start 转发（带章范围文本 message 复用现有"开始分析第X-Y章..."）
         if status == PipelineStatus.START:
             range_text = payload.get("range") or message
             await hub.publish(block_start_event(
@@ -140,7 +139,7 @@ def make_pipeline_callbacks(hub, item, stats, seen_characters):
             ))
 
         # skipped（内容审核拦截）也必须转发：否则前端已登记的 start 车道
-        # 收不到 done，activeBlocks 永久泄漏（车道堆叠修复）
+        # 收不到 done，activeBlocks 永久泄漏
         if status in (PipelineStatus.DONE, PipelineStatus.FAILED, PipelineStatus.SKIPPED):
             range_text = payload.get("range") or message
             await hub.publish(block_done_event(
@@ -153,7 +152,7 @@ def make_pipeline_callbacks(hub, item, stats, seen_characters):
             # 记录每章统计（失败块同样计入：重试成本不可因失败而归零）
             stats.record_chapter(payload)
 
-            # H17: discovery 提取（仅成功块，result 是 AnalysisResult dataclass dict）
+            # discovery 提取（仅成功块，result 是 AnalysisResult dataclass dict）
             if status == "done":
                 result = payload.get("result")
                 discovery = _extract_discovery(result, seen_characters)

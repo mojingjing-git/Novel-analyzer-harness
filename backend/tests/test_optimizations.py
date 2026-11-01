@@ -1,4 +1,4 @@
-"""2026-08-07 优化项的回归测试（P0-1 / P0-2 / P0-4 / PERF-2）"""
+"""优化项测试：快照缓存不泄漏未来章节 / 断号目录读取 / 休眠判定 / 倒排索引去重"""
 import asyncio
 import sys
 from pathlib import Path
@@ -25,7 +25,7 @@ def _result(ch: int, event: str) -> AnalysisResult:
 
 
 def test_snapshot_cache_no_future_leak():
-    """P0-1 回归：请求更小 chapter_limit 时不得返回含未来章节的缓存超集"""
+    """请求更小 chapter_limit 时不得返回含未来章节的缓存超集"""
     state = MemoryState()
     for ch in range(1, 6):
         asyncio.run(state.add_result(_result(ch, f"event{ch}")))
@@ -47,7 +47,7 @@ def test_snapshot_cache_no_future_leak():
 
 
 def test_read_block_uses_actual_chapters(tmp_path):
-    """P0-4 回归：断号目录（1/3/5.txt）按实际章号列表读取，不再静默丢章"""
+    """断号目录（1/3/5.txt）按实际章号列表读取，不静默丢章"""
     for ch in (1, 3, 5):
         (tmp_path / f"{ch}.txt").write_text(f"第{ch}章内容", encoding="utf-8")
     fp = FileProcessor(tmp_path)
@@ -61,7 +61,7 @@ def test_read_block_uses_actual_chapters(tmp_path):
 
 
 def test_dormancy_uses_current_chapter():
-    """P0-2 回归：休眠判定用当前进度章而非全书末尾章数，后埋伏笔不被提前判死"""
+    """休眠判定用当前进度章而非全书末尾章数，后埋伏笔不被提前判死"""
     ledger = ForeshadowLedger()
     ledger.total_chapters = 1000
     item = ForeshadowItem(
@@ -80,7 +80,7 @@ def test_dormancy_uses_current_chapter():
 
 
 def test_deduplicate_foreshadows_index_semantics():
-    """PERF-2 回归：倒排索引去重的合并/独立语义与原实现一致"""
+    """倒排索引去重的合并/独立语义"""
     from backend.utils.text_utils import deduplicate_foreshadows
 
     clues = [

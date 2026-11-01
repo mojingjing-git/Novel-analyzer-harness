@@ -1,10 +1,8 @@
 """API 失败日志记录器（FailureLogger）
-自 llm_client.py 拆出（2026-08-31 职责拆分）：专门记录 API 调用失败的详细信息，
-进程级单例经 _get_failure_logger() 获取。
+专门记录 API 调用失败的详细信息，进程级单例经 _get_failure_logger() 获取。
 
-H15 修复（2026-08-26）：原实现用裸 open('a') 追加，无大小限制；24h-unlink
-仅在 __init__ 触发一次，长跑不重启文件会一直增长。改用 RotatingFileHandler
-（10MB × 3），轮转由 logging 体系自动管理，与 analyzer.log/crash.log 策略一致。
+用 RotatingFileHandler（10MB × 3）追加写入，轮转由 logging 体系自动管理，
+与 analyzer.log/crash.log 策略一致。
 """
 
 import json
@@ -18,7 +16,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
-# 敏感凭证脱敏正则（PR-1 修复，2026-09-10）：
+# 敏感凭证脱敏正则：
 # 覆盖 OpenAI / Anthropic 风格 key、x-api-key / Authorization header 形式
 # 显式长度 20+ 避免误伤短随机串；多模式 any-match 全部替换
 # **顺序很关键**：sk-ant- 必须在 sk- 之前（否则会被通用 sk- 模式先吃掉）
@@ -36,8 +34,6 @@ def redact(text: str) -> str:
     - 覆盖：OpenAI sk-... / Anthropic sk-ant-... / x-api-key header / Authorization: Bearer
     - 显式长度 20+ 避免误伤短随机串
     - **fail-open**：re.sub 抛异常时返回原文（宁可漏脱敏也不丢日志）
-
-    Refs: _plan_v3.md PR-1 步骤 2
     """
     if not text:
         return text

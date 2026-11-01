@@ -1,4 +1,4 @@
-"""vnext 书目发现与索引（PLAN v2 §1.1-4/5：不猜形状、不回退解析）。"""
+"""vnext 书目发现与索引（不猜形状、不回退解析）。"""
 
 from __future__ import annotations
 
@@ -28,8 +28,8 @@ def test_scan_accepts_vnext_project(tmp_path) -> None:
 def test_legacy_dir_is_rejected_not_guessed(tmp_path) -> None:
     """旧目录即使长得像书（有 blocks/ 和 output/），也必须被拒绝。
 
-    旧实现用"有没有 blocks/ 就算书"，结果任何同名目录都会被当书打开——
-    打开后发现字段不对，再靠默认值兜底，错误就被吞掉了。
+    判定必须基于明确的产物形状，不能用"有没有 blocks/ 就算书"——否则任何同名目录
+    都会被当书打开，打开后才发现字段不对，再靠默认值兜底，错误就被吞掉了。
     """
     root = tmp_path / "data"
     legacy = root / "旧书"

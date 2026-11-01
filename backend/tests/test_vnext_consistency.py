@@ -1,4 +1,4 @@
-"""S8 写入一致性与交互保护（PLAN v2 §4 S8 C-09/C-16/C-18）。"""
+"""写入一致性与交互保护。"""
 
 from __future__ import annotations
 
@@ -223,7 +223,7 @@ def test_lock_guard_flags_await_while_holding() -> None:
 
 
 def test_settlement_happens_in_thread_even_if_loop_closes() -> None:
-    """复审三第 3 条：取消等待方后关循环，结算仍要以"线程真的结束"为准。"""
+    """取消等待方后关循环，结算仍要以"线程真的结束"为准。"""
     import threading
 
     recorded: list[tuple[str, int]] = []
@@ -254,7 +254,7 @@ def test_settlement_happens_in_thread_even_if_loop_closes() -> None:
 
 
 def test_settle_callback_failure_is_reported_not_hanging() -> None:
-    """复审三第 4 条：结算回调自己抛错，不能让 Future 永久挂起。"""
+    """结算回调自己抛错，不能让 Future 永久挂起。"""
     async def scenario() -> None:
         def boom_finish(_result, _exc) -> None:
             raise OSError("记账写盘失败")

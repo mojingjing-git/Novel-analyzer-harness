@@ -1,4 +1,4 @@
-"""2026-08-02 spec：自动总结配置与队列收尾逻辑的单元测试"""
+"""自动总结配置与队列收尾逻辑的单元测试"""
 import asyncio
 import sys
 from pathlib import Path
@@ -11,7 +11,7 @@ from backend.services.queue_service import AnalysisService
 
 
 def test_analysis_config_auto_summary_defaults():
-    """0802 spec：AnalysisConfig 新增字段默认值（auto_summary=False / 并发2 / 批次30）"""
+    """AnalysisConfig 字段默认值（auto_summary=False / 并发2 / 批次30）"""
     cfg = AnalysisConfig()
     assert cfg.auto_summary is False
     assert cfg.summary_concurrency == 2

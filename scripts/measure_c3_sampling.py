@@ -54,8 +54,8 @@ SYSTEM = (
 
 SCHEMA = "\n".join(
     [
-        "输出 JSON（字段名由 backend.vnext.resolution.RECHECK_MODEL_EXAMPLE 渲染；"
-        "不许在脚本里手写——2026-10-31 就是因为手写键名，两轮 36 次调用白烧）：",
+        "输出 JSON（字段名由 backend.vnext.resolution.RECHECK_MODEL_EXAMPLE 渲染，"
+        "不要在脚本里手写）：",
         RECHECK_MODEL_EXAMPLE,
         "判定口径：",
         "- SUPPORTED：片段明确指出该伏笔已回收；必须给 evidence_id 与逐字 supporting_quote"
@@ -324,7 +324,7 @@ async def amain(args) -> int:
         },
         "rows": rows,
     }
-    out = ROOT / "docs" / "MEASURE-C3-2026-10-31.json"
+    out = ROOT / "docs" / "data" / "MEASURE-C3-2026-10-31.json"
     out.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n",
                    encoding="utf-8", newline="\n")
 

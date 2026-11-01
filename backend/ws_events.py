@@ -105,8 +105,7 @@ def block_start_event(chapter: int, range_text: str, progress: int, total: int, 
 def block_done_event(chapter: int, ok: bool, range_text: str = "",
                      elapsed: Optional[float] = None, tokens: Optional[Any] = None) -> Dict[str, Any]:
     """payload 恒含 range/elapsed/tokens 三键（elapsed/tokens 可为 null——
-    与既有 wire 格式逐键一致；原先 progress_hub.block_done 便捷方法因形状
-    不同且无调用方已删除）"""
+    与既有 wire 格式逐键一致）"""
     return {
         "type": WSType.BLOCK_DONE,
         "payload": {

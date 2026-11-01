@@ -1,4 +1,4 @@
-"""vnext 数据空间（PLAN v2 §1.1 / §2）。
+"""vnext 数据空间。
 
 本包只放**新格式**的常量、验证器与来源模型。旧格式（``chapter_*_result.json``、
 ``knowledge.json``、``rolling_summary.json``、伏笔账本 v3、聚合产物、总结 checkpoint）

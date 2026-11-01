@@ -1,4 +1,4 @@
-"""vnext 服务门面与路由（PLAN v2 §4 S2 接线：发现/打开/队列）。"""
+"""vnext 服务门面与路由（发现/打开/队列）。"""
 
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ def client(root):
 
 
 def test_list_books_separates_accepted_and_rejected(root) -> None:
-    """旧目录不是"没读到"，而是"明确拒绝"——这条是 S2 门槛的直接断言。"""
+    """旧目录不是"没读到"，而是"明确拒绝"。"""
     _make_book(root)
     legacy = root / "workspace_vnext" / "《旧书》"
     (legacy / "blocks").mkdir(parents=True)

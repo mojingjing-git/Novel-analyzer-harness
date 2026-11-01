@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Step5: SummaryService / LocationNormalizationService lifecycle matrix.
+"""SummaryService / LocationNormalizationService lifecycle matrix.
 
 Drives the REAL service methods (start / stop / status / _run) with fake
 runners and a hub spy, then records the observed behaviour: state field
@@ -8,7 +8,7 @@ values, WS event ordering, timestamps and the persistence side effects.
 Nothing here copies a production closure or asserts on source text: every
 case calls the service and observes what it actually did.
 
-Audit conclusion recorded here (Step5, no extraction made):
+Audit conclusion recorded here (no extraction made):
 
 The two services have four small fragments in common -- the is_running
 property, the book-exists guard, the has-chapter-results guard, and the
@@ -702,7 +702,7 @@ async def test_progress_callbacks_are_not_interchangeable(book, hub_spy, monkeyp
     """Summary and normalization on_progress disagree on every detail.
 
     Extraction would have to take a callback flag or a runner-type branch,
-    which the plan forbids; the duplication stays and this test is the record.
+    which the no-extraction rule forbids; the duplication stays and this test is the record.
     """
     book_id, _ = book
 

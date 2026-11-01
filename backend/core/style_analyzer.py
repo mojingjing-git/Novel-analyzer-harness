@@ -1,8 +1,8 @@
 """
 写作风格分析器 — 代码统计 + LLM 语义提取
 从原文 txt 文件提取硬指标，用 LLM 做 8 维语义风格提取。
-（从旧项目 style_analyzer.py 移植 extract_style_profile 链路，LLM 调用改 async；
-七维评分/style.md 独立工具不迁移——风格分析内置于最终总结流程）
+（extract_style_profile 链路的 LLM 调用为 async；
+风格分析内置于最终总结流程）
 """
 import re
 import json
@@ -64,9 +64,9 @@ def extract_dialogues(text):
     return dialogues
 
 
-# PERF-1：全部词表合并为单条正则，一次 finditer 完成所有指标计数。
-# 原实现对每个词表各扫一遍全文（感官26+比喻10+心理17+口语13+文言20+时间14+
-# 视角18 ≈ 120 次 O(n) 扫描），千章书会做 12 万次全文遍历；单遍正则把该阶段
+# 全部词表合并为单条正则，一次 finditer 完成所有指标计数。
+# 逐词表各扫一遍全文（感官26+比喻10+心理17+口语13+文言20+时间14+
+# 视角18 ≈ 120 次 O(n) 扫描）在千章书上会做 12 万次全文遍历；单遍正则把该阶段
 # CPU 开销降低 1-2 个数量级。最长优先排序避免短词先匹配吃掉长词。
 _WORD_METRIC: Dict[str, str] = {}
 for _words, _metric in (
@@ -81,7 +81,7 @@ _ALL_WORD_RE = re.compile("|".join(map(re.escape, sorted(_WORD_METRIC, key=len, 
 
 
 def count_word_metrics(text: str) -> Dict[str, int]:
-    """单遍扫描统计全部词表命中次数（PERF-1）。"""
+    """单遍扫描统计全部词表命中次数。"""
     counts = {m: 0 for m in ('sensory', 'metaphor', 'psycho', 'colloquial',
                              'literary', 'follow', 'god', 'time')}
     for m in _ALL_WORD_RE.finditer(text):
@@ -125,7 +125,7 @@ def analyze_chapter_stats(text: str) -> Optional[Dict]:
     cjk_chars = [c for c in text if CJK_CHAR.match(c)]
     ttr = len(set(cjk_chars)) / max(len(cjk_chars), 1)
 
-    # PERF-1：单遍扫描获取全部词表命中（替代原先 ~120 次全文 count）
+    # 单遍扫描获取全部词表命中（约 120 次全文 count 的替代）
     wm = count_word_metrics(text)
 
     return {
@@ -225,8 +225,8 @@ def sample_chapters(blocks_dir: Path, n: int = 6) -> List[Tuple[int, str]]:
             if text is None:
                 continue
             # 随机位置取 1500 字（避免总是开头）。
-            # P1-5：改为在原文上按"第 offset 个汉字"定位窗口，保留标点/引号/段落，
-            # 否则对话与节奏分析失去核心证据（原实现把长章采样文本的标点全剥了）。
+            # 在原文上按"第 offset 个汉字"定位窗口，保留标点/引号/段落，
+            # 否则对话与节奏分析失去核心证据。
             cjk_len = count_cjk(text)
             if cjk_len > 1500:
                 offset = rng.randint(0, cjk_len - 1500)
@@ -243,7 +243,7 @@ def sample_chapters(blocks_dir: Path, n: int = 6) -> List[Tuple[int, str]]:
 def _locate_cjk_offset(text: str, n: int) -> Optional[int]:
     """返回文本中第 n 个汉字（1-based）的字符下标；n 超界返回 None。
 
-    用于在保留标点的前提下按汉字数定位采样窗口（P1-5）。
+    用于在保留标点的前提下按汉字数定位采样窗口。
     """
     if n <= 0:
         return 0
@@ -319,7 +319,7 @@ async def call_llm_semantic(prompt: str, api_config: dict,
                             token_sink=None, book_name: str = "") -> Optional[dict]:
     """调用 LLM 获取语义风格特征（async）；token_sink 可选，接收 (in, out) 元组
 
-    H16 Phase 3 (2026-08-26)：改用 chat_auto() 按 streaming_enabled 自动选流式/非流式；
+    用 chat_auto() 按 streaming_enabled 自动选流式/非流式；
     流式模式下 on_progress 回调 broadcast token_delta 给前端（context="summary_phase_3"）。
     """
     client = LLMClient(APIConfig(
@@ -342,7 +342,7 @@ async def call_llm_semantic(prompt: str, api_config: dict,
         {"role": "user", "content": prompt}
     ]
 
-    # H16 Phase 3：流式模式 on_progress broadcast token_delta
+    # 流式模式 on_progress broadcast token_delta
     from ..progress_hub import get_hub
     from .stream_progress import make_stream_progress_callback
 
@@ -359,7 +359,7 @@ async def call_llm_semantic(prompt: str, api_config: dict,
     )
     if token_sink:
         try:
-            token_sink(llm_result.tokens)  # U4：tokens 可能是 None（没拿到 usage）
+            token_sink(llm_result.tokens)  # tokens 可能是 None（没拿到 usage）
         except Exception:
             pass
 
@@ -460,8 +460,6 @@ async def analyze_book(blocks_dir: Path, book_name: str, use_llm: bool = True,
     """
     分析整本书的写作风格，返回 Markdown 报告字符串。
     纯统计部分走线程池；LLM 语义部分可选（use_llm）。
-    （style_service 旧代码曾错误地从本模块导入一个并不存在的 analyze_book，
-     现已在此补齐，点击「开始风格分析」不再 ImportError。）
     """
     import asyncio
     from ..config.settings import ConfigManager
@@ -483,7 +481,7 @@ async def analyze_book(blocks_dir: Path, book_name: str, use_llm: bool = True,
             "api_key": cfg.api.api_key,
             "model": cfg.api.model,
             # 与 base_url/api_key/model 同源透传：网关以 OpenAI 协议暴露 claude-*
-            # 时，缺省 auto 会被前缀规则误导向 /v1/messages（复审遗漏构造点）
+            # 时，缺省 auto 会被前缀规则误导向 /v1/messages
             "provider": cfg.api.provider,
         }
         profile = await extract_style_profile(blocks_dir, book_name, api_config)

@@ -7,7 +7,7 @@
 
 全量测试里有 78 处这样的构造，750 秒里绝大部分是它——不是测试逻辑慢。
 
-**怎么修**：SSLContext 只读、可共享，所以在进程内缓存一份，让所有客户端复用。
+**实现方式**：SSLContext 只读、可共享，所以在进程内缓存一份，让所有客户端复用。
 首次构建仍有 3.8 秒一次性成本，之后每个客户端 0.001 秒。
 
 **为什么只在测试环境做**：生产里 `LLMClient` 是长驻单例，构造次数极少，不值得引入
@@ -49,7 +49,7 @@ def install_ssl_cache() -> bool:
         return False
 
     def cached(verify=True, cert=None, trust_env=True):
-        # 只缓存「默认信任链」这一种组合；自定义 verify/cert 仍走原实现
+        # 只缓存「默认信任链」这一种组合；自定义 verify/cert 不走缓存
         if verify is True and cert is None:
             ctx = _CACHE.get("default")
             if ctx is None:

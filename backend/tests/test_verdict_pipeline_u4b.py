@@ -1,10 +1,10 @@
 """
-U4b：结构化 verdict 贯通 analyzer → pipeline 的回归测试。
+结构化 verdict 贯通 analyzer → pipeline 的回归测试。
 
 背景：pipeline 判定"永久失败"块（登记进 _fatal_blocks，补跑轮据此跳过）时，
-原先只能拿到错误**字符串**，文本通道判定恒不 permanent，分支永远不成立。
-U4 把 llm_result.verdict（结构化结论）从 analyzer 透传到 pipeline，
-于是"欠费 / 上下文超长"这类错误不再在补跑轮重复烧钱。
+如果只能拿到错误**字符串**，文本通道判定恒不 permanent，分支永远不成立。
+llm_result.verdict（结构化结论）从 analyzer 透传到 pipeline，
+于是"欠费 / 上下文超长"这类错误可在补跑轮被跳过，不重复烧钱。
 
 覆盖三件事：
 1. ErrorVerdict.is_permanent——判断永久停止的唯一谓词（structured + action=stop）

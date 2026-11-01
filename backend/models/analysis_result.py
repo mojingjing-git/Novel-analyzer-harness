@@ -1,7 +1,7 @@
 """
 分析结果数据模型
 定义单次章节分析的结构化输出
-（自旧项目 models/analysis_result.py 移植；新增 locations / spatial_relationships 地点字段）
+（含 locations / spatial_relationships 地点字段）
 """
 
 from dataclasses import dataclass, field
@@ -36,12 +36,12 @@ class Foreshadowing:
     implication: str = ""
     confidence: str = "中"  # "高"/"中"/"低"
     importance: str = "中"  # 高/中/低（时间线重要度过滤；旧数据缺省按中）
-    # 2026-10-31 伏笔复检 V2：原文锚点。没有锚点就等于没有证据，
-    # 复检只能靠模型自述"我支持"——那正是旧实现判错了还看不出来的原因。
+    # 伏笔复检 V2：原文锚点。没有锚点就等于没有证据，
+    # 复检只能靠模型自述"我支持"——那正是判错了还看不出来的原因。
     anchor_quote: str = ""       # 逐字取自本章正文的一句（校验后可能被清空）
     anchor_chapter: int = 0      # 锚点实际所在章（校验时反查得出）
     motif_key: str = ""          # 2-6 字稳定母题词，供实体登记用
-    # 2026-11-01 采集契约：把"细节"和"问题"分开。
+    # 采集契约：把"细节"和"问题"分开。
     # clue 只写原文出现了什么；question 写尚待交代的具体事项；
     # answer_criteria 只写"后文出现什么才算回答"（不要把某个结局写死，
     # 否则"明确取消/反转"会被误判成未回收）。
@@ -70,7 +70,7 @@ class Location:
 
 @dataclass
 class SpatialRel:
-    """空间关系（新增：A 在 B 以北等）。JSON 键为 from/to/relation，from 是关键字故字段名用 from_"""
+    """空间关系（如 A 在 B 以北）。JSON 键为 from/to/relation，from 是关键字故字段名用 from_"""
     from_: str = ""
     to: str = ""
     relation: str = ""
@@ -99,7 +99,7 @@ class LongContextInsights:
     pattern: str = ""
     foreshadowing_network: str = ""
     pacing: str = ""
-    # 兼容旧格式：新prompt不再输出此字段，但from_dict仍能读取旧JSON
+    # 兼容旧格式：prompt 不再输出此字段，但 from_dict 仍能读取旧 JSON
     long_term_arcs: List[str] = field(default_factory=list)
 
 
@@ -111,7 +111,7 @@ class AnalysisResult:
     character_arcs: List[CharacterArc] = field(default_factory=list)
     foreshadowing: List[Foreshadowing] = field(default_factory=list)
     #: 锚点采集统计：total/located/missing。**必须是 dataclass 字段**——
-    #: 动态赋值不会被 to_dict 序列化，重启后统计就没了（复审 R1）。
+    #: 动态赋值不会被 to_dict 序列化，重启后统计就没了。
     anchor_stats: dict = field(default_factory=lambda: {"total": 0, "located": 0, "missing": 0})
     plot_holes: List[str] = field(default_factory=lambda: ["无明显逻辑漏洞"])
     locations: List[Location] = field(default_factory=list)  # 新增：地点（旧 result.json 无此字段，默认空）
@@ -138,9 +138,9 @@ class AnalysisResult:
     def _normalize_string_list(items: list) -> list:
         """将列表中的每个元素都转为字符串（处理嵌套列表或字典的情况）
 
-        P2 修复（2026-08-24）：LLM 类型漂移可能把整个数组字段输出为一个字符串，
-        此前直接迭代该字符串产出单字垃圾列表并持久化污染 KB/聚合/prompt；
-        现整串收编为单元素。非列表非字符串的输入一律回落空列表。"""
+        LLM 类型漂移可能把整个数组字段输出为一个字符串，
+        直接迭代该字符串会产出单字垃圾列表并持久化污染 KB/聚合/prompt；
+        因此整串收编为单元素。非列表非字符串的输入一律回落空列表。"""
         if isinstance(items, str):
             stripped = items.strip()
             return [stripped] if stripped else []
@@ -217,7 +217,7 @@ class AnalysisResult:
                 # 跳过非字典项
                 continue
 
-        # 新增：地点列表（旧格式无此字段 → 空列表）
+        # 地点列表（旧格式无此字段 → 空列表）
         locations = []
         for loc in data.get('locations', []) or []:
             if not isinstance(loc, dict):
@@ -229,7 +229,7 @@ class AnalysisResult:
                 description=str(loc.get('description', '') or ''),
             ))
 
-        # 新增：空间关系列表（JSON 键 from/to/relation；兼容 from_）
+        # 空间关系列表（JSON 键 from/to/relation；兼容 from_）
         spatial_relationships = []
         for rel in data.get('spatial_relationships', []) or []:
             if not isinstance(rel, dict):

@@ -1,5 +1,5 @@
-"""P1 修复验证（2026-08-24）：
-1. _find_locked_milestones 对字符串型 paradigm_layers 元素不再 AttributeError
+"""rolling 更新守卫：
+1. _find_locked_milestones 对字符串型 paradigm_layers 元素不抛 AttributeError
 2. 补跑后的同步 rolling 更新失败不得冲出（吞异常，保住收尾落盘）
 """
 import asyncio

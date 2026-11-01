@@ -1,4 +1,4 @@
-"""地点归一化编排服务测试（2026-08-22 spec）"""
+"""地点归一化编排服务测试"""
 import sys
 from pathlib import Path
 

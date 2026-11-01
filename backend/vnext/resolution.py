@@ -1,6 +1,6 @@
 """原文证据与全自动裁决：把模型的"核对答复"变成程序可判定的状态。
 
-接口分工（PLAN v2 §4 S6 的接口 B）：
+接口分工：
 
 * 调和阶段提出候选答案 —— 它永远是**假设**，不是结论；
 * 复检阶段读"原悬念 + 候选答案 + 埋设原文 + 回收上下文"，逐条给出固定四枚举的判定；
@@ -63,18 +63,18 @@ REASON_MATERIAL_INSUFFICIENT = "MATERIAL_INSUFFICIENT"
 REASON_QUOTE_OUT_OF_RANGE = "QUOTE_OUT_OF_RANGE"
 REASON_EMPTY_ANSWER = "EMPTY_ANSWER"
 REASON_MALFORMED = "MALFORMED_PAYLOAD"
-# 2026-10-30 复审修正：证据门禁的三个缺口
+# 证据门禁的三个缺口
 REASON_NO_EVIDENCE = "NO_EVIDENCE_ID"
 REASON_NO_QUOTE = "NO_SUPPORTING_QUOTE"
 REASON_NO_VERIFIER = "NO_QUOTE_VERIFIER"
-# 2026-10-31 D-19：偏移不再由模型负责
+# 偏移不再由模型负责
 REASON_QUOTE_NOT_FOUND = "QUOTE_NOT_FOUND"
 REASON_QUOTE_TOO_SHORT = "QUOTE_TOO_SHORT"
 REASON_AMBIGUOUS_QUOTE = "AMBIGUOUS_QUOTE"
 
 #: 引文最短长度。
 #:
-#: 实测（2026-10-31 C2 复测）：把下限设成 10 会误杀真证据——「地窖的门被撬开。」
+#: 实测：把下限设成 10 会误杀真证据——「地窖的门被撬开。」
 #: （8 字）在那一章里唯一出现，是硬证据。所以下限降到 6；
 #: "短句在长段里必然命中"这个风险改由**出现次数**兜住：短引文只要在该证据里
 #: 出现 ≥2 次，就会走歧义判定（无 span 破歧义 → AMBIGUOUS_QUOTE），不靠长度硬挡。
@@ -109,7 +109,34 @@ class CandidateVerdict:
     ambiguous: bool = False
     #: sha256(引文)[:12]：用于账本去重键，避免"位置微调"被当成新结论
     quote_hash: str = ""
+    #: 模型这次拿来做证据的**原文引文**（逐字）。
+    #: 只把哈希与位置存下来，事后审计就会变成"只知道判了 SUPPORTED，不知道
+    #: 它是拿哪句话判的"——而"引文是否真的回答了问题"恰恰是唯一的审计入口。
+    quote: str = ""
 
+    def to_dict(self) -> dict:
+        """转成可落盘的普通字典（全字段，含位置与引文）。
+
+        位置用二元组存不下 JSON（会变成列表），这里统一转成 ``[start, end]``
+        或 ``None``，读回时不必再判断类型。
+        """
+        return {
+            "candidate_id": self.candidate_id,
+            "verdict": self.verdict,
+            "answer": self.answer,
+            "evidence_id": self.evidence_id,
+            "supporting_span": list(self.supporting_span) if self.supporting_span else None,
+            "counter_search_performed": self.counter_search_performed,
+            "reason": self.reason,
+            "retryable": self.retryable,
+            "located_span": list(self.located_span) if self.located_span else None,
+            "reported_span": list(self.reported_span) if self.reported_span else None,
+            "ambiguous": self.ambiguous,
+            "quote_hash": self.quote_hash,
+            "quote": self.quote,
+            "checked": self.checked,
+            "cached_as_terminal": self.cached_as_terminal,
+        }
     @property
     def checked(self) -> bool:
         """是否真的核对过（可计入 COMPLETED 的分母）。"""
@@ -127,7 +154,7 @@ class CandidateVerdict:
 
 
 #: 模型回包被读取的全部键名——**唯一来源**。
-#: 2026-10-31 事故：Prompt 与解析器各自手写字段名，两轮共 36 次调用（约 109k token）
+#: Prompt 与解析器各自手写字段名时，两轮共 36 次调用（约 109k token）
 #: 全部因键名不一致被判 ``NO_EVIDENCE_ID`` / ``NO_SUPPORTING_QUOTE``。
 #: 现在 Prompt 由 :func:`render_recheck_schema` 渲染，而用例
 #: ``test_vnext_schema_keys`` 双向核对"常量里的键"与"解析器实际读取的键"。
@@ -339,7 +366,7 @@ def parse_recheck(
             )
 
         # ---- 证据门禁：没有"可定位的原文"，就不允许 SUPPORTED ----
-        # 2026-10-30 复审：原先 evidence_id / span / quote 全缺也能过，于是
+        # evidence_id / span / quote 全缺也能过，于是
         # "模型觉得答对了"就成了 AUTO_RESOLVED。没有证据的支持只是又一次猜测。
         evidence_id = payload.get("evidence_id")
         if not isinstance(evidence_id, str) or not evidence_id:
@@ -383,8 +410,8 @@ def parse_recheck(
                 )
             if result.ambiguous and reported is not None:
                 # 模型自报窗口**只能用来挑一处**，位置必须由程序重新算并回验。
-                # 2026-10-31 复审实测：模型给 [10000,10020]、原文只有 26 字时，
-                # 旧实现直接按 reported[0]+len(quote) 落了一个越界位置还判 SUPPORTED。
+                # 实测：模型给 [10000,10020]、原文只有 26 字时，
+                # 若直接按 reported[0]+len(quote) 落点会得到一个越界位置，还被判成 SUPPORTED。
                 text = evidence_text(evidence_id) if evidence_text is not None else ""
                 picked = None
                 if text:
@@ -400,7 +427,7 @@ def parse_recheck(
                 located = (int(result.start), int(result.end))
             ambiguous = bool(result.ambiguous)
         elif quote_within_range is not None:
-            # 退化模式：只给旧校验器时沿用改前行为（span 必填、逐字对上）
+            # 退化模式：只给旧校验器时按 span 必填、逐字对上校验
             if reported is None:
                 return CandidateVerdict(candidate_id, INVALID, reason=REASON_NO_QUOTE, retryable=True)
             if not quote_within_range(quote, reported[0], reported[1]):
@@ -447,7 +474,7 @@ def parse_recheck(
 
 
 def reduce_entity(verdicts: Iterable[CandidateVerdict]) -> tuple[str, CandidateVerdict | None]:
-    """按 §2.3 把同一实体的所有当前有效候选归约成实体状态。
+    """把同一实体的所有当前有效候选归约成实体状态。
 
     * 任一条 ``SUPPORTED`` → ``AUTO_RESOLVED``（并返回那条作为依据）；
     * 没有任何 SUPPORTED，但存在 ``INSUFFICIENT``/``DIFFERENT_ANSWER``/``CONTRADICTED``
@@ -647,7 +674,7 @@ def recheck_status(
     stopped: bool,
     counts: CoverageCounts | None,
 ) -> str:
-    """有序互斥地判定复检任务状态（§2.3 的口径）。
+    """有序互斥地判定复检任务状态。
 
     顺序：没开始 → ``NOT_RUN``；已开始未结束 → ``RUNNING``；被中断 → ``STOPPED``；
     有未核对但已跑过一轮 → ``PARTIAL``；否则 ``COMPLETED``。
@@ -669,7 +696,7 @@ def recheck_status(
     if error is not None:
         return PARTIAL
     # 数字加起来对不代表核对过：重复行/外来行让这轮不能被标完成
-    # （2026-10-30 复审 #4：同一候选答两次时和照样凑齐，但其中一行没被采用）
+    # （同一候选答两次时和照样凑齐，但其中一行没被采用）
     if counts.integrity_error() is not None:
         return PARTIAL
     if counts.not_checked > 0:

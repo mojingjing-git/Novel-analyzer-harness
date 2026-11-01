@@ -30,7 +30,6 @@ logger = logging.getLogger(__name__)
 class ThrottledBroadcaster:
     """按 channel key 独立节流（150ms）；适合流式 token 增量广播 + 多 block 并发。
 
-    H16 (2026-08-26) P1-8 修订：
     - channel_key 三元组 (context, session_id, unit_idx) 独立桶，不合并最新值
     - 多 block 并发广播不互相覆盖
 
@@ -71,7 +70,7 @@ class ProgressHub:
         # 每个连接持有一个独立队列，publish 时向所有队列投递
         self._queues: Set[asyncio.Queue] = set()
         self._lock = asyncio.Lock()
-        # H16 (2026-08-26)：流式 token 增量广播节流器
+        # 流式 token 增量广播节流器
         self._token_throttler = ThrottledBroadcaster(self)
 
     async def subscribe(self) -> asyncio.Queue:
@@ -144,7 +143,7 @@ class ProgressHub:
         unit_idx: int,
         delta: Dict[str, Any],
     ) -> None:
-        """流式 token 增量广播（H16）：自动节流 5-10/s
+        """流式 token 增量广播：自动节流 5-10/s
 
         channel_key 三元组 (context, session_id, unit_idx) 独立桶——
         多 block 并发不互相覆盖；同一 block 的流式 chunk 150ms 内合并。
@@ -228,7 +227,7 @@ async def _forward_logs(handler: HubLogHandler, hub: ProgressHub) -> None:
 def install_log_forwarder() -> None:
     """安装日志转发器：在 root logger 上加 HubLogHandler，并启动后台转发任务。
 
-    P1-8：先检查 root logger 是否已挂载同类型 handler——uvicorn --reload 每次
+    先检查 root logger 是否已挂载同类型 handler——uvicorn --reload 每次
     热重载都会重新执行 app startup，重复挂载会让每条日志向 WS 推 N 份，
     且旧 handler 的线程安全队列常驻内存。
     """

@@ -1,9 +1,8 @@
 """
 分析引擎（asyncio 版）
 协调LLM调用、结果解析和知识库更新的核心逻辑
-（自旧项目 core/analyzer.py 移植：analyze_chapter 改 async，
-内部 await llm_client.chat_with_retry；H16 Phase 3 业务接入 2026-08-26：
-改用 llm_client.chat_auto()，按 self.config.api.streaming_enabled 自动选流式/非流式；
+（analyze_chapter 是 async，内部 await llm_client.chat_auto()，
+按 self.config.api.streaming_enabled 自动选流式/非流式；
 流式模式下 on_progress 回调 broadcast token_delta 给前端）
 """
 
@@ -23,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 def _usage_status_str(usage_status) -> str:
-    """把用量状态归一成上报用的字符串（U6 / T04）。
+    """把用量状态归一成上报用的字符串。
 
     retry_info 与 WS 载荷只认 "KNOWN"/"UNKNOWN"：
     - "KNOWN"   拿到了 usage，tokens 里的数字是真实测量；
@@ -37,8 +36,8 @@ def _usage_status_str(usage_status) -> str:
 def validate_parsed_analysis(data: dict) -> tuple:
     """对已解析的 JSON dict 做必须字段/类型校验。
 
-    P2 修复（2026-08-24）：真值字符串（如 long_context_insights="本章无洞察"）
-    此前绕过键存在性检查，在 AnalysisResult.from_dict 的 `or {}` 之后 .get()
+    真值字符串（如 long_context_insights="本章无洞察"）也必须被拦住：
+    它们绕过键存在性检查，在 AnalysisResult.from_dict 的 `or {}` 之后 .get()
     崩溃 → 该块被判解析失败，烧完 3 轮补跑预算后永久丢失。"""
     required_fields = ["core_events", "cross_block", "long_context_insights"]
     missing = [k for k in required_fields if k not in data]
@@ -98,7 +97,7 @@ class NovelAnalyzer:
         chapter_content: str,
         knowledge_base: KnowledgeBase,
         block_size: int = 1,
-        book_id: str = "",  # H16 Phase 3：用于 token_delta 广播的 session_id
+        book_id: str = "",  # 用于 token_delta 广播的 session_id
     ) -> Tuple[Optional[AnalysisResult], Tuple[int, int], dict]:
         """
         分析单个章节（并发安全版本）
@@ -112,12 +111,12 @@ class NovelAnalyzer:
         Returns:
             (分析结果, 本章消耗token数, retry_info)；
             retry_info = {retries, failed_tokens, usage_status, error?, verdict?}，
-            usage_status == "UNKNOWN" 表示没拿到 usage，此时 token 数只是记账哨兵（U6）；
+            usage_status == "UNKNOWN" 表示没拿到 usage，此时 token 数只是记账哨兵；
             失败返回 (None, 已消耗tokens, retry_info)
         """
         if self._is_stopped:
             logger.info("分析已被停止")
-            # 未发起任何请求：这里的零消耗是真实测量，故 usage_status=KNOWN（U6）
+            # 未发起任何请求：这里的零消耗是真实测量，故 usage_status=KNOWN
             return None, (0, 0), {"retries": 0, "failed_tokens": 0,
                                   "usage_status": "KNOWN"}
 
@@ -162,7 +161,7 @@ class NovelAnalyzer:
             # 2. 调用LLM（带重试和温度退火，包含JSON解析验证）
             # 重试归因改用单次调用统计：并发章节共享 LLMClient 时，
             # 客户端全局计数差分会把其它章节的尝试混入本块的 retry_info
-            # H16 Phase 3 (2026-08-26)：改用 chat_auto() 按 streaming_enabled 自动选流式/非流式；
+            # 用 chat_auto() 按 streaming_enabled 自动选流式/非流式；
             # 流式模式下 on_progress 回调 broadcast token_delta 给前端。
             hub = get_hub()
             on_progress = make_stream_progress_callback(
@@ -184,7 +183,7 @@ class NovelAnalyzer:
                 "retries": max(0, llm_result.call_stats.get("attempts", 0) - 1),
                 "failed_tokens": llm_result.call_stats.get("failed_tokens", 0),
             }
-            # U6（T04）：用量状态在此统一写入，成功 / 失败 / 解析失败三条出口同一口径。
+            # 用量状态在此统一写入，成功 / 失败 / 解析失败三条出口同一口径。
             # 拿到 usage → "KNOWN"；没拿到 → "UNKNOWN"，此时下面的 (0, 0) 只是记账哨兵，
             # pipeline 会在对外载荷里带上本字段，不让下游把"未知"读成"零消耗"。
             retry_info["usage_status"] = _usage_status_str(llm_result.usage_status)
@@ -195,10 +194,10 @@ class NovelAnalyzer:
                 actual_tokens = (llm_result.tokens if llm_result.tokens is not None
                                  else (0, 0))
                 retry_info["error"] = llm_result.error  # 传播原始错误（含 [MODERATION] 标记，供 pipeline 判 skipped）
-                # U4：把结构化判定透传给 pipeline——
+                # 把结构化判定透传给 pipeline——
                 # pipeline 靠 verdict.is_permanent 识别"永久失败"块（补跑轮跳过，不重复烧钱）；
                 # 文本兜底判定恒不永久，故只有结构化结论才能点亮该分支。
-                # （usage_status 已在 retry_info 构造处统一写入，见上，U6）
+                # （usage_status 已在 retry_info 构造处统一写入，见上）
                 retry_info["verdict"] = (llm_result.verdict.to_dict()
                                         if llm_result.verdict is not None else None)
                 return None, actual_tokens, retry_info
@@ -213,8 +212,8 @@ class NovelAnalyzer:
             if result is None:
                 logger.error(f"第{chapter_number}章JSON解析失败，LLM响应前800字符:\n{response[:800]}")
                 retry_info["error"] = "JSON解析失败"
-                # U4：解析失败同属失败路径——verdict 为 None（LLM 调用本身成功），
-                # usage_status 已在构造处统一透传（U6，tokens 是否可信由它决定）
+                # 解析失败同属失败路径——verdict 为 None（LLM 调用本身成功），
+                # usage_status 已在构造处统一透传（tokens 是否可信由它决定）
                 retry_info["verdict"] = (llm_result.verdict.to_dict()
                                         if llm_result.verdict is not None else None)
                 return None, (in_tok, out_tok), retry_info
@@ -251,7 +250,7 @@ class NovelAnalyzer:
             except Exception as exc:  # noqa: BLE001 - 锚点校验失败不该影响分析
                 logger.warning(f"伏笔锚点校验异常，已跳过: {exc}")
 
-            # 采集契约（2026-11-01）：没有 question/answer_criteria 的条目只是"线索"，
+            # 采集契约：没有 question/answer_criteria 的条目只是"线索"，
             # 不是"待回答的问题"。把它标出来、不进复检队列——复检要判的是"被回答了吗"，
             # 对一条没有问题的东西问这个，只能得到"证据不足"。
             try:
@@ -273,7 +272,7 @@ class NovelAnalyzer:
         except Exception as e:
             logger.error(f"第{chapter_number}章分析异常: {e}", exc_info=True)
             # 尽量保留已消耗的 tokens；异常可能发生在已扣费之后，(0, 0) 只是记账哨兵，
-            # 故 usage_status 必须标 UNKNOWN（U6：未知不得宣称为零）
+            # 故 usage_status 必须标 UNKNOWN（未知不得宣称为零）
             return None, (0, 0), {"retries": 0, "failed_tokens": 0,
                                   "usage_status": "UNKNOWN"}
 

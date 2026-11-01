@@ -36,8 +36,8 @@ def _segment(text: str) -> list[str]:
 def _keywords_for(*texts: str, max_terms: int | None = None) -> list[str]:
     """从锚点/问题/描述里提取**检索词条**。
 
-    这里曾经直接返回整句（"铜匣底下那层是空的"），结果只有当某一章原封不动
-    包含这整句时才算命中——等于检索没做。改成按标点切段后再取 2~4 字片段，
+    不能直接返回整句（"铜匣底下那层是空的"）：那样只有当某一章原封不动
+    包含这整句时才算命中——等于检索没做。因此按标点切段后再取 2~4 字片段，
     长词优先，交给 ``find_mentions`` 按命中权重排序。
     """
     buckets: dict[int, list[str]] = {4: [], 3: [], 2: []}
@@ -192,7 +192,7 @@ class EvidenceIndex:
             shown_hit_chapters.append(ch)
 
         # 截断只看"实际遗漏"：命中章比窗口多、或命中章里取不到词而跳过。
-        # 原来用 len(chapters) > max_windows 判断，恰好展示满时会误报截断。
+        # 不用 len(chapters) > max_windows 判断——恰好展示满时会误报截断。
         omitted = extra_hits + dropped
         text = "\n\n".join(blocks)
         return Bundle(

@@ -1,7 +1,6 @@
 """禁用思考参数探测（probe_thinking_params）
-自 llm_client.py 拆出（2026-08-31 职责拆分）：多模式检测某端点/模型
-默认是否输出思考链、哪个禁用参数有效。与 LLMClient 的调用/重试主链
-无状态耦合（自建 AsyncOpenAI 探针客户端，不走重试链/失败日志），
+多模式检测某端点/模型默认是否输出思考链、哪个禁用参数有效。与 LLMClient
+的调用/重试主链无状态耦合（自建 AsyncOpenAI 探针客户端，不走重试链/失败日志），
 单测 patch 目标为 `backend.core.llm_probe.AsyncOpenAI`。
 """
 
@@ -20,9 +19,9 @@ logger = logging.getLogger(__name__)
 def _get_reasoning_tokens(usage) -> int:
     """从 usage 安全提取 reasoning_tokens，兼容 dict / Pydantic model / None
 
-    2026-08-26 探测回归修复：OpenAI SDK 的 CompletionUsage 与
+    OpenAI SDK 的 CompletionUsage 与
     CompletionTokensDetails 都是 Pydantic v2 model，没有 .get() 方法。
-    原代码 (usage.get("completion_tokens_details") or {}).get("reasoning_tokens")
+    (usage.get("completion_tokens_details") or {}).get("reasoning_tokens")
     在 Pydantic 形态下 AttributeError，导致 probe_thinking_params 所有「真在
     思考」的候选都炸（只有模型完全禁思考时 completion_tokens_details 为 None
     才碰巧走通）—— 表现为大部分候选都报「无效」。
@@ -118,22 +117,22 @@ async def probe_thinking_params(base_url: str, api_key: str, model: str,
     # 候选参数：覆盖 2025-2026 主流厂商的禁用 thinking 语法
     candidates = [
         {"param": "无参数（基线）", "thinking_mode": None, "extra": {}},
-        # 现有三个
+        # 三个基础关闭写法
         {"param": "thinking: disabled", "thinking_mode": {"thinking": {"type": "disabled"}},
          "extra": {"extra_body": {"thinking": {"type": "disabled"}}}},
         {"param": "reasoning_effort: none", "thinking_mode": {"reasoning_effort": "none"},
          "extra": {"extra_body": {"reasoning_effort": "none"}}},
         {"param": "enable_thinking: false", "thinking_mode": {"enable_thinking": False},
          "extra": {"extra_body": {"enable_thinking": False}}},
-        # 新增：MiniMax M3 完整关闭（thinking + reasoning_split 联合）
+        # MiniMax M3 完整关闭（thinking + reasoning_split 联合）
         {"param": "thinking: disabled + reasoning_split",
          "thinking_mode": {"thinking": {"type": "disabled"}, "reasoning_split": True},
          "extra": {"extra_body": {"thinking": {"type": "disabled"}, "reasoning_split": True}}},
-        # 新增：Qwen3 / GLM vLLM 走 chat_template_kwargs
+        # Qwen3 / GLM vLLM 走 chat_template_kwargs
         {"param": "chat_template_kwargs: enable_thinking=false",
          "thinking_mode": {"chat_template_kwargs": {"enable_thinking": False}},
          "extra": {"extra_body": {"chat_template_kwargs": {"enable_thinking": False}}}},
-        # 新增：OpenAI Responses 风格
+        # OpenAI Responses 风格
         {"param": "reasoning: effort=none",
          "thinking_mode": {"reasoning": {"effort": "none"}},
          "extra": {"extra_body": {"reasoning": {"effort": "none"}}}},

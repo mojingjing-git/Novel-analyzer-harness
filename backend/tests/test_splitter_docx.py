@@ -1,10 +1,10 @@
-"""DOCX 输入路径测试（Plan: docs/PLAN-docx-input-2026-09-28.md）
+"""DOCX 输入路径测试
 
 覆盖三类风险：
 
-1. **行锚点前提**：15 条章正则带 `^` 且配套 `len(s) <= 80` 整行闸门。DOCX 里没有换行符，
-   若转换不当会让「标题+正文」合并成超长行 → 闸门判负 → **整章被静默吞掉**
-   （§10 记过的同类事故）。故本文件核心目标是验证"标题独占一行"。
+1. **行锚点前提**：章正则带 `^` 且配套 `len(s) <= 80` 整行闸门。DOCX 里没有换行符，
+   若转换不当会让「标题+正文」合并成超长行 → 闸门判负 → **整章被静默吞掉**。
+   故本文件核心目标是验证"标题独占一行"。
 2. **异常分诊**：加密 docx 抛 `RuntimeError`（不是 `BadZipFile`），漏掉会被
    `routes_splitter.py` 的 `except Exception` 吞成 500。
 3. **自动检测未被污染**：`_chapter_regex_for_mode` 只扫 `lines[:800]`，故必须断言
@@ -211,7 +211,7 @@ def test_heading_not_merged_with_body(tmp_path):
 def test_table_wrapped_body_is_extracted(tmp_path):
     """网页转制的 DOCX 常把正文塞进单单元格表格，递归遍历必须能抽到。
 
-    复审发现：原先只断言「文本里有」，太弱——单章时自动检测的 scores>=5 闸门过不了，
+    只断言「文本里有」太弱——单章时自动检测的 scores>=5 闸门过不了，
     会静默回落单章且 detected_pattern 变成兜底串。故这里用 ≥6 章并要求 pattern 正确。
     """
     cell = "".join(

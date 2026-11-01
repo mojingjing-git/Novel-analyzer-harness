@@ -1,4 +1,4 @@
-"""本次窗口会话 token 累计测试（2026-08-18）
+"""本次窗口会话 token 累计测试
 - SummaryService.session_token_stats() 汇总分类小计正确
 - 会话累计跨多次总结任务叠加
 - GET /api/analysis/token_stats/session 端点返回分析+总结结构

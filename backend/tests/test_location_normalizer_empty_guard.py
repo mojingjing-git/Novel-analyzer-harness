@@ -1,4 +1,4 @@
-"""P1 修复验证（2026-08-24）：归一化全批次解析为零条目时必须整体判败，
+"""归一化全批次解析为零条目时必须整体判败，
 不得落盘空 normalized 文件 + 当前 hash（否则永久短路，地图数据恒空）。"""
 import asyncio
 import json
@@ -41,7 +41,7 @@ def test_all_empty_batches_abort_phase_0a(tmp_path):
         output_dir=tmp_path, llm_client=FakeLLM(),  # type: ignore[arg-type]
         concurrency=2, locations_batch_size=1)   # 2 个 group → 2 个批次
     result = asyncio.run(norm._run_phase_0a_batches(_groups(2)))
-    assert result is None, "全部批次解析为零条目时应熔断返回 None（原实现返回 [] 当成功）"
+    assert result is None, "全部批次解析为零条目时应熔断返回 None（返回 [] 会被当成成功）"
 
 
 def test_run_refuses_to_persist_empty_normalization(tmp_path):

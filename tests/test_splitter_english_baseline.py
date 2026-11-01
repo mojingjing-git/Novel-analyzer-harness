@@ -1,7 +1,7 @@
 """
 切章器 baseline 跑测 —— 只跑不修
 记录 7 本 Project Gutenberg 外文书用现有切章器切出什么。
-v2 (2026-09-02) Phase 1 baseline
+baseline 快照（当前切章器在这些书上的实际输出）
 
 设计要点（与父任务派工说明一致）：
 - 不修改 splitter_service.py，仅跑测
@@ -30,7 +30,7 @@ from backend.services.splitter_service import (
 
 FIXTURES = Path(__file__).parent / "fixtures" / "gutenberg"
 
-# 期望值是粗略的（plan §3 验收测试矩阵的"宽松"版本）
+# 期望值是粗略的（验收测试矩阵的"宽松"版本）
 EXPECTED = {
     1342:  {"min_chapters": 50,  "title_contains": "Pride",         "label": "Pride and Prejudice"},
     84:    {"min_chapters": 20,  "title_contains": "Frankenstein",  "label": "Frankenstein"},

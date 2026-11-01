@@ -1,7 +1,7 @@
 """Prompt 上下文限额：9 个上限的统一定义与配置校验。
 
-**为什么收进一个不可变 dataclass**：旧代码里这 9 个上限是 ``prompt_builder.py`` 里的
-散装硬编码数字（max_arcs=30、max_summaries=5、max_character_states=20、max_world_items=20、
+**为什么收进一个不可变 dataclass**：这 9 个上限散装成 ``prompt_builder.py`` 里的
+硬编码数字（max_arcs=30、max_summaries=5、max_character_states=20、max_world_items=20、
 max_foreshadow_entries=5、max_relationships=15、max_verified_facts=15、max_themes=8、
 max_content_chars=30000）。散装数字会漂移：其中 4 个在 analyzer 里根本没被传进去，
 于是"配置了也不生效"——配置层看起来支持，实际链路不消费。
@@ -96,7 +96,7 @@ def from_dict(payload: Mapping[str, object]) -> PromptLimits:
     规则：
 
     - 只认识 9 个已知键；**未知键一律忽略**（配置可能来自更新的版本，
-      旧实现不该因此拒绝整份配置），返回对象不含它们。
+      未知键不该因此拒绝整份配置），返回对象不含它们。
     - 每个已知键的值必须是**严格正整数**：``bool`` 拒绝（``True`` 会被
       ``int()`` 悄悄变成 1），``float`` 即使等于整数也拒绝（``2.0`` 说明
       写错了），字符串数字拒绝（不做隐式转换），``0`` 与负数拒绝。

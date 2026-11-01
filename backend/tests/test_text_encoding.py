@@ -1,4 +1,4 @@
-"""P2 收口：编码选择从「首个成功」改为「采样罚分择优」——
+"""编码选择按「采样罚分择优」——
 Big5 书不得落入 gb18030 乱码；两入口（detect_and_decode/detect_encoding）行为一致。"""
 import sys
 from pathlib import Path

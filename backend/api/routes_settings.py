@@ -21,7 +21,7 @@ class ModelPreviewRequest(BaseModel):
     base_url: Optional[str] = None
     api_key: Optional[str] = None
     provider: Optional[str] = None
-    # 2026-09-30：探测目标模型（总结页对 summary_model 独立探测）；空回退主模型。
+    # 探测目标模型（总结页对 summary_model 独立探测）；空回退主模型。
     # summary_model 复用同一 base_url/api_key，探测结果对其同样有效。
     model: Optional[str] = None
 

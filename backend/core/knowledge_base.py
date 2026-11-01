@@ -1,8 +1,7 @@
 """
 知识库管理器
 负责知识库的加载、保存、更新和压缩
-（自旧项目 core/knowledge_base.py 原样移植，import 改相对路径；
-纯 dict/文件操作无 LLM 调用，同步保留，pipeline 中经 asyncio.to_thread 调用）
+（纯 dict/文件操作无 LLM 调用，同步保留，pipeline 中经 asyncio.to_thread 调用）
 """
 
 import json
@@ -212,7 +211,7 @@ class KnowledgeBaseManager:
             near_neighbor_valid = False
             if best_key is not None:
                 cached_fp, cached_results, cached_kb = _temp_kb_cache[best_key]
-                # P2 修复（2026-08-24）：≤best_limit 基线区间的文件可能已被重写
+                # ≤best_limit 基线区间的文件可能已被重写
                 # （重跑/手工修正）。近邻增量只解析 >best_limit 新文件，若不校验
                 # 基线指纹，陈旧 KB 会经 _cache_put 固化到新 key 且永不自愈，
                 # 并可经 merge_results 进入最终 knowledge.json。

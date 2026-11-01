@@ -74,3 +74,5 @@ docs/plans/
 # PyInstaller 打包产物（v0.1.0+：dist/ 里的 exe 单独走 gh release，不入库）
 build/
 dist/
+
+.tmp_fullbook/

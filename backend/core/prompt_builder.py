@@ -1,7 +1,7 @@
 """
 提示词构建器
 构建长上下文专用的系统提示和用户提示
-（自旧项目 core/prompt_builder.py 移植；SYSTEM_PROMPT 新增 locations / spatial_relationships 输出要求）
+（SYSTEM_PROMPT 含 locations / spatial_relationships 输出要求）
 """
 
 from typing import List
@@ -112,11 +112,11 @@ class PromptBuilder:
         self.max_character_states = max_character_states
         self.max_world_items = max_world_items
         self.max_foreshadow_entries = max_foreshadow_entries
-        # P1 修复：以下三个字段此前派生但从未注入 prompt，现启用注入
+        # 以下三个字段都会注入 prompt
         self.max_relationships = max_relationships
         self.max_verified_facts = max_verified_facts
         self.max_themes = max_themes
-        # P2 修复：正文是唯一无上限的 prompt 注入项；超窗确定性失败且退火无效。
+        # 正文是唯一无上限的 prompt 注入项；超窗确定性失败且退火无效。
         # 3 万字≈为 32k-token 窗口的 system+九路上下文留足余量；后续可接配置。
         self.max_content_chars = max_content_chars
 
@@ -180,7 +180,7 @@ class PromptBuilder:
         else:
             foreshadow_text = "（暂无伏笔网络）"
 
-        # 角色关系（P1：启用注入，此前为死字段）
+        # 角色关系（注入 prompt）
         relationships = knowledge_base.character_relationships
         if relationships:
             rel_items = list(relationships.items())[-self.max_relationships:]
@@ -188,14 +188,14 @@ class PromptBuilder:
         else:
             rel_text = "（暂无角色关系）"
 
-        # 已验证事实（P1：启用注入，此前为死字段）
+        # 已验证事实（注入 prompt）
         facts = knowledge_base.verified_facts
         if facts:
             fact_text = "\n".join(f"- {f}" for f in facts[-self.max_verified_facts:])
         else:
             fact_text = "（暂无已验证事实）"
 
-        # 主题元素（P1：启用注入，此前为死字段）
+        # 主题元素（注入 prompt）
         themes = knowledge_base.thematic_elements
         if themes:
             theme_text = "\n".join(f"- {t}" for t in themes[-self.max_themes:])
@@ -217,7 +217,7 @@ class PromptBuilder:
 [主题元素]
 {theme_text}"""
 
-        # P2：尾部保序截断——开头丢弃量显式告知模型，避免其困惑叙事断裂
+        # 尾部保序截断——开头丢弃量显式告知模型，避免其困惑叙事断裂
         content_text = chapter_content
         if len(content_text) > self.max_content_chars:
             dropped = len(content_text) - self.max_content_chars

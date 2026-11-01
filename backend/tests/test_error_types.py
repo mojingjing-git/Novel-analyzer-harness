@@ -1,7 +1,6 @@
-"""error_types 单测（U1）
+"""error_types 单测
 
-覆盖 docs/DESIGN-D01-verdict-transport-2026-10-30.md §3 与
-docs/PLAN-v2-long-novel-reliability-2026-10-30.md §2.5 的类型契约：
+覆盖错误类型契约：
 
 - 五个枚举的取值集合（尤其 ErrorScope 恰好 4 个值）
 - ErrorVerdict / LLMResult 的 to_dict → from_dict 往返相等
@@ -110,7 +109,7 @@ def test_source_channel_values():
 
 
 def test_error_scope_has_exactly_four_members():
-    """ErrorScope 恰好四个值（§3.5 / §2.5）"""
+    """ErrorScope 恰好四个值"""
     assert len(ErrorScope) == 4
     assert {m.name: m.value for m in ErrorScope} == {
         "ACCOUNT_GLOBAL": "ACCOUNT_GLOBAL",
@@ -135,7 +134,7 @@ def test_usage_status_values():
 
 
 def test_error_scope_default_is_not_request_local():
-    """scope 不得默认成 REQUEST_LOCAL（§3.5）"""
+    """scope 不得默认成 REQUEST_LOCAL"""
     assert ErrorVerdict(
         cls=ErrorClass.UNKNOWN,
         confidence=Confidence.NONE,
@@ -247,7 +246,7 @@ def test_llm_result_is_frozen():
 
 
 def test_llm_result_is_not_tuple_like():
-    """LLMResult 不实现 __iter__，不提供位置式解包（§3.3）"""
+    """LLMResult 不实现 __iter__，不提供位置式解包"""
     r = _result()
     assert not hasattr(type(r), "__iter__")
     assert not hasattr(type(r), "__getitem__")

@@ -1,4 +1,4 @@
-"""S8 生产接线后的入口级故障测试（复审三第 1、2 条）。
+"""生产接线后的入口级故障测试。
 
 这些用例打在**真实发布入口** `results.publish_result` 上，不是打在封装上——
 封装测得再绿，只要没接进生产路径就等于没有保护。
@@ -85,7 +85,7 @@ def test_commit_failure_removes_file_and_manifest_unchanged(tmp_path, monkeypatc
 
 
 def test_commit_written_then_raise_keeps_file_and_registration(tmp_path, monkeypatch) -> None:
-    """复审三第 2 条的正例：manifest 写完才炸，文件已被引用，绝不能删。"""
+    """manifest 写完才炸，文件已被引用，绝不能删。"""
     book_dir, manifest, plan = _book(tmp_path)
     record = _record(plan, manifest)
     real_commit = results.commit_manifest

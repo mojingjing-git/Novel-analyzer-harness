@@ -61,7 +61,7 @@ class SummaryService:
               allow_during_analysis: bool = False) -> None:
         """启动总结任务。已在运行抛 RuntimeError，书不存在抛 KeyError，无结果抛 ValueError
 
-        allow_during_analysis：仅供队列自动总结使用（2026-08-02 spec）——该场景在
+        allow_during_analysis：仅供队列自动总结使用——该场景在
         队列分析任务自身的收尾阶段（_run_queue 内）调用，get_analysis_service()
         仍为 running，但所有章节已分析完毕、result.json 已完整，读取是安全的。
         普通用户入口（/api/summary/start）保持护栏：分析期间禁止手动总结。
@@ -174,7 +174,7 @@ class SummaryService:
             await hub.state_change(WSState.SUMMARY_FAILED, str(e))
         finally:
             self._finished_at = time.time()
-            # 会话累计 + 总结 token 落盘（2026-08-17）：历史成本可查，重启不丢
+            # 会话累计 + 总结 token 落盘：历史成本可查，重启不丢
             if self._runner is not None:
                 try:
                     stats = self._runner.get_token_stats()

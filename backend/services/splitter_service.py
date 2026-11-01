@@ -1,7 +1,7 @@
 """
-切分工具服务 —— 功能增强版
+切分工具服务
 
-将旧项目 cuttttttt_pyqt6.py 的切分逻辑，与两个开源实现里最实用的部分合并重写：
+在两个开源实现最实用的部分基础上合并重写，贡献边界见下方 Third-Party Notices：
   * zzk6780051/novel  (.github/scripts/fenli.py)
         - 多格式章节正则（中文/阿拉伯数字、卷章节回、英文 Chapter、括号包裹）
         - 按前 N 行对每个候选正则打分，自动选出本书最优正则
@@ -11,8 +11,8 @@
         - 卷/章/节 层级结构识别（volume / chapter / section）
         - 章节最小 / 最大字数限制
 
-本模块在保留「workspace/{书名}/blocks/{index}.txt 扁平数字命名」契约的前提下，
-新增：卷层级分组、番外/序章/楔子/尾声等特章、中文数字转阿拉伯、广告/水印行清理、
+本模块在保留「workspace/{书名}/blocks/{index:04d}.txt 扁平数字命名」契约的前提下，
+提供：卷层级分组、番外/序章/楔子/尾声等特章、中文数字转阿拉伯、广告/水印行清理、
 最小字数跳过或合并短章、超大章自动拆分、相邻去重、书名作者推断、统计信息。
 
 输出：
@@ -41,17 +41,17 @@
        - 卷 / 章 / 节 三层层级结构识别（volume / chapter / section）
        - 章节最小 / 最大字数限制
 
-  本文件中 2024 年 3 月之后所有改进（特章正则、强弱广告清理、并发写入、
-  原子写入、min_words 沉默失败保护、超大章按段落拆分、书名作者推断、
-  P1-P5 + G6 等六轮修复）由本项目作者独立完成。
+  本文件中超出上述借鉴范围的改进（特章正则、强弱广告清理、并发写入、
+  原子写入、min_words 沉默失败保护、超大章按段落拆分、书名作者推断等）
+  由本项目作者独立完成。
 
   MIT 协议原文：https://opensource.org/licenses/MIT
   本文件同时包含上述项目的衍生作品，按 MIT 协议保留版权声明即可闭源商用。
 
-已知限制（2026-09-02 P1 国际化修复后追加）
+已知限制
 =========================================
 下列限制经 7 本 Project Gutenberg 外文书 baseline + 4 类边界 case 实测确认，
-本次 P1 修复未完全消除，列在此供 caller 知情使用：
+当前实现仍未完全消除，列在此供 caller 知情使用：
 
 1. **Dracula 等日记体无显式 Chapter 标记**：
    - baseline 期望：章节数 ≥ 0（不保证 ≥ 2）
@@ -59,9 +59,9 @@
    - 完全无 Chapter 标记的纯日记体（罕见）会兜底为 1 章"全文"
 
 2. **Moby-Dick TOC 重复切分残留**：
-   - T2.5b 已识别并跳过 CONTENTS 块，再通过 `_dedup_same_key` 兜底去重
+   - 头截断已识别并跳过 CONTENTS 块，再通过 `_dedup_same_key` 兜底去重
    - 极少数情况（TOC 条目紧跟 preface/poem 让 body check 误判）可能残留 1-2 条
-   - 实测 Moby-Dick 切出 139 章（基线 270 → 修复后 139），残留可控
+   - 实测 Moby-Dick 切出 139 章，残留可控
 
 3. **裸罗马短篇正则要求全大写**：
    - 当前正则：`^[IVXLCDM]+\\.\\s+[A-Z][A-Z\\s,'\\u2019\\-:]{2,80}$`
@@ -134,7 +134,7 @@ def cn_to_int(chars: str) -> Optional[int]:
             section += number * 1000
             number = 0
         elif ch == "万":
-            # 结算进 total，重置 section——旧实现直接改写 section 导致
+            # 结算进 total，重置 section：直接改写 section 会让
             # "一亿零二万三千" 被算成 1000000023000（亿级联乘重复累计）
             total += (section + number) * 10000
             section = 0
@@ -159,18 +159,18 @@ CHAPTER_PATTERNS: List[tuple] = [
     ("第一卷第一章", r"^第[零一二三四五六七八九十百千两万千亿\d]+卷\s*第[零一二三四五六七八九十百千两万千亿\d]+[章节回]"),
     ("卷一第一章", r"^[卷部篇][零一二三四五六七八九十百千两万千亿\d]+卷?\s*第[零一二三四五六七八九十百千两万千亿\d]+[章节回]"),
     ("英文Chapter", r"^chapter\s+\d+"),
-    # T2.1a（2026-09-02）：古典英文罗马数字章节（Austen、Dickens）
+    # 古典英文罗马数字章节（Austen、Dickens）
     # 匹配 `Chapter I.` `Chapter I.]` `CHAPTER II.` `CHAPTER XIII` 等。
     # 无 $ 锚点——允许后续接 `]` / `:` / 任意字符。
     ("古典罗马章节", r"^[Cc]hapter\s+[IVXLCDM]+[\.\s:]?"),
-    # T2.1a（2026-09-02）：Sherlock 短篇无前缀 Roman（"I. A SCANDAL IN BOHEMIA"）
+    # Sherlock 短篇无前缀 Roman（"I. A SCANDAL IN BOHEMIA"）
     # 要求后接全大写标题（区分正文内 "I went to..."）。\u2019 兼容 's 弯引号。
     ("裸罗马短篇", r"^[IVXLCDM]+\.\s+[A-Z][A-Z\s,'\u2019\-:]{2,80}$"),
-    # T2.6（2026-09-02）：Gatsby 风格独行 Roman（仅在 T2.5b 跳过 TOC 后生效）
+    # Gatsby 风格独行 Roman（仅在跳过 Gutenberg TOC 后生效）
     # 匹配 "I" / "II" / "IX" / "X" 这种独占一行的 Roman。
     # 范围 I-XX 覆盖常见章节数；超过 XX 的不识别。
     ("裸罗马独行", r"^\s*(?:I{1,3}|IV|VI{0,3}|IX|X|XI{0,2}|XIV|XV|XIX|XX)\s*$"),
-    # T2.5 收紧（2026-09-02）：原 r"^\d+[\.、]\s*\S" 会误命中 Gutenberg license 的
+    # 数字点编号收紧：r"^\d+[\.、]\s*\S" 会误命中 Gutenberg license 的
     # 1.A./1.B./1.E.1./1.F.6. 等条款，导致 Gatsby/Sherlock/Pride/Dracula/Tale 5/7 本
     # baseline 把 license 段当章节切。收紧：数字点后必须接非大写非点的内容（避免 1.A.）。
     # 两条覆盖「数字点+空格」与「数字点紧跟」两种常见章节标题写法。
@@ -187,7 +187,7 @@ VOLUME_PATTERNS: List[tuple] = [
     ("卷X", r"^[卷部篇][零一二三四五六七八九十百千两万千亿\d]+"),
     ("上下卷", r"^[上下中]+[卷部篇]"),
     ("英文卷", r"^(volume|book|part)\s+[\dIVXLC]+"),
-    # T2.4（2026-09-02）：古典英文卷归属
+    # 古典英文卷归属
     # 覆盖 "Book the First/Second/Third"（A Tale of Two Cities）与
     # "Book I/II/III"（已有正则也覆盖）。不带 $ 锚点以兼容"Book the First--Recalled to Life"
     # 这种「卷名+--副标题」的 Dickens 风格。后续的 _normalize_volume_label 会从行首提取
@@ -257,10 +257,9 @@ class SplitOptions:
 # ---------------------------------------------------------------------------
 # 与其他入口（file_processor / routes_prompt 等）共用 ENCODING_CANDIDATES 常量，
 # 包含 gb18030（GBK 超集，能解 GBK 边界字符）和 latin-1 兜底。
-# P3 修复（2026-08-27）：之前的本地列表缺 gb18030，导致 4.5MB GBK 小说在
-# 256KB 采样边界切到 2-byte 字符尾字节时，gbk 解码失败，splitter 路径
-# 抛 "无法使用任何编码读取文件"。与 file_processor.py 行为对齐后，splitter
-# 与 file_processor 选编码结果一致。
+# gb18030 必须在候选列表内：4.5MB GBK 小说在 256KB 采样边界切到 2-byte
+# 字符尾字节时，gbk 解码失败，splitter 路径会抛 "无法使用任何编码读取文件"。
+# 与 file_processor.py 行为对齐后，splitter 与 file_processor 选编码结果一致。
 def _normalize_content(content: str) -> str:
     """统一的后处理：剥 BOM + 换行归一。TXT / DOCX 两条路径共用，确保形态严格一致。"""
     if content.startswith("\ufeff"):
@@ -272,7 +271,7 @@ def _detect_and_read(file_path: Path) -> str:
     """读取源文件并归一化为「一行一个语义单元」的纯文本。
 
     这是全链路唯一的文本入口（调用方仅 preview_split / save_split 两处）。
-    15 条章正则全部带 `^` 行首锚点并配套 `len(s) <= 80` 整行闸门，其成立前提
+    16 条章正则全部带 `^` 行首锚点并配套 `len(s) <= 80` 整行闸门，其成立前提
     是「一行一个语义单元」——TXT 天然满足，DOCX 需要显式重建，故在此唯一入口
     做格式分派，下游切章逻辑零改动。
     """
@@ -354,27 +353,27 @@ def _extract_chapter_num(title: str) -> Optional[int]:
     m = re.search(r"chapter\s+(\d+)", title, re.IGNORECASE)
     if m:
         return int(m.group(1))
-    # T2.1b（2026-09-02）：英文 Chapter <Roman>
-    # v2（2026-09-02）：允许 Roman 后无 . 空白 :（Dracula 真实章节是 "CHAPTER I" 无尾标点）
+    # 英文 Chapter <Roman>
+    # 允许 Roman 后无 . 空白 :（Dracula 真实章节是 "CHAPTER I" 无尾标点）
     m = re.search(r"chapter\s+([IVXLCDM]+)[\.\s:]?", title, re.IGNORECASE)
     if m:
         val = _roman_to_int(m.group(1).upper())
         if val is not None:
             return val
-    # T2.1b（2026-09-02）：英文 Chapter <英文数词>（含连字符/空格复合）
+    # 英文 Chapter <英文数词>（含连字符/空格复合）
     m = re.search(r"chapter\s+([\w\- ]{1,30}?)\b[\s\.:]?", title, re.IGNORECASE)
     if m:
         word = m.group(1).strip().lower()
         val = _word_to_int(word)
         if val is not None:
             return val
-    # T2.1b（2026-09-02）：裸 Roman 短篇（SHERLOCK/Gatsby 等）
+    # 裸 Roman 短篇（SHERLOCK/Gatsby 等）
     m = re.match(r"^\s*([IVXLCDM]+)[\.\s]\s*[A-Z]", title)
     if m:
         val = _roman_to_int(m.group(1).upper())
         if val is not None:
             return val
-    # T2.1b（2026-09-02）：裸 Roman 独行（Gatsby 风格 "I" / "II"）
+    # 裸 Roman 独行（Gatsby 风格 "I" / "II"）
     m = re.match(r"^\s*([IVXLCDM]{1,5})\s*$", title)
     if m:
         val = _roman_to_int(m.group(1).upper())
@@ -397,7 +396,7 @@ def _normalize_volume_label(line: str) -> Optional[str]:
     统一输出形如「第X卷 / 卷X / 上卷 / Part I / Book I」，保证『独立卷行』与
     『第X卷第Y章』合并写法被归到同一个卷标签下。
 
-    T2.4（2026-09-02）：新增『Book the First/Second/Third』支持（Dickens 等）。
+    支持『Book the First/Second/Third』（Dickens 等），
     把英文序数词 first/second/third... 转为 Roman numeral 以保持标签一致。
     """
     m = re.match(r"^(?:第)?\s*([零一二三四五六七八九十百千两万千亿\d]+)\s*([卷部篇])", line, re.IGNORECASE)
@@ -412,7 +411,7 @@ def _normalize_volume_label(line: str) -> Optional[str]:
     m = re.match(r"^(volume|book|part)\s+([\dIVXLC]+)", line, re.IGNORECASE)
     if m:
         return f"{m.group(1)} {m.group(2)}"
-    # T2.4：Book the First/Second/Third/...（允许后续接 `--Title` 或行尾）
+    # Book the First/Second/Third/...（允许后续接 `--Title` 或行尾）
     m = re.match(
         r"^[Bb]ook\s+(?:the\s+)?(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth)",
         line, re.IGNORECASE,
@@ -450,12 +449,12 @@ def _chapter_regex_for_mode(options: SplitOptions, lines: List[str]) -> tuple:
         try:
             custom_rx = re.compile(options.pattern, re.MULTILINE)
         except re.error as e:
-            # 正则语法错误，回退自动检测（之前行为：编译失败也回退）
+            # 正则语法错误，回退自动检测
             logger.warning(f"自定义正则编译失败 ({e})，回退自动检测")
         else:
-            # P4 修复（2026-08-27）：编译成功但在前 N 行 0 命中，也回退 auto
-            # 之前会沉默地把整本书当 1 章，split_report.txt 显示「总章节数 1」，
-            # GUI 上看起来「切分成功」但用户拿到的是 1 个 2MB 的伪章节。
+            # 编译成功但在前 N 行 0 命中，也回退 auto：否则会沉默地把整本书当 1 章，
+            # split_report.txt 显示「总章节数 1」，GUI 上看起来「切分成功」
+            # 但用户拿到的是 1 个 2MB 的伪章节。
             # 真实案例：用户 mode=custom + 第X回 pattern（书用「章」不用「回」），
             # 或者 mode=custom + min_words=10000（其他章节都不到 10000 字被过滤）。
             # 复用 _chapter_regex_for_mode 的 scan_lines 做命中统计：
@@ -497,10 +496,9 @@ def _chapter_regex_for_mode(options: SplitOptions, lines: List[str]) -> tuple:
     special_patterns = [pat for name, pat in CHAPTER_PATTERNS if name.startswith("特章")]
     special_alt = "|".join(special_patterns)
 
-    # P2-11 + G6 收口（2026-08-24）：主导格式足够强时收窄为
-    # 「主导 + 特章 + 达标次级」。次级入选双门槛：绝对得分 ≥ 2（排掉孤例噪声）
-    # 且得分 ≥ 主导的 15%（排掉数量远超主导的高频噪声列表——那正是 P2-11 要防的
-    # 过度切分场景）。合法卷章混排与主导同量级，必然入选。
+    # 主导格式足够强时收窄为「主导 + 特章 + 达标次级」。次级入选双门槛：
+    # 绝对得分 ≥ 2（排掉孤例噪声）且得分 ≥ 主导的 15%（排掉数量远超主导的
+    # 高频噪声列表——防止过度切分场景）。合法卷章混排与主导同量级，必然入选。
     if best_name and scores[best_name] >= 5 and not best_name.startswith("特章"):
         _pat_by_name = {name: pat for name, pat in CHAPTER_PATTERNS}
         best_score = scores[best_name]
@@ -530,7 +528,7 @@ def _chapter_regex_for_mode(options: SplitOptions, lines: List[str]) -> tuple:
 def _extract_metadata(
     lines: List[str],
     filename: str,
-    external_title: str = "",  # 新增：来自文件名推断的权威书名（save_to_workspace 传入）
+    external_title: str = "",  # 来自文件名推断的权威书名（save_to_workspace 传入）
 ) -> Dict[str, str]:
     meta: Dict[str, str] = {}
     # 外部权威书名优先：来自 save_to_workspace 的 book_name 参数
@@ -558,11 +556,11 @@ def _extract_metadata(
     return meta
 
 
-# T2.7（2026-09-02）：从 Gutenberg 头（pre-START）提取 Title/Author
-# baseline 暴露 Bug-7：所有 7 本 title 退步到 "[Illustration:" / "MOBY-DICK;" / "A TALE OF TWO CITIES"，
-# 根因是 T2.5 截断后留下的头部不干净（Pride 的出版页/Dracula 的版权页等），_extract_metadata 的
-# "前 8 行内短行" 策略误命中了这些行。修法：单独扫 pre-START 头，识别 PG 显式的 `Title:`/`Author:` 行
-# 或第 1 行的 `The Project Gutenberg eBook of X`。
+# 从 Gutenberg 头（pre-START）提取 Title/Author
+# 头截断后留下的头部可能不干净（Pride 的出版页/Dracula 的版权页等），
+# _extract_metadata 的 "前 8 行内短行" 策略会误命中成 "[Illustration:" /
+# "MOBY-DICK;" / "A TALE OF TWO CITIES"。这里单独扫 pre-START 头，识别 PG 显式的
+# `Title:`/`Author:` 行或第 1 行的 `The Project Gutenberg eBook of X`。
 def _extract_pg_header_meta(content: str) -> Dict[str, str]:
     """从 Gutenberg 头（pre-START 段）提取 Title/Author。
 
@@ -602,18 +600,18 @@ def _extract_pg_header_meta(content: str) -> Dict[str, str]:
 
 
 # ---------------------------------------------------------------------------
-# Gutenberg 头截断（T2.5 + T2.5b，2026-09-02）
+# Gutenberg 头截断
 # ---------------------------------------------------------------------------
 def _strip_gutenberg_header(content: str) -> str:
     """Gutenberg 头截断 + TOC 块跳过。
 
-    T2.5（2026-09-02）：找到 '*** START OF PROJECT GUTENBERG' 标记后，截掉到
-    第一个真章节行之间的版权页/Table of Contents/序言/题献等内容。
+    找到 '*** START OF PROJECT GUTENBERG' 标记后，截掉到第一个真章节行之间的
+    版权页/Table of Contents/序言/题献等内容。
 
-    T2.5b（2026-09-02）：baseline 发现 T2.5 在 2 本（Moby-Dick / Dracula）上
-    误把 TOC 块里的 "CHAPTER 1." 当成"第一个真章节"截断，导致 TOC 和正文双重
-    匹配（Moby-Dick 270 章 = 135 TOC + 135 正文）。新增：在 START 后 100 行内
-    识别 CONTENTS / Table of Contents 标记，整块跳过后再找真章节。
+    注意：不能把 TOC 块里的 "CHAPTER 1." 当成"第一个真章节"截断，否则会
+    TOC 和正文双重匹配（Moby-Dick 270 章 = 135 TOC + 135 正文）。
+    因此在 START 后 100 行内识别 CONTENTS / Table of Contents 标记，
+    整块跳过后再找真章节。
 
     处理流程：
       1. 找 '*** START OF' 标记
@@ -642,7 +640,7 @@ def _strip_gutenberg_header(content: str) -> str:
     nl = after_start.find("\n")
     after_start_no_start = after_start[nl + 1:] if nl != -1 else ""
 
-    # T2.5b：在 after_start_no_start 前 100 行内找 CONTENTS 标记
+    # 在 after_start_no_start 前 100 行内找 CONTENTS 标记
     # 触发条件：独立的 "CONTENTS" / "Table of Contents" 行（允许前导空白）。
     contents_m = re.search(
         r"^[\s]*(?:CONTENTS|Table of Contents)\s*$",
@@ -656,7 +654,7 @@ def _strip_gutenberg_header(content: str) -> str:
         # 没找到 CONTENTS → 直接从 START 后开始搜
         search_text = after_start_no_start
 
-    # T2.5b（v2）：找第一个有 body 紧随的章节/卷行（区别于 TOC 条目）
+    # 找第一个有 body 紧随的章节/卷行（区别于 TOC 条目）
     real_offset = _find_first_real_chapter_or_volume(search_text)
     if real_offset is not None:
         return search_text[real_offset:]
@@ -668,14 +666,14 @@ def _strip_gutenberg_header(content: str) -> str:
 def _find_first_real_chapter_or_volume(text: str) -> Optional[int]:
     """在 text 中找第一个有 body 紧随的章节/卷行（区别于 TOC 条目）。
 
-    判定逻辑（v2, 2026-09-02）：
+    判定逻辑：
       - 候选章节/卷行之后的 12 行内（跳过空行）：
         - 出现 2 个连续的非空章节/卷标记 → 还在 TOC，跳过
         - 出现非章节/卷 且非标题续行的"段落"内容 → 真章节/卷，OK
       - 章节标题续行（如 Moby-Dick 的 2 行标题、Tale 的"Book the First--Recalled to Life"
         之后的"The Period"）由 _is_title_continuation 识别，跳过但继续扫描。
 
-    候选正则：T2.5 原有 + T2.5b 补充 Sherlock/Gatsby 风格。
+    候选正则：基础章节正则 + Sherlock/Gatsby 风格补充。
 
     返回该行相对 text 起点的字节偏移；找不到返回 None。
     """
@@ -726,7 +724,7 @@ def _find_first_real_chapter_or_volume(text: str) -> Optional[int]:
 def _is_title_continuation(s: str) -> bool:
     """判断一行是否是章节标题的续行。
 
-    启发式（v2, 2026-09-02）：标题续行通常 ≤ 5 词、仅末尾 1 个句点、无段落标点。
+    启发式：标题续行通常 ≤ 5 词、仅末尾 1 个句点、无段落标点。
     段落通常 ≥ 6 词、含分号/冒号/破折号/括号，或有多个句点（多句）。
 
     测试用例：
@@ -752,7 +750,7 @@ def _is_title_continuation(s: str) -> bool:
 def _dedup_same_key(blocks: List[ChapterBlock]) -> tuple:
     """同号去重：同 (volume, num) 出现多次时，仅删除字数 < 阈值的疑似 TOC 条目。
 
-    用途：T2.5b 未完全跳过 TOC 时，TOC 条目与正文同号章节并存。
+    用途：TOC 未完全跳过时，TOC 条目与正文同号章节并存。
     正文章节通常 10000+ 字，TOC 条目通常 0-500 字。
 
     保守策略（避免误删真实短章）：
@@ -793,15 +791,15 @@ def _dedup_same_key(blocks: List[ChapterBlock]) -> tuple:
 def split_text(
     content: str,
     options: Optional[SplitOptions] = None,
-    external_title: str = "",  # 新增：来自 save_split / save_to_workspace 透传的权威书名
+    external_title: str = "",  # 来自 save_split / save_to_workspace 透传的权威书名
 ) -> SplitResult:
     if options is None:
         options = SplitOptions()
-    # T2.7（2026-09-02）：先从 pre-START 头提取 Title/Author（必须在 T2.5 截断前做，
-    # 否则 Title: / Author: 行被切掉）。后续 _extract_metadata 仅作 fallback。
+    # 先从 pre-START 头提取 Title/Author（必须在头截断前做，否则
+    # Title: / Author: 行被切掉）。后续 _extract_metadata 仅作 fallback。
     pg_meta = _extract_pg_header_meta(content)
-    # T2.5 + T2.5b（2026-09-02）：Gutenberg 头截断 + TOC 跳过
-    # 解决 baseline 暴露的 Bug-1（license 段被当章节切）+ Bug-2（Moby-Dick TOC 重复）。
+    # Gutenberg 头截断 + TOC 跳过
+    # 避免 license 段被当章节切，以及 Moby-Dick TOC 重复。
     content = _strip_gutenberg_header(content)
     lines = content.split("\n")
 
@@ -897,13 +895,12 @@ def split_text(
         deduped.append(blk)
     blocks = deduped
 
-    # T2.5b（v2 增强，2026-09-02）：同号去重
-    # baseline 暴露：当 T2.5b 未完全跳过 TOC（如 Dracula/Gatsby/Moby-Dick 的最后 1-2 个
+    # 同号去重
+    # 当 TOC 未完全跳过（如 Dracula/Gatsby/Moby-Dick 的最后 1-2 个
     # TOC 条目紧跟 preface/poem/notes，body check 误判为"真章节"）时，主扫描会同时命中
     # TOC 和正文的同号章节（CONTENTS 1-27 / CHAPTER 1-135 / I-IX）。内容 MD5 不同导致
     # 相邻去重无效。
-    # 修法：同 (volume, num) 出现多次时，保留字数最多的那一个（正文章节通常 10000+ 字，
-    # TOC 条目通常 0-500 字）。
+    # 保留字数最多的那一个（正文章节通常 10000+ 字，TOC 条目通常 0-500 字）。
     blocks, same_key_dedup = _dedup_same_key(blocks)
     dedup_count += same_key_dedup
 
@@ -914,7 +911,7 @@ def split_text(
             blocks = _merge_tiny(blocks, options.min_words)
         else:
             blocks = [b for b in blocks if b.word_count >= options.min_words or b.num is None]
-        # P4 修复（2026-08-27）：min_words 过滤后剩余章节过少时直接报错，
+        # min_words 过滤后剩余章节过少时直接报错，
         # 避免「切分成功」但只切出 1 章的沉默失败。
         # 真实案例：《从姑获鸟开始》6.3MB 切出 768 章，仅第 1 章 (20568 字) 超过
         # min_words=10000 阈值，其余 767 章 < 10000 字全被过滤 → 剩 1 章。
@@ -944,8 +941,8 @@ def split_text(
         "median": counts_sorted[len(counts_sorted) // 2],
     }
     volumes = sorted({b.volume for b in blocks if b.volume})
-    # T2.7（2026-09-02）：pre-START 提取的 Title/Author 优先（覆盖 lines 提取）。
-    # baseline 显示 _extract_metadata 的"前 8 行短行"策略对 PG header 退化成
+    # pre-START 提取的 Title/Author 优先（覆盖 lines 提取）。
+    # _extract_metadata 的"前 8 行短行"策略对 PG header 会退化成
     # `[Illustration:` / `CHAPTER I. ...` 等。pg_meta（来自 Title: / Author: 显式行）
     # 准确度更高，必须覆盖而非 fallback。
     metadata = _extract_metadata(lines, "", external_title)
@@ -1061,7 +1058,7 @@ def _split_oversized(blocks: List[ChapterBlock], max_words: int) -> List[Chapter
 
 
 # ---------------------------------------------------------------------------
-# 对外接口（保持旧签名 + 新增 options）
+# 对外接口
 # ---------------------------------------------------------------------------
 def preview_split(
     file_path: Path,
@@ -1100,7 +1097,7 @@ def save_split(
     file_path: Path,
     output_dir: Path,
     options: Optional[SplitOptions] = None,
-    external_title: str = "",  # 新增
+    external_title: str = "",  # 权威书名（来自文件名推断）
 ) -> Dict[str, Any]:
     if options is None:
         options = SplitOptions()
@@ -1108,8 +1105,8 @@ def save_split(
     result = split_text(content, options, external_title=external_title)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # P1 修复（2026-08-24）：先全部暂存到 _split_staging，全部成功后才清理旧章并交换。
-    # 原实现先删旧 txt 再并行写新文件，中途任一写入失败会留下
+    # 先全部暂存到 _split_staging，全部成功后才清理旧章并交换。
+    # 若先删旧 txt 再并行写新文件，中途任一写入失败会留下
     # 「旧章已删、新章残缺、chapters.json 还指向已删除文件」的不一致状态。
     chapters = result.chapters
     if chapters:
@@ -1129,7 +1126,7 @@ def save_split(
             shutil.rmtree(staging_dir, ignore_errors=True)
             raise  # 旧 blocks 一个都没动过
 
-        # 暂存全部成功后才进入破坏性阶段：清理旧章（含网络盘延迟优化注释保留）
+        # 暂存全部成功后才进入破坏性阶段：清理旧章
         for stale in output_dir.glob("*.txt"):
             stem = stale.name[:-4]
             if stem.isdigit():
@@ -1192,16 +1189,14 @@ def save_split(
 def infer_book_name(file_path: Path) -> str:
     """从文件名推断书名。
 
-    P5 + P5b 修复（2026-08-27）：之前用 suffix 白名单（校对版/完整版/全本/...）剥离，
-    永远漏（精校版/精修版/典藏版/完结版/最终版/校对后/无括号版 全部漏网）。
-    实际小说文件名约定俗成都是 `《书名》（xx版）.txt` 格式——**书名就是
-    第一个《到第一个》之间的内容**，版本后缀都在》之后。
-    修法：优先截取《...》作为书名；截不到时回退到通用 regex 剥离版本后缀
+    优先截取《...》作为书名：实际小说文件名约定俗成都是 `《书名》（xx版）.txt`
+    格式——**书名就是第一个《到第一个》之间的内容**，版本后缀都在》之后。
+    截不到时回退到通用 regex 剥离版本后缀
     （覆盖分隔符变体：连字符/下划线/点/空格 + 可选括号）。
 
-    真实案例（用户 2 本书）:
-    - 《从姑获鸟开始》（精校版）.txt  → 之前: 含"精校版"; 现在: 《从姑获鸟开始》
-    - 《超级能源强国》（精校版）.txt  → 之前: 含"精校版"; 现在: 《超级能源强国》
+    真实案例:
+    - 《从姑获鸟开始》（精校版）.txt  → 《从姑获鸟开始》
+    - 《超级能源强国》（精校版）.txt  → 《超级能源强国》
 
     无《》书名 fallback 案例:
     - 斗破苍穹.txt                 → 斗破苍穹
@@ -1211,13 +1206,12 @@ def infer_book_name(file_path: Path) -> str:
     - 凡人修仙传 （校对版）.txt    → 凡人修仙传
     """
     name = file_path.stem
-    # P5c（2026-08-27）：任意深度的最内层《...》或<...>内容
-    # 之前用 `[《<]([^》>]{1,80})[》>]` 在双层书名号 `《《xxx》》` 上输出 `《《xxx》`
+    # 任意深度的最内层《...》或<...>内容
+    # 单层正则 `[《<]([^》>]{1,80})[》>]` 在双层书名号 `《《xxx》》` 上会输出 `《《xxx》`
     # （少一个外层 `》`），导致书目录名跟"逻辑书名"对不上，分析/总结阶段按 item.name 找不到。
-    # 真实案例: 《《大王饶命》》（精校版）.txt → 之前: 《《大王饶命》（少外层》）;
-    #          现在: 《大王饶命》（最内层正确内容）。
+    # 真实案例: 《《大王饶命》》（精校版）.txt → 《大王饶命》（最内层正确内容）。
     # 用 `《+([^《》]+)》+` 自动找最内层，支持《》/双层《《》》/三层《《《》》》。
-    # 用 <+...>+ 同步支持半角书名号（P5 已支持）。
+    # 用 <+...>+ 同步支持半角书名号。
     for open_q, close_q in [("《", "》"), ("<", ">")]:
         m = re.search(rf"{re.escape(open_q)}+([^《》<>]{{1,80}}){re.escape(close_q)}+", name)
         if m:
@@ -1255,7 +1249,7 @@ def save_to_workspace(
     """切分并保存到工作区 workspace/{书名}/blocks/"""
     book_dir = workspace_dir / book_name
     blocks_dir = book_dir / "blocks"
-    # 修法 A 关键：把权威书名（已在调用方 routes_splitter.py:130 / 192 推断过）透传
+    # 把权威书名（调用方 routes_splitter.py 已用 infer_book_name 推断）透传给 save_split
     result = save_split(file_path, blocks_dir, options, external_title=book_name)
     result["book_name"] = book_name
     result["workspace_dir"] = book_dir.as_posix()

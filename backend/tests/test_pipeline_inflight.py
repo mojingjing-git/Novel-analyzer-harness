@@ -1,11 +1,11 @@
 """
-pipeline 在途块跟踪 + 异常兜底测试（车道堆叠修复）
+pipeline 在途块跟踪 + 异常兜底测试
 
 验证：
 - _analyze_one_block 在 LLM 调用窗口内登记 _inflight_blocks，结束后清空
   （预热/并发/补跑三条路径共用的单点，覆盖即全覆盖）
 - analyze_block_with_progress 异常时带正确 chapter 发 failed 并记入失败集
-  （原实现异常冲出 run() 整书标 failed；消费循环兜底发 chapter:0 被前端忽略 → 车道泄漏）
+  （异常不得冲出 run() 把整书标 failed；消费循环兜底发 chapter:0 会被前端忽略 → 车道泄漏）
 """
 import asyncio
 from pathlib import Path

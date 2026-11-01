@@ -1,4 +1,4 @@
-"""P2：风格分析 token 消耗必须接入 runner 统计（此前恒为 (0,0) 盲区）"""
+"""风格分析 token 消耗必须接入 runner 统计（否则恒为 (0,0) 盲区）"""
 import asyncio
 import sys
 from pathlib import Path

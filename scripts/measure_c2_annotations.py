@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """C2 实测：用标注集（30 条）评"事实核查"环节的召回与误报。
 
-标注口径（`docs/annotations-C2-2026-10-31.json`）：
+标注口径（`docs/data/annotations-C2-2026-10-31.json`）：
 - `SUPPORTED`：正文逐字支持；
 - `NOT_STATED`：正文未提及但不矛盾；
 - `CONTRADICTED`：正文与之冲突。
@@ -46,7 +46,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 MAX_CALLS = 30
 MAX_TOKENS = 200_000
-ANNOTATIONS = ROOT / "docs" / "annotations-C2-2026-10-31.json"
+ANNOTATIONS = ROOT / "docs" / "data" / "annotations-C2-2026-10-31.json"
 
 SYSTEM = (
     "你是长篇小说事实核查员。判断给定陈述是否被提供的原文片段支持。\n"
@@ -56,8 +56,8 @@ SYSTEM = (
 
 SCHEMA = "\n".join(
     [
-        "输出 JSON（字段名由 backend.vnext.resolution.RECHECK_MODEL_EXAMPLE 渲染；"
-        "不许在脚本里手写——2026-10-31 就是因为手写键名，两轮 36 次调用白烧）：",
+        "输出 JSON（字段名由 backend.vnext.resolution.RECHECK_MODEL_EXAMPLE 渲染，"
+        "不要在脚本里手写）：",
         RECHECK_MODEL_EXAMPLE,
         "判定口径：",
         "- SUPPORTED：片段明确指出该伏笔已回收；必须给 evidence_id 与逐字 supporting_quote"
@@ -190,7 +190,7 @@ async def amain(args) -> int:
             "false_positive_rate_on_non_supported": false_positive,
             "quote_located_rate_among_supported": (len(located_ok) / len(located)) if located else None,
             "exact_match_rate": sum(1 for r in rows if r["match"]) / len(rows) if rows else None,
-            "note": "30 条样本，不给置信区间；标注者是模型，人工复核范围见 docs/MEASURE-C2-2026-10-31.md",
+            "note": "30 条样本，不给置信区间；标注者是模型，人工复核范围见 docs/data/MEASURE-C2-2026-10-31.json",
         },
         "confusion": {
             f"{r['expected']}->{r['parsed_verdict']}": sum(
@@ -200,7 +200,7 @@ async def amain(args) -> int:
         },
         "rows": rows,
     }
-    out = ROOT / "docs" / "MEASURE-C2-2026-10-31.json"
+    out = ROOT / "docs" / "data" / "MEASURE-C2-2026-10-31.json"
     out.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
     print(f"\n调用 {client.calls} / token {client.total_tokens} / {elapsed:.1f}s")
     print(f"召回 {recall}  误报 {false_positive}  精确匹配 {report['metrics']['exact_match_rate']}")

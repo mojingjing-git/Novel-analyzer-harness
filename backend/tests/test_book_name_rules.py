@@ -1,6 +1,6 @@
-"""Step4-4B: book-name rule baseline matrix.
+"""book-name rule baseline matrix.
 
-R4 review scope: audit `splitter_service.infer_book_name`,
+Review scope: audit `splitter_service.infer_book_name`,
 `final_summary._clean_book_name` and `final_summary._looks_valid_book_name`
 for real, and extract only strictly-equivalent fragments that clearly reduce
 complexity. Everything else stays as-is with the reason recorded.
@@ -176,7 +176,7 @@ def test_looks_valid_book_name_known_gap(raw):
     """\u8fde\u8f7d / \u65b0\u4e66 are NOT in _NON_TITLE_PREFIXES, so they pass today.
 
     Recorded as a gap, not a target: adding them would change which
-    metadata titles get rejected, and Step4-4B is an audit-only batch.
+    metadata titles get rejected, and this is an audit-only batch.
     """
     assert raw not in _NON_TITLE_PREFIXES
     assert _looks_valid_book_name(raw) is True

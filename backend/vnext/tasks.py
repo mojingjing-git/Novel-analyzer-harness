@@ -1,8 +1,8 @@
 """任务账本：把"这一步跑过了吗"变成可判定、可重放、可复用的记录。
 
-为什么必须有它（PLAN v2 §4 S7-1/2/4/9）：
+为什么必须有它：
 
-旧实现用"业务状态"当缓存——例如"这条伏笔已回收"就等于"复检做过了"。这有两个致命后果：
+用"业务状态"当缓存（例如"这条伏笔已回收"就等于"复检做过了"）有两个致命后果：
 一是**状态会被别的路径改写**（调和、人工、休眠判定都能改），缓存命中与事实真假混在一起；
 二是**无法区分"没跑"与"跑了但没结论"**，于是"证据不足"每次都要重跑，或者更糟——被当成完成。
 
@@ -17,7 +17,7 @@ from typing import Iterable, Mapping
 
 from .fingerprint import canonical_json, task_key as _task_key
 
-# 任务状态（PLAN v2 §2.4）
+# 任务状态
 PENDING = "PENDING"
 RUNNING = "RUNNING"
 SUCCEEDED = "SUCCEEDED"

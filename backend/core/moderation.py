@@ -1,11 +1,10 @@
 """
 内容审核拦截识别（provider 无关）
 
-2026-10-25 起判定逻辑迁移至 error_taxonomy.py（厂商错误码分类体系，见
-docs/PLAN-provider-error-taxonomy-2026-09-30.md T1.2）：
-- 码表/文本表由 taxonomy 持有并扩容（旧 10 值码 + 文本模式全量吸收）
+判定逻辑位于 error_taxonomy.py（厂商错误码分类体系）：
+- 码表/文本表由 taxonomy 持有并扩容
 - 本模块保留 [MODERATION] 标记契约（mark_moderation / is_moderation_error /
-  MODERATION_MARKER 原样，pipeline/analyzer/前端零改动），判定函数转发 taxonomy
+  MODERATION_MARKER 原样，pipeline/analyzer/前端沿用同一标记），判定函数转发 taxonomy
 """
 
 import re

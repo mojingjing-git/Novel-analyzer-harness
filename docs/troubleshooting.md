@@ -84,7 +84,7 @@ Web 前端的代码在 `frontend/src/`，开发模式 Vite HMR 应该实时生�
 常见原因：
 
 - **旧书 type 自由式**：没经过 50 类映射，账本字段空。看 `foreshadow_type_map.json` 是否生成
-- **休眠判定过激**：15 批未现 + 200 章跨度会让活跃伏笔被误标 dormant，调 `analysis.foreshadow_kept_categories` 提高保留集
+- **休眠判定过激**：最后出现后满 200 章未再出现即标 dormant（`DORMANT_CHAPTER_THRESHOLD`），调 `analysis.foreshadow_kept_categories` 提高保留集
 - **复检阶段崩溃**：看 `final_summary_checkpoint/manifest.json` 哪些批次已完成，重启只跑剩下的
 
 ### 总结 checkpoint 恢复行为
@@ -108,7 +108,9 @@ Web 前端的代码在 `frontend/src/`，开发模式 Vite HMR 应该实时生�
 2. 确认 `session.token` 文件存在
 3. 开发模式（`run_dev.bat`）不走这个鉴权，可以直接访问
 
-详见 [CHANGELOG.md](../CHANGELOG.md) 的 PR-1 段。
+鉴权由 `backend/api/auth.py` 的 `require_session_token` 依赖实现，校验的是
+`X-Session-Token` header 与 `session.token` 文件 / `NOVEL_ANALYZER_SESSION_TOKEN`
+环境变量。
 
 ## 性能调优速查
 
@@ -117,7 +119,7 @@ Web 前端的代码在 `frontend/src/`，开发模式 Vite HMR 应该实时生�
 | 章节分析慢 | `api.timeout` ↑ `analysis.concurrency` ↑ |
 | 总结慢 | `api.summary_timeout` ↑ 总结模型换快 |
 | token 太贵 | 减少 `analysis.concurrency`（让 KV cache 命中串行复用） |
-| 伏笔总表太大 | `analysis.foreshadow_min_importance` / `min_confidence` ↑ |
+| 伏笔总表太大 | `analysis.foreshadow_min_importance` / `min_confidence` 提到更高等级（取值：高 / 中 / 低） |
 | 总结报告卷摘要太长 | `analysis.volume_compress_threshold` ↓ `volume_compress_group` ↑ |
 | checkpoint 频繁落盘 | `analysis.checkpoint_interval` ↑（默认 5） |
 

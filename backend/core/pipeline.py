@@ -1,11 +1,10 @@
 """
 分析流水线（asyncio 版）
-自旧项目 workers/analysis_worker.py 移植：
-- QThread → 普通 async 类，进度经 async 回调发布（由 service 层转发 WebSocket）
-- ThreadPoolExecutor + as_completed → asyncio.Semaphore + asyncio.as_completed
-- 三阶段循环保留：串行预热 → 流式并发 → 失败补跑（最多3轮）
+- 普通 async 类，进度经 async 回调发布（由 service 层转发 WebSocket）
+- asyncio.Semaphore + asyncio.as_completed 控制并发
+- 三阶段循环：串行预热 → 流式并发 → 失败补跑（最多3轮）
 - 批次 Rolling：asyncio.Task 后台执行，不阻塞分析；asyncio.Event 同步
-- 磁盘格式与旧项目零改动（MemoryState 统一落盘）
+- 磁盘产物由 MemoryState 统一落盘
 """
 
 import asyncio
@@ -30,7 +29,7 @@ from .analyzer import NovelAnalyzer
 from .knowledge_base import KnowledgeBaseManager
 from .llm_client import LLMClient
 from .memory_state import MemoryState
-from ..core.moderation import is_moderation_error
+from ..core.moderation import is_moderation_error, is_moderation_message
 from ..core.error_taxonomy import ErrorClass, classify_message
 from .error_types import ErrorVerdict, ErrorClass as VerdictErrorClass
 from ..ws_events import PipelineStatus
@@ -51,7 +50,7 @@ def _fmt_range(block_id: int, block_chs, block_size: int) -> str:
 
 
 def _usage_status_of(retry_info) -> str:
-    """从块的 retry_info 读出用量状态（U6 / T04），只返回 "KNOWN" 或 "UNKNOWN"。
+    """从块的 retry_info 读出用量状态，只返回 "KNOWN" 或 "UNKNOWN"。
 
     - 缺省 KNOWN：未透传 usage_status 的调用方（含测试桩）保持原有统计口径，
       成功调用本来就拿得到 usage，对外数字不变；
@@ -64,7 +63,7 @@ def _usage_status_of(retry_info) -> str:
     return "UNKNOWN" if str(raw or "KNOWN").upper() == "UNKNOWN" else "KNOWN"
 
 
-# ==================== 结构化 Rolling 摘要 Prompt（原样移植） ====================
+# ==================== 结构化 Rolling 摘要 Prompt ====================
 
 STRUCTURED_ROLLING_EARLY_PROMPT = """你是一个小说信息提取器。从以下章节数据中提取结构化信息，输出纯 JSON（不要任何 markdown 包裹）。
 
@@ -125,7 +124,7 @@ STRUCTURED_ROLLING_USER_UPDATE_TEMPLATE = """【当前数据】
 请输出更新后的完整 JSON："""
 
 
-# ==================== 结构化滚动总结辅助函数（原样移植） ====================
+# ==================== 结构化滚动总结辅助函数 ====================
 
 _DEFAULT_ROLLING_SCHEMA = {
     "global_milestones": [],
@@ -181,7 +180,7 @@ def _find_locked_milestones(milestones: list, paradigm_layers: list) -> set:
         if not isinstance(layer, dict):
             # LLM 偶发返回字符串元素（如 ["修仙期"]）：跳过而非 AttributeError。
             # 异步路径会让该批 rolling 永久丢失（last_chapter 冻结），
-            # 补跑后同步路径会把整场分析炸成 failed（P1 2026-08-24）。
+            # 补跑后同步路径会把整场分析炸成 failed。
             continue
         chapters_str = layer.get("chapters", "")
         m = re.match(r'(\d+)', str(chapters_str))
@@ -197,7 +196,7 @@ def _find_locked_milestones(milestones: list, paradigm_layers: list) -> set:
 
 
 class AnalysisPipeline:
-    """分析流水线（asyncio 版，替代旧 AnalysisWorker）"""
+    """分析流水线（asyncio 版）"""
 
     def __init__(
         self,
@@ -216,7 +215,7 @@ class AnalysisPipeline:
             knowledge_file: 知识库文件路径（用于最终保存合并结果）
             start_chapter: 起始章节
             end_chapter: 结束章节（None表示到最后）
-            on_progress: 进度回调 async fn(dict)，payload 对齐旧 progress 信号
+            on_progress: 进度回调 async fn(dict)，payload 对齐 progress 信号
             on_token_stats: token 统计回调 async fn(dict)
         """
         self.config = config
@@ -232,13 +231,13 @@ class AnalysisPipeline:
         # 运行概览在途块（block_id -> {chapter, range, started_at}）：LLM 调用窗口内登记，
         # 供 /api/analysis/status#inflight_blocks 给前端车道对账（WS 丢 done 的治本纠偏源）
         self._inflight_blocks: dict = {}
-        # 致命错误块登记（block_id -> 错误类别值，error_taxonomy T2.4/P2-2②）：
+        # 致命错误块登记（block_id -> 错误类别值，见 error_taxonomy）：
         # AUTH/BILLING/CONTEXT_LENGTH/BAD_REQUEST 类失败确定性不可自愈，补跑轮剔除不重试。
         # 审核类除外——skip_moderation_blocked=False 时用户明确要求补跑审核块
         self._fatal_blocks: dict = {}
 
     async def _emit(self, payload: dict) -> None:
-        """发进度（替代旧 progress.emit）"""
+        """发进度"""
         if self._on_progress:
             try:
                 await self._on_progress(payload)
@@ -246,7 +245,7 @@ class AnalysisPipeline:
                 logger.warning(f"进度回调异常: {e}")
 
     async def _emit_tokens(self, payload: dict) -> None:
-        """发 token 统计（替代旧 token_stats.emit）"""
+        """发 token 统计"""
         if self._on_token_stats:
             try:
                 await self._on_token_stats(payload)
@@ -265,7 +264,7 @@ class AnalysisPipeline:
         logger.info("收到停止请求")
 
     def _retryable_failed_blocks(self, failed_block_ids: list) -> list:
-        """补跑列表过滤（T2.4）：剔除致命错误块（AUTH/BILLING/CONTEXT_LENGTH/BAD_REQUEST，
+        """补跑列表过滤：剔除致命错误块（AUTH/BILLING/CONTEXT_LENGTH/BAD_REQUEST，
         见 _analyze_one_block_impl 的登记逻辑）。全部为致命错误时返回空列表，调用方据此终止补跑。"""
         retryable = [bid for bid in failed_block_ids if bid not in self._fatal_blocks]
         skipped_fatal = len(failed_block_ids) - len(retryable)
@@ -297,7 +296,7 @@ class AnalysisPipeline:
         if not all_chapters:
             raise RuntimeError("未找到章节文件（需要1.txt, 2.txt等格式）")
 
-        # 滚动摘要首生成阈值自适应（QUA-2）：短书按总章数 1/3 触发（否则全书
+        # 滚动摘要首生成阈值自适应：短书按总章数 1/3 触发（否则全书
         # 分析完都不会生成结构化滚动摘要，prompt 缺失"全书主线概要"层）；
         # 长书维持配置值（默认 100 章）。
         cfg_early = self.config.analysis.rolling_early_chapters or ROLLING_EARLY_CHAPTERS
@@ -318,7 +317,7 @@ class AnalysisPipeline:
         for i in range(0, len(chapters_to_analyze), block_size):
             block_chapters = chapters_to_analyze[i:i + block_size]
             blocks.append((block_chapters[0], block_chapters))
-        # 保存块 -> 实际章号映射：断号目录下 read_block 必须按实际章号读（P0-4），
+        # 保存块 -> 实际章号映射：断号目录下 read_block 必须按实际章号读，
         # 补跑阶段 block_chs=None 时也据此恢复原块内容。
         self._block_map = {bid: chs for bid, chs in blocks}
 
@@ -348,7 +347,7 @@ class AnalysisPipeline:
             kb_limits=kb_limits,
         )
         state = self.state
-        # 恢复内部走线程池（MINOR-7）：千章级续跑不再阻塞事件循环
+        # 恢复内部走线程池：千章级续跑不再阻塞事件循环
         restored = await state.restore_from_disk(output_dir, block_size=block_size)
         if restored > 0:
             logger.info(f"从磁盘恢复 {restored} 个已有 result")
@@ -415,7 +414,7 @@ class AnalysisPipeline:
         # 续跑时已有产物 >10 跳过预热（KB 已从磁盘重建）
         skip_warmup = restored > 10
         warmup_count = 0 if skip_warmup else min(concurrency, len(remaining_blocks))
-        # BUG FIX: 进度从已恢复的块数开始，避免断点续跑时进度条从 0 跳变
+        # 进度从已恢复的块数开始，避免断点续跑时进度条从 0 跳变
         completed_count = len(skipped_blocks)
 
         if not skip_warmup:
@@ -424,7 +423,7 @@ class AnalysisPipeline:
                 if self._stop_requested:
                     break
                 block_id, block_chs = remaining_blocks[i]
-                # BUG FIX: 预热 start 事件使用 completed_count（而非循环索引 i），
+                # 预热 start 事件使用 completed_count（而非循环索引 i），
                 # 避免前端进度条从已完成数"回退"到 0
                 _, completed_count, _, _, _ = await self.analyze_block_with_progress(
                     block_id=block_id, block_chs=block_chs, block_size=block_size,
@@ -487,13 +486,11 @@ class AnalysisPipeline:
             async with sem:
                 if self._stop_requested:
                     return block_id, block_chs, False, 0.0, (0, 0), None, {"retries": 0, "failed_tokens": 0}, True
-                # H17 P3 V2 修复（2026-08-26）：并发模式必须 emit start
-                # 原因：前端 activeBlocks 依赖 block_start 消息登记车道。
-                # 原代码 _worker 只调 _analyze_one_block（不 emit），由 _handle_block_outcome
-                # 触发 done。结果：预热阶段（用 analyze_block_with_progress）正常，
-                # 并发阶段 activeBlocks 永远为空 → 「并发车道 0/N 运行中」错误，
+                # 并发模式必须 emit start：前端 activeBlocks 依赖 block_start 消息登记车道。
+                # 预热阶段走 analyze_block_with_progress（自带 emit），并发阶段若不 emit，
+                # activeBlocks 永远为空 → 「并发车道 0/N 运行中」错误，
                 # 车道也看不到运行时间（progressBar/lastTokenAt 不更新）。
-                # 修复：在 _analyze_one_block 前补发 start，_handle_block_outcome 照常
+                # 在 _analyze_one_block 前补发 start，_handle_block_outcome 照常
                 # 触发 done。semaphore 内部 emit 保证只在真正拿到槽位后才登记活跃。
                 ch_range = _fmt_range(block_id, block_chs, block_size)
                 await self._emit({
@@ -512,7 +509,7 @@ class AnalysisPipeline:
                     # 已登记的 start 车道将永远收不到 done（车道堆叠泄漏源之一）
                     logger.error(f"块{block_id}分析异常: {e}", exc_info=True)
                     state.add_failed(block_id, f"块分析异常: {e}")
-                    # U6（T04）：异常可能发生在请求已发出 / 已扣费之后，(0, 0) 只是记账哨兵，
+                    # 异常可能发生在请求已发出 / 已扣费之后，(0, 0) 只是记账哨兵，
                     # 故标 UNKNOWN——不能把"没拿到用量"当成"用量确实为零"上报。
                     success, elapsed, ch_tokens, result, retry_info = (
                         False, 0.0, (0, 0), None,
@@ -585,7 +582,7 @@ class AnalysisPipeline:
                                 if bid in state._failed_chapters and bid not in state.results]
             if not failed_block_ids:
                 break
-            # T2.4（P2-2②）：致命错误块（欠费/认证/参数/上下文）确定性不可自愈，不进补跑
+            # 致命错误块（欠费/认证/参数/上下文）确定性不可自愈，不进补跑
             failed_block_ids = self._retryable_failed_blocks(failed_block_ids)
             if not failed_block_ids:
                 logger.warning("补跑终止：失败块全部为致命错误（API 余额不足/认证失败等），不再补跑")
@@ -707,34 +704,39 @@ class AnalysisPipeline:
             state.add_failed(block_id, "读取失败")
             return False, 0.0, (0, 0), None, {"retries": 0, "failed_tokens": 0}
 
-        # P2 修复：快照构建是 CPU 密集深拷贝，事件循环内裸调会让并发 worker/
+        # 快照构建是 CPU 密集深拷贝，事件循环内裸调会让并发 worker/
         # WS 广播整体冻结；内部 _snapshot_lock 是 threading.Lock，to_thread 安全。
         temp_kb = await asyncio.to_thread(state.get_kb_snapshot, chapter_limit=block_id)
         t_start = time.time()
         result, ch_tokens, retry_info = await analyzer.analyze_chapter(
             block_id, content, temp_kb, block_size=block_size,
-            # H16 Phase 3：session_id 借用 directory 路径（保证多书并发隔离）
+            # session_id 借用 directory 路径（保证多书并发隔离）
             book_id=str(self.directory) if self.directory else "")
         elapsed = time.time() - t_start
 
         if result is None:
             err_text = (retry_info or {}).get("error", "")
-            if (self.config.analysis.skip_moderation_blocked
-                    and is_moderation_error(err_text)):
+            # 审核拦截有两个来源：结构化码（is_moderation_error）与**厂商返回的文本**
+            # （`output new_sensitive (1027)` 这类，is_moderation_message 才认）。
+            # 原来只查前者，实测这类文本被当成普通失败：块进失败集、补跑还会重烧一遍，
+            # 而用户配的 skip_moderation_blocked 等于没生效。
+            if self.config.analysis.skip_moderation_blocked and (
+                is_moderation_error(err_text) or is_moderation_message(err_text)
+            ):
                 # 内容审核拦截：标记 skipped（不进失败集、补跑不重试）
                 retry_info["moderation_skip"] = True
                 state.add_skipped(block_id, "内容审核拦截")
                 logger.warning(f"块{block_id}内容审核拦截，跳过（重试1次后仍拦截）")
                 return False, elapsed, ch_tokens, None, retry_info
-            # 致命错误登记（T2.4，P2-2 最小方案②）：stop 类错误重试成功率恒为零，
+            # 致命错误登记：stop 类错误重试成功率恒为零，
             # 补跑轮据此剔除。审核类不登记（见 __init__ 注释）；err_text 为空/UNKNOWN 保守不登记。
-            # U4：**结构化优先、文本兜底**。
+            # **结构化优先、文本兜底**。
             #  - 有 verdict（analyzer 从 llm_result.verdict 透传）→ 用 ErrorVerdict.is_permanent
             #    判定（= structured 且 action=stop），billing / context_length 这类才真正登记，
             #    补跑轮不再对它们重复烧钱。
             #  - 无 verdict → 回退 classify_message(err_text) 文本通道；但文本通道经
             #    resolve_action 施加上限（action 永不为 stop），故 is_permanent 恒 False，
-            #    兜底路径保留旧语义且不会误登记——纯文本永远不能触发永久熔断。
+            #    兜底路径不会误登记——纯文本永远不能触发永久熔断。
             _verdict_dict = (retry_info or {}).get("verdict")
             _fatal_value = None
             if isinstance(_verdict_dict, dict):
@@ -811,7 +813,7 @@ class AnalysisPipeline:
                 "retries": 0, "failed_tokens": 0,
                 "message": f"{prefix}{ch_range}分析异常",
             })
-            # U6（T04）：同上——异常路径的 (0, 0) 是哨兵而非测量值，标 UNKNOWN
+            # 同上——异常路径的 (0, 0) 是哨兵而非测量值，标 UNKNOWN
             return False, completed_count, (0, 0), None, {
                 "retries": 0, "failed_tokens": 0, "usage_status": "UNKNOWN"}
         return success, new_completed, ch_tokens, result, retry_info
@@ -823,7 +825,7 @@ class AnalysisPipeline:
     ):
         """单块结果后处理（accumulate + emit done/failed + token stats）。
 
-        对外载荷（block_done / chapter token_stats）统一携带 usage_status（U6 / T04）：
+        对外载荷（block_done / chapter token_stats）统一携带 usage_status：
         "UNKNOWN" 表示本次没拿到 usage，载荷里的 0 是记账哨兵而不是"零消耗"，
         数字仍保持 int 以不破坏既有聚合口径，可信与否由本字段决定。
 
@@ -833,7 +835,7 @@ class AnalysisPipeline:
         retry_info = retry_info or {"retries": 0, "failed_tokens": 0}
         ch_range = _fmt_range(block_id, block_chs, block_size)
         prefix = f"[{label}] " if label else ""
-        # U6（T04）：本块用量状态，随下面所有"消耗"上报一起走
+        # 本块用量状态，随下面所有"消耗"上报一起走
         usage_status = _usage_status_of(retry_info)
 
         if success:
@@ -887,14 +889,14 @@ class AnalysisPipeline:
             "input_tokens": in_tok,
             "output_tokens": out_tok,
             "current_tokens": in_tok + out_tok,  # 兼容旧前端读取 current_tokens
-            # U6（T04）：UNKNOWN = 没拿到 usage，上面的 0 只是哨兵，
+            # UNKNOWN = 没拿到 usage，上面的 0 只是哨兵，
             # 不得被读成"本次确实消耗 0 token"
             "usage_status": usage_status,
         })
         return success, completed_count
 
     async def _emit_rolling_tokens(self, tokens):
-        """rolling 调用 token 统计（asyncio 内直接 emit，无需旧版线程缓冲）"""
+        """rolling 调用 token 统计（asyncio 内直接 emit，无需线程缓冲）"""
         if not tokens or not isinstance(tokens, tuple) or len(tokens) < 2:
             return
         await self._emit_tokens({
@@ -1080,9 +1082,9 @@ class AnalysisPipeline:
     async def _safe_post_retry_rolling_update(self, rolling_client, output_dir,
                                               _rolling_state, retried_block_ids,
                                               state, completed_count, total) -> None:
-        """补跑完成后的同步 rolling 更新（P1 修复 2026-08-24）。
+        """补跑完成后的同步 rolling 更新。
 
-        原实现裸 await：畸形 rolling schema 的 AttributeError 直接冲出 run()，
+        裸 await 会让畸形 rolling schema 的 AttributeError 直接冲出 run()，
         最终 flush / 最终 KB 合并 / 汇总报告全部跳过，整场已成功的分析被
         service 层标记为 failed。此处失败只告警，不影响收尾。"""
         try:

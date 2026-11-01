@@ -1,4 +1,4 @@
-"""外部复审（2026-10-30）六条发现的回归用例。
+"""六条易退化点的用例。
 
 每条都对应一处"看起来能跑、实际给出错误结论"的地方：
 
@@ -140,7 +140,7 @@ def test_block_size_accepts_valid_int_and_defaults_only_when_absent(tmp_path, mo
 def test_restore_recomputes_progress_instead_of_trusting_stored_counters(
     tmp_path, monkeypatch
 ) -> None:
-    """复现复审给的最坏情形：改一章之后，队列仍写着 done 2/2。"""
+    """最坏情形：改一章之后，队列仍写着 done 2/2。"""
     root = _env_root(tmp_path, monkeypatch)
     book = _make_book(root, "书", 4, book_id="bk_restore0001")
 

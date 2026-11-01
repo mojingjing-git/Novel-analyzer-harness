@@ -1,7 +1,7 @@
-"""S-1：模型回包键名只允许有一个来源。
+"""模型回包键名只允许有一个来源。
 
-2026-10-31 的事故值得留个用例：Prompt 里手写 `supporting_evidence_id` 而解析器读
-`evidence_id`，连续两轮真实调用（36 次、约 109k token）全部被判 `NO_EVIDENCE_ID` /
+这个坑值得留个用例：Prompt 里手写 `supporting_evidence_id` 而解析器读
+`evidence_id`，回包会被判 `NO_EVIDENCE_ID` /
 `NO_SUPPORTING_QUOTE`。那不是模型不行，是两边各写一份字段名。
 
 这里做**双向核对**：

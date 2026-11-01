@@ -1,9 +1,9 @@
-"""S0 回归：测试进程代理环境净化（PLAN v2 §S0-4、REPORT-review C-17）。
+"""测试进程代理环境净化。
 
-历史事故：本机 ``NO_PROXY`` 含方括号写法 ``[::1]``，httpx 把它当 URL 解析，
+已知问题：本机 ``NO_PROXY`` 含方括号写法 ``[::1]``，httpx 把它当 URL 解析，
 端口段 ``:1]`` 转 int 失败 → ``httpx.InvalidURL: Invalid port: ':1]'``，
-在 ``AsyncOpenAI(...)`` 构造期抛异常，导致 74 个用例整片假失败（实测清掉后
-864 全绿）。净化必须发生在任何 ``backend.*`` import 之前，由
+在 ``AsyncOpenAI(...)`` 构造期抛异常，导致整片用例假失败。
+净化必须发生在任何 ``backend.*`` import 之前，由
 ``pytest_isolation.install()`` 承担，本文件只锁行为。
 """
 

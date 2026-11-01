@@ -173,7 +173,7 @@ class JSONAggregator:
 
             aggregated["chapters"][str(result.chapter_number)] = chapter_data
 
-        # P2 修复（2026-08-24）：open('w') 截断直写在并发 GET 触发实时聚合时
+        # open('w') 截断直写在并发 GET 触发实时聚合时
         # 会产出交错/截断 JSON，后续读取全部 500；统一走仓库标准原子原语。
         safe_save_json(aggregated, output_path, ensure_ascii=False)
 
@@ -542,7 +542,7 @@ class JSONAggregator:
                 })
 
         # 收集角色关系（从同章角色配对推导）
-        # D9 修复：配对 key 归一化（按名字排序），避免 A-B 与 B-A 生成两条重复记录
+        # 配对 key 归一化（按名字排序），避免 A-B 与 B-A 生成两条重复记录
         for result in self.results:
             arcs = [a for a in result.character_arcs if a.name]
             for i, a1 in enumerate(arcs):

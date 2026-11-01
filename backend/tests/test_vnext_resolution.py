@@ -1,4 +1,4 @@
-"""全自动裁决（S6）：严格枚举、反证必查、垃圾候选不降级、覆盖必须守恒。
+"""全自动裁决：严格枚举、反证必查、垃圾候选不降级、覆盖必须守恒。
 
 用例按"模型会怎么出错"组织：小写枚举、缺反证、编造引文、外来 ID、空答案、
 以及最容易漏的"没跑却说无发现"。
@@ -41,7 +41,7 @@ from backend.vnext.resolution import (
 CANDIDATES = {"cd_1"}
 EVIDENCE = {"ev_1"}
 
-#: D-19（2026-10-31）：偏移由程序算，不再由模型负责。所以引文必须是真实正文里的
+#: 偏移由程序算，不由模型负责。所以引文必须是真实正文里的
 #: 一句话（≥ ``resolution.MIN_QUOTE_CHARS`` 字），否则 QUOTE_TOO_SHORT 会先抢跑。
 TEXT = "书页泛黄。王冠早已熔成金锭，此事千真万确。此后无人再提。"
 QUOTE = "王冠早已熔成金锭，此事千真万确"
@@ -94,7 +94,7 @@ def test_supported_passes_all_gates() -> None:
     assert verdict.verdict == SUPPORTED
     assert verdict.answer == "王冠已被熔毁"
     assert verdict.counter_search_performed is True
-    # 证据三件套：ID、引文、**程序算出的**位置（D-19 之后 located_span 才是权威）
+    # 证据三件套：ID、引文、**程序算出的**位置（located_span 才是权威）
     assert verdict.evidence_id == "ev_1"
     assert verdict.located_span == SPAN
 
@@ -146,7 +146,7 @@ def test_foreign_evidence_id_is_rejected() -> None:
 def test_supported_without_counter_search_is_insufficient() -> None:
     """没查反证不是"响应坏了"，而是"材料/核对不足"——落 INSUFFICIENT，不是 INVALID。
 
-    2026-10-30 复审：原先判 INVALID 会让实体变成 OPEN，等于把"没查"读成"这个悬念没问题"。
+    判 INVALID 会让实体变成 OPEN，等于把"没查"读成"这个悬念没问题"。
     """
     verdict = _parse(_payload(counter_search={"performed": False, "counter_quotes": []}))
     assert verdict.verdict == INSUFFICIENT
@@ -200,7 +200,7 @@ def test_legacy_mode_still_requires_span() -> None:
 
 
 def test_malformed_reported_span_is_ignored() -> None:
-    """span 形状非法不再判失败：新契约里它只是"破歧义"的辅助信息，位置由程序算。"""
+    """span 形状非法不判失败：它只是"破歧义"的辅助信息，位置由程序算。"""
     verdict = _parse(_payload(supporting_span=[20, 10]))
     assert verdict.verdict == SUPPORTED
     assert verdict.located_span == SPAN

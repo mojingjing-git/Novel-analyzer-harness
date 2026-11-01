@@ -1,4 +1,4 @@
-"""卷摘要断点续跑测试（2026-08-07）：
+"""卷摘要断点续跑测试：
 - checkpoint 落盘/恢复往返
 - batch_size 变化时忽略旧断点
 - 重跑时已恢复批次不再调用卷摘要/reconciliation LLM
@@ -37,7 +37,7 @@ def _write_results(output_dir: Path, chapters: int):
         (output_dir / f"chapter_{ch}_result.json").write_text(
             json.dumps(data, ensure_ascii=False), encoding="utf-8")
 
-    # 2026-08-22: final_summary.run() 需归一化文件存在才不早退
+    # final_summary.run() 需归一化文件存在才不早退
     output_subdir = output_dir / "output" if (output_dir / "output").is_dir() else output_dir
     (output_subdir / "locations_normalized.json").write_text(
         json.dumps({"schema_version": 1, "locations": [], "chapter_mtimes_hash": ""}, ensure_ascii=False),
@@ -137,8 +137,8 @@ def test_resume_reconciliation_only_when_missing(tmp_path):
 
 
 def test_stale_volume_file_gets_overwritten(tmp_path):
-    """残留的陈旧 volume_N.md 必须被新生成内容覆盖（原 not vf.exists() 守卫导致
-    batch_size 变化后新摘要写不进盘、manifest 却登记旧文件 → 过期内容中毒报告）"""
+    """残留的陈旧 volume_N.md 必须被新生成内容覆盖：batch_size 变化后新摘要写不进盘、
+    manifest 却登记旧文件 → 过期内容中毒报告"""
     runner = _make_runner(tmp_path, batch_size=2)
     cp = tmp_path / "final_summary_checkpoint"
     cp.mkdir(parents=True)
@@ -177,7 +177,7 @@ def test_checkpoint_invalidated_when_results_change(tmp_path):
 
 
 def test_checkpoint_invalidated_when_manifest_corrupt(tmp_path):
-    """manifest.json 损坏时清空整个断点目录（原实现只忽略、残留文件继续毒化下次登记）"""
+    """manifest.json 损坏时清空整个断点目录（只忽略会让残留文件继续毒化下次登记）"""
     _write_results(tmp_path, 4)
     runner = _make_runner(tmp_path, batch_size=2)
     cp = tmp_path / "final_summary_checkpoint"

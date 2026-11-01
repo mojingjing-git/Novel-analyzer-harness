@@ -16,7 +16,7 @@ _RISKY_PREFIXES = ("=", "+", "-", "@")
 def _safe_cell_value(val) -> str:
     """Excel 公式注入消毒：以 = + - @ 开头的文本前置单引号强制按文本存储。
 
-    P2 修复（2026-08-24）：LLM 产出的分析文本可能形如 =cmd|'/c calc'!A1，
+    LLM 产出的分析文本可能形如 =cmd|'/c calc'!A1，
     openpyxl 原样写入会被 Excel 当公式求值（DDE 注入面）。负数显示不受影响
     （前导撇号被 Excel 隐藏，值为文本 "-5"）。"""
     s = str(val) if val is not None else ""
@@ -203,8 +203,8 @@ def export_aggregated_to_excel(aggregated_dir: Path, output_path: Path = None) -
             ws.column_dimensions[col[0].column_letter].width = max_len + 2
 
     if not wb.worksheets:
-        # P2 修复：目录里只有非识别名 JSON 时，11 个 _load_json 全 None，
-        # 删默认 sheet 后零工作表 → wb.save 抛 IndexError 接口 500；改为明确报错。
+        # 目录里只有非识别名 JSON 时，11 个 _load_json 全 None，
+        # 删默认 sheet 后零工作表 → wb.save 抛 IndexError 接口 500；必须明确报错。
         raise ValueError(f"聚合目录缺少可识别的分析 JSON 文件，无法导出 Excel: {aggregated_dir}")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)

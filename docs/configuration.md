@@ -1,107 +1,174 @@
 # 配置参考
 
-> 完整配置字段参考。常用字段见根目录 [README](../README.md)。
+配置文件是仓库根目录的 `config.json`，首次启动时由 `config.example.json` 复制生成。
+设置页提供图形化编辑，保存后立即落盘。
 
-配置文件：`config.json`（首次启动自动生成模板）。
+**所有默认值以 `backend/config/constants.py` 为准**。本文表格里的"默认"列是代码默认值，
+不是某一台机器上的实例值。
 
-设置页也提供图形化编辑，运行时 PUT `/api/settings` 会被拒绝（需要重启生效）。
+## 配置的读写机制
+
+- `PUT /api/settings` 是**全量覆盖**：请求体整体替换配置。分析正在运行时会被拒绝
+  （409），其余时候可以正常写入，**不需要重启**。
+- 设置页保存前会删掉所有空字符串字段，服务端据此把该项**回落成代码默认值**——
+  这就是"清空输入框 = 恢复默认"的实现方式。
+- 服务端只接受 dataclass 里声明过的键，并做类型强转（字符串 `"4"` → `4`）。
+  **未声明的键会被静默丢弃**，写错字段名不会报错，只会不生效。
+- 配置文件损坏时会被标记，修复前拒绝写入，避免默认配置覆盖真实 API Key。
 
 ## 环境变量
 
-| 变量 | 优先级 | 说明 |
-|---|---|---|
-| `LLM_API_KEY` | 覆盖 `api.api_key` | 通用 OpenAI 兼容 key |
-| `MINIMAX_API_KEY` | 覆盖 `api.api_key` | M2.7 / M3 专用，与 LLM_API_KEY 二选一 |
-| `NOVEL_ROOT` | 覆盖默认工作区 | 桌面端双目录方案的关键，详见 [architecture.md](./architecture.md) |
-| `NOVEL_ANALYZER_SESSION_TOKEN` | 桌面端自动生成 | 日志查询端点鉴权，详见 [architecture.md](./architecture.md) |
+| 变量 | 作用 |
+|---|---|
+| `LLM_API_KEY` | 覆盖 `api.api_key` |
+| `MINIMAX_API_KEY` | 覆盖 `api.api_key`（MiniMax 专用） |
+| `NOVEL_ROOT` | 覆盖默认工作区根目录，桌面端网络盘场景必须用 |
+| `NOVEL_ANALYZER_SESSION_TOKEN` | 桌面端日志下载端点的鉴权 token |
 
-环境变量优先级高于 `config.json`，常用于 CI / 容器化部署。
+密钥来自环境变量时，保存配置会把 `api_key` 置空后落盘——磁盘上不留环境变量里的密钥。
 
 ## api 段
 
-| 字段 | 默认 | 说明 |
-|---|---|---|
-| `base_url` | 预设空 | 任意 OpenAI 兼容端点，如 `https://api.minimaxi.com/v1` |
-| `api_key` | 预设空 | 可用 `LLM_API_KEY` / `MINIMAX_API_KEY` 环境变量覆盖 |
-| `model` | 预设空 | 默认分析模型 |
-| `max_tokens` | 130000 | 输出上限（>65537 时警告） |
-| `timeout` | 300 | 分析阶段 API 超时（秒） |
-| `summary_timeout` | 600 | 总结阶段 API 超时（秒）。总结 prompt 11 万字符级，单独给长 |
-| `json_mode` | `default` | `default` / `qwen` / `deepseek` / `glm47`，按厂商 JSON 输出协议选 |
-| `temperature` | 0.5 | 初始温度 |
-| `temperature_step` | 0.25 | 温度退火步长（每重试一次降多少） |
-| `temperature_max_retries` | 2 | 温度退火轮数 |
-| `backoff_max_retries` | 1 | 指数退避轮数 |
-| `thinking_mode` | `{}` | 思考控制。M2.7 / GLM / M3 用 `{"thinking": {"type": "disabled"}}`，DeepSeek / Qwen 用 `{"enable_thinking": false}` |
-| `summary_model` | `""` | 总结专用模型，空值跟随 `model` |
-| `summary_thinking_mode` | `{}` | 总结专用思考控制，空值跟随 `thinking_mode` |
+| 字段 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `base_url` | str | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI 兼容端点基址 |
+| `api_key` | str | `""` | 密钥，可由环境变量覆盖 |
+| `model` | str | `""` | 分析主模型；为空时启动分析会被拦下 |
+| `provider` | str | `auto` | 协议格式：`auto` / `openai` / `anthropic`，非法值回落 `auto` |
+| `max_tokens` | int | `130000` | 单次输出上限；超过 65537 会在启动时告警 |
+| `timeout` | int | `300` | 分析阶段超时（秒） |
+| `summary_timeout` | int | `600` | 总结阶段超时（秒），总结阶段单独用这个值 |
+| `temperature` | float | `0.1` | 温度退火的起始温度 |
+| `temperature_step` | float | `0.05` | 每轮退火降低的温度 |
+| `temperature_max_retries` | int | `3` | 温度退火阶段的最大轮数 |
+| `backoff_max_retries` | int | `1` | 指数退避轮数；遇到 429 时至少退避 3 轮并尊重 `Retry-After` |
+| `max_retries` | int | `5` | **只用于失败日志里标注"第 n/m 次尝试"，不控制任何重试**。真正的重试由上面两个重试项决定 |
+| `json_mode` | str | `default` | JSON 输出协议。只有 `default` 与非 `default` 有区别：非 `default` 且非 Anthropic 协议、非 localhost 时，额外加 `response_format={"type":"json_object"}` |
+| `thinking_mode` | dict | `{}` | 思考链控制。空 dict 表示不注入任何参数、跟随端点默认。不同厂商认的键不同（`{"thinking":{"type":"disabled"}}` 或 `{"enable_thinking":false}`），Anthropic 协议只放行 `thinking` 键 |
+| `summary_model` | str | `""` | 总结专用模型，空值跟随 `model` |
+| `summary_thinking_mode` | dict | `{}` | 总结专用思考控制，空值跟随 `thinking_mode` |
+| `streaming_enabled` | bool | `true` | 是否走流式调用；关掉则回退非流式。**设置页没有这一项**，只能手改配置文件 |
 
 ## analysis 段
 
-### 并发与块大小
+### 并发与切块
 
-| 字段 | 默认 | 说明 |
-|---|---|---|
-| `concurrency` | 3 | 章节分析并发数（同时最多几个 LLM 请求） |
-| `block_size` | 1 | 每个块包含多少章（按章号切块，容错断号目录） |
+| 字段 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `concurrency` | int | `2` | 章节分析的并行 worker 数 |
+| `block_size` | int | `1` | 每块包含几章（1 = 单章一块） |
+| `checkpoint_interval` | int | `5` | 每 N 批落盘一次，0 = 只在结束时落盘 |
+| `encoding_priority` | list[str] | 11 种编码候选 | 文件编码探测顺序。设置页没有这一项 |
 
 ### Prompt 预算
 
-| 字段 | 默认 | 说明 |
-|---|---|---|
-| `max_arcs_in_prompt` | 30 | 单章 prompt 最多带多少条人物弧光 |
-| `max_foreshadows_in_prompt` | 50 | 单章 prompt 最多带多少条活跃伏笔 |
-| `max_locations_in_prompt` | 20 | 单章 prompt 最多带多少个地点 |
-| `volume_compress_threshold` | 8 | 卷摘要超过多少卷触发分层压缩 |
-| `volume_compress_group` | 3 | 压缩时每组合并多少卷 |
+这些字段决定一次提示词里能带多少历史信息。
 
-### 伏笔筛选
-
-| 字段 | 默认 | 说明 |
-|---|---|---|
-| `foreshadow_kept_categories` | 全 50 类 | 保留的伏笔类别集合，TimelinePage chip 多选 |
-| `foreshadow_min_importance` | 0.3 | 重要度阈值（0-1） |
-| `foreshadow_min_confidence` | 0.5 | 置信度阈值（0-1） |
-| `max_foreshadow_catalog_high` | 500 | 高优先级伏笔总表上限 |
-| `max_foreshadow_catalog_mid` | 200 | 中优先级伏笔总表上限 |
+| 字段 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `max_arc_length` | int | `1500` | 主线的最大字数 |
+| `max_arcs_in_prompt` | int | `30` | 单次提示词最多带几条主线 |
+| `max_summaries_in_prompt` | int | `5` | 单次提示词最多带几条摘要 |
+| `timeline_truncate` | int | `200` | 时间线截断字符数 |
+| `max_character_states` | int | `20` | 人物状态条目上限 |
+| `max_world_items` | int | `20` | 世界观条目上限 |
+| `max_foreshadow_entries` | int | `5` | 活跃伏笔条目上限 |
 
 ### 滚动总结
 
-| 字段 | 默认 | 说明 |
+| 字段 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `rolling_early_chapters` | int | `100` | 首次生成结构化 JSON 的触发章数 |
+| `rolling_max_milestones` | int | `20` | 全局里程碑上限，FIFO 淘汰最旧的 |
+| `rolling_max_momentum` | int | `15` | 近期势头条目上限 |
+
+### 知识库容量
+
+以下字段限制磁盘知识库各子表的条目数，满了按写入顺序淘汰。设置页没有这几项。
+
+| 字段 | 默认 | 对应子表 |
 |---|---|---|
-| `rolling_summary_threshold` | 20 | 章数达到多少时触发滚动总结 |
-| `rolling_summary_window` | 10 | 近期势头窗口大小 |
-| `milestone_max_per_layer` | 5 | 每个范式层最多保留多少条里程碑 |
-| `auto_archive` | true | 近期势头满窗是否自动 LLM 归档压缩 |
+| `max_compressed_arcs` | 50 | 压缩主线 |
+| `max_recent_summaries` | 5 | 最近章节摘要 |
+| `max_pacing_tracker` | 100 | 节奏追踪 |
+| `max_foreshadow_network` | 100 | 伏笔网络 |
+| `max_world_building` | 200 | 世界观 |
+| `max_verified_facts` | 200 | 已验证事实 |
+| `max_long_term_arcs` | 200 | 长线主线 |
+| `max_thematic_elements` | 100 | 主题要素 |
 
-### 自动总结与总结批
+### 伏笔筛选
 
-| 字段 | 默认 | 说明 |
-|---|---|---|
-| `auto_summary` | false | 单书分析完成后是否自动跑最终总结 |
-| `summary_concurrency` | 2 | 总结阶段并发数（伏笔复检子批并发） |
-| `summary_batch_size` | 40 | 伏笔复检每批多少个 |
-| `checkpoint_interval` | 5 | 章节分析每多少批落盘一次 |
+| 字段 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `foreshadow_kept_categories` | list[str] | 全部 50 类 | 保留哪些伏笔分类，时间线页按这个筛选 |
+| `foreshadow_min_importance` | str | `中` | **取值是中文等级 `高` / `中` / `低`，不是 0–1 的数值** |
+| `foreshadow_min_confidence` | str | `低` | 同上，中文等级字符串 |
+| `max_foreshadow_catalog_high` | int | `500` | 高重要度伏笔在总表里的上限，`-1` 表示不限制 |
+| `max_foreshadow_catalog_mid` | int | `200` | 中重要度伏笔在总表里的上限 |
 
-## 预设厂商
+### 总结与归档
 
-设置页"预设"下拉可一键填充 `base_url` + 默认 `model`：
+| 字段 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `summary_batch_size` | int | `30` | 最终总结每批处理多少章 |
+| `summary_concurrency` | int | `2` | 总结阶段的并发数 |
+| `batch_summary_min_words` | int | `2000` | 分卷摘要的建议最低字数 |
+| `final_report_min_words` | int | `5000` | 最终报告的建议最低字数 |
+| `volume_compress_threshold` | int | `80000` | **单位是字符数**：卷摘要拼接后的总字符数超过它就触发分层压缩 |
+| `volume_compress_group` | int | `5` | 压缩时每组几卷；首尾各一组保留全文，中间组截断到一半 |
+| `auto_summary` | bool | `false` | 队列里的书全部分析完成后，逐本自动跑最终总结 |
+| `auto_archive` | bool | `false` | 队列分析完成后，自动把整本书的目录归档到 `分析结果/` |
 
-| 预设 | base_url |
-|---|---|
-| M2.7 | `https://api.minimaxi.com/v1` |
-| DeepSeek | `https://api.deepseek.com/v1` |
-| 智谱 GLM | `https://open.bigmodel.cn/api/paas/v4` |
-| 火山引擎 | `https://ark.cn-beijing.volces.com/api/v3` |
-| 硅基流动 | `https://api.siliconflow.cn/v1` |
-| LM Studio | `http://localhost:1234/v1` |
-| Ollama | `http://localhost:11434/v1` |
-| 自定义 | 留空手动填 |
+### 伏笔复检
 
-完整厂商 JSON 列表见 `backend/config/presets.py`。
+| 字段 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `foreshadow_recheck_batch_size` | int | `40` | 全书伏笔复检时，单次调用携带多少条活跃伏笔 |
+| `recheck_max_calls` | int | `300` | 一次复检最多调用多少次，超出记 `BUDGET_SKIPPED` |
+| `recheck_max_tokens` | int | `60000` | 单次复检调用的输出上限，给足量才能拿到完整 JSON |
+| `recheck_concurrency` | int | `0` | 0 = 跟随 `concurrency`；大于 0 只用来压窄并发波次 |
+| `anchor_quote_enabled` | bool | `true` | 逐章采集锚点引文；关掉则复检退化为无证据模式 |
+| `anchor_min_chars` | int | `6` | 锚点引文的最短字数 |
+| `recheck_v2_enabled` | bool | `false` | 总结第 2 阶段改用带证据的复检（V2）。默认关闭 |
 
-## 修改字段时的注意
+这几项在设置页都没有输入框，只能手改 `config.json`。
 
-- `APIConfig` / `AnalysisConfig` 是 dataclass，加新字段后旧 `config.json` 仍可加载（`_coerce_fields` 过滤未知字段并清洗类型）
-- 前端 `AppConfigDto` 必须同步补类型，否则 TypeScript 编译失败
-- 涉及 KV cache 命中的字段（`thinking_mode`、`prompt_version`）变化会让远端缓存失效
+### 内容审核
+
+| 字段 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `skip_moderation_blocked` | bool | `true` | 判定为审核拦截的章节，重试一次后跳过并标记 |
+
+## 顶层字段
+
+| 字段 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `working_directory` | str \| null | `null` | 运行时按书覆写，用于定位输出目录 |
+| `knowledge_file` | str | `knowledge.json` | 知识库文件名 |
+| `workspace_dir` | str | `workspace` | 工作区目录名 |
+| `gui.language` | str | `zh-CN` | i18n 预留字段，**后端目前没有消费点**，不影响任何行为 |
+
+## 厂商预设
+
+设置页的"预设"下拉可以一键填入 `base_url`：
+
+`LM Studio`、`OpenCodeGo`、`OpenRouter`、`MiniMax`、`阿里百炼`、`智谱清言`、
+`火山引擎`、`硅基流动`、`DeepSeek`、`自定义`。
+
+预设不预置模型名，`model` 一律留空由用户填。完整定义见 `backend/config/presets.py`。
+
+## 已废弃的键
+
+读到这些键会被丢弃，其中 `api.temperature_sequence` 会打一条警告日志：
+
+`api.temperature_sequence`、`analysis.compress_every`、
+`analysis.rolling_summary_target_chars`、`analysis.rolling_early_target_chars`、
+`analysis.rolling_recent_target_chars`。
+
+## 修改配置时注意
+
+- `APIConfig` / `AnalysisConfig` 是 dataclass，新增字段后旧 `config.json` 仍能加载
+  （`_coerce_fields` 过滤未知字段并清洗类型）。
+- 前端 `AppConfigDto` 必须同步补类型，否则 TypeScript 编译不过。
+- 改动 `thinking_mode`、提示词内容会让远端 KV cache 失效，缓存命中率会掉一截。

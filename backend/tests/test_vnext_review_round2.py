@@ -1,6 +1,6 @@
-"""第二轮外部复审七条的回归（2026-10-30）。
+"""七条易退化点的用例。
 
-这七条的共同点：**都能通过原来的用例，因为原用例把错误行为当成了正确行为**。
+这七条的共同点：**很容易被"看起来通过"的用例掩盖**。
 所以这里不写"函数返回什么"，只写"什么情况下结论必须不算数"。
 """
 
@@ -31,7 +31,7 @@ from backend.vnext.resolution import (
     reduce_entity,
 )
 
-#: D-19（2026-10-31）：引文必须是真的正文片段且 ≥ ``resolution.MIN_QUOTE_CHARS`` 字，
+#: 引文必须是真的正文片段且 ≥ ``resolution.MIN_QUOTE_CHARS`` 字，
 #: 位置由程序算（``located_span``），模型自报的 span 降级为"破歧义"用途。
 TEXT = "卷首语很短。原文片段里并没有这句话，可它确实在文中。其后无话。"
 QUOTE = "原文片段里并没有这句话"
@@ -77,10 +77,9 @@ def test_supported_without_evidence_id_is_invalid() -> None:
 
 
 def test_supported_without_span_is_supported() -> None:
-    """D-19 把这条语义反过来了：span 不再是必需字段，只给引文也能定位。
+    """span 不是必需字段，只给引文也能定位。
 
-    原来这里断言"没 span 就 INVALID"——那是"模型负责算偏移"时代的契约。现在偏移由
-    程序算（``located_quote``），模型自报的 span 只在多处出现时用来破歧义。
+    偏移由程序算（``located_quote``），模型自报的 span 只在多处出现时用来破歧义。
     """
     verdict = parse_recheck(
         _payload(supporting_span=None),
@@ -178,7 +177,7 @@ def test_signature_mismatch_downgrades_to_pending() -> None:
 
 
 def test_matching_signature_still_inherits() -> None:
-    """不能因为要修 #3 就把正常的"签名一致→继承"也废掉。"""
+    """签名一致→继承的正常路径不能被"签名不符不得继承"这条规则误伤。"""
     plans = [BlockPlan("sig", ("c1",), 1)]
     states = {0: rolling.BlockSlot(0, "sig", rolling.DONE, "r1")}
     coverage = rolling.build_coverage(plans, batch_size=1, states=states)

@@ -1,8 +1,8 @@
-"""外部复审（2026-10-30）第 1、2 条的回归用例。
+"""失败结果的 tokens 记账与完整判定契约。
 
-第 1 条：无 usage 的失败不得继承上一次尝试的 tokens（T45：已知与未知必须分列）。
-第 2 条：完整判定不得被压成三元组再重建（provider_code / http_status / 来源通道会丢），
-        typed ``retry_after`` 必须被消费，而不是从显示串里正则捞。
+1. 无 usage 的失败不得继承上一次尝试的 tokens（已知与未知必须分列）。
+2. 完整判定不得被压成三元组再重建（provider_code / http_status / 来源通道会丢），
+   typed ``retry_after`` 必须被消费，而不是从显示串里正则捞。
 """
 
 from __future__ import annotations
@@ -114,7 +114,7 @@ async def test_full_verdict_survives_retry_layer():
 
     verdict = result.verdict
     assert verdict is not None
-    assert verdict.confidence is Confidence.STRUCTURED     # 曾被降级成 NONE
+    assert verdict.confidence is Confidence.STRUCTURED     # 不得降级成 NONE
     # 来源通道必须与"异常现场分类"的结论一致：只要不是被降成 TEXT_FALLBACK 就说明
     # 判定没有经过"压成三元组再重建"的往返
     assert verdict.source_channel is _verdict_from_exception(exc, "").source_channel

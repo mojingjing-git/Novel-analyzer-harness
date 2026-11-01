@@ -72,15 +72,9 @@ def _install_crash_diagnostics():
     默认情况下桌面端 stderr 没有文件落盘，进程被 os._exit 或渲染进程崩溃带走时
     任何 traceback / pywebview(WebView2) 原生报错都会丢失，难以定位。
 
-    H15 修复（2026-08-26）：原实现中 _StderrTee 用独立 open("a") 句柄直接写 crash.log，
-    这与 crash_logger 的 RotatingFileHandler 持有同一文件的另一句柄——Windows 下
-    os.rename(crash.log → crash.log.1) 会因 ERROR_SHARING_VIOLATION 失败，
-    异常被 logging.handleError 捕获后又写回 stderr（即 crash.log），形成「永远不轮转 +
-    永远增长」的反馈环，实测 crash.log 单文件涨到 60MB 无 .1 备份。
-
-    修法：让 stderr 写入也走 crash_logger 的 logging 体系（统一 stream、统一锁、
-    自动跟随 RotatingFileHandler.doRollover）；不再持有独立 open() 句柄，Windows
-    上不再有共享锁竞争。
+    stderr 写入也走 crash_logger 的 logging 体系（统一 stream、统一锁、
+    自动跟随 RotatingFileHandler.doRollover）；不持有独立 open() 句柄，Windows
+    上不会有同一文件被两个句柄持有的共享锁竞争。
     """
     import sys
     import threading
@@ -122,7 +116,7 @@ def _install_crash_diagnostics():
     threading.excepthook = _thread_excepthook
 
     # 重定向 stderr 到「原 stderr + crash.log（走 logging）」，捕获 pywebview / WebView2 原生报错。
-    # H15 关键：不再独立 open()，让 stderr 写入借 crash_logger 的 RotatingFileHandler
+    # 关键：不再独立 open()，让 stderr 写入借 crash_logger 的 RotatingFileHandler
     # （同一流、同一锁、轮转自动跟随），消除 Windows ERROR_SHARING_VIOLATION。
     class _StderrTee:
         """std.stderr 替换实现：把原生 stderr 写入既送到原 stderr（控制台），
@@ -425,8 +419,17 @@ class Api:
         except Exception:
             pass
 
+    def move_to(self, x: int, y: int):
+        """按绝对屏幕坐标移动窗口（自定义标题栏拖拽）"""
+        import webview
+        try:
+            win = webview.windows[0]
+            win.move(int(x), int(y))
+        except Exception:
+            pass
+
     def move(self, dx, dy):
-        """按增量移动窗口（标题栏拖拽）"""
+        """按增量移动窗口（兼容旧版接口）"""
         import webview
         try:
             win = webview.windows[0]
@@ -435,7 +438,7 @@ class Api:
             pass
 
     def get_session_token(self) -> str:
-        """返回会话 token，前端 fetch 据此附加 X-Session-Token header（PR-1 收尾）。
+        """返回会话 token，前端 fetch 据此附加 X-Session-Token header。
 
         信任域前提：pywebview js_api 只暴露给 webview 当前加载的页面，而本应用
         webview 只加载本地 dist（不渲染远程内容），与 /ws/progress 的 Origin
@@ -504,10 +507,10 @@ def main():
     logger.info(f"启动后端服务: http://127.0.0.1:{port}")
     logger.info(f"项目根目录: {PROJECT_ROOT}")
 
-    # 单实例保护（2026-08-17 优化）：
-    # 原实现在服务器就绪后才写锁，竞态窗口长达数秒——两个实例同时启动、在“都还没写锁”的
+    # 单实例保护：
+    # 若在服务器就绪后才写锁，竞态窗口长达数秒——两个实例同时启动、在“都还没写锁”的
     # 窗口内会双双通过 exists() 检查并各自起服务。
-    # 现改为：抢到端口后立即用 os.open(O_CREAT|O_EXCL) 原子创建锁文件，窗口缩到微秒级；
+    # 因此：抢到端口后立即用 os.open(O_CREAT|O_EXCL) 原子创建锁文件，窗口缩到微秒级；
     # 抢到锁即写入端口，让随后启动的实例立刻读到锁并做健康检查：活实例→提示退出，
     # 端口未就绪/进程已崩→视为上次残留，删锁后重试抢锁（最多 3 次）。
     for _attempt in range(3):
@@ -556,13 +559,12 @@ def main():
         except OSError:
             pass
 
-    # 生成 session token（PR-1 修复，D 方案鉴权，2026-09-10）
+    # 生成 session token
     # desktop.py 启动时生成 32 字节 url-safe token：
     #   1) 写到 session.token（工作目录 app.lock 旁）
     #   2) 设置 NOVEL_ANALYZER_SESSION_TOKEN 环境变量
     #   3) 后端 uvicorn（在同一 Python 解释器线程中跑）读环境变量启用 Depends 鉴权
     # 退出时通过 _on_closed 清理（删 session.token + 清环境变量）
-    # Refs: _plan_v3.md PR-1 步骤 4
     try:
         _session_token = secrets.token_urlsafe(32)
         SESSION_TOKEN_FILE.write_text(_session_token, encoding="utf-8")
@@ -643,13 +645,14 @@ def main():
         text_select=True,
         js_api=Api(port),
         frameless=True,  # 隐藏系统标题栏，由前端 48px 一体化标题栏接管（VSCode/Discord 同款）
-        transparent=True,  # Win11 Mica：WebView2 底色透明，让 DWM 背景透出（见 _apply_win11_backdrop）
+        easy_drag=False,  # 禁用 pywebview 全局拖拽（否则点击页面任意内容都会误拖动窗口，且高频 IPC 造成严重卡顿）
+        transparent=False,  # 禁用透明窗口：避免 WebView2 每帧 DWM 合成重绘引发拖拽卡顿，并保证黑暗模式完美呈现
     )
 
     # 记录窗口关闭 / 前端加载异常，便于区分「用户主动关」还是「渲染进程崩溃」
     def _on_closed():
         logger.warning("窗口已关闭（可能是用户主动关闭，也可能是渲染进程崩溃）")
-        # 清理 session token（PR-1 修复，D 方案鉴权）
+        # 清理 session token
         # 删文件 + 清环境变量，避免下次启动时残留 token 被滥用
         try:
             os.environ.pop(SESSION_TOKEN_ENV, None)
@@ -680,52 +683,10 @@ def main():
     except Exception as e:
         logger.debug(f"注册窗口事件回调失败（pywebview 版本差异）: {e}")
 
-    def _apply_win11_backdrop():
-        """Win11 宿主质感：DWM Mica 背景 + 深浅色适配。
-
-        透明 WebView2 已在 create_window(transparent=True) 打开；本线程等窗口
-        句柄就绪后启用 DWM Mica，成功则给前端注入 mica-on 类让页面底色让位
-        系统背景。任一步失败（Win10/关闭桌面合成等）静默降级——前端无
-        mica-on 类，保持原纯色背景，观感与旧版一致。"""
-        import ctypes
-        try:
-            theme = ""
-            try:
-                cfg_path = Path(__file__).resolve().parent / "config.json"
-                theme = str(json.loads(cfg_path.read_text(encoding="utf-8")).get("gui", {}).get("theme", ""))
-            except Exception:
-                pass  # 主题读取失败按浅色处理
-
-            native = None
-            for _ in range(60):
-                native = getattr(window, "native", None)
-                if native is not None and getattr(native, "Handle", 0):
-                    break
-                time.sleep(0.25)
-            if native is None:
-                logger.warning("Win11 背景：未获取窗口句柄，跳过 Mica")
-                return
-
-            hwnd = int(native.Handle.ToInt64()) if hasattr(native.Handle, 'ToInt64') else int(native.Handle)
-            dwm = ctypes.windll.dwmapi
-            dark = ctypes.c_int(1 if theme.lower() == "dark" else 0)
-            dwm.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(dark), 4)  # DWMWA_USE_IMMERSIVE_DARK_MODE
-            backdrop = ctypes.c_int(2)                                  # DWMSBT_MAINWINDOW（Mica）
-            hr = dwm.DwmSetWindowAttribute(hwnd, 38, ctypes.byref(backdrop), 4)
-            if hr != 0:
-                logger.warning(f"Win11 背景：Mica 不可用 (hr={hr})，保持纯色背景")
-                return
-            # 关键：WinForms 背景擦除会用不透明 BackColor 盖住 DWM Mica——
-            # 把窗体刷子设为 alpha≈0（近透明），擦除等于不画，Mica 才能透出。
-            # （alpha=1 而非 0：避开 Color.Transparent 的父背景特殊分支）
-            from System.Drawing import Color  # clr 此时已由 pywebview 平台模块加载
-            native.BackColor = Color.FromArgb(1, 0, 0, 0)
-            window.evaluate_js("document.documentElement.classList.add('mica-on')")
-            logger.info("Win11 背景：Mica 已启用")
-        except Exception as e:
-            logger.warning(f"Win11 背景：启用失败（保持纯色）: {e}")
-
-    threading.Thread(target=_apply_win11_backdrop, args=(), daemon=True).start()
+    # Win11 背景质感策略（对齐 agent.md 9.3 规范）：
+    # WebView2 在 transparent=True / DWM 穿透模式下移动窗口会导致严重的每帧合成丢帧与拖拽卡顿，
+    # 且 DWM 亮暗模式与前端运行时 localStorage 动态切换存在脱节冲突。
+    # 故统一采用高性能非透明窗口 + CSS 原生模拟 Mica 质感（中性渐变 + 纯色图层）。
 
     # v0.2.0：首次启动后等页面加载完跳设置页（让用户填 API Key）
     if first_run_status == "NEEDS_API_KEY":
@@ -746,7 +707,7 @@ def main():
         LOCK_FILE.unlink()
     except OSError:
         pass
-    # H2b 修复：原直接 os._exit(0) 跳过所有 atexit、不 flush 缓冲区，会丢失最后几行日志、
+    # 直接 os._exit(0) 会跳过所有 atexit、不 flush 缓冲区，会丢失最后几行日志、
     # 且硬杀仍在跑的 uvicorn 守护线程（在途写文件可能截断）。退出前先 logging.shutdown()
     # 刷盘所有 handler（含 analyzer.log 与 crash.log 的 RotatingFileHandler），再结束进程。
     logging.shutdown()

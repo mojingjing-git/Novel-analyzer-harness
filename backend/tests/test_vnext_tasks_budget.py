@@ -1,4 +1,4 @@
-"""S7 任务账本与预算（PLAN v2 §4 S7-2/4/5/9）。
+"""任务账本与预算。
 
 守的四件事：
 1. 同输入复用不再调用；2. 输入变了换新键；3. 失败也扣额度；4. 未完成不写成功标记。
@@ -119,7 +119,7 @@ def test_failed_retry_does_not_shadow_earlier_success() -> None:
 def test_same_apply_key_applied_once_but_still_accounted() -> None:
     """同一条结论不能应用两次，但第二次真的花了的钱必须记账。
 
-    早先的实现直接拒收第二条记录，于是"两次实际消耗 10/12 token"在账本里只剩 10——
+    若直接拒收第二条记录，"两次实际消耗 10/12 token"在账本里就只剩 10——
     少算费用比重复应用更难发现。
     """
     ledger = TaskLedger()

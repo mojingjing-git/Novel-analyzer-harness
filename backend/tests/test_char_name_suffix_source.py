@@ -1,6 +1,6 @@
-"""Step4-4A: character-name suffix single-source regression.
+"""character-name suffix single-source regression.
 
-R4 review scope: unify the duplicated character-name suffix list between
+Review scope: unify the duplicated character-name suffix list between
 `aggregate_utils._normalize_char_name` and `viz_service._aggregate_chars_edges`
 into one source of truth, WITHOUT changing either path's behavior.
 

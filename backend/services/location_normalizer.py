@@ -1,7 +1,7 @@
 """
-地点与空间关系归一化（2026-08-21 spec）
+地点与空间关系归一化
 
-Phase 0 在最终总结之前跑：
+地点归一化在最终总结之前跑：
 - 0a-batches: 并发 LLM 归一化 locations
 - 0b-batches: 并发 LLM 结构化 spatial_relationships
 - 0b-dedupe: 机械去重同 (from, to) 对
@@ -337,7 +337,7 @@ def parse_and_validate_spatial(
 
 
 # ---------------------------------------------------------------------------
-# Phase 0 orchestration（Task 6）
+# 地点归一化编排
 # ---------------------------------------------------------------------------
 import asyncio
 import hashlib
@@ -350,7 +350,7 @@ from backend.utils.json_utils import safe_load_json, safe_save_json
 
 _LOCATIONS_NORMALIZED_FILENAME = "locations_normalized.json"
 _SPATIAL_NORMALIZED_FILENAME = "spatial_relationships_normalized.json"
-# Phase 0a locations batch 控制（2026-08-22 调整：35K → 18K）：
+# locations 批次控制（单批 user prompt 预算 18K）：
 # - 硬上限：单批 user prompt ≤ 18K chars（防单批 stall / 撞 timeout）
 # - 实测《韩娱》512 group、user prompt ~70K chars → 切 ~5-6 batch 并发，
 #   充分利用 config.analysis.concurrency=9；单批 stall 仅损失 ~17% group 而非 ~33%
@@ -399,7 +399,7 @@ def _split_into_batches_by_budget(
 
 
 class LocationNormalizer:
-    """地点与空间关系归一化（Phase 0）
+    """地点与空间关系归一化
 
     流程：
     - _run_phase_0a_batches: 切片 locations → 并发 LLM → 校验
@@ -430,7 +430,7 @@ class LocationNormalizer:
         self.llm_client.request_stop()
 
     async def run(self) -> Optional[bool]:
-        """跑完整 Phase 0
+        """跑完整地点归一化流程
         返回：True=成功；False=失败；None=用户中途停止
         """
         # 0. 缓存短路：若两个 normalized 文件都已存在且 chapter_mtimes_hash 一致，跳过
@@ -438,8 +438,8 @@ class LocationNormalizer:
         current_hash = self._compute_chapter_mtimes_hash()
         if existing_loc and existing_rel:
             loc_items = existing_loc.get("locations") or []
-            # 第三层防线：缓存短路要求已有 locations 非空——历史上落盘的空 normalized 文件
-            # 带匹配 hash 时不能秒退，必须重新归一化给地图产出数据（P1 2026-08-24）
+            # 第三层防线：缓存短路要求已有 locations 非空——落盘过的空 normalized 文件
+            # 带匹配 hash 时不能秒退，必须重新归一化给地图产出数据
             if (loc_items
                     and existing_loc.get("chapter_mtimes_hash") == current_hash
                     and existing_rel.get("chapter_mtimes_hash") == current_hash):
@@ -458,17 +458,17 @@ class LocationNormalizer:
             logger.info("无 locations 数据，跳过 Phase 0")
             return False
 
-        # 2. Phase 0a-batches：并发归一化 locations
-        # 2026-08-23 激进简化：删除跨 batch consolidation 步骤（之前的卡死点）。
-        # 理由：consolidation 串行单 batch，撞 630s 硬超时会让前 5 个 batch 的结果全部白做；
-        # 单 batch 内的合并已经在 Phase 0a-batches 完成，跨 batch 合并收益有限。
+        # 2. 并发归一化 locations（_run_phase_0a_batches）
+        # 不做跨 batch consolidation：consolidation 串行单 batch，撞 630s 硬超时会让
+        # 前 5 个 batch 的结果全部白做；单 batch 内的合并已经在 locations 批次内完成，
+        # 跨 batch 合并收益有限。
         groups = aggregate_locations(raw_locations)
         logger.info(f"Phase 0a：{len(groups)} 个 location group")
         all_canonicals = await self._run_phase_0a_batches(groups)
         if all_canonicals is None:
             return None if self.llm_client._stop_requested else False
         # 第二层防线：即使 batch 汇总未拦住（如未来逻辑回退），也绝不能落盘空归一化数据——
-        # 空白名单 + 当前 hash 会永久短路缓存，地图数据恒空且零告警（P1 2026-08-24）
+        # 空白名单 + 当前 hash 会永久短路缓存，地图数据恒空且零告警
         if not all_canonicals:
             logger.error("Phase 0a 所有批次均解析为零条目，视为整体失败；不落盘空归一化数据")
             if self.on_progress:
@@ -477,10 +477,10 @@ class LocationNormalizer:
                                   "message": "[地点归一化] 所有批次解析为空，请检查模型输出质量后重试"})
             return False
 
-        # 3. 跨 batch consolidation 已删除：直接用 batch 阶段的 canonical 作为 final_locations
+        # 3. 直接用 batch 阶段的 canonical 作为 final_locations
         final_locations = all_canonicals
 
-        # 4. Phase 0b-batches：并发结构化 spatial
+        # 4. 并发结构化 spatial（_run_phase_0b_batches）
         pairs = aggregate_spatial_pairs(raw_spatial)
         logger.info(f"Phase 0b：{len(pairs)} 个 spatial pair")
         whitelist = [{"canonical": c["canonical_name"], "aliases": c["aliases"]} for c in final_locations]
@@ -489,7 +489,7 @@ class LocationNormalizer:
         if all_spatial is None:
             return None if self.llm_client._stop_requested else False
 
-        # 5. Phase 0b-dedupe：机械去重
+        # 5. 机械去重 spatial（_run_phase_0b_dedupe）
         final_spatial = self._run_phase_0b_dedupe(all_spatial)
 
         # 6. 先把 _normalized_ref 写回章节，再写 normalized 文件 —
@@ -529,10 +529,10 @@ class LocationNormalizer:
                 raw_spatial.append(rel_copy)
         return raw_locations, raw_spatial
 
-    # ---- Phase 0a ----
+    # ---- locations 批次 ----
 
     async def _run_phase_0a_batches(self, groups):
-        # 2026-08-21 修复：按 user prompt 字符预算切分（不再按 group 数硬切）
+        # 按 user prompt 字符预算切分（不按 group 数硬切）
         # 实测：398 groups + 53K chars user prompt → 拆 2 批避免 10+ min 超时
         batches = _split_into_batches_by_budget(
             groups,
@@ -582,7 +582,7 @@ class LocationNormalizer:
         results = await asyncio.gather(*tasks, return_exceptions=True)
         valid: List[List[Dict]] = [r for r in results if isinstance(r, list)]
         # 解析成功但零条目也计入失败：HTTP 成功 + 空数组是模型违反 schema 的典型形态，
-        # 按"成功"处理会固化空白名单并永久短路（P1 2026-08-24）
+        # 按"成功"处理会固化空白名单并永久短路
         empty_batches = sum(1 for r in valid if not r)
         failed = len(results) - len(valid) + empty_batches
         if failed > 0:
@@ -598,7 +598,7 @@ class LocationNormalizer:
             return None
         return [c for batch in valid for c in batch]
 
-    # ---- Phase 0b ----
+    # ---- spatial 批次 ----
 
     async def _run_phase_0b_batches(self, pairs, whitelist, whitelist_names):
         if not pairs:

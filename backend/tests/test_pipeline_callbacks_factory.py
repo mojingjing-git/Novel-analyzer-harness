@@ -1,8 +1,6 @@
-"""Step1-1B：生产回调工厂 `make_pipeline_callbacks` 的真实回归（第三批清理，2026-10-14）
+"""生产回调工厂 `make_pipeline_callbacks` 的真实契约
 
-背景：原 `backend/tests/test_queue_service.py::test_on_progress_block_start_publishes`
-用的是测试内**复制的** `on_progress_like` 闭包，即使禁用生产 `make_pipeline_callbacks`
-仍然全绿——属无效覆盖。本文件直接调用生产工厂，覆盖：
+本文件直接调用生产工厂（而不是测试内复制的 `on_progress_like` 闭包），覆盖：
 
 - 结构化 `range` 优先于 `message`（前端车道统一显示 chN-chM）；
 - DONE / FAILED / SKIPPED 三个终态都转发 `block_done` 并记每章统计（失败同样计入成本）；

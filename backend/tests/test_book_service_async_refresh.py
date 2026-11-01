@@ -1,4 +1,4 @@
-"""P2：get_book_path miss 后不得再在事件循环内阻塞式全量扫描；
+"""get_book_path miss 后不得再在事件循环内阻塞式全量扫描；
 冷启动（映射为空）除外。"""
 import sys
 import threading
@@ -56,7 +56,7 @@ def test_cold_start_still_blocks_for_usability(monkeypatch, tmp_path):
 
 
 def test_single_flight_no_stampede(monkeypatch, tmp_path):
-    """刷新进行中时后续 miss 不再叠加线程"""
+    """刷新进行中时后续 miss 不叠加线程"""
     monkeypatch.setattr(book_service, "_books", {"a": tmp_path})
     monkeypatch.setattr(book_service, "_manual_books", {})
     monkeypatch.setattr(book_service, "_refreshing", True)

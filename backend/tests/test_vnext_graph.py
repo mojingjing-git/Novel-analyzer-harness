@@ -1,4 +1,4 @@
-"""vnext 图谱边：共现与语义关系分表（PLAN v3 §图谱）。
+"""vnext 图谱边：共现与语义关系分表。
 
 这些用例守的不是"函数能跑"，而是三条容易悄悄退化的性质：
 
@@ -77,8 +77,8 @@ def test_cooccurrence_never_becomes_semantic_relationship() -> None:
     assert not any(isinstance(edge, graph.SemanticRelationship) for edge in edges)
     assert edges[0].edge_type == graph.COOCCURRENCE
 
-    # 共现的"证据"里没有 interaction，语义接口必须一条都不认——这正是旧实现在
-    # "甲在城东、乙在城西"上凭空编出关系描述的那一步。
+    # 共现的"证据"里没有 interaction，语义接口必须一条都不认——不能仅凭共现
+    # 就编出"甲在城东、乙在城西"这类关系描述。
     assert graph.semantic_relationships([edge.to_dict() for edge in edges]) == []
 
 

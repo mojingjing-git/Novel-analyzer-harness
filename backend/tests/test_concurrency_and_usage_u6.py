@@ -1,12 +1,12 @@
-"""U6 验收：T03 并发不串判定 / T04 未知消耗不得宣称为零 / _decide_retry 类型守卫。
+"""并发不串判定 / 未知消耗不得宣称为零 / _decide_retry 类型守卫。
 
 三部分：
 
-1. T04（usage_status 贯通）：analyzer 的 retry_info 带上 usage_status，
+1. usage_status 贯通：analyzer 的 retry_info 带上 usage_status，
    pipeline 的块级载荷（block_done / chapter token_stats）原样携带。
    记账口径保持 "拿不到 usage → tokens=(0, 0)"，但 "UNKNOWN" 让
    "没拿到用量" 与 "用量确实为零" 在数据上可区分，下游不得把 0 读成精确消耗。
-2. T03（并发不串判定）：6 路 chat_with_retry 真并发，共用同一 LLMClient，
+2. 并发不串判定：6 路 chat_with_retry 真并发，共用同一 LLMClient，
    SDK 层按消息里的 tag 分派各自的错误；断言每路只携带自己的
    cls / confidence / action / attempts，成功路 verdict 为 None。
    同时验证两块并发时 usage_status 与致命块登记互不串味。

@@ -1,14 +1,14 @@
 """
 文本处理工具
 提供编码检测、文本截断等功能
-（自旧项目 utils/text_utils.py 原样移植）
+
 """
 
 from pathlib import Path
 from typing import Dict, List, Optional
 
 
-# P2 修复（2026-08-24）：编码选择从「首个解码成功即返回」改为「采样罚分择优」。
+# 编码选择策略：采样罚分择优（而非首个解码成功即返回）。
 # 繁体中文书（Big5）的字节流在 gb18030 下能无错解码，但产出乱码/PUA 字符，
 # 整本书静默损坏。罚分权重：U+FFFD ×8（解码器替换符，强信号）/
 # 控制字符 ×4 / PUA(U+E000-F8FF) ×3（gb18030 吞 Big5 的典型产物）。
@@ -18,7 +18,7 @@ _CTRL_ALLOWED = set("\t\n\r")
 # 单字节编码（latin-1 / cp1252 / ascii）能无错解码任何字节流，
 # 它们的「无错」特性让它们在罚分系统里天然占优，会盖过真正的多字节编码
 # （GBK 文本在 GBK 下的真实 penalty ~1e-5，单字节永远是 0）。
-# P3 修复（2026-08-27）：给单字节编码加基础偏置 0.001，让 GBK 文本在
+# 给单字节编码加基础偏置 0.001，让 GBK 文本在
 # GBK 解码下胜出（GBK penalty 0.00001 < 1e-3 < latin-1 penalty 0.001），
 # 又远低于真正乱码（gb18030 解 Big5 文本 penalty ~0.3）。
 _SINGLE_BYTE_ENCODINGS = frozenset({"latin-1", "cp1252", "ascii"})
@@ -30,11 +30,11 @@ def _penalty_sample(raw: bytes, encoding: str) -> Optional[float]:
 
     罚分权重：U+FFFD ×8（解码器替换符，强信号）/ 控制字符 ×4 /
     PUA(U+E000-F8FF) ×3（gb18030 吞 Big5 的典型产物）。
-    P2 修复（2026-08-24)：取代「首个解码成功即返回」——Big5 字节流在 gb18030
+    取代「首个解码成功即返回」——Big5 字节流在 gb18030
     下无错解码但产出乱码，繁体书整本静默损坏。
 
-    P3 修复（2026-08-27）：decode 用 errors='replace' 而非 strict。
-    之前的 strict 模式在 256KB 采样窗口边界处会切坏 2-byte 编码（GBK/GB2312）
+    decode 用 errors='replace' 而非 strict。
+    strict 模式在 256KB 采样窗口边界处会切坏 2-byte 编码（GBK/GB2312）
     的尾字节，触发 'incomplete multibyte sequence' → 整个合法编码被错误排除。
     真实案例：4.5MB GBK 小说在 256KB 边界正好切到 2-byte 字符的尾字节 0xA1，
     导致 gbk 解码失败，splitter 路径（无 gb18030 也无 latin-1 兜底）抛
@@ -244,7 +244,7 @@ def deduplicate_foreshadows(
         if not clue_text or not str(clue_text).strip():
             continue
         # 可选第 6..10 位：anchor_quote / anchor_chapter / motif_key /
-        # question / answer_criteria（伏笔复检 V2；采集契约 2026-11-01）
+        # question / answer_criteria（伏笔复检 V2）
         extra = list(item[5:10]) if len(item) > 5 else []
         entries.append({
             'chapter': chapter,
@@ -265,9 +265,9 @@ def deduplicate_foreshadows(
         return []
 
     # 分组：每条 entry 归入某个"伏笔组"。
-    # PERF-2：关键词倒排索引替代"与全部已有组逐一比较"（原实现 O(N²)，
+    # 关键词倒排索引替代"与全部已有组逐一比较"（后者是 O(N²)，
     # 长书数千条线索时需做百万级关键词交集 + SequenceMatcher 精筛）；
-    # 现在只与共享 >=1 个关键词的组比较，语义与旧逻辑等价（粗筛阈值不变）。
+    # 现在只与共享 >=1 个关键词的组比较（粗筛阈值不变）。
     groups = []  # 每组 = [entry_indices...]
     keyword_index: Dict[str, set] = {}  # 关键词 -> 含该关键词的组号集合
 
@@ -350,10 +350,10 @@ def deduplicate_foreshadows(
     return catalog
 
 
-# 2026-08-21 修复：对称剥离前后缀修饰符（替换 substring + 后缀白名单）
-# 之前 substring 规则只识别后缀（"宁安县城" 中 extra="城" 从尾部切），
+# 对称剥离前后缀修饰符（替换 substring + 后缀白名单）
+# 只识别后缀的 substring 规则（"宁安县城" 中 extra="城" 从尾部切），
 # 无法识别前缀修饰（"新大唐公司" 中 shorter="大唐公司" 在中间，extra="司" 也从尾部切）。
-# 改为：两端都剥掉已知修饰符后比核心。前缀/后缀对称处理。
+# 两端都剥掉已知修饰符后比核心，前缀/后缀对称处理。
 _PREFIX_MODS = (
     "新", "老", "旧", "原",         # 短前缀
     "原址", "旧址",                    # 复合前缀
@@ -361,7 +361,7 @@ _PREFIX_MODS = (
 _SUFFIX_MODS = (
     "主角", "身边", "附近", "一带", "境内", "内部",
     "已废弃",
-    "新址", "原址", "旧址",   # 2026-08-21：与前缀对称，否则"宁安县原址/旧址/新址"漏判
+    "新址", "原址", "旧址",   # 与前缀对称，否则"宁安县原址/旧址/新址"漏判
 )
 
 

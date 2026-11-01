@@ -163,7 +163,7 @@ def test_characters_list_normalization():
 
 
 def test_normalize_string_list_absorbs_whole_string():
-    """P2：LLM 把数组字段漂移成单个字符串时应整串收编，而非拆成单字垃圾"""
+    """LLM 把数组字段漂移成单个字符串时应整串收编，而非拆成单字垃圾"""
     from backend.models.analysis_result import AnalysisResult
     assert AnalysisResult._normalize_string_list("修仙世界有灵气") == ["修仙世界有灵气"]
     assert AnalysisResult._normalize_string_list("") == []
@@ -182,7 +182,7 @@ def test_from_dict_world_building_string_drift():
 
 
 def test_validate_rejects_string_nested_objects():
-    """P2：真值字符串此前绕过 validate，在 from_dict 里 .get() 崩 → 块永久丢失"""
+    """真值字符串绕过 validate 时，from_dict 里 .get() 崩 → 块永久丢失"""
     from backend.core.analyzer import validate_parsed_analysis
     ok = {"core_events": [], "cross_block": {"summary": "s"},
           "long_context_insights": {}, "updated_knowledge": {}}

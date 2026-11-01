@@ -1,9 +1,9 @@
-"""P3（2026-08-27）编码选择鲁棒性：
+"""编码选择鲁棒性：
 
 1. 256KB 采样窗口边界切坏 2-byte GBK 字符的尾字节，_penalty_sample 必须不抛错
    且能正确返回 gbk 而不是 latin-1 兜底。
 2. 4.5MB GBK 小说（用户真实文件《超级能源强国》精校版）必须能成功 decode_and_read。
-3. splitter_service._detect_and_read 路径必须能正确读 GBK 文件（之前缺 gb18030）。
+3. splitter_service._detect_and_read 路径必须能正确读 GBK 文件（含 gb18030）。
 """
 import sys
 from pathlib import Path
@@ -42,7 +42,7 @@ def test_256k_boundary_no_longer_kills_gbk(tmp_path):
     boundary_sample = raw[:_SAMPLE_BYTES]
     assert len(boundary_sample) == _SAMPLE_BYTES
 
-    # 之前会返回 None（bug），现在应该返回有效 penalty
+    # 应返回有效 penalty，不能是 None
     score = _penalty_sample(boundary_sample, "gbk")
     assert score is not None, "GBK 不能因为采样边界就被排除"
     # 边界字符最多几个（< 4），FFFD 罚分 8，所以 penalty < 32 / _SAMPLE_BYTES

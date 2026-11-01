@@ -239,7 +239,7 @@ def test_token_stats_elapsed_frozen_after_run():
     assert stats["elapsed"] == 5.0
 
 
-# ============ H17 (2026-08-26) 发现流提取 + block_start 转发 单测 ============
+# ============ 发现流提取 + block_start 转发 单测 ============
 
 def test_extract_discovery_normal():
     """正常提取：events 数 / foreshadows 截 24 字 / characters 首次登场 / unresolved 截 24 字"""
@@ -318,10 +318,10 @@ def test_extract_discovery_empty_or_invalid():
     assert "萧炎" in disc2["characters"]
 
 
-# ---- Step1-1B：生产回调工厂 make_pipeline_callbacks 的真实回归 ----
-# 原 test_on_progress_block_start_publishes 用的是测试内复制闭包（on_progress_like），
-# 即使禁用生产 make_pipeline_callbacks 仍然全绿，属无效测试。本文件改为直接调用
-# 生产工厂，契约断言保持不变（range 优先于 message、DONE/FAILED/SKIPPED 转发与统计）。
+# ---- 生产回调工厂 make_pipeline_callbacks 的真实契约 ----
+# 必须直接调用生产工厂（make_pipeline_callbacks），而不是测试内复制的闭包
+# （on_progress_like），否则禁用生产工厂用例仍然全绿，测试就失去保护力。
+# 契约断言：range 优先于 message、DONE/FAILED/SKIPPED 转发与统计。
 # 详见 backend/tests/test_pipeline_callbacks_factory.py（结构化事件矩阵）。
 
 
@@ -396,7 +396,7 @@ async def test_factory_callbacks_publish_block_start_and_done():
 
 
 def test_start_resets_seen_characters():
-    """P1-b (2026-08-26) 修复：AnalysisService.start() 必须重置 _seen_characters
+    """AnalysisService.start() 必须重置 _seen_characters
 
     进程级单例：__init__ 只跑一次。如果不重置，上一本书的人物会污染新书
     的"首次登场"判定（_extract_discovery 用 seen_characters 做求差）。"""
@@ -436,9 +436,9 @@ def test_start_resets_seen_characters():
 
 
 def test_status_exposes_concurrency_and_block_size():
-    """H17 P3 V2 修复（2026-08-26）：status() 暴露 concurrency / block_size
+    """status() 暴露 concurrency / block_size
 
-    修复前 LaneView 接收 currentBlockSize（每块几章）当作 concurrency（并发块数），
+    LaneView 需要区分 currentBlockSize（每块几章）与 concurrency（并发块数），
     UI 显示「N/4」实际是「N/每块4章」——配置 concurrency=8 时后端 8 路并发但 UI 标 4。
     """
     svc = object.__new__(AnalysisService)

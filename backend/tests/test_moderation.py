@@ -140,8 +140,7 @@ async def test_retry_once_success():
 async def test_analyzer_propagates_moderation_error():
     """analyzer 失败时 retry_info.error 携带标记（pipeline 据此判 skipped）
 
-    H16 Phase 3 (2026-08-26)：analyzer 改用 chat_auto()，返回 5-tuple（与 chat_with_retry 同）
-    U4（2026-10-30）：chat_auto() 改为返回 LLMResult 对象（此处只关心失败态与 call_stats）
+    analyzer 走 chat_auto()，返回 LLMResult 对象（此处只关心失败态与 call_stats）
     """
     from backend.core.analyzer import NovelAnalyzer
     from backend.config.settings import AppConfig

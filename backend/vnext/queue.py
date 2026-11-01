@@ -1,7 +1,7 @@
-"""vnext 队列状态与恢复（PLAN v2 §2.4 / §4 S2-4）。
+"""vnext 队列状态与恢复。
 
-与旧实现的关键差别：旧队列把 ``blocks_dir`` / ``workspace_dir`` 绝对路径当身份，
-恢复时用 ``glob chapter_*_result.json`` 数文件推断进度，没有任何"这些结果还配得上
+关键差别：不能用 ``blocks_dir`` / ``workspace_dir`` 绝对路径当身份，
+也不能用 ``glob chapter_*_result.json`` 数文件推断进度——那没有任何"这些结果还配得上
 当前源吗"的校验。这里进度必须**由块签名重算得出**，对不上就是 ``STALE``。
 
 进程崩溃后遗留的 ``running`` 一律回落 ``pending``：不猜它跑到哪，让块级判定说。
@@ -139,7 +139,7 @@ def normalize_after_restart(state: QueueState) -> QueueState:
     """把"上次崩在半路"的条目回落成 ``pending``。
 
     只动 ``running``：``done``/``failed``/``skipped`` 是用户可见的历史结论，重启
-    不该改写。同时清掉错误信息——旧实现只改状态不清原因，会留下"pending 却带着
+    不该改写。同时清掉错误信息——只改状态不清原因，会留下"pending 却带着
     上次的 error_message"这种自相矛盾的记录。
     """
     for entry in state.entries:
@@ -170,7 +170,7 @@ def apply_progress(
     if total_blocks and completed_blocks == total_blocks and stale_blocks == 0:
         entry.status = STATUS_DONE
     elif entry.status in (STATUS_DONE, STATUS_SKIPPED):
-        # 曾经完成过，但现在有块失效/缺失 → 退回 pending 等待重算
+        # 已完成但现在有块失效/缺失 → 退回 pending 等待重算
         entry.status = STATUS_PENDING
     entry.updated_at = time.time()
     return entry

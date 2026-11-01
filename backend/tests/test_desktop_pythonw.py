@@ -80,7 +80,7 @@ def test_stderr_tee_survives_none_orig():
 
 
 def test_api_get_session_token_reads_env():
-    """Api.get_session_token 从 SESSION_TOKEN_ENV 读取、未设返回空串（PR-1 收尾）
+    """Api.get_session_token 从 SESSION_TOKEN_ENV 读取、未设返回空串
 
     前端 client.ts 经 pywebview js_api 取 token 给所有 fetch 附加
     X-Session-Token header；方法名是前端 sessionToken.ts 的硬契约

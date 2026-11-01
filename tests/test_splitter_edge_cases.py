@@ -1,5 +1,5 @@
 """
-切章器边界 case —— Phase 3 (2026-09-02) v2 plan T3.1-T3.6
+切章器边界 case —— 空文件 / 单章节 / 诗集 / 超大单章
 
 4 个边界 case：
   1. 空文件 → 抛 ValueError 或返回空 chapters（当前实现：返回 1 个 0 字 "全文" 章，不报错）
@@ -9,7 +9,7 @@
 
 设计要点：
   - 不修改 splitter_service.py 的大逻辑；只允许在 split_text 入口加 ≤ 2 行
-    防护（T3.2-T3.5）使所有 case 满足"不报错 + 合理结果"。
+    防护使所有 case 满足"不报错 + 合理结果"。
   - 20MB 测试用手工 TemporaryDirectory()（不依赖 pytest tmp_path，避开
     Windows 文件锁导致的 teardown PermissionError）。
   - 自定义 @pytest.mark.slow 标记；conftest.py 注册 markers 防止 -W 警告。
@@ -67,7 +67,7 @@ def _run_with_timeout(fn, timeout_sec: float, label: str):
 
 
 # ---------------------------------------------------------------------------
-# T3.2: 空文件 → 抛 ValueError 或返回空 chapters
+# 空文件 → 抛 ValueError 或返回空章节列表
 # ---------------------------------------------------------------------------
 def test_empty_content_returns_sensible_result():
     """空字符串应返回合理结果：要么抛 ValueError，要么 0 章空 SplitResult。
@@ -97,7 +97,7 @@ def test_whitespace_only_content_returns_sensible_result():
 
 
 # ---------------------------------------------------------------------------
-# T3.3: 单章节（"第1章 xxx" + 500 字正文）→ 1 章不报错
+# 单章节（"第1章 xxx" + 500 字正文）→ 1 章不报错
 # ---------------------------------------------------------------------------
 def test_single_chapter_returns_one_chapter():
     """'第1章 xxx' + 500 字正文 → 1 章。"""
@@ -128,7 +128,7 @@ def test_single_chapter_with_min_words_does_not_crash():
 
 
 # ---------------------------------------------------------------------------
-# T3.4: 5 行诗集 → 1 章不报错
+# 5 行诗集 → 1 章不报错
 # ---------------------------------------------------------------------------
 def test_5_line_poem_returns_one_chapter_no_error():
     """5 行诗集（无章节标记）→ 1 章不报错。"""
@@ -149,7 +149,7 @@ def test_short_text_under_10_lines_returns_one_chapter():
 
 
 # ---------------------------------------------------------------------------
-# T3.5: 20MB 单章 → 自动拆为 2+ 章（max_words 拆分逻辑）
+# 20MB 单章 → 自动拆为 2+ 章（max_words 拆分逻辑）
 # ---------------------------------------------------------------------------
 @pytest.mark.slow
 def test_oversized_single_chapter_auto_splits():
@@ -200,7 +200,7 @@ def test_oversized_single_chapter_auto_splits():
 
 
 # ---------------------------------------------------------------------------
-# T3.5 补充：10MB 单章 + 短内容（验证不超 max_words 时不拆）
+# 补充：10MB 单章 + 短内容（验证不超 max_words 时不拆）
 # ---------------------------------------------------------------------------
 def test_normal_chapter_not_split_when_under_max_words():
     """1KB 单章 + max_words=1MB → 不拆，仍 1 章。"""

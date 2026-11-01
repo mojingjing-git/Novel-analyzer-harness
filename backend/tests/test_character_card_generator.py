@@ -1,17 +1,17 @@
-"""Step1-1A：角色卡生成器回归（第三批清理，2026-10-14）
+"""角色卡生成器契约测试
 
 背景：``CharacterCardGenerator.long_context_insights`` 只有初始化/赋值、没有输出消费者，
 但读取 ``long_context_insights_aggregated.json`` 失败会走 ``load_aggregated_data`` 的
 ``except`` 分支返回 False —— 于是合法 ``character_tracking`` 的索引变空、有效角色详情
-抛 KeyError（路由 404）。Step1-1A 删除该状态与读链。
+抛 KeyError（路由 404）。该状态与读链都不应存在。
 
 本文件用**真实生成器**与**真实路由入口**验证：
 
 - 正常索引排序 / 详情字段；
-- 洞察文件缺失 / 损坏 / 为空数组时，不影响索引与详情（这是修复的核心契约）；
+- 洞察文件缺失 / 损坏 / 为空数组时，不影响索引与详情（这是核心契约）；
 - 空目录 / 不存在角色的既有异常契约（``KeyError`` → 路由 404）；
-- arcs / events 等**真正的数据依赖**仍然按原契约要求字段，缺字段仍抛异常
-  （不因删除洞察读取而把真实数据错误一起吞掉）。
+- arcs / events 等**真正的数据依赖**仍然按契约要求字段，缺字段仍抛异常
+  （不因为缺少洞察数据而把真实数据错误一起吞掉）。
 
 全部使用 tmp 目录合成聚合文件，不读真实 workspace。
 """
@@ -61,7 +61,7 @@ ARCS = {
 }
 
 # 注意：`_analyze_relationships` 只把全角逗号（U+FF0C）归一为分隔符后再按半角逗号切分；
-# 顿号（U+3001）**不**在支持的切分字符内（既有行为，本步不改）。fixture 用真实数据形态，
+# 顿号（U+3001）**不**在支持的切分字符内（既有行为）。fixture 用真实数据形态，
 # 并在下方用一条用例锁定这一现状契约。
 EVENTS = {
     "chapter_2": [
@@ -92,11 +92,11 @@ def book_output(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# 状态与读链已删除
+# 该状态与读链都不存在
 # ---------------------------------------------------------------------------
 
 def test_no_long_context_insights_state(book_output):
-    """生成器不再持有 long_context_insights 状态，也不再读该聚合文件"""
+    """生成器不持有 long_context_insights 状态，也不读该聚合文件"""
     gen = CharacterCardGenerator(book_output)
     assert not hasattr(gen, "long_context_insights"), "无用状态未删除"
 
@@ -106,7 +106,7 @@ def test_no_long_context_insights_state(book_output):
 
 
 def test_insights_file_opened_after_removal(book_output, monkeypatch):
-    """读链删除后，不再打开 long_context_insights_aggregated.json"""
+    """读链不打开 long_context_insights_aggregated.json"""
     opened: list[str] = []
     real_open = open
 
@@ -217,7 +217,7 @@ def test_arcs_missing_required_field_still_raises(book_output):
 
 
 def test_tracking_corrupted_raises_keyerror(book_output):
-    """tracking 文件损坏：load 失败 → 详情抛 KeyError（原契约）"""
+    """tracking 文件损坏：load 失败 → 详情抛 KeyError（既有契约）"""
     (book_output / "character_tracking_aggregated.json").write_text(
         "{ 坏了", encoding="utf-8"
     )
@@ -272,7 +272,7 @@ def test_route_card_returns_404_for_unknown_character(client, book_output, monke
 
 
 def test_route_characters_ok_with_corrupted_insights(client, book_output, monkeypatch):
-    """洞察文件损坏时，列表与详情端点仍 200（修复的核心契约）"""
+    """洞察文件损坏时，列表与详情端点仍 200（核心契约）"""
     import backend.api.routes_books as routes_books
 
     (book_output / "long_context_insights_aggregated.json").write_text(
@@ -303,8 +303,8 @@ def test_route_characters_ok_with_corrupted_insights(client, book_output, monkey
 def test_ideographic_comma_not_a_separator(book_output):
     """现状契约：顿号（U+3001）不切分人物，整串被当作一个名字
 
-    这是既有行为（本步不修）：`_analyze_relationships` 只归一全角逗号 U+FF0C。
-    锁定现状，避免后续误当作回归。
+    这是既有行为（不在本用例范围内）：`_analyze_relationships` 只归一全角逗号 U+FF0C。
+    锁定现状，避免后续误当作缺陷。
     """
     _write(
         book_output,

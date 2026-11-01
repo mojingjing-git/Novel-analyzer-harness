@@ -35,7 +35,7 @@ class AnalysisService:
         self.config_manager = ConfigManager(CONFIG_FILE)
         self.config_manager.load()
         self.queue = QueueManager()
-        # 复审 Important #2：check_api 的 heal 纠正值需经 config_manager 落盘
+        # check_api 的 heal 纠正值需经 config_manager 落盘
         # 持久化（check_api 以 self.queue 身份执行，getattr(self, "config_manager")
         # 取的就是这里挂上的引用）
         self.queue.config_manager = self.config_manager
@@ -46,10 +46,10 @@ class AnalysisService:
         # 一次分析会话的 token/耗时累计（分类统计/每章记录/重试成本/KV 命中），
         # 生命周期 = start 重置 → finally 冻结（实现见 analysis_stats.py）
         self.stats = AnalysisStats()
-        # H17 (2026-08-26) 发现流：跨块"已见人物"集合（断点续跑后全量"首次"是已知限制）
+        # 发现流：跨块"已见人物"集合（断点续跑后全量"首次"是已知限制）
         self._seen_characters: set = set()
-        # 注意：启动期自动扫描已迁移到 app.py 的 lifespan 启动阶段（asyncio.to_thread 执行），
-        # 不再在此处同步执行——否则首个触发 get_service() 的 async 请求会在事件循环内
+        # 注意：启动期自动扫描在 app.py 的 lifespan 启动阶段执行（asyncio.to_thread），
+        # 此处不同步执行——否则首个触发 get_service() 的 async 请求会在事件循环内
         # 同步跑完整工作区扫描（网络盘多书时卡数秒~数十秒），冻结整个事件循环。
 
     # ---- 状态 ----
@@ -58,9 +58,9 @@ class AnalysisService:
         return self._runner_task is not None and not self._runner_task.done()
 
     def status(self) -> Dict[str, Any]:
-        # H17 P3 V2 修复（2026-08-26）：暴露 concurrency / block_size，
-        # 前端 LaneView 之前误用 block_size（每块几章）当作 concurrency（并发块数），
-        # 导致「并发车道 N/4」实际是「N/每块4章」——配置 concurrency=8 时实际 8 路并发但 UI 标 4。
+        # 暴露 concurrency / block_size，
+        # 前端 LaneView 必须区分两者：block_size（每块几章）与 concurrency（并发块数）
+        # 混用会让「并发车道 N/4」实际是「N/每块4章」——配置 concurrency=8 时实际 8 路并发但 UI 标 4。
         cm = getattr(self, "config_manager", None)
         analysis_cfg = getattr(getattr(cm, "config", None), "analysis", None) if cm else None
         # getattr 兜底：部分单测用 __new__ 构造实例（无 __init__ 属性）
@@ -73,12 +73,12 @@ class AnalysisService:
             "concurrency": getattr(analysis_cfg, "concurrency", None) if analysis_cfg else None,
             "block_size": getattr(analysis_cfg, "block_size", None) if analysis_cfg else None,
             # 运行概览车道对账源：pipeline 信号量窗口内的真实在途块（≤ concurrency，
-            # 零丢失）。前端 WS 记账丢 done 时以此整体纠偏（车道堆叠修复）
+            # 零丢失）。前端 WS 记账丢 done 时以此整体纠偏
             "inflight_blocks": pipeline.inflight_blocks() if pipeline is not None else [],
         }
 
     def token_stats(self) -> Dict[str, Any]:
-        """返回分类 token 统计 + 每章记录 + 总耗时 + KV 缓存命中数（EFF-5）"""
+        """返回分类 token 统计 + 每章记录 + 总耗时 + KV 缓存命中数"""
         # KV cache 命中：运行中读当前 analyzer（实时）；结束后用累计值
         # getattr 兜底：部分单测用 __new__ 构造实例（无 __init__ 属性）
         cached_tokens = self.stats.total_cached_tokens
@@ -162,7 +162,7 @@ class AnalysisService:
             logger.warning("队列为空或已全部完成")
             return False
         self._stop_requested = False
-        # P1-b (2026-08-26)：重置"已见人物"集合，避免上一本书的人物污染新书首次登场判定
+        # 重置"已见人物"集合，避免上一本书的人物污染新书首次登场判定
         # （AnalysisService 是进程级单例，__init__ 只跑一次）
         self._seen_characters = set()
         # 新会话：清空 token/耗时累计并记录开始时刻
@@ -219,12 +219,12 @@ class AnalysisService:
             if self._stop_requested:
                 await hub.state_change(WSState.STOPPED, "分析已停止")
             else:
-                # 2026-08-02 spec：队列全部完成且开启 auto_summary 时，
+                # 队列全部完成且开启 auto_summary 时，
                 # 对已完成的书逐本串行执行最终总结（单本失败记录日志继续下一本；
                 # 期间用户可通过既有 /api/summary/stop 停止）
                 if config.analysis.auto_summary:
                     await self._auto_summary_done_books(config)
-                # P2 修复：自动总结期间用户可能已停止——此时不得广播“队列全部完成”
+                # 自动总结期间用户可能已停止——此时不得广播“队列全部完成”
                 if self._stop_requested:
                     await hub.state_change(WSState.STOPPED, "分析已停止（总结阶段中止）")
                 else:
@@ -291,7 +291,7 @@ class AnalysisService:
             hub=hub, item=item, stats=self.stats,
             seen_characters=self._seen_characters)
 
-        # token 落盘基线快照（2026-08-17）：本书开始前的累计值，finally 中做差得本书消耗
+        # token 落盘基线快照：本书开始前的累计值，finally 中做差得本书消耗
         stats_baseline = self.stats.baseline()
 
         self._pipeline = AnalysisPipeline(
@@ -330,7 +330,7 @@ class AnalysisService:
             await hub.log(f"《{item.name}》分析异常: {e}", level="error")
         finally:
             item.end_time = time.time()
-            # EFF-5：pipeline 置 None 前累计本书 KV 缓存命中数（结束后 token_stats 仍可见）
+            # pipeline 置 None 前累计本书 KV 缓存命中数（结束后 token_stats 仍可见）
             if self._pipeline is not None:
                 analyzer = getattr(self._pipeline, '_analyzer', None)
                 if analyzer is not None:
@@ -361,7 +361,7 @@ class AnalysisService:
     def _archive_item(self, item: QueueItem) -> None:
         """归档整个书目录到 base_dir/分析结果/（失败仅标记，不影响主流程）
 
-        P5d 修复（2026-08-27）：shutil.move 成功后必须更新 item.workspace_dir 和
+        shutil.move 成功后必须更新 item.workspace_dir 和
         item.blocks_dir 指向新位置，否则：
         - _books 缓存的 path 仍是旧路径（已搬走）
         - get_book_path 命中旧路径后 path.exists() False → 返回 None

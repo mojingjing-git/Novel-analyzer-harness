@@ -1,4 +1,4 @@
-"""S8 熔断（PLAN v2 §4 S8 C-07）：只有账户级永久错误才停派发。"""
+"""熔断：只有账户级永久错误才停派发。"""
 
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ def test_transient_rate_limit_does_not_open() -> None:
 
 
 def test_text_confidence_never_opens() -> None:
-    """C-01 的教训：文本通道判出来的"永久错误"不能停派发。"""
+    """文本通道判出来的"永久错误"不能停派发。"""
     breaker = Breaker()
     for _ in range(5):
         assert breaker.record_failure(

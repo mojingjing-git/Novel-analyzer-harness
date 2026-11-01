@@ -1,9 +1,9 @@
-"""Step0/R0 守卫：pytest 运行根隔离必须生效（含独立子进程回归）。
+"""守卫：pytest 运行根隔离必须生效（含独立子进程校验）。
 
-R0 第一轮被拒原因：原实现先 import ``backend.core.llm_failure_logger``（此时模块顶层
-``FailureLogger()`` 已按真实 cwd 创建/打开 ``api_failures.log``），之后才移除 handler，
-属于「写后移除」；测试内部新建 ``FailureLogger()`` 也会按真实 cwd 重建 handler 并写入。
-修正方式：rootdir ``conftest.py`` 顶层先把测试进程 cwd 切到隔离根。
+隔离必须是「写前隔离」：``backend.core.llm_failure_logger`` 在模块顶层就实例化
+``FailureLogger()``，会按真实 cwd 创建/打开 ``api_failures.log``；测试内部新建
+``FailureLogger()`` 也会按真实 cwd 重建 handler 并写入。
+做法：rootdir ``conftest.py`` 顶层先把测试进程 cwd 切到隔离根。
 
 本文件分两层验证：
 
@@ -92,7 +92,7 @@ def test_analyzer_log_file_isolated():
 
 
 # ---------------------------------------------------------------------------
-# 独立子进程回归：原始 cwd = 临时目录
+# 独立子进程校验：原始 cwd = 临时目录
 # ---------------------------------------------------------------------------
 
 _CHILD_SCRIPT = textwrap.dedent(

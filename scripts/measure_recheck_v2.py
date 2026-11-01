@@ -87,7 +87,7 @@ async def main() -> int:
     ap.add_argument("--chapters", type=int, default=3)
     ap.add_argument("--max-calls", type=int, default=6)
     ap.add_argument("--batch-size", type=int, default=5)
-    ap.add_argument("--out", default="docs/MEASURE-RECHECK-V2-2026-10-31.json")
+    ap.add_argument("--out", default="docs/data/MEASURE-RECHECK-V2-2026-10-31.json")
     ap.add_argument("--base-url", default="", help="覆盖 api.base_url（例如本地网关）")
     ap.add_argument("--model", default="", help="覆盖 api.model")
     ap.add_argument("--max-tokens", type=int, default=0, help="覆盖 api.max_tokens")

@@ -1,4 +1,4 @@
-"""vnext 知识快照：显式上界、未知范围排除、来源顺序覆盖（PLAN v2 §4 S3 第 1–4、6 条）。
+"""vnext 知识快照：显式上界、未知范围排除、来源顺序覆盖。
 
 这些用例守的不是"功能能用"，而是三条容易悄悄退化的性质：
 上界排他、未知来源不进快照、同章冲突不随遍历顺序改变结论。
@@ -131,7 +131,7 @@ def test_later_source_overrides_earlier() -> None:
 
 
 def test_earlier_source_cannot_override_later_even_if_processed_last() -> None:
-    """迟到章节（乱序到达）不得覆盖较新状态——这正是复审第 4 条的靶子。"""
+    """迟到章节（乱序到达）不得覆盖较新状态。"""
     records = [
         CharacterStateRecord("方醒", "已登基", _src(12)),
         CharacterStateRecord("方醒", "刚穿越", _src(1)),  # 后处理但更早

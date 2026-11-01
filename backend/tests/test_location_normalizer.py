@@ -1,4 +1,4 @@
-"""地点归一化相关测试（2026-08-21 spec）"""
+"""地点归一化相关测试"""
 import sys
 from pathlib import Path
 
@@ -31,7 +31,7 @@ class TestIsSameLocation:
         # 长度 ≤ 1 的字符串走不到 SequenceMatcher 分支，直接返回 False
         assert is_same_location("京", "京") is False  # 长度 1，但 normalize 后也是 1
 
-    # === 2026-08-21 修复新算法：对称剥离前后缀修饰符 ===
+    # === 对称剥离前后缀修饰符 ===
 
     def test_prefix_modifier_merged(self):
         """前缀软修饰（新/老/旧/原）应识别 → 合并"""
@@ -58,7 +58,7 @@ class TestIsSameLocation:
 
     def test_suffix_modifier_merged(self):
         """后缀软修饰（主角/已废弃等）应识别 → 合并（括号由 normalize 阶段剥离）"""
-        assert is_same_location("宁安县", "宁安县新址") is True   # 审查反馈补的
+        assert is_same_location("宁安县", "宁安县新址") is True   # 后缀「新址」同样应识别并合并
         assert is_same_location("居安小阁", "居安小阁已废弃") is True
         assert is_same_location("宁安县", "宁安县境内") is True
         assert is_same_location("大唐公司", "大唐公司内部") is True
@@ -354,7 +354,7 @@ def _setup_output_dir(tmp_path: Path, chapters: int = 5):
 
 
 def _make_mock_llm(responses):
-    """构造 mock LLM client，按调用顺序返回 LLMResult（U4：不再是四元组）"""
+    """构造 mock LLM client，按调用顺序返回 LLMResult（不是四元组）"""
     client = MagicMock()
     client.model = "mock-model"
     client._stop_requested = False
@@ -368,9 +368,9 @@ class TestLocationNormalizerRun:
     def test_runs_all_phases_and_writes_outputs(self, tmp_path):
         _setup_output_dir(tmp_path, chapters=3)
 
-        # Phase 0a batch 返回：归一化宁安县 + 宁安县城 → "宁安县"
-        # Phase 0a consol (2026-08-23 删除：跨 batch consolidation 不再需要)
-        # Phase 0b batch 返回：宁安县→德胜府
+        # 地点归一化阶段 batch 返回：归一化宁安县 + 宁安县城 → "宁安县"
+        # 无单独的跨 batch consolidation 响应
+        # 空间关系归一化阶段 batch 返回：宁安县→德胜府
         responses = [
             json.dumps({"locations": [
                 {"canonical_name": "宁安县", "aliases": ["宁安县", "宁安县城"], "parent": "大周王朝", "type": "城市", "description": "测试"}
@@ -570,7 +570,7 @@ class TestMapDataNormalized:
         assert result["locations"] == []
         assert result["relationships"] == []
 class TestBudgetBatchSplit:
-    """2026-08-21 修复：按字符预算切分 batch（防 Phase 0a 超时）"""
+    """按字符预算切分 batch（防地点归一化阶段超时）"""
 
     def test_estimate_group_chars_includes_all_fields(self):
         g = {
@@ -625,7 +625,7 @@ class TestBudgetBatchSplit:
 
 
 class TestOnProgressCallback:
-    """on_progress callback + 部分失败容忍（2026-08-22 Task 1）"""
+    """on_progress callback + 部分失败容忍"""
 
     async def test_on_progress_called_per_batch(self, tmp_path):
         """每个 batch 完成时触发 on_progress，含正确 payload"""
@@ -697,7 +697,7 @@ async def test_stop_propagates_to_llm_client(tmp_path):
 
 async def test_typed_payload_drives_service_state(tmp_path):
     """typed batch_done 事件必须能驱动 service 的 _batches_done / _total_batches / _phase
-    （2026-08-22 Critical #1 集成测试）"""
+    （集成测试）"""
     _setup_output_dir(tmp_path, chapters=3)
 
     state = {"phase": "starting", "total_batches": 0, "batches_done": 0}
@@ -736,7 +736,7 @@ async def test_typed_payload_drives_service_state(tmp_path):
 
 async def test_run_returns_none_when_stop_requested_before_llm(tmp_path):
     """run() 在 _stop_requested=True 且无 LLM 调用时应返回 None（用户停止）
-    （2026-08-22 Critical #2）"""
+    """
     _setup_output_dir(tmp_path, chapters=3)
 
     mock_llm = MagicMock()

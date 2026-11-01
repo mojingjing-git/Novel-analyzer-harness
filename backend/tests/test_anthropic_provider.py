@@ -274,7 +274,7 @@ async def test_probe_thinking_anthropic_skip():
 
 
 # =============================================================================
-# v2 多模式检测测试（2026-08-26）— 覆盖 M3 / QwQ / DeepSeek R1 / OpenAI o-series / Anthropic
+# 多模式检测测试 — 覆盖 M3 / QwQ / DeepSeek R1 / OpenAI o-series / Anthropic
 # =============================================================================
 
 def _make_probe_resp(content, reasoning_content="", reasoning_details=None, usage_dict=None):

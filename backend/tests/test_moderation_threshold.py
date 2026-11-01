@@ -1,4 +1,4 @@
-"""P2：自由文本误判的瞬时网关错误应多获一次温度尝试（阈值 2→3）"""
+"""自由文本误判的瞬时网关错误应多获一次温度尝试（阈值 2→3）"""
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, patch

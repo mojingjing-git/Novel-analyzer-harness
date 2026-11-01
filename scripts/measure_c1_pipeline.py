@@ -187,7 +187,7 @@ async def amain(args) -> int:
         "budget": {"max_calls": MAX_CALLS, "max_tokens": MAX_TOKENS, "within_budget": budget_ok},
         "per_call": client.per_call,
     }
-    out = ROOT / "docs" / "MEASURE-C1-2026-10-31.json"
+    out = ROOT / "docs" / "data" / "MEASURE-C1-2026-10-31.json"
     out.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
     print(f"\n报告已写入 {out.relative_to(ROOT)}")
 

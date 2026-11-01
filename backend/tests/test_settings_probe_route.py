@@ -1,4 +1,4 @@
-"""probe-thinking 路由的 model 参数透传（2026-09-30，总结模型探测支持）
+"""probe-thinking 路由的 model 参数透传（总结模型探测支持）
 
 ModelPreviewRequest 新增可选 model：总结页对 summary_model 独立探测
 （复用同一 base_url/api_key）。不传时必须与旧行为逐字节等价（探测主模型）。

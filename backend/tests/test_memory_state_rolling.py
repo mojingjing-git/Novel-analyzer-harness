@@ -1,5 +1,5 @@
-"""P1 修复验证（2026-08-24）：get_kb_snapshot 必须把 self.rolling["rolling_structured"]
-注入返回的快照副本——此前该字段只在 build_temp_knowledge 导出路径注入，
+"""get_kb_snapshot 必须把 self.rolling["rolling_structured"]
+注入返回的快照副本——该字段只在 build_temp_knowledge 导出路径注入，
 分析主链路拿到的 rolling_structured 恒为空 {}，整个后台 rolling 子系统白跑。"""
 import asyncio
 import sys

@@ -1,4 +1,4 @@
-"""P1 修复验证（2026-08-24）：stop() 必须 cancel 风格提取任务——
+"""stop() 必须 cancel 风格提取任务——
 该任务持有独立 LLMClient，不受 _llm.request_stop() 控制。"""
 import asyncio
 import json

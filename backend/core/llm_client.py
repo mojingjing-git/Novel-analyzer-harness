@@ -1,9 +1,9 @@
 """
 LLM客户端封装（asyncio 版）
 提供带重试机制和温度退火的 OpenAI 兼容 API 调用
-（自旧项目 core/llm_client.py 移植：OpenAI→AsyncOpenAI，time.sleep→asyncio.sleep，
- 行为契约保持不变：stop 检查在循环顶部、温度退火 max(0, temp-attempt*step)、
- 退避 min(2^(retry+1), 60)、认证失败即停、验证失败注入格式修正 hint、failed_tokens 累加）
+
+行为契约：stop 检查在循环顶部、温度退火 max(0, temp-attempt*step)、
+退避 min(2^(retry+1), 60)、认证失败即停、验证失败注入格式修正 hint、failed_tokens 累加
 """
 
 import json
@@ -27,9 +27,8 @@ from .error_taxonomy import (
     ErrorClass, ClassVerdict,
     classify_exception, classify_message,
 )
-# U4：非流式调用结果对象化。2026-10-30 S1 起 ErrorClass 只有一处定义（error_types），
-# error_taxonomy 对它 re-export，两者是同一个类对象；下面之所以仍按 .value 重建，
-# 只是为了不依赖导入顺序的显式兜底，不再是"身份不同"的规避手段。
+# ErrorClass 只有一处定义（error_types），error_taxonomy 对它 re-export，
+# 两者是同一个类对象；下面仍按 .value 重建，只是为了不依赖导入顺序的显式兜底。
 from .error_types import (
     ErrorVerdict, LLMResult, UsageStatus,
     Confidence as _ResConfidence, ErrorClass as _ResErrorClass,
@@ -67,18 +66,17 @@ def detect_provider(config: APIConfig) -> str:
     return "openai"
 
 
-# FailureLogger 已拆至 llm_failure_logger.py（2026-08-31）：
-# 类 + 进程级单例 + _get_failure_logger 访问器随迁，本文件经导入使用。
+# FailureLogger 在 llm_failure_logger.py：类 + 进程级单例 + _get_failure_logger 访问器，
+# 本文件经导入使用。
 
 
 def moderation_hit_from_exception(e) -> bool:
     """从 API 异常嗅探内容审核拦截信号（纯函数，供单测）。
 
-    P1 修复（2026-08-24 审计）：OpenAI SDK 的 APIStatusError.body 是 Any 类型，
-    聚合网关可能返回字符串/数组错误体；原实现在 except 块内对非 dict body 调
-    .get("code") 抛 AttributeError 且无人捕获，导致整批章节零重试直接报废。
-    2026-10-25（error_taxonomy T2.3）：结构化判定委托 classify_exception；
-    非 dict body 的防御语义与 body message 文本兜底原样保留。"""
+    结构化判定委托 classify_exception。OpenAI SDK 的 APIStatusError.body 是 Any 类型，
+    聚合网关可能返回字符串/数组错误体，非 dict body 必须防御性跳过，
+    否则 .get("code") 会抛 AttributeError 且无人捕获，导致整批章节零重试直接报废；
+    body message 文本兜底同样保留。"""
     verdict = classify_exception(e)
     if verdict is not None:
         return verdict.cls in (ErrorClass.MODERATION_INPUT, ErrorClass.MODERATION_OUTPUT)
@@ -92,7 +90,7 @@ def moderation_hit_from_exception(e) -> bool:
 
 _MODERATION_CLASSES = (ErrorClass.MODERATION_INPUT, ErrorClass.MODERATION_OUTPUT)
 
-# stop 类错误的用户可读提示（D4）
+# stop 类错误的用户可读提示
 _STOP_HINTS = {
     ErrorClass.BILLING: "（API 余额不足，请充值后重试）",
     ErrorClass.CONTEXT_LENGTH: "（本章块超模型上下文，建议调小 analysis.block_size）",
@@ -105,21 +103,20 @@ _STOP_ERROR_TYPES = {
     ErrorClass.BAD_REQUEST: "BadRequestBlocked",
 }
 
-# 单次 attempt 失败后的决策结果（U2：四处重复决断收敛到 LLMClient._decide_retry）：
+# 单次 attempt 失败后的决策结果（由 LLMClient._decide_retry 统一给出）：
 #   action ∈ {"stop", "continue"}；error 为可能被"标记审核 / 追加提示语"改写后的错误串；
 #   wait_time 只有温度层有意义（下一次重试的等待秒数），退避层原样回传调用点算好的值；
-#   verdict（U4）是该次决断所用的 ClassVerdict，调用点据此把结论搬进结果对象，
+#   verdict 是该次决断所用的 ClassVerdict，调用点据此把结论搬进结果对象，
 #   不再二次分类（分类只发生一次，消费方只读）。
-# U5（2026-10-30）：决断结论改由结果对象自带（LLMResult / StreamResult / StreamChunk 的
-# verdict 字段），本字段由 _to_class_verdict 从结果对象上的 ErrorVerdict 还原；
-# U2 时代的进程内暂存槽（ContextVar）及配套存取 helper 已随本单元删除。
+# 决断结论由结果对象自带（LLMResult / StreamResult / StreamChunk 的 verdict 字段），
+# 本字段由 _to_class_verdict 从结果对象上的 ErrorVerdict 还原。
 RetryDecision = namedtuple(
     "RetryDecision", ("action", "error", "moderation_hits", "wait_time", "verdict")
 )
 
 
-# 类目 → 作用域（U4，仅对可信通道生效，键为类目字符串值）：
-# 账户级才有可能触发熔断（§3.5）；上下文超长/坏请求/审核拦截是请求自身的问题；
+# 类目 → 作用域（仅对可信通道生效，键为类目字符串值）：
+# 账户级才有可能触发熔断；上下文超长/坏请求/审核拦截是请求自身的问题；
 # 限流/服务端/网络/超时是暂时性问题。表里没有的（UNKNOWN 等）留 UNKNOWN。
 _SCOPE_BY_CLASS = {
     "auth": ErrorScope.ACCOUNT_GLOBAL,
@@ -145,14 +142,14 @@ _CONFIDENCE_MAP = {
 
 def _to_error_verdict(verdict: Optional[ClassVerdict],
                       error: str = "") -> Optional[ErrorVerdict]:
-    """ClassVerdict（策略层三元组，U1）→ ErrorVerdict（跨层传输对象，U4）。
+    """ClassVerdict（策略层三元组）→ ErrorVerdict（跨层传输对象）。
 
     这是两个类型之间的唯一转换点。转换约定：
-    - action 原样搬运：策略函数算好的结论就是它，消费方只读、不重算（§3.4）；
+    - action 原样搬运：策略函数算好的结论就是它，消费方只读、不重算；
     - scope 只给结构化结论填具体值，文本通道一律 UNKNOWN——若允许按错误串升级，
-      "第 401 章 / 赚了 1008 块"这类正文文本就能把整本书判成账户级故障（§3.5）；
+      "第 401 章 / 赚了 1008 块"这类正文文本就能把整本书判成账户级故障；
     - retry_after 仅在 RATE_LIMIT 时从错误串的 [Retry-After:N] 标记读回；
-    - provider_code / http_status 需要 ClassVerdict 额外携带字段，本单元不动策略层，
+    - provider_code / http_status 需要 ClassVerdict 额外携带字段，本模块不动策略层，
       先留 None（消费方只做展示，不参与判定）。
     """
     if verdict is None:
@@ -187,7 +184,7 @@ def _to_error_verdict(verdict: Optional[ClassVerdict],
 
 
 def _to_class_verdict(verdict: Optional[ErrorVerdict]) -> Optional[ClassVerdict]:
-    """ErrorVerdict（结果对象上的传输形态，U5）→ ClassVerdict（策略层三元组，U1）。
+    """ErrorVerdict（结果对象上的传输形态）→ ClassVerdict（策略层三元组）。
 
     与 _to_error_verdict 互为逆变换，是重试层消费「结果对象自带结论」的唯一入口：
     分类只在异常现场做一次（chat()/chat_stream()），这里只做类型还原，**不重新分类**。
@@ -222,7 +219,7 @@ def _add_tokens(
 def _extract_provider_code(exc) -> Optional[str]:
     """从 SDK 异常里取厂商错误码（envelope 的 error.code / error.type，或响应头）。
 
-    只认"厂商自己给的字段"，不从显示文本里正则捞——那正是 C-01 的误判来源。
+    只认"厂商自己给的字段"，不从显示文本里正则捞——那正是误判来源。
     """
     body = getattr(exc, "body", None)
     if isinstance(body, dict):
@@ -260,9 +257,8 @@ def _verdict_from_exception(exc, error_text: str) -> ErrorVerdict:
     """在异常现场构造**完整**判定（provider_code / http_status / 来源通道都在）。
 
     时机是关键：异常对象一旦被字符串化，厂商码与 HTTP 状态就只剩"文本里有没有那串数字"
-    可猜。原实现先在现场算出三元组 ClassVerdict，再在下游用 `_to_error_verdict` 按置信度
-    **重建**一个 ErrorVerdict——provider_code / http_status 从未被搬运过，来源通道也随之
-    退化成 SDK_ATTRIBUTE。这里一次性把该带的都带上。
+    可猜。异常现场一次性把该带的都带上：provider_code / http_status 随结论一并产出，
+    来源通道不再退化成 SDK_ATTRIBUTE。
     """
     base = classify_exception(exc) or classify_message(error_text)
     env = _to_error_verdict(base, error_text)
@@ -274,8 +270,8 @@ def _verdict_from_exception(exc, error_text: str) -> ErrorVerdict:
         channel = SourceChannel.ERROR_ENVELOPE
     env = replace(env, provider_code=code, http_status=status, source_channel=channel)
     # 限流：Retry-After 优先从**响应头**取（那是厂商给的结构化值）；
-    # 显示串里的 "[Retry-After:N]" 只是早期为了让字符串通道也能用而注入的标记，
-    # 现在作为兜底，而不是唯一来源。
+    # 显示串里的 "[Retry-After:N]" 是为字符串通道兜底注入的标记，
+    # 只作兜底，而不是唯一来源。
     if env.cls is _ResErrorClass.RATE_LIMIT and env.retry_after is None:
         raw = _retry_after_from_exception(exc)
         if raw:
@@ -291,10 +287,10 @@ def _as_error_verdict(
 ) -> Optional[ErrorVerdict]:
     """把两种判定形态统一成 ``ErrorVerdict``，**已经是就原样返回**。
 
-    原实现不管拿到什么都走 ``_to_error_verdict``（ClassVerdict → ErrorVerdict），
-    于是结果对象上原本完整的判定（provider_code / http_status / source_channel /
+    已是 ErrorVerdict 的原样返回；只有确实是 ClassVerdict 三元组时才走转换，
+    避免结果对象上原本完整的判定（provider_code / http_status / source_channel /
     retry_after）被"按置信度重建"成仿制品：来源从 ERROR_ENVELOPE 变成 SDK_ATTRIBUTE，
-    重试等待也跟着退化。这里先认原样，只在确实是三元组时才转换。
+    重试等待也跟着退化。
     """
     if verdict is None:
         return None
@@ -304,7 +300,7 @@ def _as_error_verdict(
 
 
 def _fail_result(error: str, verdict: Optional[ClassVerdict] = None) -> LLMResult:
-    """失败结果对象（U4）。
+    """失败结果对象。
 
     失败路径一律拿不到 usage → tokens=None + usage_status=UNKNOWN，
     **不得**写成 (0, 0)：那会与"真的消耗了 0 token"混为一谈，统计口径失真。
@@ -317,17 +313,16 @@ def _fail_result(error: str, verdict: Optional[ClassVerdict] = None) -> LLMResul
 
 def _error_action(error: str, moderation_hits: int,
                   verdict: Optional[ClassVerdict] = None) -> Tuple[str, ClassVerdict]:
-    """重试循环统一错误决策（D4）。返回 (action, verdict)：
+    """重试循环统一错误决策。返回 (action, verdict)：
     - "moderation_stop"：审核短路（INPUT 确定性 / structured 首次 / text 连续第 3 次）
     - "moderation_count"：审核 text 置信，计入 3 次短路计数器后继续重试
     - "stop"：**仅结构化通道**的永久停止（verdict.is_permanent()：structured 且 stop）
     - "continue"：按退避/Retry-After 继续（文本通道的 AUTH/BILLING 等一律落这里）
-    MODERATION_OUTPUT 的"何时停"由本函数的计数器参数表达，不进 RETRY_POLICY（§8 P3-2）。
+    MODERATION_OUTPUT 的"何时停"由本函数的计数器参数表达（连续命中计数），
+    策略表只表达"停不停"。
 
-    C-01（2026-10-30，U2）：原实现用 ``RETRY_POLICY[verdict.cls] == "stop"`` 判定，绕开了
-    resolve_action 施加的文本通道上限——只要 cls 是 AUTH/BILLING 就停，哪怕置信度只是 text；
-    于是"正文里的第 401 章 / 赚了 1008 块"这类纯文本误判能直接永久熔断整块。现在唯一判据是
-    verdict.is_permanent()，文本通道（confidence=text/none）永不可能返回 stop。
+    唯一判据是 verdict.is_permanent()，文本通道（confidence=text/none）永不可能返回 stop：
+    若绕过 resolve_action 施加的文本通道上限，纯文本误判也能永久熔断整块。
 
     verdict 参数：调用方手里若已有结论（异常对象还在场时的 classify_exception），
     可直接传入以免二次文本降级；不传则按 error 文本分类。四条重试路径传入的是
@@ -347,7 +342,7 @@ def _error_action(error: str, moderation_hits: int,
 
 
 def _retry_after_from_exception(e) -> str:
-    """从异常对象提取 Retry-After 响应头（流式路径此前从未做过，§9 P3-9）。
+    """从异常对象提取 Retry-After 响应头。
     返回可注入错误串的字符串（如 "30"），无则空串。"""
     resp = getattr(e, 'response', None)
     if resp is not None and getattr(resp, 'headers', None):
@@ -501,10 +496,10 @@ class LLMClient:
         temperature: float = 0.1,
         max_tokens: Optional[int] = None
     ) -> LLMResult:
-        """非流式单次调用（U4：返回 LLMResult 对象，不再返回元组）。
+        """非流式单次调用（返回 LLMResult 对象）。
 
         tokens 只有真的拿到 usage 才有值；拿不到时是 None + usage_status=UNKNOWN
-        （旧实现写 (0, 0)，与"确实消耗 0 token"无法区分）。
+        （与"确实消耗 0 token"可区分）。
         verdict 在失败时携带现场分类结论（异常对象还在场，故结构化通道可用），
         成功时为 None。attempts 由重试层按真实轮次覆盖，单次调用恒为 1。
         """
@@ -676,7 +671,7 @@ class LLMClient:
         except AuthenticationError as e:
             error_msg = f"认证失败，请检查API Key: {_redact(str(e))}"
             logger.error(error_msg)
-            # 异常对象还在场：结构化结论写进结果对象（U4），重试层再从结果对象读回（U5）
+            # 异常对象还在场：结构化结论写进结果对象，重试层再从结果对象读回
             verdict = _verdict_from_exception(e, error_msg)
 
             _get_failure_logger().record_failure(
@@ -692,7 +687,7 @@ class LLMClient:
         except APITimeoutError as e:
             error_msg = f"请求超时 (timeout={self.config.timeout}s): {_redact(str(e))}"
             logger.warning(error_msg)
-            # 超时属暂时性，只有文本通道结论（不暂存结构化槽）
+            # 超时属暂时性，结论走文本通道
             verdict = _verdict_from_exception(e, error_msg)
 
             _get_failure_logger().record_failure(
@@ -709,7 +704,7 @@ class LLMClient:
             status_code = getattr(e, 'status_code', None)
             error_msg = f"API错误 (HTTP {status_code}): {_redact(str(e))}"
 
-            # 错误分类（T2.3）：结构化通道（异常属性码/body 深挖/状态兜底）+ 文本兜底。
+            # 错误分类：结构化通道（异常属性码/body 深挖/状态兜底）+ 文本兜底。
             # 审核类打标记；stop/billing 类决策由重试循环按 ClassVerdict.is_permanent() 统一做
             verdict = _verdict_from_exception(e, error_msg)
             if verdict.cls in _MODERATION_CLASSES:
@@ -770,7 +765,7 @@ class LLMClient:
         except anthropic.APIStatusError as e:
             status_code = getattr(e, 'status_code', None)
             error_msg = f"API错误 (HTTP {status_code}): {_redact(str(e))}"
-            # 错误分类（T2.3，§9 P3-11）：原实现仅文本嗅探（response.text），
+            # 错误分类：结构化通道（异常属性码/body/状态兜底）+ 文本兜底，
             # Anthropic 皮肤的结构化码（402 billing_error / 422 审核条件规则）由此进入
             verdict = _verdict_from_exception(e, error_msg)
             if verdict.cls in _MODERATION_CLASSES:
@@ -928,10 +923,10 @@ class LLMClient:
             raise
         except Exception as e:
             # 整个调用级别错误（连接失败、API 4xx/5xx 等）作为 error chunk yield。
-            # T2.1（error_taxonomy，2026-10-25）：异常对象还在场——结构化分类唯一时机。
+            # 异常对象还在场——结构化分类唯一时机。
             # 审核类打标记（下游重试循环/pipeline skip 链据 [MODERATION] 前缀行动）；
-            # RATE_LIMIT 顺手提取 Retry-After（流式路径此前从未做过，§9 P3-9）。
-            # stop 类（billing/参数/上下文）的"立即停"不在生成器层做，决策统一收在重试循环（D3）。
+            # RATE_LIMIT 顺手提取 Retry-After。
+            # stop 类（billing/参数/上下文）的"立即停"不在生成器层做，决策统一收在重试循环。
             error_msg = f"流式调用异常: {type(e).__name__}: {_redact(str(e))}"
             verdict = _verdict_from_exception(e, error_msg)
             if verdict.cls in _MODERATION_CLASSES:
@@ -941,7 +936,7 @@ class LLMClient:
                 if ra:
                     error_msg += f" [Retry-After:{ra}]"
             logger.warning(error_msg)
-            # U5（主计划 §2.5）：错误块本身携带完整契约，重试层直接读 chunk.verdict 决断。
+            # 错误块本身携带完整契约，重试层直接读 chunk.verdict 决断。
             # retry_after 是从错误串的 [Retry-After:N] 标记读回的，故转换必须排在标记拼接之后。
             yield StreamChunk(
                 type="error", error=error_msg,
@@ -951,9 +946,8 @@ class LLMClient:
     async def _call_validate_response(validate_fn, content: str, timeout: float = 30.0):
         """兼容同步/异步 validate_response；30s 超时（与 chat_with_retry 风格一致）
 
-        H16 (2026-08-26)：现有 validator 都是同步函数（llm_client.py:881 签名），
-        老代码用 asyncio.to_thread 包裹（925/1059 行）。新流式版保持同步/异步双兼容，
-        避免破坏现有 4 个 validator。
+        现有 validator 多为同步函数，调用时用 asyncio.to_thread 包裹；
+        这里保持同步/异步双兼容，避免破坏既有 validator。
         """
         try:
             if inspect.iscoroutinefunction(validate_fn):
@@ -981,14 +975,13 @@ class LLMClient:
         wait_time: Optional[float] = None,
         verdict: Optional[ErrorVerdict] = None,
     ) -> RetryDecision:
-        """单次 attempt 失败后的统一决策 + 失败登记（U2：原四份 ~45 行拷贝合一）。
+        """单次 attempt 失败后的统一决策 + 失败登记。
 
-        此前 chat_stream_with_retry 温度层/退避层、chat_with_retry 温度层/退避层各内联了
-        一份同构的决断树（决断 + 失败日志 + 停止返回 + 退避计算），改一处要同步四处。
-        现在收在此处，四条调用路径只保留各自的结果包装（StreamResult / LLMResult）
-        与重试循环控制。
+        chat_stream_with_retry 与 chat_with_retry 的温度层/退避层共用此处的决断树
+        （决断 + 失败日志 + 停止返回 + 退避计算），四条调用路径只保留各自的结果包装
+        （StreamResult / LLMResult）与重试循环控制。
 
-        决断顺序与失败日志口径严格沿用原实现（行为等价重构，除 C-01 那处语义修正外不动）：
+        决断顺序与失败日志口径：
         1. _error_action 给出 moderation_stop / moderation_count / stop / continue
         2. moderation_stop：标记审核 → ModerationBlocked 登记 → 立即停
         3. moderation_count：审核文本连续命中计数 +1，本轮继续
@@ -1002,7 +995,7 @@ class LLMClient:
         是否把等待秒数写进失败日志（原口径）。attempt 为温度层轮次下标（退避层不使用）。
         停止结果由调用点按各自返回结构构造，本方法不返回业务结果对象。
         """
-        # U6：类型守卫。本形参只接受"结果对象上的跨层形态" ErrorVerdict（或 None）。
+        # 类型守卫。本形参只接受"结果对象上的跨层形态" ErrorVerdict（或 None）。
         # 策略层 ClassVerdict 的字段恰好同形，传进来会被 _to_class_verdict 静默重包一层，
         # 看起来"能用"；一旦两侧字段演进就会静默降级成"不 stop"（永久错误变可重试）。
         # 这里直接拒收，让类型错位在调用点立刻暴露，而不是变成隐性坑。
@@ -1013,10 +1006,10 @@ class LLMClient:
                 "ClassVerdict 请先用 _to_error_verdict 转换后再传入。"
             )
 
-        # U5：入参是结果对象上的 ErrorVerdict（跨层传输形态），这里**只借用**策略层
-        # 三元组来算 action，判定本身仍用原始的 ErrorVerdict 往下传。
-        # 原实现把 verdict 原地替换成 ClassVerdict，于是 provider_code / http_status /
-        # source_channel / retry_after 全丢，最终结果上的判定是"凭置信度重建"的仿制品。
+        # 入参是结果对象上的 ErrorVerdict（跨层传输形态），这里**只借用**策略层
+        # 三元组来算 action，判定本身仍用原始的 ErrorVerdict 往下传，
+        # 以免 provider_code / http_status / source_channel / retry_after 全丢，
+        # 最终结果上的判定退化成"凭置信度重建"的仿制品。
         raw_verdict = verdict
         action, class_verdict = _error_action(
             error, moderation_hits, _to_class_verdict(raw_verdict)
@@ -1079,7 +1072,7 @@ class LLMClient:
                 messages_length=messages_length,
             )
 
-        if action == "stop":  # AUTH：保持原有"记录后即停"形态（不追加提示语）
+        if action == "stop":  # AUTH：记录后即停（不追加提示语）
             logger.error("⛔ 认证错误，停止重试")
             return RetryDecision("stop", error, moderation_hits, 0, verdict)
 
@@ -1088,8 +1081,7 @@ class LLMClient:
         if class_verdict.cls is ErrorClass.RATE_LIMIT:
             # 限流：尊重 Retry-After，退避拉长（限流是暂时的，值得等）。
             # 优先用结构化判定里的 typed retry_after——结构化通道拿到的秒数是数字；
-            # 文本通道才需要从错误串里正则捞。原实现只认字符串，于是
-            # "typed retry_after=7 但显示串没写 Retry-After:" 会退化成 30 秒。
+            # 文本通道才需要从错误串里正则捞。
             typed = getattr(raw_verdict, "retry_after", None)
             next_wait = min(
                 typed or self._retry_after_seconds(error) or 30 * (attempt + 1), 120
@@ -1109,7 +1101,7 @@ class LLMClient:
         """流式重试包装：完整对齐 chat_with_retry 行为契约
         （温度退火 → 指数退避；429 Retry-After；审核短路；认证即停；FailureLogger；统计累加）。
 
-        H16 (2026-08-26) 关键设计：
+        关键设计：
         - 同步/异步 validator 双兼容（_call_validate_response 包裹）
         - stop 语义：每 attempt 顶部检查 _stop_requested；chunk 循环内 chat_stream 自身也检查
         - 累计值：on_progress 传 accumulated_output_tokens
@@ -1122,11 +1114,11 @@ class LLMClient:
         call_failed_tokens = 0
         messages_length = len(str(messages))
         last_consumed_tokens: Tuple[int, int] = (0, 0)
-        accumulated_output_tokens = 0  # P0-4 累计值
+        accumulated_output_tokens = 0  # 累计值
         final_content = ""  # 保留 partial content
         final_reasoning = ""
         last_usage: Optional[StreamChunk] = None
-        last_verdict: Optional[ClassVerdict] = None  # 最近一次决断结论（U5：失败结果携带它）
+        last_verdict: Optional[ClassVerdict] = None  # 最近一次决断结论（失败结果携带它）
 
         logger.info("=" * 60)
         logger.info(f"开始流式API调用 - Model: {self.config.model}")
@@ -1139,7 +1131,7 @@ class LLMClient:
 
         def _build_stream_result(success, content, error, prompt_tok, comp_tok,
                           cached_tokens=0, reasoning_chars=0, verdict=None):
-            # U5：verdict 是本次决断用的 ClassVerdict（决策层形态），出口统一转成 ErrorVerdict
+            # verdict 是本次决断用的 ClassVerdict（决策层形态），出口统一转成 ErrorVerdict
             # （跨层传输形态）；成功结果恒为 None，与 LLMResult 口径一致。
             return StreamResult(
                 success=success, content=content, error=error,
@@ -1170,7 +1162,7 @@ class LLMClient:
             """单次流式 attempt：返回 (status, content, reasoning, usage_chunk, err, verdict)。
             status ∈ {"ok", "error", "cancelled"}；
             verdict 是错误块自带的 ErrorVerdict（chat_stream 在异常现场算好后挂在 chunk 上），
-            正常结束为 None——U5 起结论随块流转，不再依赖进程内暂存槽。"""
+            正常结束为 None——结论随块流转。"""
             nonlocal accumulated_output_tokens, last_consumed_tokens
             nonlocal final_content, final_reasoning, last_usage
             attempt_content = ""
@@ -1191,7 +1183,7 @@ class LLMClient:
                         attempt_error = chunk.error
                         attempt_verdict = chunk.verdict
                         break
-                    # P0-4: on_progress 传累计值
+                    # on_progress 传累计值
                     if on_progress:
                         await on_progress(StreamChunk(
                             type="content",
@@ -1202,7 +1194,7 @@ class LLMClient:
                 return ("cancelled", attempt_content, attempt_reasoning, last_usage,
                         "用户请求停止", None)
             finally:
-                # P1-a (2026-08-26)：同步 attempt_content → final_content
+                # 同步 attempt_content → final_content
                 # 失败路径（认证/审核/退避耗尽）依赖 final_content 作为残缺 JSON 兜底
                 # 保留最新 attempt 的 partial（含 reasoning）以便重试失败后增量补全
                 final_content = attempt_content
@@ -1241,9 +1233,9 @@ class LLMClient:
                         self._failed_tokens += last_consumed_tokens[0] + last_consumed_tokens[1]
                     call_failed_tokens += last_consumed_tokens[0] + last_consumed_tokens[1]
 
-                # 错误分类决策（T2.2，D4；U2 收敛到 _decide_retry 单点）：审核短路
+                # 错误分类决策（收敛到 _decide_retry 单点）：审核短路
                 # （INPUT/structured 首次、text 连续第3次）/ 结构化 stop 类立即停 /
-                # 其余按退避继续。沿用 _build_stream_result 保证统计契约（§8 P3-4）
+                # 其余按退避继续。沿用 _build_stream_result 保证统计契约
                 decision = self._decide_retry(
                     err,
                     moderation_hits=moderation_hits,
@@ -1279,7 +1271,7 @@ class LLMClient:
                     if usage:
                         self._cached_tokens += usage.usage_cached_tokens
 
-            # 空响应检测（moderation 嗅探）— P0-小-2
+            # 空响应检测（moderation 嗅探）
             if not content.strip():
                 error_msg = "API返回空内容（可能触发内容过滤）"
                 if usage and (is_moderation_message(str(usage)) or is_moderation_error(error_msg)):
@@ -1321,7 +1313,7 @@ class LLMClient:
         # === 指数退避重试层（429 时额外多 3 轮）===
         final_temp = max(0.0, self.config.temperature -
                          (self.config.temperature_max_retries - 1) * self.config.temperature_step)
-        # P3-10：原 `_is_429`（"429" 子串）已替换为分类判定（误报"1429"之类不再加码退避）
+        # 限流判定走分类结论（"1429" 之类不再误判为限流而加码退避）
         _last_cls = classify_message(last_error).cls
         backoff_rounds = max(self.config.backoff_max_retries, 3) \
             if _last_cls is ErrorClass.RATE_LIMIT else self.config.backoff_max_retries
@@ -1368,7 +1360,7 @@ class LLMClient:
                         self._failed_tokens += last_consumed_tokens[0] + last_consumed_tokens[1]
                     call_failed_tokens += last_consumed_tokens[0] + last_consumed_tokens[1]
 
-                # T2.2：退避层同构决策（stop 类在退避轮命中同样立即停，不再烧剩余轮次）
+                # 退避层同构决策（stop 类在退避轮命中同样立即停，不再烧剩余轮次）
                 decision = self._decide_retry(
                     err,
                     moderation_hits=moderation_hits,
@@ -1450,13 +1442,13 @@ class LLMClient:
     ) -> LLMResult:
         """根据 self.config.streaming_enabled 自动选 chat_with_retry / chat_stream_with_retry
 
-        H16 Phase 3 (2026-08-26) 业务接入统一入口：
+        业务接入统一入口：
         - streaming_enabled=True（默认）→ chat_stream_with_retry（流式，每 chunk 回调 on_progress）
-        - streaming_enabled=False → chat_with_retry（旧非流式 API，on_progress 忽略）
+        - streaming_enabled=False → chat_with_retry（非流式 API，on_progress 忽略）
 
-        U4：两条分支统一返回 LLMResult（不再拼 5 元组）。流式分支从 StreamResult 的字段
-        构造；U5 起 StreamResult 自带 verdict，这里原样透传——此前流式失败结果的
-        verdict 恒为 None，导致 final_summary / style_analyzer 拿不到判定。
+        两条分支统一返回 LLMResult。流式分支从 StreamResult 的字段构造；
+        StreamResult 自带 verdict，这里原样透传，使 final_summary / style_analyzer
+        在流式失败时也能拿到判定。
         """
         if self.config.streaming_enabled:
             result = await self.chat_stream_with_retry(
@@ -1488,7 +1480,10 @@ class LLMClient:
 
     @staticmethod
     def _is_429(error: str) -> bool:
-        """错误消息是否为 429 限流"""
+        """错误消息是否为 429 限流。
+
+        兼容壳：重试决策一律走 classify_message 的分类结论，不再用子串判定。
+        """
         return "429" in (error or "")
 
     @staticmethod
@@ -1518,7 +1513,7 @@ class LLMClient:
         verdict: Optional["ErrorVerdict | ClassVerdict"] = None,
         prior_tokens: Optional[Tuple[int, int]] = None,
     ) -> LLMResult:
-        """构造非流式调用结果对象（U4）。
+        """构造非流式调用结果对象。
 
         这是非流式路径唯一的 LLMResult 出口（chat() 的直接返回除外），
         保证 attempts/tokens/usage_status/verdict 四处口径一致：
@@ -1547,10 +1542,10 @@ class LLMClient:
         validate_response: Optional[Callable[[str], Tuple[bool, str]]] = None,
         retry_messages_builder: Optional[Callable[[str, List[dict]], List[dict]]] = None
     ) -> LLMResult:
-        """非流式重试包装（温度退火 → 指数退避），U4 起返回 LLMResult 对象。
+        """非流式重试包装（温度退火 → 指数退避），返回 LLMResult 对象。
 
         tokens 保留"最后一次已扣费但未被采用"的用量（验证失败/后续全失败时也在），
-        一次都没拿到 usage 就是 None + usage_status=UNKNOWN（旧实现写 (0, 0)）。
+        一次都没拿到 usage 就是 None + usage_status=UNKNOWN。
         verdict 由 _decide_retry 的决断结论带出，停止或最终失败时随结果返回，成功为 None。
         """
         last_error = ""
@@ -1560,8 +1555,8 @@ class LLMClient:
         call_failed_tokens = 0
         messages_length = len(str(messages))
         # 跟踪最后一次 API 成功调用消耗的 tokens（即使 JSON 验证失败，API 已扣费）
-        # U4：一次都没拿到 usage 时是 None，不再用 (0, 0) 冒充"零消耗"
-        # T45：三种口径必须分开，混用会让"本次未知"冒充"本次已知"。
+        # 一次都没拿到 usage 时是 None，不用 (0, 0) 冒充"零消耗"
+        # 三种口径必须分开，混用会让"本次未知"冒充"本次已知"。
         # - attempt_tokens：**本次尝试自己**报的用量（拿不到就是 None）
         # - last_consumed_tokens：最近一次报过用量的尝试（可能来自更早的尝试），只用于统计
         # - prior_known_tokens：已被确认消耗、但产出未被采用的累计（费用必须记账，但不能算进 tokens）
@@ -1659,9 +1654,9 @@ class LLMClient:
             last_error = error = result.error
             logger.warning(f"❌ 尝试失败: {error}")
 
-            # 错误分类决策（T2.2，D4；U2 收敛到 _decide_retry 单点）：审核短路 /
+            # 错误分类决策（收敛到 _decide_retry 单点）：审核短路 /
             # 结构化 stop 类立即停 / 其余按退避继续。
-            # 审核 text 置信维持"连续 3 次短路"（P2 2026-08-24 阈值理由只适用于文本模糊匹配；
+            # 审核 text 置信维持"连续 3 次短路"（该阈值只适用于文本模糊匹配；
             # structured/输入侧无瞬时误判风险，首次即停）
             decision = self._decide_retry(
                 error,
@@ -1697,7 +1692,7 @@ class LLMClient:
 
         # 指数退避重试（429 限流时额外多试几轮：限流通常是暂时的，快速放弃会丢块）
         final_temp = max(0.0, self.config.temperature - (self.config.temperature_max_retries - 1) * self.config.temperature_step)
-        # P3-10：`_is_429` 子串判定替换为分类判定
+        # 限流判定走分类结论
         _last_cls = classify_message(last_error).cls
         backoff_rounds = max(self.config.backoff_max_retries, 3) \
             if _last_cls is ErrorClass.RATE_LIMIT else self.config.backoff_max_retries
@@ -1805,7 +1800,7 @@ class LLMClient:
             if tokens is not None and (tokens[0] > 0 or tokens[1] > 0):
                 last_consumed_tokens = tokens
 
-            # T2.2：退避层同构决策（stop 类立即停，不再烧剩余轮次）
+            # 退避层同构决策（stop 类立即停，不再烧剩余轮次）
             decision = self._decide_retry(
                 error,
                 moderation_hits=moderation_hits,

@@ -1,4 +1,4 @@
-"""全局 LLM 并发上限 Sem 测试（2026-08-23）：
+"""全局 LLM 并发上限 Sem 测试：
 - 4 阶段 + 风格分析共用 self._llm_sem，硬上限 = self.concurrency
 - 不论 concurrency 是 3 / 9 / 20，peak in-flight 都不应超配置值
 - 风格提取与阶段 1 并行启动，最容易撞上限
@@ -103,7 +103,7 @@ def test_peak_inflight_bounded_by_configured_concurrency(tmp_path, concurrency):
     async def fake_chat(messages, *args, **kwargs):
         # 模拟 LLM 真实耗时（50ms）让并发能展开
         await asyncio.sleep(0.05)
-        # U4：chat_auto 返回 LLMResult 对象
+        # chat_auto 返回 LLMResult 对象
         return LLMResult(True, "{}", "", (10, 5), UsageStatus.KNOWN)
 
     style_return = {

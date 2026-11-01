@@ -3,7 +3,7 @@
   整个文件夹搬迁/换盘符/换挂载点后仍能正确恢复）
 - QueueManager：队列状态机（增删移推进 / 工作区扫描 / API 预检 / 状态持久化）
 
-自 queue_service.py 拆出（2026-08-31 职责拆分：队列管理与分析编排分离，
+队列管理与分析编排分离（
 分析编排层见 analysis_service 所在的 queue_service.py）。
 """
 
@@ -105,7 +105,7 @@ class QueueItem:
 
 
 class QueueManager:
-    """管理小说分析队列（自旧项目原样移植）"""
+    """管理小说分析队列"""
 
     def __init__(self):
         self._items: List[QueueItem] = []
@@ -280,9 +280,9 @@ class QueueManager:
     async def check_api(self, config: AppConfig) -> bool:
         """轻量 API 预检查：优先用 /models 健康检查端点（不消耗对话 token、不污染日志），
         仅在 /models 不可用或返回空时回退到一次极短 chat 探针。
-        原生协议两种探针均失败时，再以翻转 provider 各探一次（P2 2026-08-24：
-        聚合网关常以 OpenAI 协议暴露 claude-* 模型，detect_provider 会误判为
-        anthropic → /v1/messages 404 → auto 模式下整本书无提示全量失败）。"""
+        原生协议两种探针均失败时，再以翻转 provider 各探一次（聚合网关常以
+        OpenAI 协议暴露 claude-* 模型，detect_provider 会误判为 anthropic →
+        /v1/messages 404 → auto 模式下整本书无提示全量失败）。"""
         # 空模型名直接拦截：带着空 model 发起请求只会得到晦涩的 API 报错
         if not str(config.api.model or '').strip():
             logger.warning("API 预检查失败：未配置模型（api.model 为空），请在设置页填写模型名")
@@ -314,10 +314,10 @@ class QueueManager:
 
         # ① 原生协议 models → ② 原生 chat 探针
         if await models_ok(native):
-            # 终审 M1 收口：/models 在 OpenAI 面成功且模型为 claude-* 时，
+            # /models 在 OpenAI 面成功且模型为 claude-* 时，
             # 即网关以 OpenAI 协议暴露 claude 系列——detect_provider 的前缀规则
             # 会把运行期请求误导向 /v1/messages（整书 404）。就地纠正并指引持久化。
-            # 复审 Critical 护栏：官方 Anthropic 直连（base_url 含 anthropic）时
+            # 护栏：官方 Anthropic 直连（base_url 含 anthropic）时
             # auto 解析本就命中 Anthropic 面 /models，探针成功≠协议误判，
             # 不得改写为 openai。仅聚合网关（URL 无 anthropic 特征）才纠正。
             if (native == "auto"
@@ -326,7 +326,7 @@ class QueueManager:
                 config.api.provider = "openai"
                 # 权威传播：config_manager 的内存单例 + 磁盘落盘。
                 # 否则自动总结/手动总结经 config_manager.load() 重读磁盘时，
-                # 纠正值丢失（复审 Important #2）。探针已验证该值可用，落盘安全；
+                # 纠正值丢失。探针已验证该值可用，落盘安全；
                 # save 内置 env-key 不回写保护，不会泄露密钥。
                 try:
                     cm = getattr(self, "config_manager", None)

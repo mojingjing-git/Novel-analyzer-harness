@@ -14,18 +14,18 @@ from ..utils.json_utils import safe_save_json, safe_load_json
 logger = logging.getLogger(__name__)
 
 # Schema 版本号
-# v1: 初始版本
-# v2: ForeshadowItem 新增 needs_review 可选字段（向后兼容，旧 v1 JSON 仍可加载）
-# v3: ForeshadowItem 新增 composite_score + importance（向后兼容，旧 v2 JSON 仍可加载）
-# v5: ForeshadowItem 新增 question / answer_criteria / lead（向后兼容，旧 v4 JSON 仍可加载）
-#     v4: 新增 anchor_quote / anchor_chapter / entity_key
+# v1: 基础字段
+# v2: ForeshadowItem 含 needs_review 可选字段（向后兼容，旧 v1 JSON 仍可加载）
+# v3: ForeshadowItem 含 composite_score + importance（向后兼容，旧 v2 JSON 仍可加载）
+# v5: ForeshadowItem 含 question / answer_criteria / lead（向后兼容，旧 v4 JSON 仍可加载）
+#     v4: 含 anchor_quote / anchor_chapter / entity_key
 #     anchor_quote 是**原文逐字引文**，复检要靠它核对；entity_key 是"这是同一件事"的稳定身份，
 #     一旦登记就持久化——指纹只用于去重，不能用来改号（改号等于把历史线索拆成两条）。
 SCHEMA_VERSION = 5
 
 # 休眠阈值
-# DORMANT_BATCH_THRESHOLD 已废弃（2026-08-13）：批次阈值相对批次数（10-20 批）不可达，
-# 且 last_seen_batch 在 reconciliation 中的语义不可靠，无数据支撑——休眠改以章距为主判据。
+# 休眠以章距为主判据：批次阈值相对批次数（10-20 批）不可达，
+# 且 last_seen_batch 在 reconciliation 中的语义不可靠，无数据支撑。
 DORMANT_CHAPTER_THRESHOLD = 200   # 章节跨度阈值（最后出现后 N 章未见即休眠）
 
 # 置信度字符串→数值映射（LLM输出"高"/"中"/"低"时使用）
@@ -118,16 +118,16 @@ class ForeshadowLedger:
         1. 检查休眠伏笔（章节跨度按"当前处理进度"计算，见 current_chapter 参数）
         2. 更新状态
 
-        休眠判定（2026-08-13 重构，BUG-B）：
+        休眠判定：
         - 主判据 = 章距：last_seen_chapter（最后出现的真实章节，由 catalog 证据章维护）
           距当前进度 ≥ DORMANT_CHAPTER_THRESHOLD(200) 即休眠
-        - 删除批次条件：旧实现 DORMANT_BATCH_THRESHOLD=15 相对实际批次数
+        - 不按批次判定：批次阈值相对实际批次数
           （总块数/batch_size，通常 10-20 批）永远不可达；且 last_seen_batch 语义
-          已被 BUG-A/BUG-C 证实不可靠（未回收即推进批号、跨运行批次号混用），无数据支撑。
+          已被证实不可靠（未回收即推进批号、跨运行批次号混用），无数据支撑。
 
-        2026-08-07 修复（P0-2）：原实现用 self.total_chapters（全书最终章数）
-        计算"多少章未见"，长书会提前把后埋的伏笔判为休眠；应传当前批的 ch_end。
-        current_chapter 为 None 时回退旧行为（total_chapters），兼容历史调用方。
+        计算"多少章未见"要用当前批的 ch_end，不能用 self.total_chapters（全书最终章数），
+        否则长书会提前把后埋的伏笔判为休眠。
+        current_chapter 为 None 时回退 total_chapters，兼容历史调用方。
         """
         for item in self.items:
             if item.status != 'active':

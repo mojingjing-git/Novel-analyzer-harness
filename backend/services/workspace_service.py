@@ -2,7 +2,7 @@
 工作区管理服务
 - 列出 workspace/ 中的小说
 - 列出 分析结果/ 中的归档
-- 归档小说（移植原版 workspace_manager.py 逻辑）
+- 归档小说
 - 删除归档
 - 将小说目录移入系统回收站
 """
@@ -120,7 +120,7 @@ def list_archives() -> List[Dict]:
 
 
 def detect_book_name(novel_dir: Path) -> str:
-    """从小说目录推断书名（移植 workspace_manager.py）
+    """从小说目录推断书名
 
     优先级：目录名（最可靠）> style.md 中的书名正则 > blocks 下非数字 txt（排除 split_report 等报告）。
     旧逻辑只扫 blocks 非数字 txt，而 splitter 每次都会写 blocks/split_report.txt，
@@ -223,8 +223,8 @@ def archive_novel(novel_name: str, mode: str = "rename") -> Dict:
     try:
         shutil.move(str(temp_path), str(archive_dest))
     except Exception as e:
-        # 移动失败，回滚；回滚自身失败必须暴露滞留路径（P2：此前静默吞掉，
-        # 目录滞留时间戳临时名，用户按原名重试报“不存在”，看似书丢了）
+        # 移动失败，回滚；回滚自身失败必须暴露滞留路径
+        # （目录滞留时间戳临时名，用户按原名重试报“不存在”，看似书丢了）
         roll_err = ""
         try:
             temp_path.rename(novel_dir)
@@ -329,7 +329,7 @@ def _move_to_trash(path: Path) -> None:
         op.lpszProgressTitle = None
 
         result = shell32.SHFileOperationW(ctypes.byref(op))
-        # P2：aborted 也算失败——用户/系统中止时目标仍在原处，若当成功放行，
+        # aborted 也算失败——用户/系统中止时目标仍在原处，若当成功放行，
         # 队列已删而磁盘未删（delete_book 出现幽灵条目）
         if result != 0 or op.fAnyOperationsAborted:
             if op.fAnyOperationsAborted:
@@ -355,7 +355,7 @@ def delete_novel_to_trash(novel_name: str, novel_path: Optional[Path] = None) ->
 
     novel_path：显式目录路径。队列项可来自 /api/queue/scan 扫描的任意 base_dir，
     其真实目录不在工作区之内；此时必须按显式路径删除——按名字重新解析回工作区
-    会误删工作区同名书，或在无同名时报"目录不存在"（P1 2026-08-24）。
+    会误删工作区同名书，或在无同名时报"目录不存在"。
     缺省时保持旧行为：novel_name 解析到工作区内。"""
     ws = _get_workspace_path()
     if novel_path is not None:

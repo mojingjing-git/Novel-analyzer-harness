@@ -100,8 +100,8 @@ async def put_queue(req: QueuePutRequest) -> dict:
     service = _ensure_idle()
     service.queue.clear()
     for d in req.items:
-        # P2 修复：null/空串 blocks_dir 此前一路穿透——Path(None) 让接口 500，
-        # 空串还原成 PROJECT_ROOT 当书入队。改为原始 dict 预检 + 构造兜底。
+        # null/空串 blocks_dir 必须拦截：Path(None) 让接口 500，
+        # 空串还原成 PROJECT_ROOT 当书入队。用原始 dict 预检 + 构造兜底。
         if not d.get("name") or not d.get("blocks_dir") or not d.get("workspace_dir"):
             continue
         try:
@@ -172,9 +172,9 @@ async def move_down_queue_item(req: IndexRequest) -> dict:
 async def delete_book(req: DeleteBookRequest) -> dict:
     """删除队列项对应的小说：先把文件移入回收站，成功后再从队列移除并持久化。
 
-    顺序修复：原实现先 remove_item + save_queue，再移回收站；若移回收站失败会抛 500，
-    但队列项已删、前端刷新后“书凭空消失而文件还在”，状态不一致。
-    改为先移文件、成功后再动队列，保证任一环节失败都不会出现“队列已删但磁盘未删”。"""
+    顺序要求：先移文件、成功后再动队列，保证任一环节失败都不会出现
+    “队列已删但磁盘未删”。若先 remove_item + save_queue 再移回收站，移回收站失败会抛 500，
+    但队列项已删、前端刷新后“书凭空消失而文件还在”，状态不一致。"""
     service = _ensure_idle()
     if not (0 <= req.index < service.queue.count):
         raise HTTPException(status_code=422, detail="索引无效")
@@ -275,7 +275,7 @@ async def get_style_result(book_id: str) -> dict:
 
 @router.get("/analysis/logs", dependencies=[Depends(require_session_token)])
 async def download_logs():
-    """下载 analyzer.log 日志文件（PR-1 加 session token 鉴权，D 方案）"""
+    """下载 analyzer.log 日志文件（需 session token 鉴权）"""
     from backend.app import LOG_FILE
     if not LOG_FILE.exists():
         raise HTTPException(status_code=404, detail="日志文件不存在")

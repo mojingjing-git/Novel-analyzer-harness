@@ -1,15 +1,13 @@
-"""P4（2026-08-27）splitter 沉默失败修复：
+"""splitter 沉默失败保护：
 
 两个独立 bug 都会让"切分成功"但整本书被切成 1 章：
 
 1. mode=custom + 不匹配 pattern（用户写了「第X回」但书用「章」/写错 pattern）
-   之前：沉默把整本书当 1 章。
-   现在：回退到自动检测 + log warning。
+   期望：回退到自动检测 + log warning，而不是沉默把整本书当 1 章。
 
 2. mode=custom/auto + min_words 阈值过高（网文章节大多 2000-5000 字，
    用户设 10000 几乎全部被过滤）
-   之前：沉默剩 1 章。
-   现在：过滤后 < 5 章时抛 ValueError 让用户知道阈值过高。
+   期望：过滤后 < 5 章时抛 ValueError 让用户知道阈值过高，而不是沉默剩 1 章。
 """
 import sys
 from pathlib import Path
@@ -30,10 +28,10 @@ from backend.services.splitter_service import (
 # ---------------------------------------------------------------------------
 
 def test_custom_zero_match_falls_back_to_auto(tmp_path=None):
-    """自定义 pattern 在书前 N 行 0 命中 → 回退自动检测，不再沉默出 1 章。
+    """自定义 pattern 在书前 N 行 0 命中 → 回退自动检测，不沉默出 1 章。
 
     真实场景：用户切到「自定义正则」模式但 pattern 写错了（比如「第X回」
-    但书用「章」），之前 splitter 编译成功 + 0 命中 = 整本书当 1 章。
+    但书用「章」），splitter 编译成功 + 0 命中 = 整本书当 1 章。
     """
     src = Path(r"F:\AI\04_小说与写作\修复后txt文件\《从姑获鸟开始》（精校版）.txt")
     if not src.exists():

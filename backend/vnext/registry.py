@@ -1,4 +1,4 @@
-"""书目发现与索引：只认得 vnext 项目（PLAN v2 §1.1.5 / §4 S2-4）。
+"""书目发现与索引：只认得 vnext 项目。
 
 旧目录在这里被**识别但拒绝**：扫描时看有没有 ``manifest.json``，没有就归为
 ``LEGACY_DIR`` 记在拒绝清单里，绝不去猜 ``blocks/`` 之类的形状。这与旧
@@ -154,8 +154,8 @@ def locate_project(data_root: Path, book_id: str) -> ProjectRef:
 def open_project(data_root: Path, book_id: str) -> Manifest:
     """按 ``book_id`` 打开项目；不存在或不合法都明确报错。
 
-    这里不做"名字模糊匹配"——旧实现把书名当主键，改名即失联；
-    vnext 的主键是 ``book_id``，名字只是展示字段。
+    这里不做"名字模糊匹配"——把书名当主键会导致改名即失联；
+    主键是 ``book_id``，名字只是展示字段。
     """
     ref = locate_project(data_root, book_id)
     return load_manifest(ref.path)

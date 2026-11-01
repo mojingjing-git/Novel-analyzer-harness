@@ -1,5 +1,5 @@
 """
-顶层 tests/ 共享 pytest 配置（2026-09-02）
+顶层 tests/ 共享 pytest 配置
 
 注册自定义 marker + 让 pytest 在顶层 tests/ 也能收集到测试。
 """

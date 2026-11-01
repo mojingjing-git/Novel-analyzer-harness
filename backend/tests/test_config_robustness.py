@@ -50,7 +50,7 @@ async def test_list_models_anthropic_empty_base_url():
 
 
 def test_from_dict_coerces_string_numbers():
-    """P1（2026-08-24）：PUT /api/settings 的字符串数值必须被强转，
+    """PUT /api/settings 的字符串数值必须被强转，
     否则入库后 load() 的 max_tokens > 65537 比较抛 TypeError（try 外）全 API 瘫痪"""
     cfg = AppConfig.from_dict({"api": {"max_tokens": "130000", "timeout": "30"},
                                "analysis": {"concurrency": "4"}})
@@ -77,12 +77,12 @@ def test_load_survives_string_max_tokens_on_disk(tmp_path):
     p = tmp_path / "config.json"
     p.write_text(json.dumps({"api": {"max_tokens": "130000"}}), encoding="utf-8")
     from backend.config.settings import ConfigManager
-    cfg = ConfigManager(p).load()   # 此前在这里直接 TypeError
+    cfg = ConfigManager(p).load()   # 字符串型 max_tokens 必须被正常解析，不能抛 TypeError
     assert cfg.api.max_tokens == 130000
 
 
 def test_corrupt_config_blocks_save(tmp_path):
-    """P1（2026-08-24）：config.json 解析失败未修复前，save() 必须拒绝写入，
+    """config.json 解析失败时，save() 必须拒绝写入，
     防止默认配置（空 api_key）原子覆盖掉仍可手工修复的原文件"""
     p = tmp_path / "config.json"
     broken = '{"api": BROKEN'
@@ -113,7 +113,7 @@ def test_healthy_config_still_saves(tmp_path):
 
 
 def test_gui_language_default_and_coercion():
-    """L2 i18n 接口预留（2026-09-02）：GUIConfig.language 字段默认值 + _coerce_fields 强转"""
+    """i18n 接口：GUIConfig.language 字段默认值 + _coerce_fields 强转"""
     # 缺省回落：旧 config.json 没有 gui.language → 默认 "zh-CN"
     cfg = AppConfig.from_dict({"gui": {}})
     assert cfg.gui.language == "zh-CN"

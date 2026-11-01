@@ -1,6 +1,6 @@
-"""块结果落盘与新鲜度判定（PLAN v2 §2.4 / §3.4 / §4 S2-6）。
+"""块结果落盘与新鲜度判定。
 
-协议在这一版按契约收紧，三处与原实现不同——都是为了"结果算不算数"只有一个答案：
+协议按契约收紧，三处约定都是为了"结果算不算数"只有一个答案：
 
 1. **文件名是 ``result_id``，不是块签名**。同一条链可以针对同一块产出多个结果
    （换模型、换 Prompt 策略），块签名会让后写的覆盖先写的，历史版本凭空消失。
@@ -32,7 +32,7 @@ RESULT_DIR_NAME = "results"
 #: "上下文怎么拼"的版本（前情取哪些块、截断多少字符）。与 Prompt 措辞版本分开演进。
 CONTEXT_STRATEGY_VERSION = 1
 
-#: 结果状态（与 §3.4 / §3.6 同词表）。``BLOCKED`` 是"账户级错误导致整本停摆"，
+#: 结果状态（与任务状态同词表）。``BLOCKED`` 是"账户级错误导致整本停摆"，
 #: 与 ``FAILED`` 的区别是有没有人需要动手。
 ST_SUCCEEDED = "SUCCEEDED"
 ST_FAILED = "FAILED"
@@ -62,7 +62,7 @@ def result_path(book_dir: Path, result_id: str) -> Path:
 
 @dataclass(frozen=True)
 class ResultRecord:
-    """一条块结果。字段与契约 §3.4 一一对应。"""
+    """一条块结果。"""
 
     result_id: str
     block_signature: str

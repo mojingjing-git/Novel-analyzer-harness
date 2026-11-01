@@ -1,6 +1,6 @@
 """分析会话统计累加（AnalysisStats）
-自 queue_service.py 拆出（2026-08-31 职责拆分）：AnalysisService 原先散落的
-7 个统计属性收敛为一个值对象。生命周期 = 一次分析会话（start 重置 / finally 冻结）。
+把散落在 AnalysisService 上的 7 个统计属性收敛为一个值对象。
+生命周期 = 一次分析会话（start 重置 / finally 冻结）。
 
 边界：不持有 pipeline——运行中实时 KV 缓存命中由 AnalysisService 读
 `self._pipeline._analyzer` 算好后作为参数传入 session_snapshot()。
@@ -23,7 +23,7 @@ class AnalysisStats:
         self.chapter_stats: List[Dict[str, Any]] = []
         self.total_retries = 0
         self.total_failed_tokens = 0
-        # EFF-5：KV cache 命中 token 累计（运行中实时读当前 analyzer；结束后用累计值）
+        # KV cache 命中 token 累计（运行中实时读当前 analyzer；结束后用累计值）
         self.total_cached_tokens = 0
         self.start_time: float = 0.0
         # 运行结束时刻（冻结耗时用：结束后 elapsed 不再随 time.time() 增长）
@@ -63,7 +63,7 @@ class AnalysisStats:
         self.token_stats[cat]["output_tokens"] += payload.get("output_tokens", 0) or 0
 
     def baseline(self) -> Dict[str, Any]:
-        """本书开始前的累计快照（token 落盘基线，2026-08-17），
+        """本书开始前的累计快照（token 落盘基线），
         本书 finally 中做差得本书消耗"""
         return {
             "chapter_stats_len": len(self.chapter_stats),

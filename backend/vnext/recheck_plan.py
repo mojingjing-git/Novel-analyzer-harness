@@ -1,4 +1,4 @@
-"""复检规划与覆盖汇总（PLAN v2 §4 S7-3/7/9）。
+"""复检规划与覆盖汇总。
 
 规划只做三件事，顺序固定：
 
@@ -144,7 +144,7 @@ def record_plan_outcome(
 
 @dataclass
 class RecheckSummary:
-    """一轮复检的覆盖汇总。字段与 PLAN v2 §4 S7-7 一一对应。"""
+    """一轮复检的覆盖汇总。"""
 
     candidates_total: int = 0
     new_calls: int = 0

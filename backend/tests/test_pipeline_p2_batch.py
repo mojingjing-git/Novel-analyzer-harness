@@ -1,7 +1,7 @@
-"""P2 批量修复验证：
-1. MemoryState.failed_chapters_in 按 valid_block_ids 过滤（跨场失败标记不再误报）
-2. _archive_momentum_to_milestone 对非 str 势头条目不再 TypeError
-3. get_kb_snapshot（to_thread 工作线程）vs add_result 并发读写不再炸 RuntimeError
+"""批量处理契约：
+1. MemoryState.failed_chapters_in 按 valid_block_ids 过滤（跨场失败标记不误报）
+2. _archive_momentum_to_milestone 对非 str 势头条目不抛 TypeError
+3. get_kb_snapshot（to_thread 工作线程）vs add_result 并发读写不炸 RuntimeError
 """
 import asyncio
 import sys
@@ -24,7 +24,7 @@ def test_failed_chapters_in_filters_by_scope():
 
 class _FakeRollingClient:
     async def chat_with_retry(self, messages, max_tokens=None):
-        # U4：返回 LLMResult 对象（不再是 5 元组）
+        # 返回 LLMResult 对象
         return LLMResult(True, "ch1-3: 测试里程碑", "", (0, 0), UsageStatus.KNOWN)
 
 
@@ -40,7 +40,7 @@ def test_archive_momentum_tolerates_non_str_entries():
                   "recent_momentum": []}
     momentum = [{"text": "dict 势头"}, "ch5: 正常条目"]
 
-    # 此前 "\n".join(momentum) 对 dict 元素直接 TypeError
+    # "\n".join(momentum) 对 dict 元素会直接 TypeError
     asyncio.run(p._archive_momentum_to_milestone(_FakeRollingClient(), structured, momentum))
 
     assert structured["recent_momentum"] == []
@@ -62,7 +62,7 @@ def _make_result(ch: int) -> AnalysisResult:
 
 
 def test_concurrent_snapshot_vs_add_no_runtime_error():
-    """P2 收口回归：工作线程并发快照 vs 事件循环写入不得炸
+    """工作线程并发快照 vs 事件循环写入不得炸
     dictionary changed size during iteration（概率性，跑足轮次提高捕获率）"""
     import random
 

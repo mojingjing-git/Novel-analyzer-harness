@@ -1,7 +1,7 @@
 """
-伏笔账本修复回归测试（2026-08-13：休眠判定重构）
-- BUG-B: 休眠以章距为主判据（批次阈值删除后不再卡死）
-- BUG-A: _apply_reconciliation 未回收分支不推进 last_seen
+伏笔账本测试
+- 休眠以章距为主判据（不依赖批次阈值）
+- _apply_reconciliation 未回收分支不推进 last_seen
 - needs_review: 低置信回收标记
 """
 import sys
@@ -25,7 +25,7 @@ def make_item(fid: str, first_seen: int, last_seen: int,
 
 
 def test_dormant_by_chapter_span_only():
-    """BUG-B：章距 ≥ 阈值即休眠，不再依赖批次条件（旧实现 15 批阈值永远不可达）"""
+    """章距 ≥ 阈值即休眠，不依赖批次条件"""
     ledger = ForeshadowLedger()
     # 早期埋设、久未出现：即使 last_seen_batch 很大（旧数据残留 13/16）也应休眠
     ledger.items.append(make_item("fs_old", first_seen=10, last_seen=100, last_seen_batch=13))
@@ -34,7 +34,7 @@ def test_dormant_by_chapter_span_only():
     # 已回收：不动
     ledger.items.append(make_item("fs_done", first_seen=5, last_seen=900, status="resolved"))
 
-    # 批次总数少（12 批）也能休眠——旧逻辑 12-13 < 15 永远不触发
+    # 批次总数少（12 批）也能休眠——休眠只看章距
     ledger.reconcile_and_update(batch_idx=12, current_chapter=909)
 
     statuses = {i.id: i.status for i in ledger.items}
@@ -54,7 +54,7 @@ def test_dormant_not_below_threshold():
 
 
 def test_apply_reconciliation_no_last_seen_advance():
-    """BUG-A：未回收分支不得推进 last_seen（旧实现把 last_seen 推到批末致休眠失效）"""
+    """未回收分支不得推进 last_seen"""
     from backend.services.final_summary import FinalSummaryRunner
 
     ledger = ForeshadowLedger()
@@ -120,7 +120,7 @@ def test_low_confidence_sets_needs_review():
 def test_reconcile_uses_total_chapters_fallback():
     """current_chapter=None 时回退 total_chapters（真实末章号语义）"""
     ledger = ForeshadowLedger()
-    ledger.total_chapters = 909  # 修复后存真实末章号而非块数
+    ledger.total_chapters = 909  # total_chapters 存真实末章号而非块数
     ledger.items.append(make_item("fs_old2", first_seen=10, last_seen=100))
     ledger.reconcile_and_update(batch_idx=16, current_chapter=None)
     assert ledger.items[0].status == "dormant"

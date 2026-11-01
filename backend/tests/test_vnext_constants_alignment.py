@@ -1,4 +1,4 @@
-"""vnext 数据空间：隔离基建与常量对齐（PLAN v2 §4 S2-1）。
+"""vnext 数据空间：隔离基建与常量对齐。
 
 ``pytest_isolation`` 刻意不 import ``backend.*``（它必须在任何 backend import 之前
 运行），所以格式标识在两处各写一份字面量。这个文件就是那道防漂移的锁：
