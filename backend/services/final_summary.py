@@ -1476,8 +1476,18 @@ class FinalSummaryRunner:
         recheck_config = int(getattr(self.config.analysis, "recheck_concurrency", 0) or 0)
         recheck_concurrency = min(self.concurrency, recheck_config) if recheck_config > 0 else self.concurrency
 
+        # 复检可以用**另一个模型**：采集要覆盖面、判定要准确，两者偏好不同。
+        # 留空就跟随 api.model（与旧行为一致）。
+        recheck_client = self._llm
+        recheck_model = str(getattr(self.config.analysis, "recheck_model", "") or "").strip()
+        if recheck_model and recheck_model != str(getattr(self.config.api, "model", "") or ""):
+            from backend.core.llm_client import LLMClient
+
+            recheck_client = LLMClient(replace(self.config.api, model=recheck_model))
+            logger.info(f"复检使用独立模型：{recheck_model}")
+
         async def _call_model(prompt: str) -> str:
-            res = await self._llm.chat_auto(
+            res = await recheck_client.chat_auto(
                 messages=[{"role": "user", "content": prompt}], max_tokens=max_tokens
             )
             return getattr(res, "content", "") or ""

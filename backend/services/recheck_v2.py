@@ -444,16 +444,28 @@ async def run_recheck_v2(
             _apply_state(item, state, group, chapter_of=_chapter_of)
 
     pending = [cid for cid in outcome.not_checked if cid not in set(outcome.dropped_ids)]
+    # 本轮**确实跑完了**（最多两轮：整批 + 补问），"有没有全部核对上"交给 counts 判定。
+    # 原来传 finished=not pending，于是"跑完了但仍有候选没判定出结论"永远落成 RUNNING
+    # ——而那恰恰是真实书上的常态（真书 16 块实测就有 1 条如此）。
+    # 结果就是产物里写着"运行中"，看板和报告都以为这轮还没结束。
     outcome.status = recheck_status(
-        started=True, finished=not pending, stopped=False, counts=counts
+        started=True, finished=True, stopped=False, counts=counts
     )
+    reasons: list[str] = []
     if pending:
-        outcome.status_reason = "存在未核对候选"
+        reasons.append(f"存在未核对候选（{len(pending)} 条）")
     dropped = outcome.dropped_no_anchor + outcome.dropped_anchor_missing
+    if dropped:
+        reasons.append(f"部分条目无可用证据（{dropped} 条未进入候选）")
+    if reasons:
+        outcome.status_reason = "；".join(reasons)
     if dropped and outcome.status == "COMPLETED":
         # 有条目因为没有证据而整条没查：这不是"完成"，只是"候选都处理完了"
         outcome.status = "PARTIAL"
-        outcome.status_reason = f"部分条目无可用证据（{dropped} 条未进入候选）"
+        outcome.status_reason = (
+            f"部分条目无可用证据（{dropped} 条未进入候选）"
+            + (f"；存在未核对候选（{len(pending)} 条）" if pending else "")
+        )
     if emit is not None:
         emit(outcome.summary())
     return outcome

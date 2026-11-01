@@ -178,3 +178,22 @@ def test_unrecoverable_invalid_stays_not_checked_without_retry():
     assert outcome.coverage["not_checked"] == 1
     assert outcome.coverage["invalid"] == 0
     assert _conserved(outcome.coverage)
+
+
+def test_finished_run_with_unchecked_candidate_is_partial_not_running():
+    """跑完了但有候选没判定出结论 → ``PARTIAL``，不是 ``RUNNING``。
+
+    真实书上这是常态（8 块探针里就有 1 条如此）。原来传 ``finished=not pending``，
+    于是这种状态永远显示成"运行中"——看板和报告都以为这轮还没结束。
+    """
+    async def call_model(prompt: str) -> str:
+        return "抱歉，我无法完成。"
+
+    outcome = __import__("asyncio").run(
+        run_recheck_v2([_item("fs_1")], book_text=CHAPTER_TEXT, call_model=call_model, max_calls=5)
+    )
+
+    assert outcome.status == "PARTIAL", f"状态不该是 {outcome.status}"
+    assert outcome.status != "RUNNING"
+    assert outcome.coverage["not_checked"] == 1
+    assert "未核对" in outcome.status_reason

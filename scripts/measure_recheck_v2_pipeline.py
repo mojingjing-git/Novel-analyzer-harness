@@ -122,6 +122,11 @@ async def main() -> int:
     ap.add_argument("--batch-size", type=int, default=5)
     ap.add_argument("--base-url", default="")
     ap.add_argument("--model", default="")
+    ap.add_argument(
+        "--recheck-model",
+        default="",
+        help="复检专用模型（留空 = 跟随 --model）；采集要覆盖面、判定要准确，可分开设",
+    )
     ap.add_argument("--max-tokens", type=int, default=0)
     ap.add_argument("--out", default="docs/MEASURE-RECHECK-V2-PIPELINE.json")
     ap.add_argument(
@@ -267,10 +272,21 @@ async def main() -> int:
 
         llm = LLMClient(cfg.api)
 
+    # 复检可以用**另一个模型**：采集要覆盖面（别漏伏笔），判定要准确（判得准），
+    # 两者对模型的偏好并不一致。留空就跟随 --model。
+    recheck_llm = llm
+    if args.recheck_model and args.recheck_model != cfg.api.model:
+        from dataclasses import replace
+
+        from backend.core.llm_client import LLMClient
+
+        recheck_llm = LLMClient(replace(cfg.api, model=args.recheck_model))
+        print(f"复检模型：{args.recheck_model}（采集模型：{cfg.api.model}）")
+
     recheck_max_tokens = args.recheck_max_tokens or int(cfg.analysis.recheck_max_tokens)
 
     async def call_model(prompt: str) -> str:
-        res = await llm.chat_auto(
+        res = await recheck_llm.chat_auto(
             messages=[{"role": "user", "content": prompt}],
             max_tokens=recheck_max_tokens,
         )
