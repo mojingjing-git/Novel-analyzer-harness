@@ -13,6 +13,7 @@
 | [troubleshooting.md](./troubleshooting.md) | 日志位置、常见故障的排查路径与调优建议 |
 | [build.md](./build.md) | PyInstaller 打包流程、产物布局与打包期问题 |
 | [data-contract-vnext.md](./data-contract-vnext.md) | vnext 数据空间的语义契约（格式、指纹、裁决、账本） |
+| [data-contract-2.0.md](./data-contract-2.0.md) | 2.0 管线（1.x 作业层 + vnext 数据层合并）的形态与缺口清单 |
 | [issues.md](./issues.md) | 已知缺陷与未做的取舍 |
 | [baseline-data.md](./baseline-data.md) | 质量与性能基线数据（来自 `data/` 下的测量结果） |
 | [data/](./data/) | 不可再生的测量数据：标注集与各任务实测结果（JSON） |
@@ -24,6 +25,7 @@
 
 - **第一次用**：根 README → [configuration.md](./configuration.md)（填 Key）→ [troubleshooting.md](./troubleshooting.md)
 - **要改后端**：根 [agent.md](../agent.md) → [architecture.md](./architecture.md) → [data-contract-vnext.md](./data-contract-vnext.md)
+- **要参与 2.0 合并**：[data-contract-2.0.md](./data-contract-2.0.md)（形态与缺口清单）→ [data-contract-vnext.md](./data-contract-vnext.md)
 - **要接前端或写脚本**：[api.md](./api.md)
 - **要打包发布**：[build.md](./build.md)
 - **想知道现在做到什么程度、哪里还不稳**：[issues.md](./issues.md) + [baseline-data.md](./baseline-data.md)
