@@ -2,6 +2,13 @@
 
 ---
 
+## [Unreleased] - 2026-11-01（复检复用分析阶段的在途上限）
+
+- 复检接受外部 `limiter`：卷摘要 / 复检 / 风格共用同一个信号量，全阶段在途 ≤ `analysis.concurrency`
+- 顺手修掉旧账：两处各建 `Semaphore(concurrency)`，并行时峰值可达 2× 配置值
+- `analysis.recheck_concurrency` 默认 0（跟随分析并发），正数只能压窄波次，不能抬高
+
+
 ## [Unreleased] - 2026-11-01（复检支持并发）
 
 - 复检按波次并行（`analysis.recheck_concurrency`，默认 4）：只省墙钟时间，不省 token

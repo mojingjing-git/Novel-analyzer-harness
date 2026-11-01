@@ -1010,3 +1010,16 @@ prompt 侧只降约 15%（证据窗口仍是主要开销）。
 `gather(..., return_exceptions=True)`：抛异常的批计 `failed_batches`，
 它的候选留在未完成集合里，由补问轮或收尾如实记 `not_checked`。
 **不允许**把异常批当"没有回收"或"通过"。
+
+### 22.4 复用分析阶段的在途上限（不另设一个数）
+
+账户并发上限只有一个，不该按阶段各配一个数。复检现在接受外部 `limiter`：
+总结阶段把自己的 `_llm_sem`（= `analysis.concurrency`）传进来，
+于是**卷摘要 + 复检 + 风格**共用同一个在途闸门。
+
+这也顺手修掉一个旧账：`pipeline` 与 `final_summary` 原来各建一个
+`Semaphore(concurrency)`，两阶段真并行时在途峰值能到 **2×** 配置值——
+配置写 8、实际发出 16 个请求，"上限没生效"就是这么来的。
+
+`analysis.recheck_concurrency` 默认 **0**，含义是"跟随 `concurrency`"；
+设成正数只用来把波次压得更窄（`min(concurrency, x)`），**不能抬高**。

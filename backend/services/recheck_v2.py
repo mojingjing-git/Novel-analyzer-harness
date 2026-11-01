@@ -150,6 +150,7 @@ async def run_recheck_v2(
     max_calls: int = 300,
     batch_size: int = DEFAULT_BATCH_SIZE,
     concurrency: int = DEFAULT_CONCURRENCY,
+    limiter: asyncio.Semaphore | None = None,
     emit: Callable[[dict], None] | None = None,
 ) -> RecheckOutcome:
     """对账本里的伏笔做一轮核对。
@@ -162,6 +163,9 @@ async def run_recheck_v2(
     - ``concurrency``：同时在途的批次上限。整本复检是"多批一次问完"，
       串行跑 150 批要两小时；并行只省墙钟时间，不省 token，所以要配上限
       免得把账户打到限流
+    - ``limiter``：外部传入的并发信号量。总结阶段把它自己的 `_llm_sem` 传进来，
+      于是"复检 + 卷摘要 + 风格"共用**同一个**在途上限，而不是各算各的
+      （原来两处各建 Semaphore，峰值能到 2× 配置值）
     """
     outcome = RecheckOutcome()
     candidates: list[dict] = []
@@ -319,7 +323,7 @@ async def run_recheck_v2(
             done.add(c["candidate_id"])
         return done
 
-    sem = asyncio.Semaphore(max(1, concurrency))
+    sem = limiter if limiter is not None else asyncio.Semaphore(max(1, concurrency))
 
     async def _ask(batch: list[dict]) -> tuple[list[dict], str]:
         async with sem:

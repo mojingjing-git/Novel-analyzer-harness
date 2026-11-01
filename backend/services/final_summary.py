@@ -1452,7 +1452,10 @@ class FinalSummaryRunner:
         # 一个候选一份证据包，但**允许多条一起问**：实测 6 条一批时模型能一次答满，
         # 调用数降到 1/6、完成 token 降到约 1/2。漏答的候选会被补问一次。
         batch_size = max(1, int(getattr(self.config.analysis, "foreshadow_recheck_batch_size", 6) or 6))
-        recheck_concurrency = max(1, int(getattr(self.config.analysis, "recheck_concurrency", 4) or 4))
+        # 并发跟随分析阶段的在途上限（analysis.concurrency）；recheck_concurrency
+        # 只用来把波次压得更窄，不能再抬高一档——账户上限只有一个。
+        recheck_config = int(getattr(self.config.analysis, "recheck_concurrency", 0) or 0)
+        recheck_concurrency = min(self.concurrency, recheck_config) if recheck_config > 0 else self.concurrency
 
         async def _call_model(prompt: str) -> str:
             res = await self._llm.chat_auto(

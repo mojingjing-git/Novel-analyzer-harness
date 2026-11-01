@@ -1737,3 +1737,10 @@ C2 实测把问题定性了：模型判"支持"20 次、**引文逐字命中 9/9
 - 配置 `analysis.recheck_concurrency`（默认 4），接线在 `final_summary._run_recheck_v2`。
 - 实测 24 条候选、batch=6：并发 1 → 235s，并发 4 → 69s，均 24/24 全判。
 - 用例 `test_recheck_concurrency.py`（3 例：真并发且不超上限、预算不超支、单批失败隔离）。
+
+### 10.64 复检复用分析阶段的在途上限
+
+- `run_recheck_v2(..., limiter=...)`：总结阶段传入自己的 `_llm_sem`，让卷摘要 / 复检 / 风格共用**同一个**并发闸门。
+- 顺手修旧账：`pipeline` 与 `final_summary` 各建 `Semaphore(concurrency)`，并行时峰值可到 2× 配置值。
+- `analysis.recheck_concurrency` 默认 **0** = 跟随 `analysis.concurrency`；正数只能压窄波次（`min`），不能抬高。
+- 用例 `test_recheck_shared_limiter.py`（2 例：外部限流是硬上限、复检与另一阶段共用时不超限）。
