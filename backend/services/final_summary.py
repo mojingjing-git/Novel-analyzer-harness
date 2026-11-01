@@ -1467,7 +1467,10 @@ class FinalSummaryRunner:
         max_tokens = int(getattr(self.config.analysis, "recheck_max_tokens", 60000) or 60000)
         # 一个候选一份证据包，但**允许多条一起问**：实测 6 条一批时模型能一次答满，
         # 调用数降到 1/6、完成 token 降到约 1/2。漏答的候选会被补问一次。
-        batch_size = max(1, int(getattr(self.config.analysis, "foreshadow_recheck_batch_size", 6) or 6))
+        # 批大小走 `recheck_v2_batch_size`，**不复用**旧路径的
+        # `foreshadow_recheck_batch_size`（那个默认 40，是按"每批带全量卷摘要"
+        # 调的；V2 每条候选带自己的有界证据包，40 条会把提示词顶爆）。
+        batch_size = max(1, int(getattr(self.config.analysis, "recheck_v2_batch_size", 6) or 6))
         # 并发跟随分析阶段的在途上限（analysis.concurrency）；recheck_concurrency
         # 只用来把波次压得更窄，不能再抬高一档——账户上限只有一个。
         recheck_config = int(getattr(self.config.analysis, "recheck_concurrency", 0) or 0)

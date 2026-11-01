@@ -206,25 +206,27 @@ def test_terminal_semantic_verdicts_are_cached():
         assert row.cached_as_terminal is True, verdict
 
 
-def test_invalid_is_never_cached_as_terminal_even_when_not_retryable():
-    """锁定当前（可疑）行为：任何 ``INVALID`` 都不是终态，即使 ``retryable=False``。
+def test_invalid_is_terminal_only_when_not_retryable():
+    """``INVALID`` 的终态与否由 ``retryable`` 决定（源码已按此语义修好）。
 
-    可疑之处（已上报、未修改源码）：``cached_as_terminal`` 的 docstring 说非解析失败的
-    ``INVALID``"本身是终态……所以按终态处理，只是不计入已核对数"，但实现对 ``INVALID``
-    一律 False。``parse_recheck`` 里 ``REASON_FOREIGN_ID`` / ``REASON_EMPTY_ANSWER`` /
-    ``REASON_NO_EVIDENCE`` / ``REASON_NO_VERIFIER`` 这几条分支都不传 ``retryable``，
-    因此"终态但未核对"这一类根本不存在——它们会被当成"还没判"反复重跑。
+    原来的实现对任何 ``INVALID`` 都返回 ``cached_as_terminal=False``，于是
+    "终态但未核对"这一类根本不存在——它们会被当成"还没判"反复重跑、反复计费。
+    现在三态分明：
 
-    这条用例的作用是把现状钉住：等源码按 docstring 修好时，它会红，届时按新语义改。
+    - 语义判定：终态，且算"已核对"
+    - ``INVALID`` + 可重试（解析失败／串号／引文找不到）：**不是**终态，
+      计入"未核对"，并触发补问——补问一次通常就能救回来
+    - ``INVALID`` + 不可重试（例如调用方压根没给定位器）：是终态，
+      但仍不计入"已核对"（它不是一条语义结论）
     """
     retryable_false = CandidateVerdict("cd_0001", INVALID, reason="EMPTY_ANSWER")
     retryable_true = CandidateVerdict("cd_0002", INVALID, reason="UNKNOWN_VERDICT", retryable=True)
 
     assert retryable_false.retryable is False
-    assert retryable_false.cached_as_terminal is False, "docstring 说它是终态，实现说不"
-    assert retryable_false.checked is False
+    assert retryable_false.cached_as_terminal is True, "不可重试的 INVALID 是终态：再问一次还是这个结果"
+    assert retryable_false.checked is False, "终态不等于已核对：它没有语义结论"
 
-    assert retryable_true.cached_as_terminal is False
+    assert retryable_true.cached_as_terminal is False, "可重试的 INVALID 不是终态，要留给补问"
     assert retryable_true.checked is False
 
 

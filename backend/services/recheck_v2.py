@@ -351,20 +351,29 @@ async def run_recheck_v2(
                 # 只有一段证据时才替它补；多段时必须由模型点名是哪一段，
                 # 否则"引文落在被点名的那段里"这条门禁形同虚设。
                 payload = {**payload, "evidence_id": allowed[0]}
-            outcome.verdicts.append(
-                parse_recheck(
-                    payload,
-                    allowed_candidate_ids=[c["candidate_id"]],
-                    allowed_evidence_ids=allowed,
-                    # parse_recheck 的 locate 第二个参数是 evidence_id，不是正文——
-                    # 传错会让每条 SUPPORTED 都变成 QUOTE_NOT_FOUND（这个坑踩过一次）
-                    locate=lambda quote, eid: locate_quote(
-                        quote, texts_by_evidence.get(eid, "")
-                    ),
-                    evidence_text=lambda eid: texts_by_evidence.get(eid, ""),
-                )
+            verdict = parse_recheck(
+                payload,
+                allowed_candidate_ids=[c["candidate_id"]],
+                allowed_evidence_ids=allowed,
+                # parse_recheck 的 locate 第二个参数是 evidence_id，不是正文——
+                # 传错会让每条 SUPPORTED 都变成 QUOTE_NOT_FOUND（这个坑踩过一次）
+                locate=lambda quote, eid: locate_quote(
+                    quote, texts_by_evidence.get(eid, "")
+                ),
+                evidence_text=lambda eid: texts_by_evidence.get(eid, ""),
             )
-            done.add(c["candidate_id"])
+            # 补问后同一候选可能留下两行结论——以最新一条为准，否则
+            # count_verdicts 会把它们判成"重复候选"，两条都作废。
+            for idx in range(len(outcome.verdicts) - 1, -1, -1):
+                if outcome.verdicts[idx].candidate_id == verdict.candidate_id:
+                    outcome.verdicts.pop(idx)
+                    break
+            outcome.verdicts.append(verdict)
+            # 只有"拿到结论"或"注定拿不到"的才算处理完：
+            # 可重试的无效响应（串号／引文找不到／没按格式答）不算——
+            # 它要留给补问轮再试一次，否则 16 块实测里 13% 的候选会白丢。
+            if verdict.checked or verdict.cached_as_terminal:
+                done.add(c["candidate_id"])
         return done
 
     sem = limiter if limiter is not None else asyncio.Semaphore(max(1, concurrency))

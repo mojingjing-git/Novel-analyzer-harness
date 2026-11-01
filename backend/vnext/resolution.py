@@ -139,18 +139,31 @@ class CandidateVerdict:
         }
     @property
     def checked(self) -> bool:
-        """是否真的核对过（可计入 COMPLETED 的分母）。"""
-        return self.cached_as_terminal and not self.retryable
+        """是否真的核对过（有语义结论，可计入 COMPLETED 的分母）。
+
+        与 ``cached_as_terminal`` 分开：**终态 ≠ 已核对**。不可重试的 ``INVALID``
+        是终态（再问一次还是这个结果），但它没有语义结论，所以不计入已核对数。
+        """
+        return (
+            self.verdict in (SUPPORTED, DIFFERENT_ANSWER, CONTRADICTED, INSUFFICIENT)
+            and not self.retryable
+        )
 
     @property
     def cached_as_terminal(self) -> bool:
-        """只有"真的核对过"的结果才能缓存复用。
+        """终态判定：再问一次也不会更好，不该被当成"还没查"反复重跑。
 
-        ``INVALID`` 不在此列的那部分（解析失败）也不该缓存成"已完成"——但它本身
-        是终态（重复询问同一个候选不会得到更好的结果），所以按终态处理，
-        只是不计入"已核对数"。
+        四个语义判定（``SUPPORTED`` / ``DIFFERENT_ANSWER`` / ``CONTRADICTED`` /
+        ``INSUFFICIENT``）是终态。``INVALID`` 里**不可重试**的那些也是终态——
+        它们不是"这次没答好"，而是"注定了答不好"（例如调用方压根没给定位器），
+        再问一次还是同一个结果。
+
+        可重试的 ``INVALID``（解析失败、模型串号、引文在原文里找不到）**不是**
+        终态：补问一次通常就能救回来，所以它们计入"未核对"，并触发补问。
         """
-        return self.verdict in (SUPPORTED, DIFFERENT_ANSWER, CONTRADICTED, INSUFFICIENT)
+        if self.verdict in (SUPPORTED, DIFFERENT_ANSWER, CONTRADICTED, INSUFFICIENT):
+            return True
+        return self.verdict == INVALID and not self.retryable
 
 
 #: 模型回包被读取的全部键名——**唯一来源**。
@@ -348,7 +361,10 @@ def parse_recheck(
         # INVALID 的含义是"这条响应不可用"，INSUFFICIENT 的含义是"原文没给出足够证据"。
         # 前者会被当作候选本身有问题，后者才是这条悬念的真实处境。
         if not answer:
-            return CandidateVerdict(candidate_id, INVALID, reason=REASON_EMPTY_ANSWER)
+            # 空答案 = 这次没按格式答，补问一次通常能答上来 → 可重试
+            return CandidateVerdict(
+                candidate_id, INVALID, reason=REASON_EMPTY_ANSWER, retryable=True
+            )
         if payload.get("material_insufficient_reason"):
             return CandidateVerdict(
                 candidate_id, INSUFFICIENT, reason=REASON_MATERIAL_INSUFFICIENT
@@ -370,9 +386,16 @@ def parse_recheck(
         # "模型觉得答对了"就成了 AUTO_RESOLVED。没有证据的支持只是又一次猜测。
         evidence_id = payload.get("evidence_id")
         if not isinstance(evidence_id, str) or not evidence_id:
-            return CandidateVerdict(candidate_id, INVALID, reason=REASON_NO_EVIDENCE)
+            # 没给证据 id = 这次没按格式答 → 可重试
+            return CandidateVerdict(
+                candidate_id, INVALID, reason=REASON_NO_EVIDENCE, retryable=True
+            )
         if evidence_id not in set(allowed_evidence_ids):
-            return CandidateVerdict(candidate_id, INVALID, reason=REASON_FOREIGN_ID)
+            # 引用了**别条候选**的证据 id：批量提问时的典型串号。单独补问一次
+            # 就能答对，所以可重试——16 块实测 46 条里有 4 条栽在这。
+            return CandidateVerdict(
+                candidate_id, INVALID, reason=REASON_FOREIGN_ID, retryable=True
+            )
 
         quote = payload.get("supporting_quote")
         if not isinstance(quote, str) or not quote.strip():
@@ -646,8 +669,10 @@ def count_verdicts(
                 by_reason["DUPLICATE_CANDIDATE"] = by_reason.get("DUPLICATE_CANDIDATE", 0) + 1
                 continue
             verdict = got[0]
-            if not verdict.checked:
-                # 解析失败可重跑：属于"还没核对"，不是"核对完了但无效"
+            if verdict.verdict == INVALID and verdict.retryable:
+                # 这条响应"这次没答好"（解析失败／串号／引文找不到）：属于**还没核对**，
+                # 不是"核对完了但无效"。计入 not_checked，交给补问轮再试一次——
+                # 把它算成 invalid 只会让报告上凭空多出一堆"无效"，看不出是哪一类。
                 not_checked += 1
                 continue
             _bucket(verdict)
