@@ -121,7 +121,9 @@ async def main() -> int:
     ap.add_argument("--block-size", type=int, default=1)
     ap.add_argument("--max-calls", type=int, default=12)
     ap.add_argument("--batch-size", type=int, default=5)
-    ap.add_argument("--base-url", default="")
+    # 默认走**本地网关**而不是 config.json 里的官方通道：
+    # 漏传 --base-url 时沿用 config.json 会直接打到官方 API（消耗官方额度）。
+    ap.add_argument("--base-url", default="http://127.0.0.1:3425/v1")
     ap.add_argument("--model", default="")
     ap.add_argument(
         "--recheck-model",
@@ -177,6 +179,9 @@ async def main() -> int:
     cfg = ConfigManager(ROOT / "config.json").load()
     if args.base_url:
         cfg.api.base_url = args.base_url
+    if "minimaxi.com" in (cfg.api.base_url or ""):
+        print("⚠️  警告：base_url 指向 **官方 MiniMax 通道**，本次调用会消耗官方额度！")
+        print(f"    base_url = {cfg.api.base_url}")
     if args.model:
         cfg.api.model = args.model
     if args.max_tokens:
