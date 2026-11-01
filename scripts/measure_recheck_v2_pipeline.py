@@ -25,7 +25,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from backend.config.settings import ConfigManager  # noqa: E402
-from backend.core.anchor import entity_key_for, split_block_into_chapters  # noqa: E402
+from backend.core.anchor import entity_key_for  # noqa: E402
+from backend.core.text_units import build_display_labels, load_blocks_as_files  # noqa: E402
 from backend.core.pipeline import AnalysisPipeline  # noqa: E402
 from backend.models.analysis_result import AnalysisResult  # noqa: E402
 from backend.services.recheck_v2 import run_recheck_v2  # noqa: E402
@@ -269,23 +270,16 @@ async def main() -> int:
     with_anchor = sum(1 for i in items if i.anchor_quote)
     print(f"账本候选 {len(items)} 条，带锚点 {with_anchor} 条")
 
-    # 按**回**索引的原文：生产路径（`final_summary._collect_chapters`）就是用
-    # `split_block_into_chapters` 从块内标题反查章号，再有界取窗。两件事必须对齐：
-    # 1. 只传整本 `book_text` 时，一个候选的证据包就是全书正文——批 6 条等于把同一本
-    #    12 万字塞进 prompt 六遍，既烧钱又把"证据范围"放大到整本，判定自然偏乐观；
-    # 2. 章号若按"块序号"算（而不是标题里写的回号），锚点几乎全落空：实测 48 条里
-    #    44 条被记成 `dropped_anchor_missing`，复检等于什么都没查。
-    chapters: dict[int, str] = {}
-    for ordinal, path in enumerate(sorted((book_dir / "blocks").glob("*.txt")), start=1):
-        try:
-            text = path.read_text(encoding="utf-8")
-        except OSError:
-            continue
-        chapters.update(split_block_into_chapters(text, ordinal))
+    # 按**物理单元**（文件）索引的原文：加载口径与生产路径共用同一个函数
+    # （`backend/core/text_units.load_blocks_as_files`），避免两边排序/过滤规则不同。
+    # 2.0 的单元键是文件序号，不是文学章号——章号在采集侧是"合并块内标题反查的回号"，
+    # 与这里的键根本不是同一套编号（实测按记录章号定位只有 22%）。
+    chapters, excluded = load_blocks_as_files(book_dir / "blocks")
     print(
-        f"按标题切出 {len(chapters)} 章（回号 "
+        f"按文件切出 {len(chapters)} 个单元（文件序号 "
         f"{min(chapters) if chapters else 0}..{max(chapters) if chapters else 0}），"
         f"{sum(len(t) for t in chapters.values()):,} 字"
+        + (f"，已排除非正文文件 {len(excluded)} 个：{excluded[:3]}" if excluded else "")
     )
 
     llm = pipeline._analyzer.llm_client if getattr(pipeline, "_analyzer", None) else None
@@ -332,6 +326,8 @@ async def main() -> int:
             max_calls=args.max_calls,
             batch_size=args.batch_size,
             concurrency=recheck_concurrency,
+            unit_noun="文件",
+            display_labels=build_display_labels(chapters),
         )
         print(
             f"复检完成：{json.dumps(outcome.summary(), ensure_ascii=False)}，"

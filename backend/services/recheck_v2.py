@@ -19,6 +19,7 @@ from datetime import datetime
 from typing import Any, Awaitable, Callable, Iterable, Mapping, Sequence
 
 from backend.core.evidence import EvidenceIndex
+from backend.core.text_units import locate_in_units, unit_label
 from backend.utils.json_utils import extract_json_from_text
 from backend.vnext.resolution import (
     INSUFFICIENT,
@@ -80,6 +81,7 @@ ITEM_TEMPLATE = """### 候选 candidate_id={candidate_id}
 待交代事项（question）：{question}
 判定为已回答的标准（answer_criteria）：{answer_criteria}
 首次出现：第{first_seen}章；最后提及：第{last_seen}章
+   {unit_note}
 
 以下 {segment_count} 段原文各自有 evidence_id。引文必须**逐字取自其中一段**，
 并把**那一段的** evidence_id 原样回填——不同段是不同的证据，不要混：
@@ -116,6 +118,9 @@ class RecheckOutcome:
     #: 锚点章号被修正过的条目（记录下来的章号 → 引文真正所在章）。
     #: 章号只是提示：书里同一个章号可能重复出现，采集记的那一份未必是引文所在。
     resolved_chapters: dict[str, int] = field(default_factory=dict)
+    #: 被修正的条目的**物理单元键**（2.0 里是文件序号）。与 resolved_chapters 分开：
+    #: 后者是文学章号语义（可写进账本），前者是检索单元语义（不能混进章号字段）。
+    resolved_units: dict[str, int] = field(default_factory=dict)
 
     def summary(self) -> dict:
         return {
@@ -189,6 +194,39 @@ def _evidence_id(chapter: int, text: str) -> str:
     return hashlib.sha256(raw).hexdigest()[:12]
 
 
+def _display_chapter(
+    unit: int,
+    display_labels: Mapping[int, str] | None,
+    fallback: int = 0,
+    *,
+    noun: str = "章",
+) -> int:
+    """单元键 → **文学章号**（写进账本的必须是章号，不能是文件序号）。
+
+    2.0 的单元键是物理文件序号（1..922），而账本的 ``resolved_chapter``、
+    ``first_seen_chapter`` 以及休眠跨度计算都是**章号语义**——把 366 写进
+    ``resolved_chapter`` 会让"在第几章回收"整体错位。
+
+    - ``noun="章"``（1.x）：单元键**就是**章号，原样返回；
+    - ``noun="文件"``（2.0）：章号来自文件内解析出的回号；解析不出就退回采集侧
+      记的 ``anchor_chapter``，再不行是 0（未知）。**任何情况下都不写文件序号**。
+    """
+    if noun != "文件":
+        return int(unit)
+    disp = (display_labels or {}).get(unit)
+    if disp:
+        digits = disp.replace("第", "").replace("回", "").strip()
+        try:
+            from backend.core.chapter_split import cn_to_int
+
+            parsed = cn_to_int(digits)
+        except Exception:  # pragma: no cover - 解析失败就走回退
+            parsed = None
+        if parsed:
+            return parsed
+    return int(fallback or 0)
+
+
 async def run_recheck_v2(
     items: Sequence[Any],
     *,
@@ -200,12 +238,15 @@ async def run_recheck_v2(
     concurrency: int = DEFAULT_CONCURRENCY,
     limiter: asyncio.Semaphore | None = None,
     emit: Callable[[dict], None] | None = None,
+    unit_noun: str = "章",
+    display_labels: Mapping[int, str] | None = None,
 ) -> RecheckOutcome:
     """对账本里的伏笔做一轮核对。
 
     - ``items``：`ForeshadowItem` 列表（只处理 `status == "open"/"active"` 且有锚点的）
     - ``chapters``：按章号索引的**原文**。给了它就只取相关窗口（`EvidenceIndex`），
-      否则退回 ``book_text`` 全文（该模式只在短文本/测试里能用——整本会爆上下文）
+      否则退回 ``book_text`` 全文（该模式只在短文本/测试里能用——整本会爆上下文）。
+      **2.0 里单元键是物理文件序号**（不是文学章号），见 `backend/core/text_units.py`
     - ``call_model``：给提示词返回模型文本（注入以便离线测试）
     - ``max_calls``：本轮调用上限；超出记 ``not_checked``，**不静默当作通过**
     - ``concurrency``：同时在途的批次上限。整本复检是"多批一次问完"，
@@ -214,6 +255,8 @@ async def run_recheck_v2(
     - ``limiter``：外部传入的并发信号量。总结阶段把它自己的 `_llm_sem` 传进来，
       于是"复检 + 卷摘要 + 风格"共用**同一个**在途上限，而不是各算各的
       （各建各的 Semaphore 会让峰值达到 2× 配置值）
+    - ``unit_noun`` / ``display_labels``：2.0 的展示口径（"文件366（第12回）"）；
+      默认保持 1.x 的"第 12 章"。
     """
     outcome = RecheckOutcome()
     candidates: list[dict] = []
@@ -228,9 +271,11 @@ async def run_recheck_v2(
     # 实测 1669 条带锚点的候选里，1303 条（78%）因此被记成"锚点找不到"，
     # 复检等于只查了两成。
     #
-    # 修法：先用 anchor_chapter 找；找不到就在全书范围内找那句引文，
-    # 再反查它属于哪一章，用那一章做证据包。伏笔埋设在前面，
-    # 全书首次出现就是埋设处。
+    # 修法：**单元键才是身份**（2.0 里是物理文件序号）。先用采集侧记的章号找；
+    # 找不到就在**全书按纯字面**找那句引文，取最早出现的那一单元。
+    # 全书搜索只允许 `str.find`：绝不能在这里调 `locate_quote`——
+    # 它找不到时会回退 `core/citations.py:174` 的 `difflib.SequenceMatcher`，
+    # 那是 O(N·M)，拿 435 万字符去跑单次就能卡住几十秒到几分钟。
     global_text = ""
     chapter_spans: list[tuple[int, int, int]] = []
     if index is not None:
@@ -261,24 +306,31 @@ async def run_recheck_v2(
             outcome.not_checked.append(getattr(item, "id", ""))
             outcome.dropped_ids.append(getattr(item, "id", ""))
             continue
-        # 定位用**整章**（锚点可能落在章末，窗口只够展示）
-        source = index.chapter_text(chapter) if index else book_text
-        located = locate_quote(quote, source)
-        if not located.found and global_text:
-            # 章号指错了：在全书里再找一次，反查它真正属于哪一章
-            found = locate_quote(quote, global_text)
-            if found.found:
-                owner = next(
-                    (ch for ch, start, end in chapter_spans if start <= found.start < end),
-                    None,
-                )
-                if owner is not None and owner != chapter:
-                    retry = locate_quote(quote, index.chapter_text(owner))
-                    if retry.found:
-                        located = retry
-                        chapter = owner
-                        outcome.resolved_chapters[getattr(item, "id", "")] = owner
-        if not located.found:
+        # 定位：单元内优先（快路径），否则全书纯字面扫描（最早出现 = 埋设处）
+        unit = chapter if index is not None else 0
+        hit = locate_in_units(chapters or {}, quote, prefer=chapter if index is not None else None)
+        located = None
+        if hit is not None:
+            owner, _offset = hit
+            # 命中后要在**那一单元内**再定位一次，拿到窗口内的偏移
+            located = locate_quote(quote, index.chapter_text(owner)) if index is not None else None
+            if located is not None and located.found:
+                if owner != chapter:
+                    outcome.resolved_units[getattr(item, "id", "")] = owner
+                    outcome.resolved_chapters[getattr(item, "id", "")] = _display_chapter(
+                        owner, display_labels, getattr(item, "anchor_chapter", 0),
+                        noun=unit_noun,
+                    )
+                unit = owner
+                chapter = owner
+            else:
+                located = None
+        if located is None and index is not None:
+            # 纯字面没命中：退到**章级**模糊匹配（difflib 只跑在几千字的章上，安全）
+            located = locate_quote(quote, index.chapter_text(chapter))
+        if located is None and not index and book_text:
+            located = locate_quote(quote, book_text)
+        if located is None or not located.found:
             outcome.dropped_anchor_missing += 1
             outcome.not_checked.append(getattr(item, "id", ""))
             outcome.dropped_ids.append(getattr(item, "id", ""))
@@ -289,6 +341,7 @@ async def run_recheck_v2(
                 "candidate_id": str(getattr(item, "id", "")),
                 "evidence_id": _evidence_id(chapter, quote),
                 "chapter": chapter,
+                "unit": unit,
             }
         )
 
@@ -325,6 +378,8 @@ async def run_recheck_v2(
                 getattr(item, "question", "") or "",
                 getattr(item, "description", "") or "",
             ],
+            unit_noun=unit_noun,
+            display_labels=display_labels,
         )
         segments: list[dict] = []
         for chapter, start, end in bundle.spans:
@@ -344,6 +399,17 @@ async def run_recheck_v2(
 
     by_id = {c["candidate_id"]: c for c in candidates}
 
+    def _seg_label(ch: int) -> str:
+        """证据段标签。
+
+        1.x：``第12章``（原样不动）。2.0：``文件366（第12回）``——**必须同时给出
+        两个体系**：只给文件序号，模型会拿它去和候选元数据里的"首次出现：第12章"
+        对不上，判定就会跑偏（AGY 复审 P1-3）。
+        """
+        if unit_noun == "章":
+            return f"第{ch}章"
+        return unit_label(ch, display_labels, noun="文件")
+
     def _render_batch(batch: list[dict]) -> str:
         rendered = "".join(
             ITEM_TEMPLATE.format(
@@ -353,6 +419,13 @@ async def run_recheck_v2(
                 answer_criteria=getattr(c["item"], "answer_criteria", "") or "（未提供）",
                 first_seen=getattr(c["item"], "first_seen_chapter", 0),
                 last_seen=getattr(c["item"], "last_seen_chapter", 0),
+                unit_note=(
+                    ""
+                    if unit_noun == "章"
+                    else "（注意：下面的证据标签里，“文件N”是物理文件序号，"
+                         "括号里的“第N回”是文学回号；它们与上面的章号不是同一套编号，"
+                         "不要因为编号不同就以为给错了证据）"
+                ),
                 segment_count=len(c["segments"]),
                 truncation_note=(
                     f"（注意：后文还有 {c.get('omitted', 0)} 处提到相关词但未展示，"
@@ -361,7 +434,7 @@ async def run_recheck_v2(
                     else ""
                 ),
                 segments="\n".join(
-                    f'[evidence_id={seg["evidence_id"]} 第{seg["chapter"]}章]\n"""\n'
+                    f'[evidence_id={seg["evidence_id"]} {_seg_label(seg["chapter"])}]\n"""\n'
                     f'{seg["text"]}\n"""'
                     for seg in c["segments"]
                 ),
@@ -483,7 +556,14 @@ async def run_recheck_v2(
         outcome.applied[entity_id] = state
         item = by_id.get(entity_id, {}).get("item")
         if item is not None:
-            _apply_state(item, state, group, chapter_of=_chapter_of)
+            _apply_state(
+                item, state, group,
+                chapter_of=_chapter_of,
+                unit_to_chapter=lambda u: _display_chapter(
+                    u, display_labels, getattr(item, "anchor_chapter", 0),
+                    noun=unit_noun,
+                ),
+            )
 
     pending = [cid for cid in outcome.not_checked if cid not in set(outcome.dropped_ids)]
     # 本轮**确实跑完了**（最多两轮：整批 + 补问），"有没有全部核对上"交给 counts 判定。
@@ -638,19 +718,27 @@ def _apply_state(
     group: list[CandidateVerdict],
     *,
     chapter_of: Callable[[str, int | None], int | None] | None = None,
+    unit_to_chapter: Callable[[int], int] | None = None,
 ) -> None:
     """把实体级结论写回账本条目。**只有 AUTO_RESOLVED 才置 resolved。**
 
     `resolved_chapter` 取**引文所在章**，不是埋设章：一条伏笔在第 12 章埋、在第 900 章收，
     写回埋设章等于把"什么时候解决的"记错，而且账面看不出来。
+
+    `chapter_of` 返回的是**检索单元键**（2.0 里是物理文件序号）；写进账本前必须经
+    `unit_to_chapter` 转回**文学章号**——把 366 写进 `resolved_chapter` 会让
+    "在第几章回收"整体错位，也会污染休眠跨度计算（AGY 复审 P1-2）。
     """
     supported = [v for v in group if v.verdict == "SUPPORTED"]
     if state == AUTO_RESOLVED and supported:
         best = supported[0]
-        located_chapter = None
+        located_unit = None
         if chapter_of is not None:
             start = best.located_span[0] if best.located_span else None
-            located_chapter = chapter_of(best.evidence_id, start)
+            located_unit = chapter_of(best.evidence_id, start)
+        located_chapter = None
+        if located_unit is not None:
+            located_chapter = unit_to_chapter(located_unit) if unit_to_chapter else located_unit
         item.status = "resolved"
         item.resolution = best.answer or ""
         item.resolved_chapter = int(

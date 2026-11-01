@@ -1412,28 +1412,27 @@ class FinalSummaryRunner:
         return plans
 
     def _collect_chapters(self) -> dict:
-        """整本按**真实章号**切好的正文：{章号: 正文}。
+        """整本按**物理单元**（文件）切好的正文：{单元键: 正文}。
 
-        复检的证据索引与锚点必须共用一套章号。块不等于章，按块序号算章号会让
-        落在块内第二章的锚点全部记错章（实测 60 条错 39 条）。
+        2.0 里单元键是**文件序号**（文件本身的名字），不是文学章号——
+        章号在采集侧是"合并块内标题反查的回号"、在复检侧曾按单文件切分，
+        两套章号空间根本不对齐（实测按记录章号定位只有 22%）。
+
+        加载口径只有一处（`backend/core/text_units.load_blocks_as_files`）：
+        测量脚本也调它，避免"字典序 1,10,2"和"要不要忽略非数字 txt"这类口径漂移。
         """
-        from backend.core.anchor import split_block_into_chapters
+        from backend.core.text_units import load_blocks_as_files
 
         blocks_dir = self.output_dir.parent / "blocks"
         if not blocks_dir.is_dir() and self.config.working_directory:
             blocks_dir = Path(self.config.working_directory) / "blocks"
         if not blocks_dir.is_dir():
             return {}
-        chapters: dict = {}
-        for ordinal, path in enumerate(sorted(blocks_dir.glob("*.txt")), start=1):
-            try:
-                text = path.read_text(encoding="utf-8", errors="replace")
-            except OSError as exc:
-                logger.warning(f"复检 V2：读取 {path.name} 失败：{exc}")
-                continue
-            for chapter, body in split_block_into_chapters(text, ordinal).items():
-                chapters[chapter] = body
-        return chapters
+        units, excluded = load_blocks_as_files(blocks_dir)
+        if excluded:
+            # 非正文文件（如切分报告 split_report.txt）曾被当成一章参与分析与复检
+            logger.warning(f"复检 V2：已排除 {len(excluded)} 个非正文文件：{excluded[:5]}")
+        return units
 
     def _collect_book_text(self) -> str:
         """全文：复检的证据必须是**原文**。
@@ -1457,6 +1456,7 @@ class FinalSummaryRunner:
 
     async def _run_recheck_v2(self, results: List[dict]) -> None:
         """阶段 2：带证据的复检。"""
+        from backend.core.text_units import build_display_labels
         from backend.services.recheck_v2 import run_recheck_v2
 
         chapters = self._collect_chapters()
@@ -1505,6 +1505,10 @@ class FinalSummaryRunner:
             call_model=_call_model,
             max_calls=max_calls,
             batch_size=batch_size,
+            # 单元键是物理文件序号，标签必须说清"文件N（第N回）"，
+            # 否则模型会拿它和候选元数据里的"首次出现：第12章"对不上而判定跑偏
+            unit_noun="文件",
+            display_labels=build_display_labels(chapters),
             emit=lambda summary: self._emit_progress(
                 {"type": "status", "message": _recheck_progress_message(summary)}
             ),

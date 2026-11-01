@@ -17,6 +17,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Iterable, Mapping, Sequence
 
+from backend.core.text_units import unit_label
+
 WINDOW_RADIUS = 400          # 每个窗口向前后各取多少字
 MAX_WINDOWS = 3              # 一个候选最多给几段（再多模型也读不完）
 MIN_KEYWORD_CHARS = 2
@@ -152,13 +154,25 @@ class EvidenceIndex:
         hint_texts: Iterable[str] = (),
         max_windows: int = MAX_WINDOWS,
         radius: int = WINDOW_RADIUS,
+        unit_noun: str = "章",
+        display_labels: Mapping[int, str] | None = None,
     ) -> Bundle:
-        """埋设处 + 后续命中处，拼成有界证据包。"""
+        """埋设处 + 后续命中处，拼成有界证据包。
+
+        ``unit_noun`` 与 ``display_labels`` 是 2.0 的展示参数：单元键在 2.0 里是
+        **物理文件序号**（不是文学章号），所以标签必须写成"文件366（第12回）"，
+        否则模型会看到"首次出现：第12章"配"【第366章】"而判定证据错位。
+        默认 ``unit_noun="章"`` 时行为与 1.x 完全一致。
+        """
         keywords = _keywords_for(anchor_quote, *hint_texts)
         blocks: list[str] = []
         chapters: list[int] = []
         spans: list[tuple[int, int, int]] = []
         cursor = 0
+
+        def _label(ch: int, suffix: str = "") -> str:
+            base = unit_label(ch, display_labels, noun=unit_noun)
+            return f"【{base}{suffix}】"
 
         def _append(chapter: int, body: str, label: str) -> None:
             nonlocal cursor
@@ -172,7 +186,7 @@ class EvidenceIndex:
             cursor = start + len(chunk) + 2  # "\n\n" 分隔
 
         _append(anchor_chapter, self.window(anchor_chapter, anchor_quote, radius=radius),
-                f"【第 {anchor_chapter} 章（埋设处）】")
+                _label(anchor_chapter, "（埋设处）"))
 
         dropped = 0
         # 多要一个命中，才知道"有没有因为窗口上限漏掉"——否则永远报不出截断
@@ -188,7 +202,7 @@ class EvidenceIndex:
             if not hit_word:
                 dropped += 1
                 continue
-            _append(ch, self.window(ch, hit_word, radius=radius), f"【第 {ch} 章】")
+            _append(ch, self.window(ch, hit_word, radius=radius), _label(ch))
             shown_hit_chapters.append(ch)
 
         # 截断只看"实际遗漏"：命中章比窗口多、或命中章里取不到词而跳过。

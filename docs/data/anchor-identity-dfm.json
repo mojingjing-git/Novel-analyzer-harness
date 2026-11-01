@@ -1,0 +1,45 @@
+{
+  "units": 921,
+  "chars": 4185982,
+  "excluded_files": [
+    "split_report.txt"
+  ],
+  "candidates_total": 1669,
+  "located": 1669,
+  "absent": 0,
+  "unresolved": 0,
+  "hit_by_recorded_chapter": 366,
+  "multi_file_quotes": 13,
+  "samples": [
+    {
+      "quote": "但事实就是如此。",
+      "unit": 101,
+      "label": "第 一百零一 回",
+      "occurrences": 2
+    },
+    {
+      "quote": "尔食尔禄，民脂民膏。下民易虐，上天难欺。",
+      "unit": 103,
+      "label": "第 一百零三 回",
+      "occurrences": 2
+    },
+    {
+      "quote": "“福如……东海，大吉……大利。”",
+      "unit": 171,
+      "label": "第 一百七十一 回",
+      "occurrences": 2
+    },
+    {
+      "quote": "血屠三千里，血屠三千里，请朝廷派兵讨伐……",
+      "unit": 324,
+      "label": "第 九十四 回",
+      "occurrences": 3
+    },
+    {
+      "quote": "血屠三千里，血屠三千里，请朝廷派兵讨伐……",
+      "unit": 324,
+      "label": "第 九十四 回",
+      "occurrences": 3
+    }
+  ]
+}
