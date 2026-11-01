@@ -98,7 +98,7 @@ watch(() => normStatus.value?.running, async (running, prev) => {
       window.clearInterval(normPollHandle)
       normPollHandle = null
     }
-    // P2 修复：结束沿刷新失败此前成为 unhandled rejection，locations 不刷新无提示
+    // 结束沿刷新失败不能成为 unhandled rejection，否则 locations 不刷新且无提示
     try {
       const res = (await api.getMap(bookId.value)) as unknown as MapDataResponse
       locations.value = res.locations as Location[]

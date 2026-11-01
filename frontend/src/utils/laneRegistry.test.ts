@@ -1,4 +1,4 @@
-/** 车道注册表自愈纯函数测试（车道堆叠修复） */
+/** 车道注册表自愈纯函数测试 */
 import { describe, it, expect } from 'vitest'
 import {
   gcActiveBlocks,

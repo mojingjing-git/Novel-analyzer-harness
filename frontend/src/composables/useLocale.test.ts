@@ -1,5 +1,5 @@
 /**
- * useLocale 契约测试（i18n L2 接口预留）：白名单回退 zh-CN、setLocale 直写 i18n locale。
+ * useLocale 契约测试（i18n 接口预留）：白名单回退 zh-CN、setLocale 直写 i18n locale。
  */
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'

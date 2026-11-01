@@ -137,7 +137,7 @@ describe('SummaryPage 总结参数持久化', () => {
   })
 })
 
-describe('SummaryPage 思考模式探测（2026-09-30，G2：总结模型独立探测）', () => {
+describe('SummaryPage 思考模式探测：总结模型独立探测', () => {
   function probeSelect(wrapper: ReturnType<typeof mount>) {
     // select 顺序：BookSelector stub / 总结模型 / 思考模式
     return wrapper.findAll('select')[2]
@@ -174,7 +174,7 @@ describe('SummaryPage 思考模式探测（2026-09-30，G2：总结模型独立�
     expect(last.api!.summary_thinking_mode).toEqual({ chat_template_kwargs: { enable_thinking: false } })
   })
 
-  it('总结模型为空时探测按钮禁用（D4 防呆）', async () => {
+  it('总结模型为空时探测按钮禁用（防呆）', async () => {
     const wrapper = await mountPage()
     const btn = wrapper.findAll('button').find((b) => b.text().includes('自动探测'))
     expect(btn!.attributes('disabled')).toBeDefined()
@@ -191,7 +191,7 @@ describe('SummaryPage 思考模式探测（2026-09-30，G2：总结模型独立�
     expect(wrapper.text()).toContain('探测失败: 502 bad gateway')
   })
 
-  it('`{}` + 全局已禁用 → 状态提示不误报为开启（D4 两级组合）', async () => {
+  it('`{}` + 全局已禁用 → 状态提示不误报为开启（两级组合）', async () => {
     mockedApi.getSettings.mockResolvedValue({
       ...mkCfg(),
       api: { ...mkCfg().api, thinking_mode: { thinking: { type: 'disabled' } } },

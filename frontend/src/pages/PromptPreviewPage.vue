@@ -18,7 +18,7 @@ const error = ref('')
 async function preview() {
   error.value = ''
   try {
-    // 空输入（v-model.number 清空得 ''）会 422：发送时归一化为 0（M-1）
+    // 空输入（v-model.number 清空得 ''）会 422：发送时归一化为 0
     const res = await api.promptPreview(bookId.value, Number(maxChars.value) || 0, Number(chapter.value) || 1)
     system.value = res.system_prompt
     user.value = res.user_prompt

@@ -1,5 +1,5 @@
 /**
- * ChapterDetailPanel 组件级测试：requestSeq 竞态守卫（P2：早退也失效在飞请求）、
+ * ChapterDetailPanel 组件级测试：requestSeq 竞态守卫（早退也失效在飞请求）、
  * 章号规范化、60s 空闲回退、latest 轮询门控、sections 元键过滤。
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -64,7 +64,7 @@ describe('ChapterDetailPanel 自动模式与加载', () => {
   })
 })
 
-describe('ChapterDetailPanel requestSeq 竞态守卫（P2）', () => {
+describe('ChapterDetailPanel requestSeq 竞态守卫', () => {
   it('切书瞬间早退路径失效在飞请求：旧书迟到响应不得写回', async () => {
     let resolveA!: (v: ChapterResp) => void
     mockedApi.getChapterResult.mockImplementation((bid: string, ch: number) => {

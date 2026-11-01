@@ -8,7 +8,7 @@ import {
   inferThinkingState, makeThinkingPresets, THINKING_ANTHROPIC_CAVEAT,
 } from './settingsForm'
 
-describe('settingsForm.pruneEmptyStrings（P2：v-model.number 清空残留）', () => {
+describe('settingsForm.pruneEmptyStrings：v-model.number 清空残留', () => {
   it('递归删除空字符串字段；数值 0 / false 不误删', () => {
     const cfg = {
       api: { base_url: 'https://x', summary_model: '', timeout: 0, provider: '' },
@@ -81,7 +81,7 @@ describe('settingsForm 思考模式 JSON 转换', () => {
   })
 })
 
-describe('settingsForm.inferThinkingState（思考模式状态提示，M3 教训 10.18）', () => {
+describe('settingsForm.inferThinkingState（思考模式状态提示）', () => {
   it('`{}` / 缺失 → default（是否危险由调用方文案区分）', () => {
     expect(inferThinkingState(undefined)).toBe('default')
     expect(inferThinkingState(null)).toBe('default')

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * DiscoveryFeed 发现流组件（H17 / S1）
+ * DiscoveryFeed 发现流组件
  *
  * 消费 discovery 消息，append-only，ring buffer 200 条
  * 自动滚底；hover 暂停滚动

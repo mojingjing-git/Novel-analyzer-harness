@@ -41,7 +41,7 @@ const stopRequested = ref(false)
 
 async function stop() {
   // 停止请求后保持 running=false（用户意图优先）：轮询里若后端仍短暂报 running，
-  // 不再把它置回 true，避免"停止/运行中"回跳（F-3）
+  // 不再把它置回 true，避免"停止/运行中"回跳
   stopRequested.value = true
   try {
     await api.stopStyle()
@@ -67,7 +67,7 @@ function startPolling() {
           add('风格分析完成', 'info', 'style')
         } catch {
           // 分析已结束但结果文件不存在 = 分析失败（style_service 失败时不写 style.md），
-          // 不能再说成"已完成"（F-3）
+          // 不能再说成"已完成"
           add('风格分析失败（未生成结果文件）', 'error', 'style')
         }
       }

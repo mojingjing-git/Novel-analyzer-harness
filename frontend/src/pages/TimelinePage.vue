@@ -71,7 +71,7 @@ watch(bookId, async () => {
     }
   } catch (e) {
     if (seq !== timelineSeq) return
-    // 切书失败必须清空：否则残留上一本书的数据被误当成当前书（F-1）
+    // 切书失败必须清空：否则残留上一本书的数据被误当成当前书
     events.value = []
     foreshadows.value = []
     ranking.value = []

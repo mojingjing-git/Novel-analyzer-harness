@@ -16,7 +16,7 @@ async function refresh() {
     stats.value = await api.getTokenStats()
     error.value = ''
   } catch (e) {
-    // 失败显式提示，不再静默保留旧数据（M-2）
+    // 失败显式提示，不再静默保留旧数据
     error.value = '刷新统计失败: ' + (e as Error).message
   }
 }

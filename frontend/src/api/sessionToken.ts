@@ -1,5 +1,5 @@
 /**
- * 会话 token 单例（PR-1 收尾，2026-09-30）
+ * 会话 token 单例
  *
  * desktop.py 启动时生成 token 并设 NOVEL_ANALYZER_SESSION_TOKEN 环境变量；
  * 后端 require_session_token 校验请求的 X-Session-Token header。token 经

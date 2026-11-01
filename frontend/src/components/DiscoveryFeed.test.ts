@@ -1,4 +1,4 @@
-/** H17 (2026-08-26) DiscoveryFeed 发现流测试 */
+/** DiscoveryFeed 发现流测试 */
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import DiscoveryFeed from './DiscoveryFeed.vue'

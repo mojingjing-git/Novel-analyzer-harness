@@ -1,5 +1,5 @@
 /**
- * SettingsPage 表单处理的纯函数层（从组件 save()/分类勾选/思考模式 原样抽取）。
+ * SettingsPage 表单处理的纯函数层（对应组件的 save()/分类勾选/思考模式）。
  * 语义锁定：空字符串剪除（v-model.number 清空残留）、422 校验错误按 loc 末元素映射红框。
  */
 
@@ -63,7 +63,7 @@ export function parseThinkingMode(val: string): Record<string, unknown> | null {
   try { return JSON.parse(val) } catch { return null }
 }
 
-// ============ 思考模式状态推断（2026-09-30，M3 事故教训 agent.md 10.18）============
+// ============ 思考模式状态推断 ============
 
 export type ThinkingState = 'disabled' | 'default' | 'custom'
 
@@ -72,7 +72,7 @@ export type ThinkingState = 'disabled' | 'default' | 'custom'
  *
  * 覆盖五种禁用语法：三种顶层预设 + 探测动态选项可能写入的两种嵌套写法
  * （chat_template_kwargs.enable_thinking / reasoning.effort，llm_probe 候选）——
- * 漏判会把"探测实测有效"的配置显示成 custom，G1 的禁用正反馈就落空了。
+ * 漏判会把"探测实测有效"的配置显示成 custom，禁用正反馈就落空了。
  *
  * `{}` 的语义按调用方区分：主模型 = 跟随端点默认（llm_client 不注入 extra_body），
  * 总结 = 回退全局 thinking_mode（final_summary.py 的 `or` 回退链）——"default"

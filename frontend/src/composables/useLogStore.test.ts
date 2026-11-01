@@ -23,7 +23,7 @@ afterEach(() => {
 })
 
 describe('useLogStore', () => {
-  it('坏条目被过滤且 nextId 不被污染（P2 修复锁定）', async () => {
+  it('坏条目被过滤且 nextId 不被污染', async () => {
     seed([{ id: 1, text: '好条目' }, { id: 'bad', text: 'x' }, { text: '无id' }])
     const store = await freshStore()
     expect(store.logs.value).toHaveLength(1)

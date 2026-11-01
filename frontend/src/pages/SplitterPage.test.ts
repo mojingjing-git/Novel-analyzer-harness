@@ -1,5 +1,5 @@
 /**
- * SplitterPage 组件级测试：F-2 整体失败回滚（防"处理中"永久卡死）、
+ * SplitterPage 组件级测试：整体失败回滚（防"处理中"永久卡死）、
  * pywebview/浏览器双通道文件添加、inferAll 串行容错。
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -67,7 +67,7 @@ describe('SplitterPage 文件添加双通道', () => {
   })
 })
 
-describe('SplitterPage 批量切分（F-2）', () => {
+describe('SplitterPage 批量切分', () => {
   it('整体失败 → 全部行回滚"待处理"并显示错误，不永久卡"处理中"', async () => {
     mockedApi.batchSplit.mockRejectedValue(new Error('后端崩了'))
     const wrapper = mount(SplitterPage)

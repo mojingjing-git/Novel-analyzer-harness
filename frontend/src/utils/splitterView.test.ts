@@ -1,5 +1,5 @@
 /**
- * splitterView 纯函数测试：路径/扩展名处理、去重追加、F-2 失败回滚、卷分组。
+ * splitterView 纯函数测试：路径/扩展名处理、去重追加、失败回滚、卷分组。
  */
 import { describe, it, expect } from 'vitest'
 import {
@@ -33,7 +33,7 @@ describe('splitterView.appendFileUnique', () => {
   })
 })
 
-describe('splitterView.rollbackProcessing（F-2）', () => {
+describe('splitterView.rollbackProcessing', () => {
   it('整体失败：processing → pending；done/error 行不受影响', () => {
     const items = [
       mkFile({ file_path: 'a', status: 'processing' }),

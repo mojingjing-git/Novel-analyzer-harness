@@ -1,4 +1,4 @@
-/** H17 P3 V2 (2026-08-26) 最终总结阶段 → 合成 LaneView 兼容事件 测试 */
+/** 最终总结阶段 → 合成 LaneView 兼容事件 测试 */
 import { describe, it, expect } from 'vitest'
 import { applySummaryProgress } from './summaryLanes'
 

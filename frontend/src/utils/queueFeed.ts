@@ -1,9 +1,9 @@
 /**
- * QueuePage WS 消息状态机的纯函数层（从 QueuePage.vue onMessage 原样抽取）
+ * QueuePage WS 消息状态机的纯函数层（对应 QueuePage.vue 的 onMessage）
  *
  * 设计与 laneRegistry/summaryLanes 一致：所有函数接收当前状态（Map/数组）、
  * 返回新引用（Vue 响应式要求 Map 引用替换才触发更新），不做任何 IO / 组件耦合，
- * 可被 vitest 直接覆盖。语义锁定 2026-08-26 H17 Phase 3 V2 的一批修复：
+ * 可被 vitest 直接覆盖。语义要点：
  *   - block_done 必须清理 rateByBlock（否则聚合速率把已结束块的尾速算进去）
  *   - token 累计取 Math.max（非相加——后端 delta 是累计值不是增量）
  *   - finished FIFO 上限、发现流 200 条上限
@@ -72,7 +72,7 @@ export function applyBlockDone(
   if (blockId <= 0) return { active, finished, rateByBlock }
   const nextActive = new Map(active)
   nextActive.delete(blockId)
-  // H17 P3 V2 修复（2026-08-26）：清理已完成 block 的速率，
+  // 清理已完成 block 的速率，
   // 否则 aggregateRate 会把刚结束 block 的尾速算进"当前聚合"
   const nextRate = new Map(rateByBlock)
   nextRate.delete(blockId)
@@ -193,14 +193,14 @@ export function summarizeSession(sessionStats: SessionTokenStatsResponse | null)
 // ============ 队列操作 ============
 
 /**
- * P2 修复：删除时以名称实时解析索引，避免轮询/WS 重排后按旧索引删错书。
+ * 删除时以名称实时解析索引，避免轮询/WS 重排后按旧索引删错书。
  * 找不到返回 -1（调用方只 warn 不删）。
  */
 export function resolveDeleteIndex(items: QueueItemDto[] | undefined, name: string): number {
   return items?.findIndex((i) => i.name === name) ?? -1
 }
 
-/** 多书混排修复：进度换算取正在运行那一项的 block_size，而非首项 */
+/** 多书混排：进度换算取正在运行那一项的 block_size，而非首项 */
 export function pickRunningBlockSize(running: boolean, items: QueueItemDto[] | undefined): number {
   if (!running || !items?.length) return 1
   const runningItem = items.find((i) => i.status === 'running') || items[0]

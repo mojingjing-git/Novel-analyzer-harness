@@ -107,7 +107,7 @@ describe('SettingsPage 保存（422 校验错误）', () => {
     expect(wrapper.find('input.input-invalid').exists()).toBe(false)
   })
 
-  it('P2：数值输入清空后提交，空串字段被剪除（不静默改值）', async () => {
+  it('数值输入清空后提交，空串字段被剪除（不静默改值）', async () => {
     const wrapper = await mountPage()
     // timeout 是 v-model.number：清空 → ''，提交前必须剪除该键
     const timeoutInput = wrapper.findAll('input[type="number"]').find((i) => (i.element as HTMLInputElement).value === '300')
@@ -147,7 +147,7 @@ describe('SettingsPage 思考模式自动探测', () => {
   })
 })
 
-describe('SettingsPage 思考模式状态提示（2026-09-30，G1：不点探测也可见）', () => {
+describe('SettingsPage 思考模式状态提示：不点探测也可见', () => {
   it('`{}` → 显示"跟随端点默认可能开启"警示', async () => {
     const wrapper = await mountPage()  // mkCfg thinking_mode = {}
     expect(wrapper.text()).toContain('跟随端点默认')

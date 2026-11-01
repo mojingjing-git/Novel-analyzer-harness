@@ -1,5 +1,5 @@
 /**
- * StylePage 组件级测试：F-3 stopRequested 标志（停止后轮询不回跳 running）、
+ * StylePage 组件级测试：stopRequested 标志（停止后轮询不回跳 running）、
  * 结果文件缺失=失败非完成、onMounted 恢复轮询、无书早退。
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -62,8 +62,8 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-describe('StylePage 轮询状态机（F-3）', () => {
-  it('F-3：停止后后端仍短暂报 running → 不得把 running 置回 true，也不读结果', async () => {
+describe('StylePage 轮询状态机', () => {
+  it('停止后后端仍短暂报 running → 不得把 running 置回 true，也不读结果', async () => {
     const wrapper = await mountPage()
     await pickBook(wrapper, 'A')
     await wrapper.findAll('button').find((b) => b.text().includes('开始分析'))!.trigger('click')
@@ -93,7 +93,7 @@ describe('StylePage 轮询状态机（F-3）', () => {
     expect(wrapper.text()).not.toContain('风格分析失败')
   })
 
-  it('F-3 第二处：结束但结果文件不存在 = 失败（不说"完成"）', async () => {
+  it('结束但结果文件不存在 = 失败（不说"完成"）', async () => {
     const wrapper = await mountPage()
     await pickBook(wrapper, 'A')
     await wrapper.findAll('button').find((b) => b.text().includes('开始分析'))!.trigger('click')

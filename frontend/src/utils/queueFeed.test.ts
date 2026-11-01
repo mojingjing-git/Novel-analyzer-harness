@@ -1,6 +1,6 @@
 /**
  * queueFeed 纯函数测试：QueuePage WS 消息状态机（从 onMessage 抽取）的语义锁定。
- * 重点回归：H17 P3 V2（2026-08-26）block_done 清速率 / token 累计取最大 / FIFO 上限。
+ * 重点覆盖：block_done 清速率 / token 累计取最大 / FIFO 上限。
  */
 import { describe, it, expect } from 'vitest'
 import {
@@ -66,7 +66,7 @@ describe('queueFeed.applyBlockDone', () => {
     expect(r.finished.get(9)).toEqual({ ok: true, range: 'ch9-ch10' })
   })
 
-  it('H17 P3 V2：done 后清理该块速率——聚合不再算已结束块的尾速', () => {
+  it('done 后清理该块速率——聚合不再算已结束块的尾速', () => {
     const active = new Map<number, FeedActiveBlock>([[9, { range: 'r9', startedAt: 1 }]])
     const rate = new Map<number, number>([[9, 55]])
     const r = applyBlockDone(active, new Map(), rate, { chapter: 9, ok: true, range: 'r9' })
@@ -215,7 +215,7 @@ describe('queueFeed.summarizeSession', () => {
   })
 })
 
-describe('queueFeed.resolveDeleteIndex（P2：按名称实时解析防删错书）', () => {
+describe('queueFeed.resolveDeleteIndex：按名称实时解析防删错书', () => {
   const items = [mkItem({ name: '《A》' }), mkItem({ name: '《B》' })]
 
   it('按名称命中返回当前索引', () => {

@@ -33,7 +33,7 @@ const previewTitle = ref('')
 const batchResult = ref<BatchResult | null>(null)
 const errorMsg = ref('')
 
-// baseName / statusText / 去重追加 / F-2 回滚 / 卷分组：纯函数本体在 utils/splitterView.ts（可独立 vitest）
+// baseName / statusText / 去重追加 / 回滚 / 卷分组：纯函数本体在 utils/splitterView.ts（可独立 vitest）
 
 function addFileByPath(p: string) {
   const r = appendFileUnique(files.value, p)
@@ -41,7 +41,7 @@ function addFileByPath(p: string) {
 }
 
 // 文件选择：桌面窗口（pywebview）走后端 create_file_dialog 拿真实本地路径
-// （Windows WebView2 的 <input type=file> 不给 File 对象注入 path 属性，原实现选完文件无反应）；
+// （Windows WebView2 的 <input type=file> 不给 File 对象注入 path 属性，选完文件拿不到本地路径）；
 // 浏览器环境 fallback 到原生 input（FileReader 等场景由后续功能处理）。
 const fileInput = ref<HTMLInputElement | null>(null)
 async function triggerAddFiles() {
@@ -143,7 +143,7 @@ async function doBatch() {
   } catch (e) {
     errorMsg.value = (e as Error).message
     // 整体失败（网络断/后端崩溃）：所有行恢复"待处理"，否则永久显示"处理中"卡死 UI
-    // （F-2，回滚逻辑在 utils/splitterView.rollbackProcessing）
+    // （回滚逻辑在 utils/splitterView.rollbackProcessing）
     files.value = rollbackProcessing(files.value)
   } finally {
     busy.value = false

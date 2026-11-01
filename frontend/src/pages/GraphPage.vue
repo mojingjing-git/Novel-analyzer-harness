@@ -42,7 +42,7 @@ const COLORS = {
 async function loadData() {
   const bid = bookId.value
   if (!bid) {
-    // P3：切回占位项时清掉上一本书遗留的加载态，否则一直转圈到选中新书
+    // 切回占位项时清掉上一本书遗留的加载态，否则一直转圈到选中新书
     loading.value = false
     return
   }
@@ -188,7 +188,7 @@ function initChart() {
   if (!el) return
   // 容器在 v-if/v-else 分支内切换时 DOM 会被销毁重建：旧实例绑定的节点已脱离
   // 文档，setOption 写进去也不会显示（表现为图表永久空白）。因此每次先校验
-  // 实例持有的 DOM 是否仍是当前容器，不是则销毁重建（P1 2026-08-24）。
+  // 实例持有的 DOM 是否仍是当前容器，不是则销毁重建。
   if (chart && chart.getDom() !== el) {
     chart.dispose()
     chart = null

@@ -29,12 +29,11 @@ export interface AnalysisStatus {
   queue: QueueProgress
   items: QueueItemDto[]
   workspace_dir: string
-  // H17 P3 V2 修复（2026-08-26）：后端 status 接口加 concurrency / block_size
-  // 修复前 LaneView 用 block_size（每块几章）当并发数显示「N/4」错误
-  // 实际配置 concurrency=8 时后端是 8 路并发，UI 标 4
+  // 后端 status 接口给出两个独立字段：concurrency = 并发路数，
+  // block_size = 每块章数。两者不可混用（拿 block_size 当并发数会让「N/4」显示错）
   concurrency?: number
   block_size?: number
-  // 运行概览车道对账源：pipeline 信号量窗口内的真实在途块（车道堆叠修复）
+  // 运行概览车道对账源：pipeline 信号量窗口内的真实在途块
   inflight_blocks?: Array<{ chapter: number; range: string; started_at: number }>
 }
 
@@ -151,7 +150,7 @@ export interface AppConfigDto {
     volume_compress_group: number
   }
   gui: {
-    language?: string  // i18n 接口预留（2026-09-02 L2）
+    language?: string  // i18n 接口预留
   }
   working_directory: string | null
   knowledge_file: string
@@ -278,7 +277,7 @@ const DEFAULT_TIMEOUT_MS = 30_000
 type RequestOptions = RequestInit & { timeoutMs?: number }
 
 async function request<T>(path: string, options?: RequestOptions): Promise<T> {
-  // PR-1 收尾（2026-09-30）：受保护端点需 X-Session-Token header。
+  // 受保护端点需 X-Session-Token header。
   // 合并顺序：Content-Type 默认 → 调用方 headers 覆盖 → token 最后（不可被覆盖）。
   // 注意 options 里的 headers 必须先展开再合并，整体 ...options 会把 headers 键整个替换。
   const { headers: extraHeaders, timeoutMs, ...rest } = options ?? {}
@@ -328,8 +327,8 @@ async function request<T>(path: string, options?: RequestOptions): Promise<T> {
     ;(err as Error & { status?: number; detail?: unknown }).detail = detail
     throw err
   }
-  // P3 收口（2026-08-24）：ok 但 body 非 JSON 此前静默返回 {}，
-  // 上游在深层字段上 TypeError 白屏且无从排查；显式失败走统一错误提示。
+  // ok 但 body 非 JSON 时显式失败走统一错误提示——静默返回 {} 会让上游在深层字段上
+  // TypeError 白屏且无从排查。
   // 空 body 仍宽容返回 {}（为 204 类端点留余地）。
   if (data === null && text) {
     const err = new Error(`响应不是有效 JSON (${res.status})`)
@@ -339,7 +338,7 @@ async function request<T>(path: string, options?: RequestOptions): Promise<T> {
   return (data ?? {}) as T
 }
 
-/** 路径段编码：书名/文件名含 # ? % 等时不至于把 URL 截断到错误资源（P2 审计） */
+/** 路径段编码：书名/文件名含 # ? % 等时不至于把 URL 截断到错误资源 */
 function seg(s: string | number): string {
   return encodeURIComponent(String(s))
 }
@@ -605,8 +604,8 @@ export const api = {
   exportAggregateExcel: (book_id: string) =>
     request<{ ok: boolean; path: string }>(`/api/aggregate/${seg(book_id)}/excel`, { method: 'POST' }),
 
-  // 下载运行日志（PR-1 收尾）。受保护端点且返回 text/plain——不复用 request()
-  // 的 JSON 解析契约（其 P3 规则对 200 + 非 JSON 显式抛错），独立 fetch + blob。
+  // 下载运行日志。受保护端点且返回 text/plain——不复用 request()
+  // 的 JSON 解析契约（其对 200 + 非 JSON 显式抛错），独立 fetch + blob。
   downloadLogs: async (): Promise<void> => {
     const t = getSessionToken()
     const res = await fetch('/api/analysis/logs', {
@@ -629,5 +628,5 @@ export const api = {
   },
 }
 
-// PR-1 收尾：模块加载即尝试取 token；浏览器环境拿不到则保持 null（不附加 header）
+// 模块加载即尝试取 token；浏览器环境拿不到则保持 null（不附加 header）
 initSessionToken()

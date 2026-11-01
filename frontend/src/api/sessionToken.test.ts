@@ -1,10 +1,10 @@
-/** sessionToken 模块行为 + 与 desktop.py js_api 方法名的契约（PR-1 收尾） */
+/** sessionToken 模块行为 + 与 desktop.py js_api 方法名的契约 */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { __setSessionTokenForTests, getSessionToken, initSessionToken } from './sessionToken'
 
-// 契约一致性（T3.3）：js_api 方法名打错只会静默得到 null → 403 复现且无任何报错，
+// 契约一致性：js_api 方法名打错只会静默得到 null → 403 复现且无任何报错，
 // 用源码级断言把两侧方法名锁死。
 // 注意用 import.meta.dirname（vitest 提供的真实磁盘路径）而非 import.meta.url——
 // jsdom 环境下后者是 http:// 假 URL，fileURLToPath 会抛 "scheme file" 错。

@@ -33,7 +33,7 @@ describe('client.request', () => {
     expect(await api.health()).toEqual({})
   })
 
-  it('ok 但 body 非 JSON 必须显式抛错（此前静默返回 {} 致下游 TypeError 白屏）', async () => {
+  it('ok 但 body 非 JSON 必须显式抛错（静默返回 {} 会致下游 TypeError 白屏）', async () => {
     mockFetch('<html>Bad Gateway</html>')
     await expect(api.health()).rejects.toMatchObject({ status: 200 })
   })
@@ -47,7 +47,7 @@ describe('client.request', () => {
   })
 })
 
-describe('client.request X-Session-Token（PR-1 收尾）', () => {
+describe('client.request X-Session-Token', () => {
   it('token 已注入时请求附带 X-Session-Token header', async () => {
     __setSessionTokenForTests('tok-abc')
     const fn = mockFetch('{"a":1}')
@@ -72,7 +72,7 @@ describe('client.request X-Session-Token（PR-1 收尾）', () => {
   })
 })
 
-describe('client.downloadLogs（PR-1 收尾）', () => {
+describe('client.downloadLogs', () => {
   it('200 text/plain 触发 blob 下载且不抛错（独立 fetch，绕开 request() 非 JSON 抛错契约）', async () => {
     __setSessionTokenForTests('tok-abc')
     const createObjectURL = vi.fn(() => 'blob:mock')
@@ -102,7 +102,7 @@ describe('client.downloadLogs（PR-1 收尾）', () => {
   })
 })
 
-describe('client.request 超时（A3：此前没有超时，请求卡住会永久禁用按钮）', () => {
+describe('client.request 超时', () => {
   it('fetch 抛 TimeoutError 时映射为 TIMEOUT 并给中文文案', async () => {
     const fn = vi.fn(async () => {
       const err = new Error('signal timed out')

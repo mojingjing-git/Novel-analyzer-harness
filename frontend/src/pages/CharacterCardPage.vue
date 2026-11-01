@@ -51,7 +51,7 @@ async function loadCharacters() {
   }
 }
 
-// 请求序号：跨书/快速切卡时丢弃过期响应，防止 A 书的慢请求覆盖 B 书卡片（F-6）
+// 请求序号：跨书/快速切卡时丢弃过期响应，防止 A 书的慢请求覆盖 B 书卡片
 let cardSeq = 0
 
 async function viewCard(name: string) {

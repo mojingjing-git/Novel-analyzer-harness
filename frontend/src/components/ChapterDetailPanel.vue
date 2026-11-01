@@ -62,7 +62,7 @@ async function loadLatest() {
 let requestSeq = 0
 
 async function loadChapter() {
-  // P2 修复：早退也必须失效在飞请求——否则切书瞬间旧响应因 seq 未变而合法写回
+  // 早退也必须失效在飞请求——否则切书瞬间旧响应因 seq 未变而合法写回
   requestSeq++
   if (!props.bookId || effectiveChapter.value <= 0) {
     loading.value = false

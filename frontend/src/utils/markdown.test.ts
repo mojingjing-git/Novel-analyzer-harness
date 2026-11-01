@@ -1,4 +1,4 @@
-/** Markdown 渲染器测试（vitest 版，2026-08-24 自运行脚本迁移） */
+/** Markdown 渲染器测试（vitest 版） */
 import { describe, it, expect } from 'vitest'
 import { renderMarkdown } from './markdown'
 
@@ -81,7 +81,7 @@ describe('markdown 渲染器', () => {
     expect(r).toContain('<td>1</td>')
   })
 
-  it('链接 href 不被强调正则污染（P2 2026-08-24）', () => {
+  it('链接 href 不被强调正则污染', () => {
     const r = renderMarkdown('[doc](https://example.com/wiki/a_b_c)')
     expect(r).not.toContain('<em>')
     expect(r).not.toContain('<strong>')

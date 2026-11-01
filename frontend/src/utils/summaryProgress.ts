@@ -1,5 +1,5 @@
 /**
- * SummaryPage 最终总结进度的纯函数层（从组件 computed 原样抽取）。
+ * SummaryPage 最终总结进度的纯函数层（对应组件的 computed）。
  * 语义锁定：4 阶段加权总百分比（batch 0.7 / recheck 0.12 / style 0.08 / report 0.1）、
  * 失败/停止按已完成卷进度近似、非批次阶段进行中计该阶段权重的一半。
  */

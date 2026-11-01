@@ -63,7 +63,7 @@ onMounted(() => {
   display.value = props.value
 })
 
-// P2：卸载后终止动画循环（与文件头“无泄漏”承诺对齐；影响有界但应兑现）
+// 卸载后终止动画循环（与文件头“无泄漏”承诺对齐；影响有界但应兑现）
 onUnmounted(() => { if (rafId !== null) cancelAnimationFrame(rafId) })
 
 </script>
