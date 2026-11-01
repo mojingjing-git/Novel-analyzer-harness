@@ -31,6 +31,24 @@ from backend.utils.foreshadow_ledger import ForeshadowLedger, ForeshadowItem
 
 logger = logging.getLogger(__name__)
 
+#: 旧路径（全书复检，无证据 V2）的逐条判定收据文件名。
+#: 新路径的明细文件名由 `backend.services.recheck_v2.RECHECK_DETAIL_FILENAME` 定义。
+LEGACY_RECHECK_DETAIL_FILENAME = "recheck_legacy.json"
+
+
+def _recheck_progress_message(summary: dict) -> str:
+    """复检进度文案：兼容 ``run_recheck_v2`` 的**两种** emit 载荷。
+
+    波次进度是 ``{"stage", "calls", "checked"}``，收尾才是 ``outcome.summary()``
+    （带 ``coverage``）。消费方若只认 ``coverage``，第一波跑完就 ``KeyError``——
+    而复检阶段在 ``run()`` 里没有 try/except 兜着，这一崩就是整轮总结崩，
+    "把 recheck_v2_enabled 打开"这件事因此一步也走不了。
+    """
+    checked = summary.get("checked")
+    if checked is None:
+        checked = (summary.get("coverage") or {}).get("checked", 0)
+    return f"伏笔复检：已核对 {checked} 条"
+
 
 # ==================== Prompt 定义 ====================
 
@@ -1469,15 +1487,52 @@ class FinalSummaryRunner:
             max_calls=max_calls,
             batch_size=batch_size,
             emit=lambda summary: self._emit_progress(
-                {"type": "status", "message": f"伏笔复检：已核对 {summary['coverage'].get('checked', 0)} 条"}
+                {"type": "status", "message": _recheck_progress_message(summary)}
             ),
         )
         self.ledger.save(self.ledger_path)
         self.last_recheck_summary = outcome.summary()
+        # 逐条判定必须落盘：summary 只有计数，跑完一本长书只剩
+        # "SUPPORTED 19 / INSUFFICIENT 20"——判的哪一条、拿哪句话判的都没了，
+        # 事后想复核只能靠猜。明细单独成文件，不塞进 summary：
+        # summary 会进报告快照与接口响应，带全文引文会把它撑坏。
+        detail_path = await asyncio.to_thread(
+            self._persist_recheck_detail, outcome
+        )
+        if detail_path is not None:
+            self.last_recheck_summary["verdicts_file"] = str(detail_path)
         logger.info(
             f"复检 V2 完成：{outcome.status} 调用 {outcome.calls} 次，"
-            f"覆盖 {outcome.coverage.get('checked', 0)}/{outcome.coverage.get('candidates_total', 0)}"
+            f"覆盖 {outcome.coverage.get('checked', 0)}/{outcome.coverage.get('candidates_total', 0)}，"
+            f"逐条明细 {detail_path.name if detail_path else '落盘失败'}"
         )
+
+    def _persist_recheck_detail(self, outcome) -> Path | None:
+        """把逐条判定写进 output 目录，成功返回路径，失败返回 ``None``。
+
+        写失败不抛：明细是审计材料，不是复检本身的成败判据——写不出去时
+        ``last_recheck_summary`` 里不留 ``verdicts_file``，日志里说明原因。
+        """
+        from backend.services.recheck_v2 import (
+            RECHECK_DETAIL_FILENAME,
+            dump_recheck_detail,
+        )
+
+        path = self.output_dir / RECHECK_DETAIL_FILENAME
+        payload = dump_recheck_detail(
+            outcome,
+            model=str(getattr(self.config.api, "model", "") or ""),
+            base_url=str(getattr(self.config.api, "base_url", "") or ""),
+        )
+        try:
+            saved = safe_save_json(payload, path, ensure_ascii=False)
+        except Exception as exc:  # 落盘失败不该把整轮总结带崩
+            logger.warning(f"复检明细落盘失败：{exc}")
+            return None
+        if not saved:
+            logger.warning(f"复检明细落盘失败（safe_save_json 返回 False）：{path}")
+            return None
+        return path
 
     async def _run_global_foreshadow_recheck(self, volume_summaries: List[str],
                                              foreshadow_catalog: list = None,
@@ -1544,6 +1599,11 @@ class FinalSummaryRunner:
             return
 
         semaphore = asyncio.Semaphore(min(self.concurrency, len(recheck_batches)))
+        #: 旧路径的逐条判定收据：模型回了什么，先存下来再拿去改账本。
+        #: 原来这些只用完就丢（`reconciliation` 里除回收状态外全部丢弃），
+        #: 于是"这条伏笔被判成什么、依据是什么"事后无从查证——只剩账本里的
+        #: 一个 status 和一句 resolution，复核等于靠猜。
+        legacy_rows: list[dict] = []
 
         async def process_recheck_batch(prompt: str, batch_idx: int) -> int:
             async with semaphore:
@@ -1553,7 +1613,11 @@ class FinalSummaryRunner:
             if foreshadow_data is None:
                 return 0
             local_count = 0
-            for item in foreshadow_data.get('reconciliation', []) or []:
+            reconciliation = foreshadow_data.get('reconciliation', []) or []
+            for item in reconciliation:
+                if isinstance(item, dict):
+                    legacy_rows.append({"batch_index": batch_idx, **item})
+            for item in reconciliation:
                 if not isinstance(item, dict):
                     continue
                 foreshadow_id = item.get('foreshadow_id', '')
@@ -1594,6 +1658,34 @@ class FinalSummaryRunner:
         logger.info(f"全书伏笔复检完成，新回收 {total_rechecked} 个伏笔")
         if total_rechecked > 0:
             self._emit_progress({"type": "ledger_updated", "counts": self.ledger.get_item_count()})
+        await asyncio.to_thread(self._persist_legacy_recheck_detail, legacy_rows)
+
+    def _persist_legacy_recheck_detail(self, rows: list[dict]) -> Path | None:
+        """旧路径的逐条判定收据落盘（output 目录）。
+
+        写失败不抛：这只是审计材料，不该把整轮总结带崩。
+        """
+        if not rows:
+            return None
+        path = self.output_dir / LEGACY_RECHECK_DETAIL_FILENAME
+        payload = {
+            "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "path": "legacy_global_recheck",
+            "model": str(getattr(self.config.api, "model", "") or ""),
+            "base_url": str(getattr(self.config.api, "base_url", "") or ""),
+            "items_total": len(rows),
+            "items": rows,
+        }
+        try:
+            saved = safe_save_json(payload, path, ensure_ascii=False)
+        except Exception as exc:
+            logger.warning(f"旧复检逐条收据落盘失败：{exc}")
+            return None
+        if not saved:
+            logger.warning(f"旧复检逐条收据落盘失败（safe_save_json 返回 False）：{path}")
+            return None
+        logger.info(f"旧复检逐条收据已写入 {path.name}（{len(rows)} 条）")
+        return path
 
     async def run(self) -> Optional[str]:
         """执行完整总结流程。返回最终报告文本；用户停止返回 None；失败抛 RuntimeError"""

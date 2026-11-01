@@ -15,6 +15,7 @@ import dataclasses
 import hashlib
 import json
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Awaitable, Callable, Iterable, Mapping, Sequence
 
 from backend.core.evidence import EvidenceIndex
@@ -139,6 +140,38 @@ class RecheckOutcome:
         48 条候选的全文引文挂在里面会把它们撑坏。
         """
         return {**self.summary(), "verdicts": [v.to_dict() for v in self.verdicts]}
+
+
+#: 逐条判定明细的落盘文件名（放在书的 output 目录里，和账本、审计报告同层）。
+RECHECK_DETAIL_FILENAME = "recheck_verdicts.json"
+
+
+def dump_recheck_detail(
+    outcome: RecheckOutcome, *, model: str = "", base_url: str = ""
+) -> dict:
+    """逐条判定明细（带跑批参数），供落盘与审计。
+
+    为什么必须落盘：``summary()`` 只有计数。跑完一本长书之后，能看到的只有
+    "SUPPORTED 19 / INSUFFICIENT 20"——**判的是哪一条、拿哪句话判的，全都没了**。
+    没有这层，判定质量只能靠重跑和抽样推断，而重跑得到的还是另一批结果。
+
+    明细里每条都带 `CandidateVerdict.to_dict()` 的全字段（判定、答案、逐字引文、
+    程序定位的位置、模型自报的位置、反证是否执行），所以"这条 SUPPORTED 是不是
+    真答上了那个问题"可以直接对着原文查，不必再猜。
+    """
+    return {
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "model": model,
+        "base_url": base_url,
+        "status": outcome.status,
+        "status_reason": outcome.status_reason,
+        "coverage": dict(outcome.coverage),
+        "candidates_total": outcome.coverage.get("candidates_total", 0),
+        "not_checked": list(outcome.not_checked),
+        "dropped_ids": list(outcome.dropped_ids),
+        "applied": dict(outcome.applied),
+        "verdicts": [v.to_dict() for v in outcome.verdicts],
+    }
 
 
 def _evidence_id(chapter: int, text: str) -> str:

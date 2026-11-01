@@ -69,6 +69,18 @@
 vnext 侧的 `backend/vnext/foreshadow.py` 用 `cutoff_view(cutoff_ordinal=)` 取代了休眠
 判死，但 vnext 还没有接入生产路由（见下文"vnext 未接线"）。
 
+### 把 `recheck_v2_enabled` 打开还差三件事
+
+| 阻塞 | 位置 | 表现 |
+|---|---|---|
+| 批大小配置还是旧的 | `config.json` 的 `foreshadow_recheck_batch_size=40` | 生产代码把它当复检批大小用；实测最优是 6（40 条 × 约 3k 字会把提示词撑到十几万 token） |
+| 解析失败被吞成"未核对" | `backend/vnext/resolution.py` 的 `cached_as_terminal` 对任何 `INVALID` 都为 False | 16 块实测 46 条里 6 条是 `INVALID`（4 条 `FOREIGN_ID`、2 条 `QUOTE_NOT_FOUND`），报告上全写成"未核对"，且不会被补问 |
+| 旧路径仍在生效 | `final_summary.py` 的 `run()` 里按开关二选一 | 关着时走旧的全书复检（无逐字引文校验），开着才走带证据的 V2 |
+
+逐条判定的**落盘**已经补齐：V2 走 `output/recheck_verdicts.json`（`CandidateVerdict`
+全字段），旧路径走 `output/recheck_legacy.json`（模型回包的逐条 `reconciliation`），
+两处都由 `final_summary` 在复检结束时写出。
+
 ### 账户级熔断两条管线都没有
 
 欠费或账号整体不可用时，整轮任务会继续往下派发、继续烧钱。vnext 里
