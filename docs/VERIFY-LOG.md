@@ -67,6 +67,7 @@
 | 2026-11-01 | 尚未入库 | 批量复检（解析器修复后实测） | measurement | batch=6 调用 6→1、completion 19.7k→8.8k、192s→54s，6/6 全答 | — | `docs/MEASURE-BATCHING.json` / `MEASURE-BATCHING-12.json` |
 | 2026-11-01 | 尚未入库 | 并发复检（24 条候选，batch=6） | measurement | 并发 1 → 235s；并发 4 → **69s**；判定均 24/24 | — | 真模型 hy3；`concurrency` 默认 4 |
 | 2026-11-01 | 尚未入库 | 复检复用分析阶段在途上限 | business_test（**全量**） | **1588 passed / exit 0** | — | 父 agent 亲跑 749.63s；新增 `test_recheck_shared_limiter.py`(2)，断言外部 limiter 为硬上限、跨阶段共用不超限 |
+| 2026-11-01 | 尚未入库 | 切组并行全量（新增 scripts/pytest_split.py） | business_test（**全量**） | **1588 passed / exit 0（8 组，129–142s）** | — | 单进程全量约 750s；xdist 因 pytest_isolation 不可用；首版曾因过滤 "error" 误杀 3 个 test_error_* 文件（漏 80 条），已修并打印用例总数校验 |
 | 2026-11-01 | 尚未入库 | 并发复检用例 + 全量 | business_test（**全量**） | **1586 passed / exit 0** | — | 父 agent 亲跑 809.35s；新增 `test_recheck_concurrency.py`(3) |
 | 2026-11-01 | 尚未入库 | 批量复检用例 + 全量 | business_test（**全量**） | **1583 passed / exit 0** | — | 父 agent 亲跑 758.28s；新增 `test_recheck_batching.py`(3) |
 | 2026-11-01 | 尚未入库 | 四组已知答案样本（收紧自检后重跑） | measurement | A/B SUPPORTED 回收章=9；C 判 INSUFFICIENT 且已核对 1 条；D 遗漏 1 章 | — | 自检退出码 0 |

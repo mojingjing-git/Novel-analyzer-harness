@@ -730,15 +730,26 @@ python scripts/pytest_related.py              # 先看会跑哪些
 python scripts/pytest_related.py --run        # 直接跑
 python scripts/pytest_related.py --run --base HEAD~3   # 与某个基线比较
 
-# 批次收口：全量（每次提交/推送前那一遍，不是每一处小改动都跑）
+# 批次收口 / 推送前：全量，但**并行切组**跑（1588 例约 2.5 分钟，替代 12 分钟）
+python scripts/pytest_split.py -n 8
+
+# 只有在需要逐条输出时，才用单进程全量（约 12 分钟）
 python -m pytest -o addopts= -q
 ```
 
-> **测试节奏（2026-10-30 明确）**：全量约 1100 例 / 12 分钟。**迭代期用相关集**
-> （`scripts/pytest_related.py`：按"文件名对应 + import 引用"挑选，宁可多选），
-> **批次收口才跑全量**。不要每改二十行就全量——那是把 12 分钟花在验证无关用例上。
-> 反过来，也不能只跑相关集就宣布完成：相关集是"我的改动没弄坏自己"，
-> 全量才是"没弄坏别人"。`docs/VERIFY-LOG.md` 的记录里必须写明这一遍是全量还是相关集。
+> **测试节奏（2026-11-01 修订，用户明确要求）**：
+> 1. **迭代期只用相关集**：`scripts/pytest_related.py --run`（秒级）。不要每改二十行就全量。
+> 2. **提交/推送前用切组并行全量**：`scripts/pytest_split.py -n 8`（实测 1588 例 142 秒）。
+> 3. 单进程全量 `python -m pytest` 只在需要完整逐条日志时用，平时不要跑。
+> 4. 相关集是"我的改动没弄坏自己"，全量是"没弄坏别人"——**宣布完成必须有一遍全量**
+>    （切组跑的也算），`docs/VERIFY-LOG.md` 里要写明是全量还是相关集。
+>
+> **为什么不用 pytest-xdist**：本仓库的 `pytest_isolation` 在导入期 chdir 到临时目录并按
+> testpaths 建占位目录，xdist 每个 worker 都这么干一遍，主进程就看不到用例了
+> （实测 `-n 8` 直接 "no tests ran"）。`pytest_split.py` 改成按文件切组、各起独立进程。
+> **切组必须核对用例总数**：脚本按 `--collect-only` 的每文件用例数分组，
+> 曾经因为过滤条件写成 `"error" in line` 把 `test_error_*` 三个文件整份漏掉（80 条），
+> 跑完还报"全组通过"——比慢更糟。现在脚本会打印各组用例数之和，必须等于全量数。
 
 ### 前端
 

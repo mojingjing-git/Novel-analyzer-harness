@@ -23,6 +23,13 @@ pytest_isolation.install(REPO_ROOT)
 
 ISOLATION_ROOT = pytest_isolation.ISOLATION_ROOT
 
+# SSL context 缓存：见 pytest_ssl_cache.py 的说明。
+# 本机 load_verify_locations(certifi) 要 3.8 秒，而 httpx 每个客户端建 2 个 context，
+# 全量测试 78 处客户端构造把 750 秒几乎全耗在这里。缓存后每个客户端 0.001 秒。
+import pytest_ssl_cache  # noqa: E402
+
+pytest_ssl_cache.install_ssl_cache()
+
 
 import pytest  # noqa: E402  (隔离安装后再 import，保持文件意图清晰)
 
