@@ -49,8 +49,8 @@ def _cn_to_int(text: str) -> int:
         return int(text)
     if "十" in text:
         head, tail = text.split("十", 1)
-        return (CN.get(head, 1) if head else 1) * 10 + (CN.get(tail, 0) if tail else 0)
-    return CN.get(text, 0)
+        return (_CN.get(head, 1) if head else 1) * 10 + (_CN.get(tail, 0) if tail else 0)
+    return _CN.get(text, 0)
 
 
 def _drop_proxy_env() -> None:

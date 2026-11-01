@@ -1,0 +1,3627 @@
+{
+  "generated_at": "2026-11-02T05:49:52",
+  "verdicts_file": "docs/data/verdicts-dfm-full2.json",
+  "blind_model": "wb2api/cn:deepseek-v4.1-flash",
+  "audited": 60,
+  "rows": [
+    {
+      "candidate_id": "fs_007",
+      "verdict": "SUPPORTED",
+      "answer": "第337章交代，税银案是幕后黑手为把许七安弄出京城、取回他体内气运而制造的布局；目标不是单纯获取银子。",
+      "evidence_id": "6278adf14a57",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        404,
+        450
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "c81210b67058",
+      "quote": "事实是，藏在我体内的气运，在那段时间开始复苏，所以幕后黑手制造了税银案，要将我‘弄’出京城。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "湖底阵法由谁布置，其文字记载了什么，永镇山河庙与桑泊封印物之间究竟存在何种联系？",
+        "answer_criteria": "后文明确阵法的名称、布置者或建造年代，并解释其功能及其与永镇山河庙、桑泊封印物的关系。",
+        "evidence_chapters": [
+          109,
+          121,
+          152,
+          283
+        ],
+        "evidence_chars": 3256,
+        "segments": 4,
+        "chapter_refs": [
+          337
+        ],
+        "chapter_refs_outside_evidence": [
+          337
+        ],
+        "absent_3grams": [
+          "七安弄",
+          "不是单",
+          "为把许",
+          "他体内",
+          "体内气",
+          "内气运",
+          "出京城",
+          "制造的",
+          "单纯获",
+          "取回他",
+          "取银子",
+          "后黑手"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文只提到湖底石柱按规律排列“似乎是某种阵法”，并推测司天监参与永镇山河庙建造；石柱上有蝌蚪文字，但许七安无法解读，未交代文字记载内容，也未明确阵法名称、功能及其与永镇山河庙、桑泊封印物的具体关系。",
+          "quote": "这似乎是某种阵法……许七安心里猜测。在大奉京城，能布置阵法的只有司天监的术士，也就是说，当年司天监也参与了永镇山河庙的建造。……石柱表面雕刻着扭曲、古怪的蝌蚪文字。许七安大概看出这是某种文字，碍于文化水平有限，无法解读。",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_044",
+      "verdict": "SUPPORTED",
+      "answer": "许七安后来到司天监给术士们讲授化学理论，并以自己的化学知识帮助宋卿改进炼金术；宋卿和炼金术师们也持续研究蓝皮书中的知识。",
+      "evidence_id": "1c22d156bb11",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        368,
+        383
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "26ff8cc9f63f",
+      "quote": "许七安可不想被监正一巴掌拍死。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "六号目前是否活着、身处何地，他携带的地书碎片是否落入地宗或其他敌对势力手中？",
+        "answer_criteria": "后文交代六号的生死与位置，或说明地书碎片的去向、屏蔽方式及其是否被敌方取得",
+        "evidence_chapters": [
+          126,
+          224,
+          304,
+          432
+        ],
+        "evidence_chars": 3256,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "七安后",
+          "中的知",
+          "也持续",
+          "书中的",
+          "以自己",
+          "们也持",
+          "们讲授",
+          "到司天",
+          "助宋卿",
+          "化学理",
+          "化学知",
+          "卿和炼"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文只提到六号恒远失联、没有回应，并说“恒远出事了”、被元景帝派人搜捕，未明确交代他的生死与具体身处何地，也未说明其携带的地书碎片去向、屏蔽方式或是否落入地宗等敌对势力手中。",
+          "quote": "又等了片刻，六号恒远还是没有回应……【恒远出事了，他卷入了一桩大案里，元景帝派人搜捕他，不仅仅是为报复，极可能是杀人灭口。】",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_047",
+      "verdict": "SUPPORTED",
+      "answer": "许七安后来创作了《莫愁前路无知己，天下谁人不识君》，两位大儒以此认他为学生；陈泰也据此谈及此诗流传后世。",
+      "evidence_id": "562e1cc11b91",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        221,
+        268
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "b7fd6aec8960",
+      "quote": "陈泰看了眼姓张的，又看一眼姓李的，心里一动：“那首‘莫愁前路无知己，天下谁人不识君’的诗人？”",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "皇城内究竟有什么力量能够惊吓灵龙，元景帝为何无法从灵龙口中查明？",
+        "answer_criteria": "后文出现与皇城异常、灵龙恐惧同源的具体威胁或潜伏者，并交代元景帝封锁皇城的结果",
+        "evidence_chapters": [
+          129,
+          267,
+          435,
+          868
+        ],
+        "evidence_chars": 2980,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "七安后",
+          "下谁人",
+          "不识君",
+          "两位大",
+          "为学生",
+          "也据此",
+          "人不识",
+          "他为学",
+          "以此认",
+          "传后世",
+          "位大儒",
+          "儒以此"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文只写到灵龙突然发狂、元景帝未能问出原因，并下令加强皇城守备、宵禁后不得出入皇城；没有出现与皇城异常、灵龙恐惧同源的具体威胁或潜伏者，也未交代封锁皇城的结果。",
+          "quote": "自然也就没问出灵龙突然发狂的原因。……灵龙不会无缘无故发狂，魏渊，传朕旨意，加强皇城守备力量。宵禁后不得任何人出入皇城。",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_072",
+      "verdict": "SUPPORTED",
+      "answer": "碑文崩裂使云鹿书院内蕴的浩然之气挣脱束缚、充盈自溢；赵守判断，许七安写下的那行文字动摇了镇压书院气运的封印。",
+      "evidence_id": "f3864ee4c9ae",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        415,
+        457
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "6115aedd5d25",
+      "quote": "镇压学宫的碑文崩裂，云鹿书院内蕴的浩然之气挣脱了束缚，充盈自溢，才造成了刚才的景象。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "许七安反复捡到银子的现象究竟由什么原因造成，这种异常运气是否会继续出现或造成危险？",
+        "answer_criteria": "后文明确揭示其持续捡钱的机制、来源或相关代价，并说明这一现象与许七安穿越身份、原主经历或外部势力之间的关系。",
+        "evidence_chapters": [
+          16,
+          21,
+          50,
+          155
+        ],
+        "evidence_chars": 3037,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "七安写",
+          "下的那",
+          "之气挣",
+          "书院内",
+          "书院气",
+          "了镇压",
+          "云鹿书",
+          "使云鹿",
+          "充盈自",
+          "内蕴的",
+          "写下的",
+          "动摇了"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文只写到许七安对反复捡银子的猜测与不安，例如怀疑与穿越有关、是否金手指、幸运值是否积攒等，但没有明确揭示持续捡钱的机制、来源或相关代价，也没有说明这一现象与穿越身份、原主经历或外部势力之间的确定关系。",
+          "quote": "“会不会和我的穿越有关？”……“这就是我的金手指？可是每天一钱银子是怎么回事，恰好是勾栏听曲的钱。”……“我先升级，然后观察，看后续会不会出现变化……将来能力强了，或许能弄清楚狗屎运的原因。”",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_078",
+      "verdict": "SUPPORTED",
+      "answer": "后文明确确认许七安写下了石碑上的四句格言，许辞旧也承认自己是在见到大哥写在石碑上的四句后触摸到修身境门槛。材料同时说明了格言对许辞旧修行的影响。",
+      "evidence_id": "2c6736c27e3c",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        387,
+        417
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "1b3d50c7866d",
+      "quote": "他确实触摸到修身境的门槛，但那是在见到大哥写在石碑上的四句。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "黑袍男子如何获得并驱使桑泊封印断手，他与恒慧是同一意志、控制关系还是合作关系？",
+        "answer_criteria": "后文说明黑袍男子的身份、断手附着或附身机制，以及其与恒慧之间的控制关系。",
+        "evidence_chapters": [
+          140,
+          152,
+          168
+        ],
+        "evidence_chars": 2438,
+        "segments": 3,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "七安写",
+          "上的四",
+          "下了石",
+          "也承认",
+          "了格言",
+          "了石碑",
+          "修行的",
+          "修身境",
+          "写下了",
+          "写在石",
+          "到修身",
+          "到大哥"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文未说明黑袍男子如何获得并驱使桑泊封印断手，也未说明其与恒慧是同一意志、控制关系还是合作关系。",
+          "quote": "",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_109",
+      "verdict": "SUPPORTED",
+      "answer": "魏渊暗示长公主后，她调查了许七安与朱成铸冲突事件的始末，并趁机向元景帝举荐许七安，让他戴罪立功。许七安因此被推荐。",
+      "evidence_id": "32a349f530f5",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        447,
+        482
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "4ed6e3779c90",
+      "quote": "昨日长公主派人调查许七安和朱成铸冲突事件的始末，想来是对他比较上心的。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "礼部尚书为何没有杀周赤雄灭口，是来不及安排、另有顾虑，还是有意借周赤雄牵出某方势力？",
+        "answer_criteria": "后文给出礼部尚书未灭口的具体原因，或交代周赤雄被捕前其灭口行动失败、延误或受阻的事实",
+        "evidence_chapters": [
+          159,
+          160,
+          168,
+          456
+        ],
+        "evidence_chars": 3253,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "七安与",
+          "七安因",
+          "与朱成",
+          "举荐许",
+          "了许七",
+          "事件的",
+          "他戴罪",
+          "件的始",
+          "公主后",
+          "冲突事",
+          "向元景",
+          "因此被"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "",
+          "quote": "“还有一件事，我想不通为什么礼部尚书没有杀周赤雄灭口。”许七安说。……魏渊摇摇头：“这些小问题，就别计较了，桑泊案已经告一段落。”",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_111",
+      "verdict": "SUPPORTED",
+      "answer": "魏渊为连续五层不扣不拜者另设第六关；许七安获得甲上评价。后文还明确交代魏渊要求对评级保密，避免宣扬后捧杀。",
+      "evidence_id": "be1971951beb",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        257,
+        270
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "4197a8ca0c3b",
+      "quote": "看到了鲜红的两个字：甲上！",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "怀庆公主是否确实在故意压制境界，她不愿出阁与维持皇室权力位置之间有何联系？",
+        "answer_criteria": "后文说明怀庆公主的境界是否受到主动压制，并交代她拒绝出阁的政治或婚姻原因",
+        "evidence_chapters": [
+          160,
+          245,
+          250,
+          764
+        ],
+        "evidence_chars": 2954,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "七安获",
+          "上评价",
+          "不扣不",
+          "不拜者",
+          "为连续",
+          "五层不",
+          "交代魏",
+          "代魏渊",
+          "免宣扬",
+          "另设第",
+          "后捧杀",
+          "后文还"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文只有许七安基于怀庆公主炼精境巅峰的推测：“或许她是故意的，为了不嫁人”，并未确认她确实在主动压制境界，也没有明确交代她不愿出阁与维持皇室权力位置之间的联系。",
+          "quote": "她竟是个炼精境巅峰……我好像发现了什么，众所周知，炼精境是不能破身的，这点男女都一样。……以她的天资不应该卡在炼精境。或许她是故意的，为了不嫁人。我看到了这位公主的野心。",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_112",
+      "verdict": "SUPPORTED",
+      "answer": "许七安完成开天门并晋升练气境，能自行运转气机，并获得气机外放的能力；后文还写明他晋升后气机浑厚，远超新晋练气境的表现。",
+      "evidence_id": "dda62b43bd40",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        403,
+        431
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "24a89ec4c08e",
+      "quote": "这小子是在他手中晋升练气境的，这才多久，气机如此浑厚了？",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "礼部尚书被捕后，元景帝是否会继续借案件控制王党与勋贵集团，还是让刑部把调查范围限制在李玉郎个人？",
+        "answer_criteria": "后文明确交代刑部调查范围、王党处置结果以及元景帝对相关派系的政治安排",
+        "evidence_chapters": [
+          159,
+          230,
+          250,
+          423
+        ],
+        "evidence_chars": 3256,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "七安完",
+          "他晋升",
+          "写明他",
+          "升后气",
+          "升练气",
+          "后文还",
+          "后气机",
+          "境的表",
+          "外放的",
+          "天门并",
+          "安完成",
+          "完成开"
+        ],
+        "blind": {
+          "found": true,
+          "answer": "元景帝最终叫停案件并释放被关押的王党成员，刑部和大理寺卡着“王党犯官”审不出结果，调查未限制在李玉郎个人，并改任袁雄、刘洪。",
+          "quote": "短时间内，各路人马跳出来力保王党，而刑部和大理寺卡着“王党犯官”，审不出结果，也就断了袁雄等人的后续计划。审又审不出结果，朝堂上弹劾奏章如雨，官场上开始流传元景帝在秋后算账的流言，当初逼迫他下罪己诏的人，统统都要被清算。一时间人心浮动，流言四起。这还没完，六科给事中和张行英为首的御史们，宛如嗅到血腥味的鲨鱼，兴奋的上书",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文只交代元景帝让刑部审理是为了避免牵连大批王党、维持朝堂党派平衡；后文虽写到王党成员被释放、袁雄被降职等处置，但未明确交代刑部调查范围是否限制在李玉郎个人，也未完整交代元景帝对王党与勋贵集团的后续政治安排。",
+          "quote": "",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_113",
+      "verdict": "SUPPORTED",
+      "answer": "李玉春在第65章说明了体系上限的基本规则：圣人将修行体系划为九品，但圣人及蛊神、巫神、道尊、佛陀位于品级之外；武夫没有超越品级的存在，一品武夫即当世之最。",
+      "evidence_id": "de955351b75f",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        473,
+        505
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "c0978a90745c",
+      "quote": "其他体系都有超越品级的存在，但武夫没有，一品武夫，就是当世之最。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "浮香用菜叶和七根鱼刺表达的讯息是否与许七安或教坊司中的秘密联络有关？",
+        "answer_criteria": "后文解释这一摆放方式所代表的信息，或明确它只是浮香表达拒绝与不满的动作",
+        "evidence_chapters": [
+          160,
+          348,
+          355,
+          921
+        ],
+        "evidence_chars": 3024,
+        "segments": 4,
+        "chapter_refs": [
+          65
+        ],
+        "chapter_refs_outside_evidence": [
+          65
+        ],
+        "absent_3grams": [
+          "一品武",
+          "上限的",
+          "世之最",
+          "为九品",
+          "了体系",
+          "于品级",
+          "人及蛊",
+          "人将修",
+          "但圣人",
+          "位于品",
+          "体系上",
+          "体系划"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文只写到浮香用菜叶和七根鱼刺摆盘后嫣然一笑，属于埋设处；后续段落没有解释这一摆放方式代表什么，也没有说明它只是浮香表达拒绝与不满的动作，因此无法判定其与许七安或教坊司秘密联络有关。",
+          "quote": "沉思片刻，浮香心里一动，用筷子在盘子里夹起一片菜叶，又从醋鱼里挑出七根刺，摆在菜叶上。\n做完这一切，浮香嫣然一笑。",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_117",
+      "verdict": "SUPPORTED",
+      "answer": "后文说明许七安捡到的缺角碎银就是宋廷风丢失的三钱银子，并交代他是在宋廷风房门口捡到的。",
+      "evidence_id": "dc6c7404df2c",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        461,
+        469
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "56c48cb1b5fa",
+      "quote": "那就是你的银子。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "宅院中的拐卖与虐杀网络由谁掌控，除塔姆拉哈和齐党工部尚书外还有哪些官员参与？",
+        "answer_criteria": "后文查明该宅院的主人、组织者、参与者名单及司法处置结果。",
+        "evidence_chapters": [
+          164,
+          165,
+          167
+        ],
+        "evidence_chars": 2093,
+        "segments": 3,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "七安捡",
+          "三钱银",
+          "丢失的",
+          "交代他",
+          "他是在",
+          "代他是",
+          "到的缺",
+          "口捡到",
+          "后文说",
+          "在宋廷",
+          "失的三",
+          "安捡到"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文仅交代该宅院中存在拐卖、逼良为娼及虐杀，客人多为有官身的“大人”，并明确塔姆拉哈与齐党工部尚书刘尚书参与密谈；但未查明宅院主人、组织者、除塔姆拉哈和刘尚书外的具体参与官员名单，也未给出司法处置结果。",
+          "quote": "他们彼此之间称呼“大人”，显然是有官身的人。……那个客人叫塔姆拉哈……谈话中涉及到“云州”、“火炮”、“器械”等字眼。……齐党工部尚书！／与塔姆拉哈密谈者……就是刘尚书。",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_145",
+      "verdict": "SUPPORTED",
+      "answer": "教坊司的碧绿色气是妖气；后文许七安确认自己曾以望气术在那里发现妖气，且教坊司确实藏有妖族。",
+      "evidence_id": "571ea12f1d52",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        639,
+        665
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "a4804492c48a",
+      "quote": "某次夜巡时，我用望气术观测过教坊司，发现那里有妖气。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "十几年前的运河改道是自然淤塞还是人为所造？改道是否切断了云州军需与山匪之间的水路便利？",
+        "answer_criteria": "后文解释改道原因，或云州案调查指向水利工程被操控、官商勾结改道牟利",
+        "evidence_chapters": [
+          179,
+          191,
+          202,
+          766
+        ],
+        "evidence_chars": 3256,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "七安确",
+          "且教坊",
+          "以望气",
+          "发现妖",
+          "司的碧",
+          "司确实",
+          "后文许",
+          "在那里",
+          "坊司的",
+          "坊司确",
+          "安确认",
+          "实藏有"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文仅提到云州与青州原本有支流相连，但十几年前河水忽然改道；未说明改道是自然淤塞还是人为所造，也未提及改道是否切断云州军需与山匪之间的水路便利。",
+          "quote": "“本来是有的，云州与青州有一条支流相连，但十几年前，河水忽然改道。”姜律中解释。",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_158",
+      "verdict": "SUPPORTED",
+      "answer": "一号注意到三号能获知打更人内部消息，并追问消息来源；后来恒远也根据三号透露的书院安插人手及桑泊案情报，推断三号是打更人衙门的云鹿书院谍子。这说明三号的伪装身份引发了一号的追问，且后文明确交代了该伪装所指的身份线索。",
+      "evidence_id": "f5ee966126a6",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        148,
+        182
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "8c68a2ada76a",
+      "quote": "一号很在意这个，果然，只要涉及到京城高层的事儿，他（她）就格外在乎。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "一号从未向天地会公开谈过万妖国余孽，其消息究竟来自元景帝、魏渊、怀庆公主、打更人卷宗还是其他渠道？",
+        "answer_criteria": "后文通过一号身份、与朝廷高层的接触记录或情报流转过程，明确其获知万妖国余孽线索的具体来源。",
+        "evidence_chapters": [
+          182,
+          288,
+          365,
+          653
+        ],
+        "evidence_chars": 3152,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "一号注",
+          "一号的",
+          "三号是",
+          "三号的",
+          "三号能",
+          "三号透",
+          "且后文",
+          "也根据",
+          "书院安",
+          "书院谍",
+          "了一号",
+          "了该伪"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文只提出一号获知万妖国余孽信息的可能渠道，未明确交代其具体来源。",
+          "quote": "“一号知道这个信息的渠道只有四种：一，从元景帝口中得知。老皇帝会与谁说，",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_160",
+      "verdict": "SUPPORTED",
+      "answer": "后文查明平远伯案与桑泊案有关，凶手是青龙寺的恒慧和尚；许七安将恒慧及其可能持有桑泊封印物的线索告知姜律中，并与他协力处理案件。",
+      "evidence_id": "c21bf0a1e77f",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        55,
+        88
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "602035c3c570",
+      "quote": "青龙寺的恒慧和尚，也就是盗走青龙寺法器，与平阳郡主私奔的那个和尚。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "被封印的断手主人是否属于佛门武僧体系，神殊与恒慧之死又与这一体系有何联系？",
+        "answer_criteria": "后文明确断手主人的佛门身份、所属体系及其被封印、断手和寄生经历的因果。",
+        "evidence_chapters": [
+          182,
+          285,
+          307,
+          702
+        ],
+        "evidence_chars": 3256,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "七安将",
+          "与他协",
+          "与桑泊",
+          "他协力",
+          "伯案与",
+          "其可能",
+          "凶手是",
+          "力处理",
+          "协力处",
+          "印物的",
+          "及其可",
+          "可能持"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文未明确交代断手主人的佛门身份、所属体系及其被封印、断手和寄生经历的因果，也未明确神殊与恒慧之死同佛门武僧体系的联系。",
+          "quote": "",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_161",
+      "verdict": "SUPPORTED",
+      "answer": "司天监望气师敬重许七安，是因为他向司天监传授了高端炼金术知识，宋卿还称他为“吾师”；后文明确呈现了这份关系及反常态度的缘由。",
+      "evidence_id": "1d4d7ef1d60e",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        772,
+        790
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "7417305541aa",
+      "quote": "司天监的宋卿，都赞许七安是‘吾师’。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "许七安会在何种情境下突破元神极限并晋升炼神境，这一契机是否会与云州危机或神殊寄生有关？",
+        "answer_criteria": "后文实际描写许七安突破炼神境，并交代其突破契机、身体或精神代价。",
+        "evidence_chapters": [
+          183,
+          204,
+          266
+        ],
+        "evidence_chars": 2228,
+        "segments": 3,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "为他向",
+          "了这份",
+          "了高端",
+          "他向司",
+          "份关系",
+          "传授了",
+          "关系及",
+          "卿还称",
+          "及反常",
+          "反常态",
+          "司天监",
+          "后文明"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文只提到许七安已在冲击炼神境、晋升之日可待，以及晋升炼神境需突破元神极限（如一旬不睡）的一般方法；没有实际描写许七安突破炼神境，也未交代其突破契机是否与云州危机或神殊寄生有关，亦无其突破时的身体或精神代价。",
+          "quote": "“许七安已在冲击炼神境，晋升之日可待。”",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_171",
+      "verdict": "SUPPORTED",
+      "answer": "后文明确显示恒远持续把援助和救援归功于三号，并因此更加信任三号、认为自己欠下人情；许七安借这份误认与恒远接洽。给出的后文未显示这份误认被纠正。",
+      "evidence_id": "74a7331ccc0b",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        411,
+        434
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "f31172420277",
+      "quote": "三号不愧是读书人，侠肝义胆，是个值得信赖的朋友",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "水魅现象是普通运河沉尸形成的自然阴物，还是与沉船铁矿案有关的异常征兆？",
+        "answer_criteria": "后文通过调查明确水魅的来源，并说明其是否与长期沉船、弃尸或私运铁矿的地点存在关联。",
+        "evidence_chapters": [
+          188,
+          191,
+          357,
+          512
+        ],
+        "evidence_chars": 3251,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "七安借",
+          "下人情",
+          "与恒远",
+          "为自己",
+          "于三号",
+          "任三号",
+          "份误认",
+          "信任三",
+          "借这份",
+          "出的后",
+          "功于三",
+          "加信任"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "",
+          "quote": "",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_172",
+      "verdict": "SUPPORTED",
+      "answer": "后文揭示刘汉的上级周百户是妖族行动的指使者和灭口者。刘汉当值时协助把火药运进皇城，以炸毁永镇山河庙、释放桑泊封印物；原文将之称为“办事的”，没有明确交代他收受的贿赂内容。",
+      "evidence_id": "43fe604fb9a1",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        647,
+        677
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "9f9df6f37c9a",
+      "quote": "他是个办事的，而指使者就是他的上级，也是这位上级杀了他灭口。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "杨恭与许七安的云鹿书院旧识关系是否会影响钦差队伍在青州获得官府协助，以及他是否已经察觉许七安的真实身份？",
+        "answer_criteria": "后文出现双方正式会面、杨恭提供协助或质疑许七安身份的具体情节，并交代其态度和掌握的信息。",
+        "evidence_chapters": [
+          188,
+          189,
+          191,
+          206
+        ],
+        "evidence_chars": 2539,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "上级周",
+          "之称为",
+          "交代他",
+          "他收受",
+          "代他收",
+          "以炸毁",
+          "使者和",
+          "值时协",
+          "刘汉当",
+          "刘汉的",
+          "办事的",
+          "动的指"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文只交代钦差队伍到青州后需要找青州官府调度马车马匹，并介绍青州布政使杨恭是云鹿书院大儒、许七安算半个云鹿书院学子；张巡抚带许七安拜访时杨恭外出视察戒碑，未出现双方正式会面、杨恭实际提供协助或质疑许七安身份的具体情节，因此未明确交代该旧识关系是否影响官府协助及杨恭是否察觉许七安真实身份。",
+          "quote": "需要找青州官府帮忙调度。……青州布政使是云鹿书院的大儒，杨恭杨子谦。……布政使大人去各大衙门视察戒碑之事。",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_177",
+      "verdict": "SUPPORTED",
+      "answer": "祭祖过程中神庙突然炸开，剑气冲出并引得桑泊沸腾；后文将求救与这次祭祖异变联系起来，但未交代更具体的仪式机制。",
+      "evidence_id": "faf73dc32a6e",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        562,
+        595
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "309e71a6c588",
+      "quote": "永镇山河庙忽然炸了，庙里冲出一道剑气，引得整个桑泊沸腾，宛如地震。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "许七安为何已经知道极渊存在儒家圣人石塑，这一信息由谁提供并经过何种途径传入京城？",
+        "answer_criteria": "后文说明极渊石塑的发现者、消息传递路径，或由许七安本人交代他获知此事的渠道。",
+        "evidence_chapters": [
+          191,
+          337,
+          602,
+          799
+        ],
+        "evidence_chars": 3256,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "与这次",
+          "中神庙",
+          "交代更",
+          "代更具",
+          "仪式机",
+          "但未交",
+          "体的仪",
+          "具体的",
+          "冲出并",
+          "出并引",
+          "剑气冲",
+          "变联系"
+        ],
+        "blind": {
+          "found": true,
+          "answer": "由五号丽娜通过地书碎片告知，蛊族在探索极渊时发现了儒家圣人雕塑。",
+          "quote": "五号丽娜曾在地书碎片里说过，蛊族在探索极渊的行动中，发现了儒家圣人的雕塑。",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": true,
+          "answer": "许七安知道极渊有儒家圣人石塑，是因为五号丽娜曾在“地书碎片”中说过：蛊族在探索极渊的行动中发现了儒家圣人的雕塑。即信息由五号丽娜提供，经地书碎片这一渠道传递给许七安。",
+          "quote": "五号丽娜曾在地书碎片里说过，蛊族在探索极渊的行动中，发现了儒家圣人的雕塑。",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_178",
+      "verdict": "SUPPORTED",
+      "answer": "后文将求救声推断为消失已久的法济菩萨，并称只有许七安能听见；给出的片段没有明确说明他听见声音的具体原因或求救者当前处境。",
+      "evidence_id": "36f7e69459c9",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        375,
+        404
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "9ac586cd016c",
+      "quote": "你听见的求救声，大概率是那位消失已久的法济菩萨，而非佛陀。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "许辞旧是否已经收到搬家消息，许家父子之间的通信为何出现半个月的信息断档？",
+        "answer_criteria": "后文出现许辞旧得知住址后的回信或明确确认其仍未获知消息。",
+        "evidence_chapters": [
+          191,
+          494,
+          684,
+          720
+        ],
+        "evidence_chars": 2810,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "七安能",
+          "为消失",
+          "久的法",
+          "他听见",
+          "体原因",
+          "具体原",
+          "出的片",
+          "前处境",
+          "原因或",
+          "只有许",
+          "后文将",
+          "听见声"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文没有明确交代许辞旧是否已经收到搬家消息，也没有出现许辞旧得知住址后的回信或明确确认其仍未获知消息。第191章仅写到许七安猜测“都半个月过去了，辞旧现在应该知道家搬到哪儿了”，并提到自己没有写信告诉辞旧搬家，属于猜测和埋设，未回答问题。",
+          "quote": "“哦，还有，我忽然想起你大字不识几个，该不会没给辞旧写信吧？我一直以为你这个当爹的心里自然记挂儿子，便没有给他写信告诉他我们搬家了……罢了，反正都半个月过去了，辞旧现在应该知道家搬到哪儿了。\n“希望是我多虑。”",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_191",
+      "verdict": "SUPPORTED",
+      "answer": "许七安获准戴罪立功而脱离死刑判决，继续以打更人身份办案；他将官箴刻在戒碑上，后文仍以行动践行其信念。",
+      "evidence_id": "445e709ac484",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        321,
+        360
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "44c4ddfc4db2",
+      "quote": "第二天，布政使杨恭召集石匠，在青州各个衙门前院的戒碑上刻下了警示百官的四句诗。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "杨川南与宋长辅之间存在何种具体矛盾，张巡抚应当除去的“一人”究竟是谁，双方是否已经结成针对巡抚调查的联盟？",
+        "answer_criteria": "后文通过官场行动、宴席站队、调查证据或明确对话说明二人矛盾的性质及各自阵营关系。",
+        "evidence_chapters": [
+          200,
+          212,
+          224,
+          228
+        ],
+        "evidence_chars": 3256,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "七安获",
+          "人身份",
+          "仍以行",
+          "他将官",
+          "以打更",
+          "以行动",
+          "份办案",
+          "其信念",
+          "准戴罪",
+          "刑判决",
+          "刻在戒",
+          "功而脱"
+        ],
+        "blind": {
+          "found": true,
+          "answer": "宋长辅按计划把杨川南推出去顶锅，张巡抚要除的是宋长辅；二人并未结成针对调查的联盟，杨川南获释后反奉命清除宋长辅逆党。",
+          "quote": "布政使就按照既定的计划，把杨川南推出去顶锅",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": true,
+          "answer": "原文显示二人不是同盟：宋长辅是布政使，在云州官场占主导；杨川南是都指挥使，受到云州官场孤立、打压。梁有平供称宋布政使计划把杨川南推出去顶锅，说明矛盾性质是宋长辅一方排挤并以杨川南为替罪羊。张巡抚随后下令缉拿宋长辅，并在事后清洗“宋长辅逆党”，所以应除去的一人指向宋长辅。原文没有表明杨川南与宋长辅结成针对巡抚调查的联盟；相反，杨川南后来被张巡抚释放并奉命剿灭宋长辅逆党。",
+          "quote": "张巡抚冷笑道：“这说明云州官场大部分人都姓宋。”……“这云州当以宋布政使为主，他与杨川南不合。”；众官员隐晦的看向沉默不语的都指挥使杨川南，没有人为他说话，反而个个表态，支持张巡抚严查。……整个云州官场孤立、打压杨川南的风气，在巡视期间培养成型。；布政使就按照既定的计划，把杨川南推出去顶锅。……即刻传令，全员出动，缉拿",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_210",
+      "verdict": "SUPPORTED",
+      "answer": "周赤雄逃入了云州，二号找到了他；许七安得知后安排二号将他送往云鹿书院，由人接手。",
+      "evidence_id": "2e51fdadbb54",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        390,
+        424
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "f82db123a25f",
+      "quote": "记得当初他曾经通过地书传信，请求她帮助搜捕逃入云州的金吾卫百户周赤雄",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "禹州之外的漕运衙门是否普遍存在细作，谁在京城和地方共同保护这套庞大利益网络？",
+        "answer_criteria": "后文出现可核实的其他州漕运细作证据、保护网络关键人物或朝廷扩大彻查范围的决策。",
+        "evidence_chapters": [
+          205,
+          320,
+          342,
+          471
+        ],
+        "evidence_chars": 3254,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "七安得",
+          "了云州",
+          "二号将",
+          "二号找",
+          "人接手",
+          "他送往",
+          "入了云",
+          "到了他",
+          "号将他",
+          "号找到",
+          "后安排",
+          "周赤雄"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "",
+          "quote": "",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_220",
+      "verdict": "SUPPORTED",
+      "answer": "长公主听到初代监正与桑泊封印的关联后明显震惊；她此前已知五百年前太子溺死于桑泊，并与许七安继续讨论桑泊秘密。",
+      "evidence_id": "b9f914d16d09",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        604,
+        614
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "876722d1db1d",
+      "quote": "长公主真正花容变色。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "是否还存在符合条件、可供李妙真继续炼制的特殊阴年阴月女子？",
+        "answer_criteria": "后文出现与该条件直接相关的人物线索、炼化过程或对魅这一类高级怨灵来源的明确说明。",
+        "evidence_chapters": [
+          211,
+          218,
+          473,
+          764
+        ],
+        "evidence_chars": 3252,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "七安继",
+          "与桑泊",
+          "与许七",
+          "主听到",
+          "于桑泊",
+          "五百年",
+          "代监正",
+          "公主听",
+          "关联后",
+          "初代监",
+          "到初代",
+          "前太子"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文只交代了魅的炼制条件，以及苏苏作为魅的来源，没有明确说明还存在符合阴年阴月、死后处子条件且可供李妙真继续炼制的女子。",
+          "quote": "魅不是寻常鬼物，必须是阴年阴月出生的女子，且死后依旧是处子之身，方能炼成魅。",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_272",
+      "verdict": "SUPPORTED",
+      "answer": "幕后施术者是万妖国安插在大奉京城的谍子。她利用尸蛊将恒慧炼成行尸傀儡，并掌握平阳郡主遇害的秘密；她后来与礼部尚书背后的势力合作，推动炸毁永镇山河庙、释放桑泊封印物。",
+      "evidence_id": "da427debff29",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        400,
+        429
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "c43e80c37e12",
+      "quote": "她利用尸蛊把恒慧炼成了行尸傀儡，掌握着这个秘密，蛰伏起来。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "监正为何不给皇帝脱胎丸，却允许褚采薇将脱胎丸赠予许七安，脱胎丸是否本就被预留用于某个特定对象？",
+        "answer_criteria": "后文说明监正保留、分配或送出游七安脱胎丸的真实考量，包括是否预知许七安会遭遇云州生死危机。",
+        "evidence_chapters": [
+          4,
+          138,
+          233,
+          234
+        ],
+        "evidence_chars": 2752,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "万妖国",
+          "与礼部",
+          "主遇害",
+          "书背后",
+          "京城的",
+          "利用尸",
+          "力合作",
+          "动炸毁",
+          "势力合",
+          "后施术",
+          "后来与",
+          "后的势"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文只提到元景帝曾向监正索要脱胎丸被拒，以及褚采薇将脱胎丸赠予许七安、许七安在云州生死危机时服用；没有明确说明监正为何不给皇帝、为何允许褚采薇赠送、脱胎丸是否预留给特定对象，也没有说明监正是否预知许七安会遭遇云州生死危机。",
+          "quote": "“唉，监正的心思，朕是越来越看不透了。当日朕向他索要脱胎丸，他不给，谁料今日朕得知，一个小小铜锣，都能享用此灵丹妙药。”",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_323",
+      "verdict": "SUPPORTED",
+      "answer": "杨千幻后来念出了完整句子“手握明月摘星辰，世间无我这般人”；监正让他少到处说这句话，并警告会挨揍。",
+      "evidence_id": "34a507871da8",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        411,
+        427
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "40bb425e90a3",
+      "quote": "手握明月摘星辰，世间无我这般人。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "“爱德华·艾尔利克”究竟是何种身份标记，其与许七安及蓝皮书来源有什么关系？",
+        "answer_criteria": "后文通过人物调查、文本解释或直接对话，明确该署名的身份、含义或来源。",
+        "evidence_chapters": [
+          25,
+          84,
+          341,
+          734
+        ],
+        "evidence_chars": 3200,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "世间无",
+          "了完整",
+          "他少到",
+          "会挨揍",
+          "出了完",
+          "到处说",
+          "千幻后",
+          "后来念",
+          "告会挨",
+          "处说这",
+          "完整句",
+          "少到处"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文仅写到宋卿看到“爱德华·艾尔利克”后猜测它可能是名字、暗号或炼金术领域的暗语，并感到想不通；没有明确交代该署名的身份、含义或来源，也没有明确说明其与许七安及蓝皮书来源的关系。",
+          "quote": "平复了激动的心情后，宋卿开始思考“爱德华·艾尔利克”这几个字代表的含义。是名字吗？哪有这么奇怪的名字。是暗号，还是某种炼金术领域的暗语？想不通，一时心痒难耐。",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_328",
+      "verdict": "SUPPORTED",
+      "answer": "后文写到许新年中了会元后，许家人十分高兴，二叔决定在家摆宴席庆贺；这表明他与许家正面接触，关系已不再是祖宅门前所说的“没有家人”。",
+      "evidence_id": "6ec1b8722136",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        703,
+        732
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "3f9ef2aae752",
+      "quote": "二叔也很高兴，决定要在家里大摆宴席，请同族和同僚过来喝酒。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "七绝蛊的完整能力是什么，丽娜在京城会将其赠予何人？",
+        "answer_criteria": "后文明确七绝蛊的用途、认主或赠予对象，并呈现其对相关人物或事件产生的实际作用",
+        "evidence_chapters": [
+          31,
+          261,
+          336,
+          497
+        ],
+        "evidence_chars": 2854,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "不再是",
+          "与许家",
+          "中了会",
+          "了会元",
+          "二叔决",
+          "人十分",
+          "他与许",
+          "会元后",
+          "关系已",
+          "再是祖",
+          "写到许",
+          "决定在"
+        ],
+        "blind": {
+          "found": true,
+          "answer": "七绝蛊融合七种蛊派，监正将其交给有缘人许七安，使他短时间内拥有超凡脱俗的战力并克制望气术。",
+          "quote": "“你就是天蛊婆婆口中的有缘人。” 许七安沉默。 监正道： “容纳七绝蛊，你能在短时间内拥有超凡脱俗的战力。”",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": true,
+          "answer": "七绝蛊融合天蛊、力蛊、心蛊、情蛊、药蛊、暗蛊、尸蛊七大蛊派，集蛊族之力于一身；容纳它可在短时间内拥有超凡脱俗的战力，并借天蛊部“不被知”的特性克制望气术，帮助许七安走江湖、集龙脉、搜寻神殊残躯、拔出封魔钉，且不被许平峰追踪。丽娜在京城应将其赠予“有缘人”，后文明确这个有缘人就是许七安，并由监正将七绝蛊交给许七安。",
+          "quote": "“这只七绝蛊，融合了七种流派。集蛊族之力于一身啊。”……“容纳七绝蛊，你能在短时间内拥有超凡脱俗的战力。这样，你才能走江湖，集龙脉，搜寻神殊残躯，拔出封魔钉。……天蛊部有‘不被知’的特性……它能帮助你在走江湖期间不被许平峰追踪。”……“它现在是你的了。”监正把七绝蛊丢到许七安面前。……“你就是天蛊婆婆口中的有缘人。”",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_345",
+      "verdict": "SUPPORTED",
+      "answer": "许七安随张巡抚拜访紫阳居士，紫阳居士明确称许七安为老师，并表示已从张慎的书信中听说他；他还答应赠鹰供云州传书，交代许七安专心查案并保护张巡抚。谈话中紫阳居士询问书院清气冲霄之事，但没有明确确认许七安的真实身份。",
+      "evidence_id": "11ccf852e77f",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        619,
+        656
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "d8361fbec34b",
+      "quote": "抵达青州官办驿站后，张巡抚特意带上许七安，前往布政使司衙门，拜访紫阳居士。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "这两句诗在许七安的原记忆世界中分别对应什么典故，其跨世界变异会否影响作品真实性？",
+        "answer_criteria": "后文给出诗句原始典故、异世界对应关系，或由许七安本人明确释义",
+        "evidence_chapters": [
+          270,
+          315,
+          320
+        ],
+        "evidence_chars": 2183,
+        "segments": 3,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "七安专",
+          "七安为",
+          "七安随",
+          "专心查",
+          "中听说",
+          "中紫阳",
+          "为老师",
+          "书信中",
+          "书院清",
+          "云州传",
+          "交代许",
+          "从张慎"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文只出现“尔曹身与名俱灭，不废江河万古流”一句，未交代其原始典故、异世界对应关系，也没有许七安本人明确释义；亦未见“这两句诗”的另一句及相关说明，因此无法判定跨世界变异是否影响作品真实性。",
+          "quote": "“尔曹身与名俱灭，不废江河万古流……呸！”",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_350",
+      "verdict": "SUPPORTED",
+      "answer": "许七安在第337章回忆起五号丽娜曾在地书碎片里提过，蛊族探索极渊时发现了儒家圣人雕塑，说明他获知此事的途径是丽娜在地书碎片中的告知。",
+      "evidence_id": "3f3b0b560b23",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        382,
+        419
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "f0cb2e4b9441",
+      "quote": "五号丽娜曾在地书碎片里说过，蛊族在探索极渊的行动中，发现了儒家圣人的雕塑。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "许七安所捡荷包属于谁，它为何与许七安恢复部分气运的异常同时出现？",
+        "answer_criteria": "后文说明荷包主人身份、荷包内容或用途，并解释许七安此次捡取是否受命数变化影响",
+        "evidence_chapters": [
+          495,
+          555,
+          876
+        ],
+        "evidence_chars": 2438,
+        "segments": 3,
+        "chapter_refs": [
+          337
+        ],
+        "chapter_refs_outside_evidence": [
+          337
+        ],
+        "absent_3grams": [
+          "中的告",
+          "丽娜在",
+          "丽娜曾",
+          "书碎片",
+          "了儒家",
+          "事的途",
+          "五号丽",
+          "人雕塑",
+          "他获知",
+          "儒家圣",
+          "发现了",
+          "号丽娜"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文三段均未提及许七安捡到荷包，也未说明荷包主人、内容或用途，更没有解释其与许七安恢复部分气运异常的关系。",
+          "quote": "",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_352",
+      "verdict": "SUPPORTED",
+      "answer": "杨莺莺携带的是周旻交给她的玉佩；周旻预感自己可能遭遇危险，嘱咐她若自己遇害便躲藏并离开云州，把玉佩交给青州布政使杨大人。",
+      "evidence_id": "03e52be43c0b",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        374,
+        430
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "1d4beb9939e1",
+      "quote": "他说自己近期可能会有危险，如果真的遭遇了不测，就让我马上躲起来，然后想办法离开云州，将此物交给青州布政使杨大人。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "这名铜皮铁骨境武者究竟受谁指使，其挑战许七安是试探、报复，还是针对打更人的试探？",
+        "answer_criteria": "后文交代挑战者的真实身份、幕后指使者及其挑战许七安的具体目的，并说明其如何被处置或受审。",
+        "evidence_chapters": [
+          44,
+          273,
+          274,
+          285
+        ],
+        "evidence_chars": 2446,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "交给她",
+          "交给青",
+          "佩交给",
+          "使杨大",
+          "便躲藏",
+          "可能遭",
+          "周旻交",
+          "周旻预",
+          "咐她若",
+          "嘱咐她",
+          "她的玉",
+          "她若自"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文仅写到一名铜皮铁骨境汉子在擂台叫嚣挑战许七安，许七安表示不认识此人并猜测可能敌人，但未交代该武者的真实身份、幕后指使者、挑战的具体目的，也未说明其如何被处置或受审。",
+          "quote": "",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_356",
+      "verdict": "SUPPORTED",
+      "answer": "周旻用字谜留下线索：两组暗号中的“默”字拆为“黑”和“犬”，指向黄伯街狗市，调查由此继续。",
+      "evidence_id": "7da6d279d274",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        533,
+        578
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "e00842808262",
+      "quote": "默，拆开就是黑和犬……许七安边捏着眉心，边问道：“我记得去黄伯街的同僚说过，那里是狗市？”",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "许七安与金莲道长各自使用了何种幻术或感知手段识破假昏迷，许七安此前被幻术影响的经历是否仍存在隐患？",
+        "answer_criteria": "后文说明反制所依赖的幻术、预判或反制能力，并交代许七安此前的神殊寄生是否与本次识破幻术有关。",
+        "evidence_chapters": [
+          46,
+          74,
+          151,
+          276
+        ],
+        "evidence_chars": 2804,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "下线索",
+          "两组暗",
+          "伯街狗",
+          "号中的",
+          "向黄伯",
+          "周旻用",
+          "字拆为",
+          "字谜留",
+          "指向黄",
+          "旻用字",
+          "暗号中",
+          "查由此"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文仅提到许七安说女飞贼“连自己什么时候中的幻术都不知道”，并称金莲道长是“道门地宗的大佬”，但没有明确交代许七安与金莲道长各自使用了何种幻术或感知手段识破假昏迷；也没有交代许七安此前被幻术影响的经历、神殊寄生是否与本次识破幻术有关或是否仍有隐患。",
+          "quote": "“都提醒你了，这位是道门地宗的大佬，你连自己什么时候中的幻术都不知道。”许七安笑着说：",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_357",
+      "verdict": "SUPPORTED",
+      "answer": "李妙真所属的势力是飞燕军；她带领数十骑并调动飞燕军迎上卫司的三千兵马，实际介入了云州局势。",
+      "evidence_id": "53a64adf1d4c",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        118,
+        163
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "4c6a402bdcf9",
+      "quote": "李妙真没有直扑卫司，而是调转马头去了自己的飞燕军，喊来数十骑压阵，这才迎上卫司的三千兵马。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "魏渊画中的宫装丽人究竟是谁，她与许七安近期得罪的人及六品高手被带走一事有何关联？",
+        "answer_criteria": "后文明确揭示画中女子的姓名、身份，以及她与魏渊追问许七安仇家之间的关系。",
+        "evidence_chapters": [
+          47,
+          277,
+          317,
+          361
+        ],
+        "evidence_chars": 2851,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "三千兵",
+          "上卫司",
+          "了云州",
+          "云州局",
+          "介入了",
+          "入了云",
+          "军迎上",
+          "力是飞",
+          "动飞燕",
+          "势力是",
+          "十骑并",
+          "千兵马"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "到最后，也没说画中女子是谁，更没再提得罪人的事",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文未明确揭示画中宫装丽人的姓名、身份，也未说明她与许七安近期得罪的人及六品高手被带走一事之间有何关联。第277章只写魏渊画了宫装丽人，并明确说“到最后，也没说画中女子是谁，更没再提得罪人的事”。",
+          "quote": "画卷上是一位宫装丽人，穿着华美的衣裙，头戴诸多首饰，纤纤玉手捏着一柄轻罗小扇。……魏渊遗憾的摇头：“世上无人能画出她的美，我亦不行。” 到最后，也没说画中女子是谁，更没再提得罪人的事，挥挥手把许七安赶出浩气楼。",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_359",
+      "verdict": "SUPPORTED",
+      "answer": "杨川南借剿匪积累声望和势力，实际利用李妙真剿灭巫神教扶植的山匪，以掩护自身并服务于潜龙城阵营。",
+      "evidence_id": "1a4c660cfe34",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        521,
+        546
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "3cb9deea630e",
+      "quote": "知道那杨川南当初是在利用她，铲除巫神教扶植的山匪。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "许七安会如何利用葛小菁的易容能力，这一能力会不会被用于身份伪装或针对宫廷、齐党的调查？",
+        "answer_criteria": "后文出现许七安或葛小菁实际施展瞒天过海术、部署侦查或身份伪装的行动。",
+        "evidence_chapters": [
+          47,
+          276,
+          277,
+          557
+        ],
+        "evidence_chars": 2854,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "于潜龙",
+          "以掩护",
+          "借剿匪",
+          "利用李",
+          "剿匪积",
+          "剿灭巫",
+          "务于潜",
+          "匪积累",
+          "南借剿",
+          "和势力",
+          "城阵营",
+          "声望和"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文只提到许七安审讯葛小菁、询问“瞒天过海”之术的奥秘，并打算将来利用她；没有出现许七安或葛小菁实际施展易容/瞒天过海术、部署侦查或身份伪装的行动。",
+          "quote": "他刚审讯完葛小菁，向她询问了“瞒天过海”之术的奥秘。\n“这女飞贼倒是个人才，先把她留下来，将来肯定会有用。",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_362",
+      "verdict": "SUPPORTED",
+      "answer": "两组数字用十四年前的黄历解码：162和347是页数，4、1、2是取字位置，得到“丁15”，指向黑市丁15号铺子，那里保管着周旻留下的账簿证据。",
+      "evidence_id": "4cde69e39ad5",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        485,
+        513
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "10d87b9e299b",
+      "quote": "一百六十二和三百四十七指的是页数，四、一、二指的是字数。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "许新年会元名次中，第三场诗作究竟贡献了多少，阅卷官是否受到其他因素影响？",
+        "answer_criteria": "后文交代阅卷官评价、最终阅卷记录或朝廷复核结果，明确其会元排名的实际依据。",
+        "evidence_chapters": [
+          270,
+          279,
+          280
+        ],
+        "evidence_chars": 2237,
+        "segments": 3,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "下的账",
+          "两组数",
+          "保管着",
+          "前的黄",
+          "十四年",
+          "历解码",
+          "取字位",
+          "号铺子",
+          "向黑市",
+          "周旻留",
+          "四年前",
+          "字位置"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文未交代许新年会元排名中第三场诗作的具体贡献，也未提及阅卷官评价、最终阅卷记录或朝廷复核结果来说明其会元排名的实际依据。",
+          "quote": "",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_363",
+      "verdict": "SUPPORTED",
+      "answer": "夜间开市后调查黑市，解码线索指向丁15号铺子并取得账簿；调查还查明杨川南阵营提前破解了周旻留给青州布政使的线索，并曾接触账簿。",
+      "evidence_id": "0168fcf852a4",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        408,
+        432
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "f99ff530c6aa",
+      "quote": "我解开周旻留下的暗号，摸索到那边，才得到了账簿。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "这部话本会怎样影响怀庆对两性关系、权力关系及自身情感模式的判断？",
+        "answer_criteria": "后文出现怀庆明确讨论、续写、评价该话本，或其对许七安的态度因相关内容发生具体变化。",
+        "evidence_chapters": [
+          50,
+          278,
+          280,
+          390
+        ],
+        "evidence_chars": 2854,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "了周旻",
+          "使的线",
+          "前破解",
+          "南阵营",
+          "取得账",
+          "号铺子",
+          "后调查",
+          "周旻留",
+          "夜间开",
+          "子并取",
+          "川南阵",
+          "州布政"
+        ],
+        "blind": {
+          "found": true,
+          "answer": "后文出现怀庆对该话本的明确评价：她认为这是“没营养没知识”的闲书，却看了两个多时辰并产生罪恶感，最后偷偷把书藏起。",
+          "quote": "这么一本没营养没知识的书，我竟然看了两个时辰？！",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": true,
+          "answer": "已交代。第280章明确写怀庆阅读并评价该话本：她被“女君人前显圣”“把男人踩在脚下、养在后宫”等内容吸引，连看两个多时辰；看后产生恼怒与罪恶感，认为这是“没营养没知识”的闲书，却又折返把书藏进袖子带走，并打算夜里回顾。这说明该话本已具体影响她对两性关系、权力关系及自身情感模式的判断与反应。",
+          "quote": "让怀庆忍不住想看女君的各种……人前显圣？！对，就是人前显圣。把男人踩在脚下，把男人养在后宫，用霸道和冷酷的态度对待男人……那书生，对女君千依百顺，处处为她着想。还会因为女君和魔界将军们喝酒而生气、吃醋。……怀庆又发现这本小说的一个优点，它，它不需要动脑子。有趣就完了。爽完之后，怀庆忽然涌起了恼怒的情绪……她为此产生了深",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_380",
+      "verdict": "SUPPORTED",
+      "answer": "许七安一行按暗号找到黄伯街丁15号铺子，发现它表面卖狗肉，实际是私娼铺子；随后许七安从那里取得了账簿，铺子老板与账簿保管及周旻线索相连。",
+      "evidence_id": "78ea97a519d6",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        394,
+        435
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "ef1dc88cb12a",
+      "quote": "很快，他们按着铺子的门牌号，找到了丁15号铺子。从外表看，这也是一家卖生狗肉的铺子",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "这场斗法具体如何进行，其胜负赌注与生死风险分别是什么？",
+        "answer_criteria": "后文公开斗法的方式、参与者、规则、结果及天机盘和金刚经的最终归属。",
+        "evidence_chapters": [
+          66,
+          288,
+          461
+        ],
+        "evidence_chars": 2165,
+        "segments": 3,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "一行按",
+          "七安一",
+          "与账簿",
+          "了账簿",
+          "从那里",
+          "伯街丁",
+          "保管及",
+          "到黄伯",
+          "卖狗肉",
+          "及周旻",
+          "发现它",
+          "取得了"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "魏渊摇摇头：“今日便知。”",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文只提到度厄大师提出与监正论道斗法，赌注是天机盘和金刚经，监正同意并将发黄榜昭告；但未交代斗法具体如何进行、规则、参与者、结果，以及天机盘和金刚经的最终归属。",
+          "quote": "他提出要与监正论道斗法，赌注是天机盘和金刚经。希望陛下同意。……监正同意了。午后就会发黄榜昭告全京城，有热闹可以看了。”……“怎么斗？”魏渊摇摇头：“今日便知。”",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_387",
+      "verdict": "SUPPORTED",
+      "answer": "后文交代苏苏生前是大户人家的千金，十八岁时家中女眷服毒而死；她死后执念未散，遇到天宗高人，被认定为万中无一的魅并收进天宗。这说明符合条件的特殊女子确实可能成为魅，但所给片段没有表明李妙真后来又找到或炼制了另一名符合条件的女子。",
+      "evidence_id": "a9a40e26085d",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        671,
+        729
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "7d8765f4c8da",
+      "quote": "我死之后，执念不散，在乱葬岗徘徊了数日，眼见就要消散，没想到遇到了天宗的一位高人，他说我是万中无一的魅，将我收了去。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "神殊为何知道八苦阵存在众生之力的破解方式，他此前对佛门秘法了解到何种程度？",
+        "answer_criteria": "后文说明神殊对佛门八苦阵、须弥芥子或斗法规则的了解来源，并解释其主动提示许七安的目的。",
+        "evidence_chapters": [
+          62,
+          292,
+          293,
+          788
+        ],
+        "evidence_chars": 2848,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "一名符",
+          "一的魅",
+          "万中无",
+          "中女眷",
+          "中无一",
+          "为万中",
+          "了另一",
+          "交代苏",
+          "人家的",
+          "代苏苏",
+          "件的女",
+          "件的特"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文仅写神殊在八苦阵中主动传念提示“以众生之力破阵”，但未说明他为何知晓这一破解方式、此前对佛门秘法了解到何种程度，也未解释其主动提示许七安的目的。",
+          "quote": "“此阵还有第三种方法可破。”……“除以上两者外，还有一个办法：以众生之力破阵！”",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_389",
+      "verdict": "SUPPORTED",
+      "answer": "杨川南获释后奉命调动卫司军队入城，与飞燕军配合剿灭叛军，随后率军包围五城兵马司并缉拿相关人员。",
+      "evidence_id": "a54822a65689",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        543,
+        582
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "020b1ba7fcfe",
+      "quote": "杨川南随即离开驿站，奉命调动卫司军队入城，与飞燕军配合，剿灭了其余三门的叛军。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "金钵裂缝代表掌中佛国遭到结构性损伤，还是度厄大师布下的后续考验已经启动？",
+        "answer_criteria": "后文说明金钵受损的性质及其对剩余关卡、须弥芥子稳定性或佛门计划造成的具体影响。",
+        "evidence_chapters": [
+          62,
+          292,
+          296,
+          913
+        ],
+        "evidence_chars": 2598,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "与飞燕",
+          "五城兵",
+          "关人员",
+          "兵马司",
+          "军包围",
+          "军配合",
+          "军队入",
+          "剿灭叛",
+          "动卫司",
+          "包围五",
+          "南获释",
+          "卫司军"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文未提及金钵裂缝、掌中佛国结构性损伤或度厄大师后续考验启动，也未说明金钵受损对剩余关卡、须弥芥子稳定性或佛门计划的具体影响。",
+          "quote": "",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_394",
+      "verdict": "SUPPORTED",
+      "answer": "原文明确推断，杀周旻和杀狗肉铺老板都应该与京城齐党无关，真正的敌人在云州；后文又确认宋长辅是云州案的幕后黑手。",
+      "evidence_id": "562b79156940",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        416,
+        455
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "14d0ebe4b367",
+      "quote": "杀周旻灭口也好，杀狗肉铺老板也好，应该和京城的齐党无关。我们真正的敌人在云州。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "这把黑色刻刀究竟是什么，亚圣为何预先将其留在亚圣殿，又为何会在许七安拒绝下跪时主动认主般飞来？",
+        "answer_criteria": "后文交代刻刀的名称、来源、历代持有者、与亚圣的关系，以及它认主和飞来的具体触发机制。",
+        "evidence_chapters": [
+          296,
+          328,
+          609
+        ],
+        "evidence_chars": 2336,
+        "segments": 3,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "与京城",
+          "云州案",
+          "京城齐",
+          "人在云",
+          "党无关",
+          "原文明",
+          "又确认",
+          "后文又",
+          "后黑手",
+          "周旻和",
+          "和杀狗",
+          "城齐党"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文仅交代许七安拒绝下跪时，一道清光破空而来落入其手中，是一把古朴的黑色刻刀；未交代刻刀名称、来源、历代持有者、与亚圣的关系，也未说明其预先留在亚圣殿及认主、飞来的具体触发机制。",
+          "quote": "当是时，一道清光破空而来……那道清光旋即入庙，落在许七安手里。那是一把古朴的，黑色的刻刀。",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_402",
+      "verdict": "SUPPORTED",
+      "answer": "宋长辅组织官员集体拜访、施压，目的是逼张巡抚尽快给杨川南的案子定案，把杨川南推出去做替罪羊；官员群体中存在幕后黑手的嫌疑。",
+      "evidence_id": "804daaeae6db",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        596,
+        634
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "2db43ffa5a41",
+      "quote": "只能说明梁有平迟迟没有线索，让对方如坐针毡，恨不得立刻推杨川南出去做替罪羊。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "洛玉衡是否会接受这一安排，双修若发生将对她的业火、一品之路、传承子嗣及与元景帝的关系造成何种后果？",
+        "answer_criteria": "后文明确交代洛玉衡对双修的最终决定及实际关系进展，并呈现相应修行和利益后果。",
+        "evidence_chapters": [
+          69,
+          299,
+          434,
+          482
+        ],
+        "evidence_chars": 2764,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "中存在",
+          "体中存",
+          "体拜访",
+          "做替罪",
+          "出去做",
+          "南推出",
+          "南的案",
+          "去做替",
+          "后黑手",
+          "员群体",
+          "员集体",
+          "在幕后"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文未明确交代洛玉衡对双修的最终决定及实际关系进展，也未呈现双修发生后对其业火、一品之路、传承子嗣及与元景帝关系的相应后果。仅见许七安试探邀请被拒、王妃转述洛玉衡未选元景帝、金莲道长提出双修与子嗣设想等前期讨论。",
+          "quote": "洛玉衡柳眉倒竖，目光看向一边，淡淡道：“我虽有，有此打算，但……也不是非你不可，道侣之事岂可儿戏。”……洛玉衡眸子里水光闪烁，同时有着罕见的羞恼，淡淡道：“我明日自会出手，滚！”",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_403",
+      "verdict": "SUPPORTED",
+      "answer": "第228章交代，张巡抚释放杨川南并命他调动卫司军队入城；杨川南率军与飞燕军配合，剿灭其余三门的叛军。此前南城集结的军队是为逼巡抚释放杨川南而来，后来奉命参与平叛。",
+      "evidence_id": "a54822a65689",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        488,
+        540
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "f17c883b85d5",
+      "quote": "杨川南立刻就答应了，不是因为急于脱罪，而是这一刻，杨都指挥使从这个读书人眼神里，看到了令他心悸的暴风雨。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "淮王在南栀赴京和长期滞留期间究竟在谋划什么，南栀频繁接触洛玉衡与观测许七安的行为是受谁指使？",
+        "answer_criteria": "后文交代南栀与淮王在京城布局中的角色、任务归属及其对许七安或气运线索的真实目的。",
+        "evidence_chapters": [
+          67,
+          297,
+          363,
+          422
+        ],
+        "evidence_chars": 2852,
+        "segments": 4,
+        "chapter_refs": [
+          228
+        ],
+        "chapter_refs_outside_evidence": [
+          228
+        ],
+        "absent_3grams": [
+          "三门的",
+          "与平叛",
+          "与飞燕",
+          "为逼巡",
+          "他调动",
+          "余三门",
+          "其余三",
+          "军与飞",
+          "军配合",
+          "军队入",
+          "军队是",
+          "前南城"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文仅提及淮王镇守边关、在京城有心腹耳目，以及洛玉衡提醒南栀不要与许七安牵扯；未交代淮王在南栀赴京和长期滞留期间谋划什么，也未交代南栀频繁接触洛玉衡、观测许七安是受谁指使及其真实目的。",
+          "quote": "你夫君是淮王，三品武者。他镇守边关，不在京城。但京城有多他的心腹和耳目，你莫要与那许七安有太多牵扯，否则就是害了他。",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_436",
+      "verdict": "SUPPORTED",
+      "answer": "恒远与许七安以地书传书确认：许七安不愿公开身份，日后偶遇只需相逢一笑；恒远知晓并接受这一约定。原文还记载恒远后来在贡院外见到许七安时没有公开相认，具体以讳莫如深的笑容回应，表明双方继续维护这层秘密关系。",
+      "evidence_id": "a52fdff36335",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        387,
+        418
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "388e5ccb69ce",
+      "quote": "三号并不愿意与我们公开身份，他说，如果相见，只需相逢一笑便可。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "当初代监正遇害时，当代监正扮演了何种具体角色，参与者又分别是谁？",
+        "answer_criteria": "后文提供弑师案参与者名单、当代监正的具体行动或罪责证据，并说明初代监正最终结局",
+        "evidence_chapters": [
+          82,
+          288,
+          312,
+          491
+        ],
+        "evidence_chars": 2627,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "一约定",
+          "七安不",
+          "七安以",
+          "七安时",
+          "不愿公",
+          "与许七",
+          "书传书",
+          "书确认",
+          "以地书",
+          "以讳莫",
+          "传书确",
+          "体以讳"
+        ],
+        "blind": {
+          "found": true,
+          "answer": "后文明确交代佛门与当代监正一手主导了初代监正的殒落，参与者包括佛门、武宗皇帝和当代监正，初代监正最终被杀殒落。",
+          "quote": "佛门和当代监正在其中扮演了至关重要的角色。\n　　一手主导了初代监正的殒落。",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": true,
+          "answer": "参与者包括佛门、武宗皇帝以及当代监正（高品术士里应外合）。当代监正在弑师案中扮演内应/主导角色：他与佛门共同“一手主导了初代监正的殒落”，并因高品术士里应外合才使佛门能杀死一品术士。初代监正最终结局是被杀死/殒落。",
+          "quote": "第288章：“佛门帮武宗皇帝杀死初代监正”。第491章：“当年武宗皇帝能篡位，佛门和当代监正在其中扮演了至关重要的角色。一手主导了初代监正的殒落。”第312章：“若没有高品术士里应外合，佛门想杀一品的术士，岂有那么简单。”",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_468",
+      "verdict": "SUPPORTED",
+      "answer": "许七安向小宦官传授了一番关于陈贵妃的说辞，让他转述给元景帝，意在使元景帝怀疑陈贵妃；魏渊确认这番话会让元景帝重新思索福妃案。",
+      "evidence_id": "0aed69473a62",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        155,
+        188
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "c4d07ae74c37",
+      "quote": "陛下多疑，擅长制衡，你的这番话传入他耳中，会让他对陈贵妃心生疑窦。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "朝廷内部哪一方会借天人之争除掉李妙真，别国谍子将如何针对她？",
+        "answer_criteria": "后文应出现具体敌对势力、刺杀或谍报行动，并揭示其与李妙真竞争道统名额或国家利益之间的联系。",
+        "evidence_chapters": [
+          96,
+          326,
+          350,
+          375
+        ],
+        "evidence_chars": 2853,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "一番关",
+          "七安向",
+          "了一番",
+          "于陈贵",
+          "他转述",
+          "会让元",
+          "传授了",
+          "使元景",
+          "关于陈",
+          "向小宦",
+          "在使元",
+          "妃的说"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文仅通过魏渊提示李妙真可能遭遇两类危险：一来自朝廷，二来自别国谍子，并要求她不要随意出城、防备危险；但没有明确交代朝廷内部哪一方会借天人之争除掉她，也没有写出别国谍子的具体刺杀或谍报行动，更未揭示这些行动与竞争道统名额或国家利益之间的联系。",
+          "quote": "我只告诉你她可能遭遇的危险：一，危险来自朝廷。二，危险来自别国谍子。原因你自己想，我必须得进宫了。",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_474",
+      "verdict": "SUPPORTED",
+      "answer": "第763章说明双修的核心目的是平息业火，以便洛玉衡渡劫时专心对抗天劫；她已能逐渐压制并延缓业火发作，因此不必等到业火反噬才双修。第564章补充她估计还需三至六个月才有把握渡劫。",
+      "evidence_id": "761610af3abc",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        543,
+        593
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "e6a4813a80e7",
+      "quote": "我记得，双修的核心目的是平息业火，将来渡劫时，国师就能专心对抗天劫，不用担心业火灼身，导致身死道消。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "许铃音为何执意验证鬼魂是否可食用，她对异常事物的感知来自童年经历、命格还是特定能力？",
+        "answer_criteria": "后文应说明许铃音异常认知的来源，并展示她是否能进一步感知、影响或食用鬼魂。",
+        "evidence_chapters": [
+          97,
+          327,
+          472,
+          686
+        ],
+        "evidence_chars": 2852,
+        "segments": 4,
+        "chapter_refs": [
+          763,
+          564
+        ],
+        "chapter_refs_outside_evidence": [
+          763,
+          564
+        ],
+        "absent_3grams": [
+          "三至六",
+          "不必等",
+          "专心对",
+          "业火反",
+          "业火发",
+          "个月才",
+          "以便洛",
+          "估计还",
+          "便洛玉",
+          "修的核",
+          "充她估",
+          "六个月"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文仅写到许铃音问苏苏是不是鬼，并把她带到热油滚滚的伙房，问“姐姐你能自己爬进去吗”，疑似想验证鬼魂能否被煮食；但没有任何后文说明许铃音这种异常认知的来源（童年经历、命格或特定能力），也没有展示她是否能进一步感知、影响或食用鬼魂。",
+          "quote": "“姐姐，姐姐，你真的是鬼吗。”……伙房里，南疆的小黑皮正在烧火，锅里热油滚滚，许铃音拉着苏苏到锅边，抬起脸，期待地说：“姐姐你能自己爬进去吗。”",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_477",
+      "verdict": "SUPPORTED",
+      "answer": "第304章补充了预言师泄露天机后每日只能预测一次，之后厄运会升级为天谴；若没有大气运或特殊法阵庇佑，钟璃活不过两个时辰。第271章还交代了预言师需承受三千六百劫。",
+      "evidence_id": "ae87a8c1eef2",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        354,
+        377
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "f126c2cbd7ea",
+      "quote": "预言师每日只能预测一次，而后厄运会升级成天谴。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "两位道门祖师究竟因何论道交战，他们留下的甲子之约隐藏了什么真实目的？",
+        "answer_criteria": "后文给出祖宗教训、隐秘规则或知情者的可靠解释，揭示甲子天人之争的最初动因。",
+        "evidence_chapters": [
+          100,
+          263,
+          329,
+          330
+        ],
+        "evidence_chars": 2853,
+        "segments": 4,
+        "chapter_refs": [
+          304,
+          271
+        ],
+        "chapter_refs_outside_evidence": [
+          304,
+          271
+        ],
+        "absent_3grams": [
+          "三千六",
+          "不过两",
+          "两个时",
+          "个时辰",
+          "为天谴",
+          "之后厄",
+          "了预言",
+          "交代了",
+          "代了预",
+          "会升级",
+          "充了预",
+          "六百劫"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "真正的原因，只有天人两宗的道首才知道。",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文没有明确交代两位道门祖师究竟因何论道交战，也没有可靠解释甲子之约隐藏的真实目的。仅提到相传两宗祖师在一次论道中大打出手、双双重伤后羽化，并留下“每隔甲子，天人之争”的遗言；橘猫还说真正原因只有天人两宗道首才知道，只能根据蛛丝马迹推测。",
+          "quote": "相传，人宗和天宗的两位祖师在一次论道中大打出手，双双重伤，返回宗门不久便羽化。\n“两人同时一句遗言：每隔甲子，天人之争。\n……\n“真正的原因，只有天人两宗的道首才知道。但根据过去无数年的蛛丝马迹，其实可以推测出一些东西。”",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_481",
+      "verdict": "SUPPORTED",
+      "answer": "七绝蛊融合天蛊、力蛊、心蛊、情蛊、药蛊、暗蛊、尸蛊七种流派，丽娜将其交给许七安；它为许七安提供超凡战力及不被望气术追踪的能力，并使他承担封印蛊神的因果。",
+      "evidence_id": "356cc01422c5",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        68,
+        79
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "2c7a7205ae11",
+      "quote": "七绝蛊，倒是虫如其名。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "许七安的金刚神功能否在本场战斗中真正达到小成并形成可与四品抗衡的稳定战力？",
+        "answer_criteria": "后文明确展示护体气罩与肉身防御达到小成标准，或说明此次突破仍未完成及其具体差距。",
+        "evidence_chapters": [
+          102,
+          330,
+          332,
+          335
+        ],
+        "evidence_chars": 2852,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "七安提",
+          "七种流",
+          "七绝蛊",
+          "不被望",
+          "为许七",
+          "丽娜将",
+          "交给许",
+          "他承担",
+          "使他承",
+          "供超凡",
+          "其交给",
+          "凡战力"
+        ],
+        "blind": {
+          "found": true,
+          "answer": "不能，原文明确说许七安的金刚神功只是接近小成，护体气罩防御比本体稍弱，尚未达到小成后气罩与肉身等同的标准。",
+          "quote": "这是许七安的金刚神功接近小成带来的改变",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": true,
+          "answer": "未真正达到小成。原文明确说许七安的金刚神功只是“接近小成”，虽已能催生护体气罩，但气罩防御比本体稍弱，需等到小成之后才与肉身等同；因此本场并未展示其达到小成标准，也不能据此认定已形成可与四品抗衡的稳定战力。",
+          "quote": "这是许七安的金刚神功接近小成带来的改变。到了这一步，金刚神功可以催生出护体气罩，不再是肉身硬抗攻击。当然，气罩的防御比本体稍弱，等到小成之后，气罩才与肉身等同。",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_487",
+      "verdict": "SUPPORTED",
+      "answer": "钟璃的厄运会影响身边的人，不论朋友还是敌人；许七安这样的气运加身者和许铃音这类八字硬的人可以免疫。",
+      "evidence_id": "4c39e84e6330",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        411,
+        435
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "7341d13e3170",
+      "quote": "钟璃的厄运会影响到身边的人，不管是朋友还是敌人。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "天蛊婆婆的丈夫是否就是二十年前两名小偷之一，他为何离开南疆，后来死于何处，又如何与许七安或被盗之物发生联系？",
+        "answer_criteria": "后文交代该丈夫的姓名、盗取行动中的职责、离开南疆的目的、死亡经过及其留下的线索。",
+        "evidence_chapters": [
+          106,
+          261,
+          336,
+          804
+        ],
+        "evidence_chars": 2855,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "七安这",
+          "不论朋",
+          "人可以",
+          "以免疫",
+          "会影响",
+          "八字硬",
+          "加身者",
+          "厄运会",
+          "友还是",
+          "可以免",
+          "和许铃",
+          "响身边"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文仅交代天蛊婆婆的丈夫是二十年前两名小偷之一，他为压制蛊神而离开南疆去偷东西，之后未归，本命蛊枯萎预示其死亡；但未明确交代其姓名、盗取行动中的具体职责、死亡处所与经过，以及他如何与许七安或被盗之物发生具体联系。",
+          "quote": "“后来，我离开南疆前，天蛊婆婆对我说，那两个小偷的其中一位，是她的丈夫。……为了改变未来，阿公想出了一个办法，于是离开南疆。然后他再也没有回来。他留在蛊族的本命蛊枯竭，这预示着他的死亡。”",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_493",
+      "verdict": "SUPPORTED",
+      "answer": "四号楚元缜已是天地会成员，并参与地书传书；他估计这次传书会持续一时半会。",
+      "evidence_id": "98ffaff1e7ca",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        699,
+        720
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "53cf60848f73",
+      "quote": "他估计天地会成员的传书，一时半会无法结束。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "天宗会由谁对许七安采取何种行动，李妙真所谓替他把控宗门压力能够持续到什么程度？",
+        "answer_criteria": "后文出现天宗长老或高阶人物对许七安作出明确处置，并展示李妙真此前承诺的实际作用。",
+        "evidence_chapters": [
+          105,
+          330,
+          335,
+          584
+        ],
+        "evidence_chars": 2700,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "一时半",
+          "与地书",
+          "书会持",
+          "书传书",
+          "他估计",
+          "会成员",
+          "会持续",
+          "传书会",
+          "估计这",
+          "元缜已",
+          "参与地",
+          "号楚元"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文未出现天宗长老或高阶人物对许七安作出明确处置，也未展示李妙真承诺的实际作用；仅有李妙真口头表示会帮他把控宗门，以及金莲道长对天宗长辈可能反应的推测。",
+          "quote": "",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_512",
+      "verdict": "SUPPORTED",
+      "answer": "许七安实际练习了瞒天过海之术，并研究了通过特殊药水和行气法门改变容貌的具体方法。",
+      "evidence_id": "20558f96944d",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        386,
+        412
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "db0bd3198b2d",
+      "quote": "他刚审讯完葛小菁，向她询问了“瞒天过海”之术的奥秘。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "宋卿为何会制造出持续衰竭且排斥魂魄和药效的肉身？九色莲花能否在点化后解决这些缺陷？",
+        "answer_criteria": "后文明确交代该肉身的缺陷来源、点化过程及最终能否成为苏苏的稳定魂魄载体",
+        "evidence_chapters": [
+          111,
+          341,
+          373,
+          398
+        ],
+        "evidence_chars": 2853,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "七安实",
+          "习了瞒",
+          "了瞒天",
+          "了通过",
+          "体方法",
+          "具体方",
+          "变容貌",
+          "和行气",
+          "安实际",
+          "实际练",
+          "容貌的",
+          "并研究"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文未明确交代宋卿制造出持续衰竭且排斥魂魄和药效肉身的原因，也未提及九色莲花点化过程及最终能否解决缺陷成为苏苏的稳定魂魄载体。第341章仅描述肉身每日衰竭、药物无效，并称其干净无魂魄适合作为苏苏的肉身，但未解释缺陷来源，也未涉及九色莲花点化及效果。",
+          "quote": "【第341章】宋卿说道：“他炼成之时，身体状态与常人无异，但每日都在衰竭，我估计再过三天就会死亡。无法避免，药物无效。”……李妙真感应了一下，眼睛发亮，道：“这具身体是干净的，没有灵智，没有魂魄。比活人的躯壳更好，最适合作为苏苏的肉……”",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_517",
+      "verdict": "SUPPORTED",
+      "answer": "后文中临安将自己藏着的话本交给许七安，暗示两人的关系；许七安解释故事是妖族小人物爱上天界公主并最终相守，临安把话本交给他时表现出不舍与期待。",
+      "evidence_id": "d73219a0052a",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        599,
+        620
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "dede0a0dabd9",
+      "quote": "而今，临安把话本给他，暗示什么，不言而喻。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "赵守赠书中的法术会如何服务于北境查案？镇北王势力的行动是否会触及“黎民百姓与苍生气运”这一评判标准？",
+        "answer_criteria": "后文出现许七安使用赠书中的法术，或北境案件明确涉及百姓、军士或苍生气运的因果",
+        "evidence_chapters": [
+          343,
+          352,
+          356
+        ],
+        "evidence_chars": 2438,
+        "segments": 3,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "七安解",
+          "上天界",
+          "不舍与",
+          "与期待",
+          "两人的",
+          "中临安",
+          "临安将",
+          "临安把",
+          "主并最",
+          "事是妖",
+          "交给许",
+          "人物爱"
+        ],
+        "blind": {
+          "found": true,
+          "answer": "许七安使用望气术窥探气数，作为北境查案中的追踪手段。",
+          "quote": "撕下记录望气术的纸张。窥探气数，有时候也能作为追踪手段。",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": true,
+          "answer": "原文可确认许七安将赠书所录的望气术用于追踪：他撕下记录望气术的纸张，以窥探气数作为追踪手段。至于镇北王势力的行动是否触及“黎民百姓与苍生气运”，原文只有赵守对气运根本在百姓、苍生的泛论，没有明确写到北境案件或镇北王势力造成此种因果。",
+          "quote": "许七安一边说着，一边撕下记录望气术的纸张。窥探气数，有时候也能作为追踪手段。……气运的根本是‘人’这个字……是黎民百姓凝聚了气运，是苍生凝聚了气运。",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_528",
+      "verdict": "SUPPORTED",
+      "answer": "许七安后来掌握了以众生之意养刀意的办法，并在佛门斗法中领悟其奥义；他主动收敛情绪、调动身后大奉士卒凝聚的意气，施展天地一刀斩，斩出大范围杀伤。",
+      "evidence_id": "52acc888141b",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        281,
+        315
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "bd64f866743d",
+      "quote": "以楚元缜教导的养剑意之法，调动众生之力，是他在佛门斗法中领悟的奥义。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "协助蛮族、妖族锁定使团的术士是谁，受谁指使，其身份是否与云州术士、监正或佛门秘密势力有关？",
+        "answer_criteria": "后文揭示术士的姓名、所属阵营、与使团消息渠道的连接方式，或通过可核验的术法痕迹确认其身份",
+        "evidence_chapters": [
+          121,
+          230,
+          351,
+          688
+        ],
+        "evidence_chars": 2855,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "一刀斩",
+          "七安后",
+          "中领悟",
+          "主动收",
+          "之意养",
+          "了以众",
+          "他主动",
+          "以众生",
+          "众生之",
+          "佛门斗",
+          "其奥义",
+          "养刀意"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文仅确认使团遇伏时有术士暗中帮忙，但未揭示该术士的姓名、所属阵营、受谁指使，也未说明其与云州术士、监正或佛门秘密势力有关；第230章虽讨论云州案术士并怀疑与税银案术士同势力、司天监有秘密，但均属猜测，未可核验确认。",
+          "quote": "许七安心里一动，嗤笑道：“我猜你们中有术士帮忙。”\n红裙女人霍然变色，目光倏地锐利，重新审视他，问道：“你怎么知道的。”",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_535",
+      "verdict": "SUPPORTED",
+      "answer": "佛门将神殊分尸封印，是因为他的肉身过于强大，普通封印无法困住他，只能分尸；桑泊是利用大奉气运封印其断臂的封印方式之一。五百年前佛门帮助武宗皇帝叛乱，条件之一就是封印神殊断臂，佛门借助大奉气运完成封印。",
+      "evidence_id": "01c418a85228",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        422,
+        442
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "f9c3fc980d82",
+      "quote": "本质上，佛门是在借助大奉的气运封印神殊。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "镇北王一方是否已经知道血屠案是构陷，其让褚相龙护送使团和截杀许七安的真正目的是什么？",
+        "answer_criteria": "后文通过镇北王、李元化或女密探的明确行动和证词说明淮王对朝廷使团与许七安的真实意图。",
+        "evidence_chapters": [
+          124,
+          354,
+          356,
+          375
+        ],
+        "evidence_chars": 2855,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "一就是",
+          "为他的",
+          "之一就",
+          "于强大",
+          "五百年",
+          "他的肉",
+          "件之一",
+          "佛门借",
+          "佛门将",
+          "佛门帮",
+          "借助大",
+          "其断臂"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文仅写到褚相龙认为血屠案是魏渊等人构陷淮王，并推测镇北王一方将计就计利用使团护送王妃；但没有通过镇北王、李元化或女密探的明确行动和证词，说明淮王让褚相龙护送使团及截杀许七安的真正目的。",
+          "quote": "",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_541",
+      "verdict": "SUPPORTED",
+      "answer": "红木盒中封印的是亚圣遗泽所关联的前辈；许七安调动众生之力使其复苏，之后前辈破盒而出，并选择了许七安。",
+      "evidence_id": "1a7faf6f04b5",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        61,
+        104
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "f7dd1023fd0f",
+      "quote": "你也选择了他吗……这一刻，这位坐镇京城五百年，大奉子民心目中的“神”，于心底喃喃自语。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "西口郡究竟发生过什么，朝廷为何封锁当地，血屠三千里的死者与现场是否都在那里？",
+        "answer_criteria": "后文出现西口郡封锁命令、现场勘验结果、死者身份或与血屠案相符的大规模惨案证据",
+        "evidence_chapters": [
+          129,
+          359,
+          360,
+          367
+        ],
+        "evidence_chars": 2659,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "七安调",
+          "中封印",
+          "之力使",
+          "之后前",
+          "了许七",
+          "亚圣遗",
+          "众生之",
+          "使其复",
+          "关联的",
+          "其复苏",
+          "前辈破",
+          "力使其"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文仅提到西口郡及下辖三县被官兵封锁、官道全封，许七安据此猜测那里“极有可能”是血屠三千里的案发地点；但没有明确交代西口郡究竟发生过什么、朝廷为何封锁当地，也没有现场勘验结果、死者身份或与血屠案相符的大规模惨案证据。",
+          "quote": "“前阵子，奴家接待过一位客人……说，西口郡以及下辖三县，不知为何竟被官兵封锁，官道全封了。”……“如果那里真有问题，那里极有可能是血屠三千里的案发地点。”",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_554",
+      "verdict": "SUPPORTED",
+      "answer": "后文解释气运复苏与幕后黑手将许七安弄出京城的计划有关；取出气运会使容器死亡，而仇谦称那份气运原本属于自己。",
+      "evidence_id": "695c34826378",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        404,
+        450
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "c81210b67058",
+      "quote": "事实是，藏在我体内的气运，在那段时间开始复苏，所以幕后黑手制造了税银案，要将我‘弄’出京城。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "监正是否在利用许七安和慕南栀推动镇北王晋升计划，其真正布局是什么？",
+        "answer_criteria": "后文由监正本人、相关角色证词或可验证事件揭示其对血屠案及许七安行动的安排。",
+        "evidence_chapters": [
+          134,
+          364,
+          596,
+          731
+        ],
+        "evidence_chars": 2753,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "七安弄",
+          "与幕后",
+          "于自己",
+          "京城的",
+          "仇谦称",
+          "份气运",
+          "会使容",
+          "使容器",
+          "出京城",
+          "出气运",
+          "划有关",
+          "原本属"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文只出现角色对监正是否暗中推波助澜的猜测，没有由监正本人、相关角色证词或可验证事件揭示其对血屠案及许七安行动的具体安排，因此未明确回答监正的真正布局。",
+          "quote": "“对了，你说监正知道镇北王的谋划吗？如果知道，他为何漠不关心？我突然怀疑慕南栀和许七安走在一起，是监正在暗中推波助澜。”",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_580",
+      "verdict": "SUPPORTED",
+      "answer": "公羊宿称武宗皇帝与佛门结盟，由佛门助其杀死初代监正；他又指出若无高品术士里应外合，佛门难以杀死一品术士，明确指向当代监正与弑师案的内应关系。",
+      "evidence_id": "3c548b18499a",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        584,
+        613
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "b3a2a463962b",
+      "quote": "若没有高品术士里应外合，佛门想杀一品的术士，岂有那么简单。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "元景帝为何特别关注淮王妃随行一事，他又是否预知了王妃灵蕴会被泄露或被许七安截走？",
+        "answer_criteria": "后文说明元景帝警告魏渊的具体目的，以及他掌握王妃行动和北境布局的程度。",
+        "evidence_chapters": [
+          149,
+          347,
+          379,
+          479
+        ],
+        "evidence_chars": 2464,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "一品术",
+          "与佛门",
+          "与弑师",
+          "他又指",
+          "代监正",
+          "以杀死",
+          "佛门助",
+          "佛门结",
+          "佛门难",
+          "公羊宿",
+          "其杀死",
+          "内应关"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文仅说明元景帝在使团出发前特意告知魏渊淮王妃会随行，目的是警告魏渊不要做小动作；并提到王妃行踪仍被泄露，但未说明元景帝是否预知王妃灵蕴会被泄露或被许七安截走，也未交代其掌握北境布局的程度，因此未达到判定标准。",
+          "quote": "使团出发前，陛下曾多此一举的告之我王妃会随行，他是在警告我，不要做小动作。没想到王妃的行踪还是被泄露出去。",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_582",
+      "verdict": "SUPPORTED",
+      "answer": "后文说明屏蔽天机受影响力与因果关系限制，亲近之人会留下模糊印象；许七安通过追查和因果线索识破屏蔽，确认许平峰就是云州高品术士及幕后真凶。",
+      "evidence_id": "7f5293053342",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        559,
+        579
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "2ab5debd37c3",
+      "quote": "慢慢的，我总结出屏蔽天机之术的两个限制。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "楚州城亡魂最终去了哪里，地宗道首是否确实以魂丹形式收取了献祭成果？",
+        "answer_criteria": "后文提供魂魄、阵法或魂丹的具体去向，并确认地宗道首与楚州献祭的关系。",
+        "evidence_chapters": [
+          147,
+          377,
+          381,
+          390
+        ],
+        "evidence_chars": 2577,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "七安通",
+          "下模糊",
+          "与因果",
+          "之人会",
+          "云州高",
+          "亲近之",
+          "人会留",
+          "会留下",
+          "关系限",
+          "力与因",
+          "及幕后",
+          "受影响"
+        ],
+        "blind": {
+          "found": true,
+          "answer": "魂丹被阙永修趁乱取走并带回京城交给元景帝，地宗道首并未以魂丹形式收取献祭成果。",
+          "quote": "淮王死后，我趁乱取走了魂丹，带回京城，给了陛下……",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": true,
+          "answer": "楚州百姓血祭后，精血上浮化作血丹，魂魄入地底；事后魂丹被阙永修趁乱取走，带回京城交给元景帝。地宗道首并非以魂丹形式收取献祭成果，许七安原以为魂丹被地宗道首取走，实际进了元景帝腰包；原文只表明地宗道首为所谓“恶”参与此事，并与镇北王有合作。",
+          "quote": "“淮王死后，我趁乱取走了魂丹，带回京城，给了陛下……”阙永修的魂魄，老实回答。……难怪杨砚说，血祭百姓时，精血上浮化作血丹，魂魄入地底，事后却毫无痕迹，原来是被阙永修趁乱盗走……许七安恍然大悟，他还以为魂丹被地宗道首取走，没想到进了元景帝的腰包。……“这么说，地宗道首是为了所谓的‘恶’才参与了这件事，嗯，镇北王和地宗道",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_595",
+      "verdict": "SUPPORTED",
+      "answer": "门房描述的姑娘就是丽娜；许七安根据她黑皮肤、蓝眼睛和卷发认出她是天地会五号。",
+      "evidence_id": "65bcd6ae730b",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        447,
+        477
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "54eb997f568d",
+      "quote": "“是个黑皮的丑姑娘，眼睛还是蓝色的。头发也难看，带着卷儿。”",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "刺杀太子的主使者是谁，刺杀与临安求见被拒、楚州案舆论之间是否存在布局上的联系？",
+        "answer_criteria": "后文出现关于刺杀主使、执行者、雇佣关系或政治目的的调查结论，并能解释其与楚州案或宫门抗议的关联。",
+        "evidence_chapters": [
+          152,
+          382,
+          385,
+          564
+        ],
+        "evidence_chars": 2852,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "七安根",
+          "会五号",
+          "出她是",
+          "卷发认",
+          "发认出",
+          "和卷发",
+          "地会五",
+          "天地会",
+          "她是天",
+          "她黑皮",
+          "姑娘就",
+          "娘就是"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文未明确交代刺杀太子的主使者、执行者、雇佣关系或政治目的，也没有调查结论说明刺杀与临安求见被拒、楚州案舆论之间存在布局上的联系。第382章仅提到太子遭遇刺杀及全城搜捕无果，许七安也只是猜测是否为博弈中的一环。",
+          "quote": "同样是在这一天，东宫太子，于黄昏后在寝宫遭遇刺杀。当夜，宫门禁闭，禁军满皇宫搜捕刺客，无果。……“太子跟这件事有什么关系？怎么就凭白遭遇刺杀了，是巧合，还是博弈中的一环？如果是后者，那也太惨了吧。”",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_604",
+      "verdict": "SUPPORTED",
+      "answer": "死者是钱有义，是魏游龙当年一起行走江湖的兄弟；“血屠三千里”指楚州屠城，郑兴怀等人试图揭发镇北王的暴行。",
+      "evidence_id": "78c2bc73ece7",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        469,
+        488
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "d268aa7e00b7",
+      "quote": "他叫钱有义，是我当年一起行走江湖的兄弟",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "许七安在外养的外室究竟是谁，她为何会让他产生不同于洛玉衡的感受，其真实身份和来历是什么？",
+        "answer_criteria": "后文明确揭示外室的身份、背景、修为或来历，并解释其与许七安的关系和吸引方式。",
+        "evidence_chapters": [
+          151,
+          381,
+          514,
+          819
+        ],
+        "evidence_chars": 2507,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "一起行",
+          "三千里",
+          "人试图",
+          "兴怀等",
+          "发镇北",
+          "图揭发",
+          "屠三千",
+          "州屠城",
+          "年一起",
+          "当年一",
+          "怀等人",
+          "指楚州"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "真想知道她究竟是何来历",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文未明确揭示许七安外室的身份、背景、修为或来历，只提到他养了一个外室并好奇其来历，未交代其究竟是谁。",
+          "quote": "目视前方，心里想着自己那个养在外面的外室。\n多日不见，我竟有些养她……大奉第一美人的魅力，似乎有些奇怪，没有洛玉衡那样诱人，却暗中潜移默化？\n真想知道她究竟是何来历。",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_609",
+      "verdict": "SUPPORTED",
+      "answer": "“血屠三千里”指镇北王在楚州屠城；受害者是楚州城百姓，钱有义受郑兴怀等人所托送信、揭发镇北王暴行，因而遭镇北王密探追杀。现有片段没有解释司天监口径冲突的具体原因。",
+      "evidence_id": "78c2bc73ece7",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        527,
+        553
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "7442bf4b7b36",
+      "quote": "楚州屠城后，我们六人包括郑大人，早已被镇北王密探通缉",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "七号究竟是谁、做过什么导致遭报应，以及他与许七安之间存在何种潜在冲突？",
+        "answer_criteria": "后文交代七号的身份、相关旧事及其与李妙真、许七安或天宗的关系。",
+        "evidence_chapters": [
+          158,
+          388,
+          514,
+          533
+        ],
+        "evidence_chars": 2855,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "三千里",
+          "义受郑",
+          "人所托",
+          "体原因",
+          "兴怀等",
+          "具体原",
+          "冲突的",
+          "北王在",
+          "北王密",
+          "北王暴",
+          "发镇北",
+          "受害者"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文仅交代七号据说是天宗圣子、李妙真的师兄；李妙真不愿多聊，只称他“是个烂人”“遭了报应”，并说许七安总有一天会步其后尘。未明确交代七号具体做过什么导致遭报应，也未明确说明他与许七安之间存在何种潜在冲突。",
+          "quote": "至于七号和八号，据说前者是天宗圣子，李妙真的师兄。目前不知身在何方，说起此人时，李妙真吞吞吐吐，不想多聊。后来被问的烦了，就说：那家伙跟你一样是个烂人，只不过他遭了报应，你却还没有，但你总有一天会步他后尘。",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_636",
+      "verdict": "SUPPORTED",
+      "answer": "后文明确显示云鹿书院仍有记载“卦术”和“言出法随”的纸张可借，并提及可借亚圣儒冠；所给材料没有说明黑色刻刀与这些纸页的联系。",
+      "evidence_id": "aafb369ad743",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        456,
+        492
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "088f6563c0c4",
+      "quote": "所以要去云鹿书院借亚圣儒冠，还有两张记录了“卦术”和“言出法随”的纸张。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "黑金长刀能否成功诞生器灵，器灵将具备何种能力，许七安需要为此付出什么代价？",
+        "answer_criteria": "后文明确长刀是否诞生器灵、器灵的具体能力与限制，以及温养和认主过程的结果。",
+        "evidence_chapters": [
+          167,
+          396,
+          397,
+          416
+        ],
+        "evidence_chars": 2855,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "与这些",
+          "书院仍",
+          "云鹿书",
+          "亚圣儒",
+          "些纸页",
+          "仍有记",
+          "借亚圣",
+          "出法随",
+          "刀与这",
+          "刻刀与",
+          "及可借",
+          "可借亚"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文显示莲子温养后黑金长刀活化、自行飞舞、亲近许七安且力量暴增，可推断器灵已诞生；但未明确交代器灵的具体能力与限制，也未明确许七安为此付出的代价（仅见莲子枯萎），因此未完全回答待交代事项。",
+          "quote": "这个过程中，许七安看着莲子一点点的枯萎，看着黑金长刀慢慢蜕变，它没有变的锋利，但给人的感觉不再是死物，它仿佛活过来了。……黑金长刀鸣颤中，自行飞起，绕着许七安飞舞。它似乎很亲近许七安，就像幼崽亲近自己的父母。……黑金长刀的力量暴增了啊",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_640",
+      "verdict": "SUPPORTED",
+      "answer": "后文说明许七安是盛放气运的容器，气运取出前容器不能破；税银案用于把他送出京城。白衣术士解释，若以不合理的方式强行掳走他，监正会迅速反应，因此需要合理离京。",
+      "evidence_id": "8eed1ed523c3",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        473,
+        499
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "6bb73d60e5a7",
+      "quote": "如果你以不合理的手段强行掳走我，监正会迅速反应过来。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "杨崔雪所说的危急关头是否会到来，他将以何种名义和立场介入月氏山庄决战？",
+        "answer_criteria": "后文出现杨崔雪或墨阁的明确援手行动，并说明其介入原因及与许七安的交换关系。",
+        "evidence_chapters": [
+          170,
+          400,
+          406,
+          409
+        ],
+        "evidence_chars": 2855,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "七安是",
+          "不合理",
+          "不能破",
+          "于把他",
+          "他送出",
+          "以不合",
+          "会迅速",
+          "出京城",
+          "出前容",
+          "前容器",
+          "取出前",
+          "合理的"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文仅写到杨崔雪表示墨阁不参与此事、明日会来观战，并留下‘危急关头……’未明说；后文第409章杨崔雪仍是退出争夺、遗憾心疼，没有出现杨崔雪或墨阁明确援手月氏山庄决战的行动，也未说明其介入原因及与许七安的交换关系。",
+          "quote": "杨崔雪犹豫了一下，传音道：“墨阁不参与此事了……明日老夫会来观战，危急关头……”\n他没有明说。",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_650",
+      "verdict": "SUPPORTED",
+      "answer": "镇北王势力确实阻挠调查并试图灭口：镇北王密探率兵袭击李妙真和郑兴怀，之后许七安与神殊杀死褚相龙等人；镇北王本人最终死亡。杨砚随行的安排也在镇北王死后由他接管楚州军政事务。",
+      "evidence_id": "962f2882154f",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        92,
+        118
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "ac6c066eea65",
+      "quote": "镇北王密探突然率兵杀到，欲将贫道和郑布政使杀人灭口。",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "月氏山庄究竟隐藏了何种力量，导致地宗明知胜算不高仍极力拉拢武林盟？",
+        "answer_criteria": "后文通过敌方试探、人物判断或战斗结果明确山庄隐藏力量的来源和实际作用。",
+        "evidence_chapters": [
+          171,
+          401,
+          408,
+          409
+        ],
+        "evidence_chars": 2627,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "七安与",
+          "与神殊",
+          "之后许",
+          "也在镇",
+          "人最终",
+          "他接管",
+          "兵袭击",
+          "军政事",
+          "击李妙",
+          "力确实",
+          "势力确",
+          "北王势"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "",
+          "quote": "",
+          "parsed": true
+        }
+      }
+    },
+    {
+      "candidate_id": "fs_651",
+      "verdict": "SUPPORTED",
+      "answer": "许七安没有因危险而停止调查。他查明屠城事实后继续行动，最终镇北王死亡，杨砚接管楚州城军政事务。",
+      "evidence_id": "d8cc5cb1bb37",
+      "supporting_span": null,
+      "counter_search_performed": true,
+      "reason": "",
+      "retryable": false,
+      "located_span": [
+        652,
+        673
+      ],
+      "reported_span": null,
+      "ambiguous": false,
+      "quote_hash": "d8556a1d2856",
+      "quote": "如今镇北王已死，本官接受楚州城一切军政要务",
+      "checked": true,
+      "cached_as_terminal": true,
+      "audit": {
+        "question": "许七安体内的气运究竟从何而来，初代监正与当代监正分别会如何处置这个容器？",
+        "answer_criteria": "后文明确说明气运进入许七安体内的原因、取出方式及两代监正对容器生死的最终处置",
+        "evidence_chapters": [
+          177,
+          407,
+          408,
+          493
+        ],
+        "evidence_chars": 2447,
+        "segments": 4,
+        "chapter_refs": [],
+        "chapter_refs_outside_evidence": [],
+        "absent_3grams": [
+          "七安没",
+          "事实后",
+          "他查明",
+          "停止调",
+          "军政事",
+          "北王死",
+          "危险而",
+          "后继续",
+          "因危险",
+          "城事实",
+          "城军政",
+          "安没有"
+        ],
+        "blind": {
+          "found": false,
+          "answer": "无法确定",
+          "quote": "",
+          "parsed": true
+        },
+        "blind_reversed": {
+          "found": false,
+          "answer": "原文未明确说明气运进入许七安体内的具体原因，也未明确交代取出气运的方式；仅提到气运因“某些原因”不得不存放在他体内，取出方式尚在筹备。关于处置，仇谦称气运取出后容器会死，许七安据此推断初代监正和当代监正都是死敌，但没有明确交代两代监正对容器生死的最终处置。",
+          "quote": "仇谦茫然呆立，回答道：“我不知道，我只知道因为某些原因，气运不得不存放在他体内。原本在京察年尾的税银案里，他会被送出京城。”……许七安再问：“怎么取出气运？”仇谦：“我不知道，但父亲和那位大人一直在做相应的筹备，筹备了很多年。”……“那你知不知道，气运取出来之后，容器会怎么样？”他盯着仇谦，沉声道。“当然是死。”",
+          "parsed": true
+        }
+      }
+    }
+  ]
+}
