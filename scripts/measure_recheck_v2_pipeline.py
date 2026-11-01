@@ -328,6 +328,7 @@ async def main() -> int:
             concurrency=recheck_concurrency,
             unit_noun="文件",
             display_labels=build_display_labels(chapters),
+            block_size=args.block_size,
         )
         print(
             f"复检完成：{json.dumps(outcome.summary(), ensure_ascii=False)}，"

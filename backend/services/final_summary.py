@@ -606,6 +606,9 @@ class FinalSummaryRunner:
                 continue
             extracted = extract_key_fields(data)
             if extracted:
+                # 物理文件序号以**文件名**为准（AGY 复审 §3.1）：JSON 里的
+                # chapter_number 可能缺失或与文件名不一致，而定位候选块范围要用它。
+                extracted["ch"] = ch
                 # 额外保留原始 foreshadowing 数据（用于构建伏笔总表）
                 extracted["foreshadowing_raw"] = data.get("foreshadowing", [])
                 results.append(extracted)
@@ -1509,6 +1512,7 @@ class FinalSummaryRunner:
             # 否则模型会拿它和候选元数据里的"首次出现：第12章"对不上而判定跑偏
             unit_noun="文件",
             display_labels=build_display_labels(chapters),
+            block_size=int(getattr(getattr(self.config, "analysis", None), "block_size", 4) or 4),
             emit=lambda summary: self._emit_progress(
                 {"type": "status", "message": _recheck_progress_message(summary)}
             ),

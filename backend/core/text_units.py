@@ -34,6 +34,39 @@ from typing import Mapping
 _TITLE_RE = re.compile(r"^\s*第\s*([0-9零〇一二三四五六七八九十百千万两]+)\s*[章回节]", re.MULTILINE)
 
 
+class LocateHit(tuple):
+    """一次定位的结果：命中单元、单元内偏移、命中方式。
+
+    **刻意不是三字段 NamedTuple**：既有调用方写的是 ``owner, _offset = hit``，
+    三元素元组解包会直接 ``ValueError: too many values to unpack``（AGY 复审 P1-2）。
+    所以这里做成"解包只给两项 + 命中方式作为额外属性"的元组子类：
+
+    - ``owner, offset = hit`` —— 照旧能用；
+    - ``hit.unit`` / ``hit.offset`` / ``hit.mode`` —— 属性访问。
+    """
+
+    __slots__ = ()
+
+    def __new__(cls, unit: int | None, offset: int | None, mode: str = "absent"):
+        return super().__new__(cls, (unit, offset, mode))
+
+    def __iter__(self):
+        # 只暴露两项：解包契约按旧形状走
+        return iter((self[0], self[1]))
+
+    @property
+    def unit(self) -> int | None:
+        return self[0]
+
+    @property
+    def offset(self) -> int | None:
+        return self[1]
+
+    @property
+    def mode(self) -> str:
+        return self[2]
+
+
 def load_blocks_as_files(blocks_dir: Path) -> tuple[dict[int, str], list[str]]:
     """按**自然数序**读 blocks 目录 → ``{文件序号: 原文}``。
 
@@ -99,6 +132,54 @@ def locate_in_units(
         if pos is not None:
             return key, pos
     return None
+
+
+def locate_with_mode(
+    units: Mapping[int, str],
+    quote: str,
+    *,
+    candidate_range: tuple[int, int] | None = None,
+    display_labels: Mapping[int, str] | None = None,
+    anchor_round: int | None = None,
+) -> LocateHit:
+    """在**候选范围**内定位引文，并报告命中方式。
+
+    候选范围 = 物理文件序号区间 ``[start, end]``。采集是 ``block_size`` 章合并分析，
+    一条伏笔的引文只能落在产生它的那一块里（实测 1669/1669 = 100% 落在
+    ``[N, N+3]`` 内，范围外 0 条）。**范围是唯一的**——因此不会出现"同回号多文件
+    按升序取第一个"那种跨卷截胡。
+
+    命中方式：
+
+    - ``range``：在候选范围内命中；
+    - ``fallback``：范围内没命中，退到全书最早出现（跨卷错挂风险高，应视为低置信度）；
+    - ``absent``：全书都没有。
+
+    范围内**多处**命中时：优先取回号等于 ``anchor_round`` 的那个文件；
+    无法消歧就取范围内**首个**命中——**绝不跳出范围去兜底**（跳出去就会重演跨卷错挂）。
+    """
+    q = (quote or "").strip()
+    if not q or not units:
+        return LocateHit(None, None, "absent")
+
+    if candidate_range is not None:
+        start, end = candidate_range
+        hits = [k for k in sorted(units) if start <= k <= end and find_literal(units[k], q) is not None]
+        if hits:
+            if len(hits) == 1:
+                return LocateHit(hits[0], find_literal(units[hits[0]], q), "range")
+            if anchor_round:
+                for k in hits:
+                    disp = (display_labels or {}).get(k) or ""
+                    if disp.replace("第", "").replace("回", "").strip() == str(anchor_round):
+                        return LocateHit(k, find_literal(units[k], q), "range")
+            return LocateHit(hits[0], find_literal(units[hits[0]], q), "range")
+
+    for key in sorted(units):
+        pos = find_literal(units[key], q)
+        if pos is not None:
+            return LocateHit(key, pos, "fallback")
+    return LocateHit(None, None, "absent")
 
 
 def build_display_labels(units: Mapping[int, str]) -> dict[int, str]:

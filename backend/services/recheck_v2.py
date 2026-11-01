@@ -19,7 +19,7 @@ from datetime import datetime
 from typing import Any, Awaitable, Callable, Iterable, Mapping, Sequence
 
 from backend.core.evidence import EvidenceIndex
-from backend.core.text_units import locate_in_units, unit_label
+from backend.core.text_units import locate_with_mode, unit_label
 from backend.utils.json_utils import extract_json_from_text
 from backend.vnext.resolution import (
     INSUFFICIENT,
@@ -121,6 +121,10 @@ class RecheckOutcome:
     #: 被修正的条目的**物理单元键**（2.0 里是文件序号）。与 resolved_chapters 分开：
     #: 后者是文学章号语义（可写进账本），前者是检索单元语义（不能混进章号字段）。
     resolved_units: dict[str, int] = field(default_factory=dict)
+    #: 逐条定位诊断：candidate_id -> {unit, mode, source_chapter, range, low_confidence}。
+    #: 与 verdicts 分开存——**没进入候选的条目（掉队条目）也要有定位记录**，
+    #: 否则"锚点找不到"这类掉队在明细里彻底失灵（AGY 复审 P1-3）。
+    locate_records: dict[str, dict] = field(default_factory=dict)
 
     def summary(self) -> dict:
         return {
@@ -147,7 +151,13 @@ class RecheckOutcome:
         ``summary()``：``summary()`` 会进进度事件（每次 emit 广播）和报告快照，
         48 条候选的全文引文挂在里面会把它们撑坏。
         """
-        return {**self.summary(), "verdicts": [v.to_dict() for v in self.verdicts]}
+        return {
+        **self.summary(),
+        "verdicts": [v.to_dict() for v in self.verdicts],
+        # 定位诊断放在**顶层**：没进入候选的条目（dropped_anchor_missing / dropped_no_anchor）
+        # 没有 verdict 实例，它们的定位信息只能落在这里，否则掉队条目在明细里彻底失灵。
+        "locate_records": dict(self.locate_records),
+    }
 
 
 #: 逐条判定明细的落盘文件名（放在书的 output 目录里，和账本、审计报告同层）。
@@ -240,6 +250,7 @@ async def run_recheck_v2(
     emit: Callable[[dict], None] | None = None,
     unit_noun: str = "章",
     display_labels: Mapping[int, str] | None = None,
+    block_size: int = 4,
 ) -> RecheckOutcome:
     """对账本里的伏笔做一轮核对。
 
@@ -306,12 +317,27 @@ async def run_recheck_v2(
             outcome.not_checked.append(getattr(item, "id", ""))
             outcome.dropped_ids.append(getattr(item, "id", ""))
             continue
-        # 定位：单元内优先（快路径），否则全书纯字面扫描（最早出现 = 埋设处）
+        # 定位：**候选块范围优先**。
+        #
+        # 采集是 block_size 章合并分析，一条伏笔的引文只能落在产生它的那一块里
+        # （物理文件序号区间 [N, N+block_size-1]）。实测 1669/1669 = 100% 命中，
+        # 范围外 0 条 → 范围唯一，不会出现"同回号多文件按升序取第一个"的跨卷截胡。
+        #
+        # N 从 `item.first_seen_chapter` 取——它存的就是物理文件序号（去重时取最早那条），
+        # 与锚点引文的来源严格一致，**旧账本同样可用**（无需迁移）。
         unit = chapter if index is not None else 0
-        hit = locate_in_units(chapters or {}, quote, prefer=chapter if index is not None else None)
+        start = int(getattr(item, "first_seen_chapter", 0) or 0)
+        cand_range = (start, start + max(block_size, 1) - 1) if start > 0 else None
+        hit = locate_with_mode(
+            chapters or {},
+            quote,
+            candidate_range=cand_range,
+            display_labels=display_labels,
+            anchor_round=chapter or None,
+        )
         located = None
-        if hit is not None:
-            owner, _offset = hit
+        if hit.unit is not None:
+            owner = hit.unit
             # 命中后要在**那一单元内**再定位一次，拿到窗口内的偏移
             located = locate_quote(quote, index.chapter_text(owner)) if index is not None else None
             if located is not None and located.found:
@@ -330,6 +356,13 @@ async def run_recheck_v2(
             located = locate_quote(quote, index.chapter_text(chapter))
         if located is None and not index and book_text:
             located = locate_quote(quote, book_text)
+        outcome.locate_records[str(getattr(item, "id", ""))] = {
+            "unit": hit.unit,
+            "mode": hit.mode,
+            "source_chapter": start,
+            "range": list(cand_range) if cand_range else None,
+            "low_confidence": hit.mode != "range",
+        }
         if located is None or not located.found:
             outcome.dropped_anchor_missing += 1
             outcome.not_checked.append(getattr(item, "id", ""))

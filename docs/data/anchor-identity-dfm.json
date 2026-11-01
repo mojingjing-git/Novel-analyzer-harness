@@ -4,42 +4,63 @@
   "excluded_files": [
     "split_report.txt"
   ],
-  "candidates_total": 1669,
-  "located": 1669,
+  "block_size": 4,
+  "candidates_total": 3164,
+  "range_hits": 3164,
+  "fallback_hits": 0,
   "absent": 0,
   "unresolved": 0,
-  "hit_by_recorded_chapter": 366,
-  "multi_file_quotes": 13,
-  "samples": [
+  "hit_by_recorded_chapter": 721,
+  "differs_from_earliest": 17,
+  "diff_samples": [
     {
-      "quote": "但事实就是如此。",
-      "unit": 101,
-      "label": "第 一百零一 回",
-      "occurrences": 2
+      "id": "fs_346",
+      "quote": "“救救我，救救我……”",
+      "range_unit": 97,
+      "earliest_unit": 96
     },
     {
-      "quote": "尔食尔禄，民脂民膏。下民易虐，上天难欺。",
-      "unit": 103,
-      "label": "第 一百零三 回",
-      "occurrences": 2
-    },
-    {
+      "id": "fs_606",
       "quote": "“福如……东海，大吉……大利。”",
-      "unit": 171,
-      "label": "第 一百七十一 回",
-      "occurrences": 2
+      "range_unit": 171,
+      "earliest_unit": 85
     },
     {
+      "id": "fs_1179",
       "quote": "血屠三千里，血屠三千里，请朝廷派兵讨伐……",
-      "unit": 324,
-      "label": "第 九十四 回",
-      "occurrences": 3
+      "range_unit": 326,
+      "earliest_unit": 324
     },
     {
+      "id": "fs_1187",
       "quote": "血屠三千里，血屠三千里，请朝廷派兵讨伐……",
-      "unit": 324,
-      "label": "第 九十四 回",
-      "occurrences": 3
+      "range_unit": 326,
+      "earliest_unit": 324
+    },
+    {
+      "id": "fs_1534",
+      "quote": "为万世开太平！",
+      "range_unit": 416,
+      "earliest_unit": 43
+    },
+    {
+      "id": "fs_2014",
+      "quote": "夜姬姐姐是我三姐",
+      "range_unit": 532,
+      "earliest_unit": 522
+    },
+    {
+      "id": "fs_2296",
+      "quote": "但不是现在。",
+      "range_unit": 604,
+      "earliest_unit": 386
+    },
+    {
+      "id": "fs_2385",
+      "quote": "“金刚神功？！”",
+      "range_unit": 624,
+      "earliest_unit": 364
     }
-  ]
+  ],
+  "fallback_samples": []
 }
