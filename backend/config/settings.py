@@ -131,6 +131,11 @@ class APIConfig:
     temperature_max_retries: int = TEMPERATURE_MAX_RETRIES
     backoff_max_retries: int = BACKOFF_MAX_RETRIES
     thinking_mode: dict = field(default_factory=dict)  # {}=自动过滤, {"thinking":{"type":"disabled"}}=mimo/GLM, {"enable_thinking":false}=DeepSeek/Qwen
+    #: 推理档位（low/medium/high/xhigh/max）。与 ``thinking_mode`` 是两件事：
+    #: 后者决定"要不要思考"，前者决定"想多深"。网关支持的模型会按档位给不同的
+    #: 思考预算——实测 low 与 max 的思考量差约 3 倍，所以长书批量跑通常用 low。
+    #: 空 = 不传，由服务端默认决定。
+    reasoning_effort: str = ""
     summary_model: str = ""      # 最终总结专用模型；空=跟随 model（复用同一 base_url/api_key，重型任务可切 M3 等）
     summary_thinking_mode: dict = field(default_factory=dict)  # 最终总结专用思考控制；空=跟随 thinking_mode
     provider: str = "auto"       # 协议格式：auto=自动检测 / openai=OpenAI兼容 / anthropic=Anthropic /v1/messages

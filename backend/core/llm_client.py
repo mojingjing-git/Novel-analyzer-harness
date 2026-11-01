@@ -36,7 +36,7 @@ from .error_types import (
 )
 from .llm_failure_logger import _get_failure_logger, redact as _redact
 from .llm_stream import (
-    StreamChunk, StreamResult,
+    StreamChunk, StreamResult, estimate_token_count,
     parse_anthropic_response, parse_anthropic_stream_event, parse_openai_stream_event,
 )
 
@@ -138,6 +138,26 @@ _CONFIDENCE_MAP = {
     "text": (_ResConfidence.TEXT, SourceChannel.TEXT_FALLBACK),
     "none": (_ResConfidence.NONE, SourceChannel.TEXT_FALLBACK),
 }
+
+
+def _extra_body(config) -> dict:
+    """OpenAI 兼容请求体里那些"非标准但要透传"的字段。
+
+    两件事合成一个 body：
+
+    - ``thinking_mode``：要不要思考、按各家协议怎么关（OpenAI 系的
+      ``enable_thinking``、mimo/GLM 的 ``thinking.type=disabled``）；
+    - ``reasoning_effort``：想多深（low/medium/high/xhigh/max）。它是**档位**，
+      和"要不要思考"不是一回事——实测 low 与 max 的思考量差约 3 倍。
+
+    走 ``extra_body`` 而不是顶层 kwarg：OpenAI SDK 的 ``create()`` 只认自己
+    签名里的参数，写死档位会在这套 SDK 上直接 TypeError。
+    """
+    body = dict(getattr(config, "thinking_mode", None) or {})
+    effort = str(getattr(config, "reasoning_effort", "") or "").strip()
+    if effort:
+        body.setdefault("reasoning_effort", effort)
+    return body
 
 
 def _to_error_verdict(verdict: Optional[ClassVerdict],
@@ -514,8 +534,10 @@ class LLMClient:
             extra_kwargs["response_format"] = {"type": "json_object"}
 
         # 思考模式控制：OpenAI 兼容用 extra_body；Anthropic 在载荷构造时注入
-        if self.config.thinking_mode and self.provider != "anthropic":
-            extra_kwargs["extra_body"] = dict(self.config.thinking_mode)
+        if self.provider != "anthropic":
+            body = _extra_body(self.config)
+            if body:
+                extra_kwargs["extra_body"] = body
 
         try:
             # 三分竞争：API 请求完成 / 用户请求停止 / 硬超时（任选其一先到）
@@ -854,8 +876,10 @@ class LLMClient:
                 and "127.0.0.1" not in self.config.base_url):
             extra_kwargs["response_format"] = {"type": "json_object"}
 
-        if self.config.thinking_mode and self.provider != "anthropic":
-            extra_kwargs["extra_body"] = dict(self.config.thinking_mode)
+        if self.provider != "anthropic":
+            body = _extra_body(self.config)
+            if body:
+                extra_kwargs["extra_body"] = body
 
         try:
             if self.provider == "anthropic":
@@ -1169,13 +1193,15 @@ class LLMClient:
             attempt_reasoning = ""
             attempt_error = ""
             attempt_verdict = None
+            accumulated_output_tokens = 0  # 单次 attempt 独立统计，重试不污染初值
             try:
                 async for chunk in self.chat_stream(messages, temperature=temp, max_tokens=max_tokens):
                     if chunk.type == "content":
                         attempt_content += chunk.text
-                        accumulated_output_tokens += len(chunk.text) // 4
+                        accumulated_output_tokens += estimate_token_count(chunk.text)
                     elif chunk.type == "reasoning":
                         attempt_reasoning += chunk.reasoning_text
+                        accumulated_output_tokens += estimate_token_count(chunk.reasoning_text)
                     elif chunk.type == "usage":
                         last_usage = chunk
                         last_consumed_tokens = (chunk.usage_prompt_tokens, chunk.usage_completion_tokens)
@@ -1183,12 +1209,13 @@ class LLMClient:
                         attempt_error = chunk.error
                         attempt_verdict = chunk.verdict
                         break
-                    # on_progress 传累计值
+                    # on_progress 传累计值（保持 type="content" 兼容现有白名单契约，用 is_thinking 携带推理状态）
                     if on_progress:
                         await on_progress(StreamChunk(
                             type="content",
                             estimated_total_tokens=accumulated_output_tokens,
                             text=chunk.text if chunk.type == "content" else "",
+                            is_thinking=bool(chunk.type == "reasoning" or getattr(chunk, "is_thinking", False)),
                         ))
             except asyncio.CancelledError:
                 return ("cancelled", attempt_content, attempt_reasoning, last_usage,

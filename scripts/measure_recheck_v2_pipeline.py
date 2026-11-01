@@ -128,6 +128,12 @@ async def main() -> int:
         help="复检专用模型（留空 = 跟随 --model）；采集要覆盖面、判定要准确，可分开设",
     )
     ap.add_argument("--max-tokens", type=int, default=0)
+    ap.add_argument(
+        "--reasoning-effort",
+        default="",
+        help="推理档位（low/medium/high/xhigh/max）；留空 = 服务端默认。"
+        "实测 low 与 max 的思考量差约 3 倍，长书批量跑通常用 low",
+    )
     ap.add_argument("--out", default="docs/MEASURE-RECHECK-V2-PIPELINE.json")
     ap.add_argument(
         "--out-verdicts",
@@ -174,12 +180,15 @@ async def main() -> int:
         cfg.api.model = args.model
     if args.max_tokens:
         cfg.api.max_tokens = args.max_tokens
+    if args.reasoning_effort:
+        cfg.api.reasoning_effort = args.reasoning_effort
     cfg.analysis.concurrency = args.concurrency
     cfg.analysis.block_size = args.block_size
     cfg.analysis.anchor_quote_enabled = True
     print(
         f"模型 {cfg.api.base_url} / {cfg.api.model} / max_tokens={cfg.api.max_tokens}，"
-        f"并发={cfg.analysis.concurrency}，块={cfg.analysis.block_size}"
+        f"并发={cfg.analysis.concurrency}，块={cfg.analysis.block_size}，"
+        f"思考档位={cfg.api.reasoning_effort or '默认'}"
     )
 
     if args.reuse:
@@ -197,9 +206,22 @@ async def main() -> int:
     cfg.working_directory = str(book_dir)
 
     async def on_progress(payload: dict) -> None:
-        kind = payload.get("type", "")
-        if kind in ("block_done", "block_start", "progress", "finished"):
-            print(f"  [{kind}] {payload.get('message') or payload.get('block_id') or ''}")
+        # 管线发的事件用 ``status``（PipelineStatus 枚举），没有 ``type`` 字段——
+        # 早先按 ``type`` 过滤会一行都打不出来，并发也就无从取证。
+        raw = payload.get("status") or payload.get("type") or ""
+        name = getattr(raw, "name", None) or str(raw)
+        if not name or name.startswith("_"):
+            return
+        if not any(tag in name for tag in ("START", "DONE", "ROLLING", "FAILED", "SKIPPED")):
+            return
+        # 带时间戳：并发有没有真的生效，看这些行的时间分布就知道
+        # （串行的话 START 与 DONE 会一行隔一行地顺序出现）
+        stamp = time.strftime("%H:%M:%S")
+        print(
+            f"  [{stamp}] {name} ch={payload.get('chapter')} "
+            f"{payload.get('message') or ''}".rstrip(),
+            flush=True,
+        )
 
     t0 = time.time()
     payload = {}
