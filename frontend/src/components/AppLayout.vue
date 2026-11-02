@@ -531,6 +531,11 @@ html.dark .sidebar {
   overflow-y: auto;
   padding: 24px;
   min-width: 0;
+  /* 容器查询锚点：子页面（设置页两列等）按内容区实际宽度响应，
+     侧栏折叠/展开时布局即时正确；scrollbar-gutter 防滚动条出现/消失
+     引起的宽度跳变（临界断点抖动） */
+  container-type: inline-size;
+  scrollbar-gutter: stable;
 }
 
 /* ===== 桌面端右下角 Corner Resize Grip =====
