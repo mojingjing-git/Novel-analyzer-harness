@@ -214,6 +214,7 @@ export function catTotal(
 /** 本次窗口会话总量（分析 + 总结）。命中率只基于分析侧计算（总结侧未记录缓存命中，混入会低估） */
 export function summarizeSession(sessionStats: SessionTokenStatsResponse | null): {
   input: number; output: number; cached: number; hitRate: number; total: number
+  cost: SessionTokenStatsResponse['cost'] | null
 } {
   const a = sessionStats?.analysis
   const s = sessionStats?.summary
@@ -222,7 +223,20 @@ export function summarizeSession(sessionStats: SessionTokenStatsResponse | null)
   const cached = a?.cached_tokens || 0
   const aInput = catTotal(a?.categories, 'input_tokens') || 0
   const hitRate = aInput + cached > 0 ? (cached / (aInput + cached)) * 100 : 0
-  return { input, output, cached, hitRate, total: input + output + cached }
+  return { input, output, cached, hitRate, total: input + output + cached, cost: sessionStats?.cost ?? null }
+}
+
+/**
+ * 费用 chip 文案：models.dev 挂牌价估算（后端算好，前端只格式化）。
+ * usd=null 表示全部用量都未定价（自定义模型/网关特有命名）——
+ * 显示"未定价"比误导性的 ~$0.00 诚实（AGY 复审 R-4）。
+ */
+export function formatSessionCost(
+  cost: SessionTokenStatsResponse['cost'] | null | undefined,
+): string {
+  if (!cost) return ''
+  if (cost.usd === null || cost.usd === undefined) return '未定价'
+  return `~$${cost.usd.toFixed(2)}`
 }
 
 // ============ 队列操作 ============

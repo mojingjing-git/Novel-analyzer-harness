@@ -12,7 +12,6 @@ backend/core/model_catalog.py
 
 import json
 import logging
-import os
 import re
 import urllib.request
 from datetime import datetime, timezone
@@ -200,6 +199,35 @@ def get_catalog_version() -> str:
     if _CATALOG_CACHE is None:
         load_model_catalog()
     return _CATALOG_VERSION
+
+
+def calc_model_cost(
+    model_name: str,
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+    cached_tokens: int = 0,
+) -> Optional[Dict[str, Any]]:
+    """按 models.dev 挂牌价计算一组用量的成本（USD）。
+
+    口径（复审 R-1）：OpenAI 协议的 prompt_tokens **已包含** cached_tokens，
+    所以输入费只对未命中部分按 input 价计，命中部分按 cache_read 价计——
+    直接 in×input + cached×cache_read 会把缓存部分收两次费。
+    查不到牌价返回 None，由调用方决定未定价如何呈现。
+    """
+    spec = lookup_model_spec(model_name)
+    if not spec or not isinstance(spec.get("cost"), dict):
+        return None
+    price = spec["cost"]
+    in_tok = max(int(input_tokens or 0), 0)
+    out_tok = max(int(output_tokens or 0), 0)
+    cached = min(max(int(cached_tokens or 0), 0), in_tok)
+    uncached = in_tok - cached
+    usd = (
+        uncached * float(price.get("input", 0) or 0)
+        + cached * float(price.get("cache_read", 0) or 0)
+        + out_tok * float(price.get("output", 0) or 0)
+    ) / 1_000_000
+    return {"model": model_name, "usd": usd, "price": dict(price)}
 
 
 def sync_models_from_remote(url: str = "https://models.dev/api.json", timeout: int = 15) -> Dict[str, Any]:

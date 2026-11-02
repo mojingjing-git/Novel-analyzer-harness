@@ -14,7 +14,7 @@ import { gcActiveBlocks, reconcileActiveBlocks } from '../utils/laneRegistry'
 import {
   applyBlockStart, applyBlockDone, applyTokenDelta, appendDiscovery,
   aggregateRate as computeAggregateRate, summarizeSession, resolveDeleteIndex,
-  pickRunningBlockSize, fmt, fmtPercent,
+  pickRunningBlockSize, fmt, fmtPercent, formatSessionCost,
 } from '../utils/queueFeed'
 import { api, type AnalysisStatus, type TokenStatsResponse, type SessionTokenStatsResponse } from '../api/client'
 import { useProgressSocket, type ProgressMessage } from '../api/useProgressSocket'
@@ -191,6 +191,18 @@ async function refreshSessionStats() { try { sessionStats.value = await api.getS
 // 本次窗口会话的总量与命中率（命中率只算分析侧）——计算本体在 utils/queueFeed.summarizeSession
 const sessionTotal = computed(() => summarizeSession(sessionStats.value))
 
+// 费用 chip：models.dev 挂牌价估算（后端算好）。未定价模型在 tooltip 里点名，
+// 避免"少算了但看起来算全了"的错觉
+const sessionCostTooltip = computed(() => {
+  const cost = sessionStats.value?.cost
+  if (!cost) return ''
+  const base = '费用 = 按 models.dev 挂牌价估算（输入/输出/缓存分别计价）；'
+    + '网关订阅或官方账单的实付可能与此不同'
+  const ver = cost.catalog_version ? `；牌价目录 ${cost.catalog_version}` : ''
+  const un = cost.unpriced?.length ? `；未计价模型（牌价库查不到，不计入）：${cost.unpriced.join('、')}` : ''
+  return base + ver + un
+})
+
 async function withBusy(fn: () => Promise<void>, label: string) {
   busy.value = true; error.value = ''
   try { await fn(); await refresh() }
@@ -349,8 +361,7 @@ const tooltips: Record<string, string> = {
   session_output: '本次窗口会话累计输出 tokens = LLM 实际生成的内容',
   session_cached: '本次窗口会话累计 KV cache 命中 tokens（prompt 重复片段命中部分不计费但占带宽）',
   session_hit_rate: '命中率 = 命中缓存 ÷ (输入 + 命中缓存)；仅统计分析侧（总结侧未记录缓存命中）',
-  session_total: '总消耗 = 输入 + 输出 + 命中缓存；这是实际向 API 发送/接收的 token 总量',
-  // 每章统计表表头
+  session_total: '总消耗 = 输入 + 输出 + 命中缓存；这是实际向 API 发送/接收的 token 总量',  // 每章统计表表头
   col_elapsed: '这一章从发送到收到 LLM 响应的总耗时（秒），含网络 + 推理 + 重试',
   col_input_tokens: '这一章 LLM 请求的输入 token 总数（系统提示 + 用户消息）',
   col_output_tokens: '这一章 LLM 实际输出的 token 总数',
@@ -486,6 +497,11 @@ onUnmounted(() => {
         <span class="total-item" v-tooltip="tooltips.session_cached">命中缓存 <CountUp :value="sessionTotal.cached" :format="fmt" /></span>
         <span class="total-item" v-tooltip="tooltips.session_hit_rate">命中率 <CountUp :value="sessionTotal.hitRate" :format="fmtPercent" /></span>
         <span class="total-item" v-tooltip="tooltips.session_total">总消耗 <CountUp :value="sessionTotal.total" :format="fmt" /></span>
+        <span
+          v-if="sessionTotal.cost"
+          class="total-item"
+          v-tooltip="sessionCostTooltip"
+        >费用 {{ formatSessionCost(sessionTotal.cost) }}</span>
       </div>
       <button class="glass-button" style="font-size: 12px" v-tooltip="tooltips.download_logs" @click="handleDownloadLogs">下载日志</button>
     </div>

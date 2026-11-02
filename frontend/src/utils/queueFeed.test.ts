@@ -7,7 +7,7 @@ import {
   applyBlockStart, applyBlockDone, applyTokenDelta, appendDiscovery,
   resolvePayloadBlockId,
   aggregateRate, fmt, fmtPercent, summarizeSession, resolveDeleteIndex,
-  pickRunningBlockSize, FINISHED_BLOCKS_MAX, RATE_HISTORY_MAX, DISCOVERIES_MAX,
+  pickRunningBlockSize, formatSessionCost, FINISHED_BLOCKS_MAX, RATE_HISTORY_MAX, DISCOVERIES_MAX,
   type FeedActiveBlock, type FeedFinishedBlock, type FeedDiscoveryItem,
 } from './queueFeed'
 import type { QueueItemDto, SessionTokenStatsResponse } from '../api/client'
@@ -235,7 +235,7 @@ describe('queueFeed.summarizeSession', () => {
   })
 
   it('空统计 → 全 0，命中率不出现 NaN', () => {
-    expect(summarizeSession(null)).toEqual({ input: 0, output: 0, cached: 0, hitRate: 0, total: 0 })
+    expect(summarizeSession(null)).toEqual({ input: 0, output: 0, cached: 0, hitRate: 0, total: 0, cost: null })
     expect(summarizeSession(stats({})).hitRate).toBe(0)
   })
 })
@@ -273,5 +273,42 @@ describe('queueFeed.pickRunningBlockSize（多书混排取运行项）', () => {
     expect(pickRunningBlockSize(false, [mkItem({ block_size: 4 })])).toBe(1)
     expect(pickRunningBlockSize(true, [])).toBe(1)
     expect(pickRunningBlockSize(true, [mkItem({ block_size: 0 })])).toBe(1)
+  })
+})
+
+describe('queueFeed.formatSessionCost（挂牌价费用 chip）', () => {
+  it('有定价 → ~$ 两位小数', () => {
+    expect(formatSessionCost({ usd: 0.321, unpriced: [] })).toBe('~$0.32')
+    expect(formatSessionCost({ usd: 0, unpriced: [] })).toBe('~$0.00')
+  })
+
+  it('全部未定价 → 未定价（不是误导性的 $0.00）', () => {
+    expect(formatSessionCost({ usd: null, unpriced: ['未知模型'] })).toBe('未定价')
+  })
+
+  it('无 cost 字段（旧后端）→ 空串，chip 由 v-if 隐藏', () => {
+    expect(formatSessionCost(null)).toBe('')
+    expect(formatSessionCost(undefined)).toBe('')
+  })
+})
+
+describe('queueFeed.summarizeSession（cost 透传）', () => {
+  it('把后端 cost 原样带给 chip（不重算）', () => {
+    const stats = {
+      analysis: { categories: { chapter: { input_tokens: 100, output_tokens: 50 } }, cached_tokens: 20 },
+      summary: { categories: {}, input_tokens: 60, output_tokens: 25, elapsed: 1 },
+      cost: { usd: 0.42, unpriced: [] },
+    } as unknown as SessionTokenStatsResponse
+    const r = summarizeSession(stats)
+    expect(r.total).toBe(100 + 50 + 60 + 25 + 20)
+    expect(r.cost).toEqual({ usd: 0.42, unpriced: [] })
+  })
+
+  it('旧后端无 cost 字段 → cost=null', () => {
+    const stats = {
+      analysis: { categories: {}, cached_tokens: 0 },
+      summary: { categories: {}, input_tokens: 0, output_tokens: 0, elapsed: 0 },
+    } as unknown as SessionTokenStatsResponse
+    expect(summarizeSession(stats).cost).toBeNull()
   })
 })

@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from backend.api.auth import require_session_token
+from backend.core.model_catalog import calc_model_cost, get_catalog_version
 from backend.services.queue_manager import QueueItem
 from backend.services.queue_service import get_service
 from backend.services import workspace_service
@@ -20,6 +21,68 @@ from backend.services import workspace_service
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["analysis"])
+
+_ROOT = Path(__file__).resolve().parent.parent.parent
+
+
+def _estimate_session_cost(
+    analysis: dict,
+    summary: dict,
+    *,
+    api_model: str,
+    summary_model: str,
+    recheck_model: str,
+) -> dict:
+    """会话费用估算（models.dev 挂牌价，PLAN-cost-estimate D-2/D-3/D-4 + 复审修订）。
+
+    类目 → 模型映射（依据 FinalSummaryRunner 的两客户端结构 + AGY R-2）：
+    - summary 侧 `recheck` 类目 → 复检模型（recheck_model，留空回退 api_model）；
+    - summary 侧其余类目与 analysis 侧全部 → `summary_model or api_model`
+      （runner 的 self._llm 实际用的是 summary_model or model，不是裸 api.model）；
+    - 缓存：只有 analysis 侧记录 cached_tokens（服务端 prompt cache 命中），
+      按 cache_read 价计；prompt_tokens 已包含命中部分，输入费只对未命中部分计
+      （防双重计费）。summary 侧未记录缓存，不虚构。
+    全部用量都查不到牌价时 usd=None——token 消耗巨大却显示 $0.00 比"未定价"更误导。
+    """
+    per_model: dict[str, dict[str, int]] = {}
+
+    def _add(model: str, in_tok: int, out_tok: int, cached: int = 0) -> None:
+        entry = per_model.setdefault(model, {"in": 0, "out": 0, "cached": 0})
+        entry["in"] += int(in_tok or 0)
+        entry["out"] += int(out_tok or 0)
+        entry["cached"] += int(cached or 0)
+
+    a_in = a_out = 0
+    for pair in (analysis.get("categories") or {}).values():
+        a_in += pair.get("input_tokens", 0)
+        a_out += pair.get("output_tokens", 0)
+    _add(api_model, a_in, a_out, int(analysis.get("cached_tokens") or 0))
+
+    base = summary_model or api_model
+    for cat, pair in (summary.get("categories") or {}).items():
+        model = (recheck_model or api_model) if cat == "recheck" else base
+        _add(model, pair.get("input_tokens", 0), pair.get("output_tokens", 0))
+
+    usd = 0.0
+    unpriced: list[str] = []
+    priced_tokens = 0
+    total_tokens = 0
+    for model, t in per_model.items():
+        total_tokens += t["in"] + t["out"] + t["cached"]
+        result = calc_model_cost(model, t["in"], t["out"], t["cached"])
+        if result is None:
+            unpriced.append(model)
+        else:
+            usd += result["usd"]
+            priced_tokens += t["in"] + t["out"] + t["cached"]
+    return {
+        # usd=None 专指"有用量但全部未定价"；零用量就是 0.0，不要虚报未定价
+        "usd": (round(usd, 4) if priced_tokens > 0 else (None if total_tokens > 0 else 0.0)),
+        "unpriced": sorted(unpriced),
+        "priced_tokens": priced_tokens,
+        "total_tokens": total_tokens,
+        "catalog_version": get_catalog_version(),
+    }
 
 
 # ==================== 分析控制 ====================
@@ -56,12 +119,27 @@ async def analysis_token_stats() -> dict:
 @router.get("/analysis/token_stats/session")
 async def analysis_token_stats_session() -> dict:
     """本次窗口会话的 token 累计（内存态，重启清零）：
-    分析侧 = AnalysisService 单例跨书累计；总结侧 = SummaryService 会话累计。"""
+    分析侧 = AnalysisService 单例跨书累计；总结侧 = SummaryService 会话累计。
+    cost = 按 models.dev 挂牌价的费用估算（可选字段：配置不可用时不出现）。"""
     from backend.services.summary_service import get_summary_service
-    return {
-        "analysis": get_service().token_stats(),
-        "summary": get_summary_service().session_token_stats(),
-    }
+
+    analysis = get_service().token_stats()
+    summary = get_summary_service().session_token_stats()
+    resp: dict = {"analysis": analysis, "summary": summary}
+    try:
+        from backend.config.settings import ConfigManager
+
+        cfg = ConfigManager(_ROOT / "config.json").load()
+        resp["cost"] = _estimate_session_cost(
+            analysis,
+            summary,
+            api_model=cfg.api.model,
+            summary_model=getattr(cfg.api, "summary_model", "") or "",
+            recheck_model=getattr(cfg.analysis, "recheck_model", "") or "",
+        )
+    except Exception as e:  # 配置不可用时费用缺省，统计本身不受影响
+        logger.debug("会话费用估算跳过：%s", e)
+    return resp
 
 
 # ==================== 队列管理 ====================

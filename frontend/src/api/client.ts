@@ -61,6 +61,14 @@ export interface TokenStatsResponse {
   cached_tokens?: number
 }
 
+export interface SessionCostEstimate {
+  usd: number | null
+  unpriced: string[]
+  priced_tokens?: number
+  total_tokens?: number
+  catalog_version?: string
+}
+
 export interface SessionTokenStatsResponse {
   analysis: TokenStatsResponse
   summary: {
@@ -69,6 +77,7 @@ export interface SessionTokenStatsResponse {
     output_tokens: number
     elapsed: number
   }
+  cost?: SessionCostEstimate | null
 }
 
 export interface ProbeThinkingItem {
