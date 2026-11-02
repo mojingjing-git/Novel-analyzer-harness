@@ -178,19 +178,19 @@ vnext 侧对应能力都有（`exclusive_before` 快照、有序归约、`Source
 请求超时已经处理（`frontend/src/api/client.ts` 的 30 秒默认超时 + 重活 120–300 秒），
 但总结状态仍是 2 秒轮询（`frontend/src/pages/SummaryPage.vue:200`）。
 
-### vnext 页面与后端字段名不一致
+### vnext 页面已下架，接入前需对齐字段名
 
-vnext 前端页面按一套字段名读数据，后端返回的是另一套，页面上直接显示为空。
+vnext 前端页面（导航/路由/页面文件/客户端 API）已下架，引擎与测试保留（见
+"vnext 未接线"）。重新做页面时按下表对齐后端字段，否则页面显示为空：
 
-| 端点 | 后端返回 | 前端读取 | 页面表现 |
-|---|---|---|---|
-| `POST /api/vnext/projects` | `total_chapters`（`backend/vnext/vnext_service.py:297`） | `chapter_count`（`frontend/src/pages/VnextPage.vue:154`） | 显示"已创建《X》（undefined 章）"——**已修**：`vnext_service.py:78` 现在补了 `chapter_count` |
-| `GET /api/vnext/books/{id}/blocks` | `state`（取值 `done` / `stale:<原因>` / `missing:<原因>`） | `block.status`（`frontend/src/pages/VnextDetailPage.vue:30-38`） | 块状态列为空 |
-| `GET /api/vnext/queue` | 条目缺 `total_chapters` / `block_size` / `updated_at`（`backend/api/routes_vnext.py:92-105` 手工构造） | 声明了 `total_chapters`（`frontend/src/api/client.ts:364`） | 该字段缺失；POST / DELETE 路径的同一队列是有这些字段的 |
+| 端点 | 后端返回 | 接入时注意 |
+|---|---|---|
+| `POST /api/vnext/projects` | `total_chapters` 与 `chapter_count` 都有（`backend/vnext/vnext_service.py:297`、`:78`） | 两者任一可用于显示章数 |
+| `GET /api/vnext/books/{id}/blocks` | 状态字段是 `state`（取值 `done` / `stale:<原因>` / `missing:<原因>`） | 不是 `status` |
+| `GET /api/vnext/queue` | 条目缺 `total_chapters` / `block_size` / `updated_at`（`backend/api/routes_vnext.py:92-105` 手工构造） | POST / DELETE 路径的同一队列有这些字段；GET 端点需补齐或页面不依赖 |
 
 另两处较小的口径差异：`GET /api/style/status` 只返回 `{running, phase}`，前端类型声明了
-`error`；`GET /api/vnext/books` 的 rejected 项多返回 `name` / `message`，前端只声明
-`path` / `reason`（后者不影响显示）。
+`error`；`GET /api/vnext/books` 的 rejected 项多返回 `name` / `message`。
 
 ### 桌面端下载日志可能 403
 
@@ -201,7 +201,9 @@ pywebview 调受保护端点会被 403"。这一条**未实机验证**：桌面�
 
 ## 五、vnext 未接线
 
-vnext 是与 1.x 并存的第二套数据层，**尚未替换生产路径**：
+vnext 是与 1.x 并存的第二套数据层，**尚未替换生产路径**，前端入口已下架
+（导航/路由/页面文件/客户端 API 已删；`backend/vnext/` 引擎、39 个测试文件与
+`/api/vnext/*` 路由原样保留，作为 2.0 合并的地基）：
 
 - `backend/api/routes_vnext.py:196` 明确写着"本版没有分析流水线"；
 - `run_analysis` 目前只被测试调用（`backend/tests/test_vnext_runner_analysis.py:19`）；

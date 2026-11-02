@@ -8,8 +8,6 @@ const routes = [
     component: AppLayout,
     children: [
       { path: '', component: QueuePage },
-      { path: 'vnext', component: () => import('./pages/VnextPage.vue') },
-      { path: 'vnext/:bookId', component: () => import('./pages/VnextDetailPage.vue') },
       { path: 'settings', component: () => import('./pages/SettingsPage.vue') },
       { path: 'characters', component: () => import('./pages/CharacterCardPage.vue') },
       { path: 'summary', component: () => import('./pages/SummaryPage.vue') },

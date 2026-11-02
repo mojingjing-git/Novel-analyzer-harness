@@ -132,10 +132,4 @@ describe('client.request 超时', () => {
     const init = fn.mock.calls[0]?.[1] as RequestInit
     expect(init.signal).toBeDefined()
   })
-
-  it('T I M E O U T 出现在错误码中文映射里', async () => {
-    const { vnextErrorText } = await import('./client')
-    expect(vnextErrorText('TIMEOUT')).toContain('超时')
-    expect(vnextErrorText('ABORTED')).toContain('取消')
-  })
 })
