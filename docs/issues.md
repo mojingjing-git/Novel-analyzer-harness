@@ -58,37 +58,42 @@
 见上一节：根因是测量脚本只传整本正文，不是证据包设计本身。有界取窗上线后，同一批
 数据单候选提示词约 2.8k–4.7k 字，不再有 `CONTEXT_LENGTH` 拒绝。
 
-### 休眠判定让全书复检永远启动不了
+### 休眠判定让旧的全书复检永远启动不了
 
 现有账本里 dormant 占多数、active 为 0，而
 `backend/services/final_summary.py:1488` 在"没有 active 伏笔"时直接返回——休眠判死
-事实上让全书复检不会开始。新的带证据复检（`backend/services/recheck_v2.py`）默认关闭
-（`backend/config/settings.py:187` 的 `recheck_v2_enabled=False`），所以**当前实际生效
-的仍是旧的无阻断路径**。
+事实上让**旧路径**的全书复检不会开始。
+
+生产默认走带证据复检（`backend/services/recheck_v2.py`，开关
+`analysis.recheck_v2_enabled` 默认开），它只看 `open`/`active` 且带锚点的条目，
+不受这条休眠判定影响；要回退旧路径时才会重新撞上它。
 
 vnext 侧的 `backend/vnext/foreshadow.py` 用 `cutoff_view(cutoff_ordinal=)` 取代了休眠
 判死，但 vnext 还没有接入生产路由（见下文"vnext 未接线"）。
 
-### 把 `recheck_v2_enabled` 打开还差什么
+### 带证据复检（V2）现在怎么跑
 
-原先列的三条阻塞都已处理：
+开关默认开，判定通道由三件配置决定：
 
-| 原阻塞 | 处理 |
+| 配置 | 作用 |
 |---|---|
-| 批大小配置还是旧的（40） | 新增 `analysis.recheck_v2_batch_size`（默认 6），与旧路径的 `foreshadow_recheck_batch_size` 分开 |
-| 解析失败被吞成"未核对"、不补问 | 记账分三态（已核对／终态未核对／还没核对），可重试的 `INVALID` 进补问轮，同候选旧结论作废 |
-| 开关本身 | **仍关着**（`recheck_v2_enabled=False`，`config.json` 里也没开）——开关本身要用户点头 |
+| `analysis.recheck_model` | 判定模型（留空 = 跟随 `api.model`） |
+| `analysis.recheck_base_url` | 判定通道（留空 = 跟随 `api.base_url`） |
+| `analysis.recheck_reasoning_effort` | 判定思考档位（默认 `low`） |
 
-顺带补上的几件：
+**判定模型与判定通道必须同源**：网关专用名（如 `codex/gpt-6-luna`）打到官方端点会被
+以 `400 unknown model` 拒绝，而流式失败返回的是空回包。两处兜住这件事：
 
-- 逐条判定落盘：V2 走 `output/recheck_verdicts.json`（`CandidateVerdict` 全字段），
-  旧路径走 `output/recheck_legacy.json`（模型回包的逐条 `reconciliation`）；
-- 复检状态语义：原来"跑完了但仍有候选没判定出结论"永远显示成 `RUNNING`
-  （看板和报告都以为这轮没结束），现在按覆盖计数落成 `PARTIAL`；
-- 复检可用独立模型（`analysis.recheck_model`）：采集要覆盖面、判定要准确，
-  两者对模型的偏好并不一致；
-- 推理档位 `api.reasoning_effort`（low/medium/high/xhigh/max）：与"要不要思考"
-  是两件事，实测 low 与 max 的思考量差约 3 倍。
+- `recheck_conflict_reason()`（`final_summary.py`）在开跑之前阻断并记
+  `PARTIAL` + 原因，不静默降级到主模型；
+- 两处 `call_model` 不再吞 `success=False`，失败如实进 `failed_batches`；
+- 收尾哨兵：`calls > 0` 但 `checked == 0` 时记 ERROR，并把首个原始回包留在
+  明细的 `raw_sample` 里。
+
+配套语义：批大小 `recheck_v2_batch_size`（默认 6，与旧路径的
+`foreshadow_recheck_batch_size` 分开）、记账三态（已核对／终态未核对／还没核对，
+可重试的 `INVALID` 进补问轮）、逐条判定落盘（V2 走 `output/recheck_verdicts.json`）、
+"跑完但没全核对上"落 `PARTIAL` 而不是 `RUNNING`。
 
 审计用的脚本：`scripts/audit_recheck_verdicts.py`——章号闭包（0 成本）、
 专名闭包统计、盲读者复核、乱序复核。
@@ -128,6 +133,20 @@ vnext 侧的 `backend/vnext/foreshadow.py` 用 `cutoff_view(cutoff_ordinal=)` �
    `SCHEMA_VERSION` 已经是 5（`backend/utils/foreshadow_ledger.py:24`）。
 6. **数据根互不相干**：文档说 `workspace_vnext/` 是独立数据根、由 `config_vnext.json` 管；
    而 `backend/config/settings.py:233` 只有通用的 `workspace_dir`——两者没有任何联动。
+
+### 候选构建是 O(候选 × 全书)，且不受调用上限约束
+
+`EvidenceIndex.find_mentions` 对**每条候选**都要用它自己的检索词（每条约 200 个
+2~4 字片段）扫一遍全书。整本《大奉打更人》（1669 候选 / 418 万字）实测约
+**11 分钟纯 CPU**，且这段发生在第一批调用之前——`--max-calls` 限制的是调用数，
+**限制不住候选构建**，于是 `--max-calls 2` 也要先把全书算完，外部看就是"启动后
+长时间没有任何输出"。
+
+已做的缓解：关键词 → 章号集合的缓存（约 690ms → 400ms/条，语义不变）、
+测量脚本新增 `--limit-candidates` 与波次进度输出。
+
+根治方向（未做）：把关键词检索换成倒排索引或多模式匹配，或把候选构建改成
+按批惰性——两者都动 `evidence.py` 的检索语义，需与证据窗口策略一起评审。
 
 ### 账户级熔断两条管线都没有
 

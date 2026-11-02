@@ -14,13 +14,37 @@
 | `MEASURE-E2E-2026-10-31.json` | E2E：真实长书（三侠五义）整本跑通 |
 | `MEASURE-ACQ-2026-11-01.json` | 采集侧：真实 16 章的锚点定位与伏笔采集 |
 | `MEASURE-RECHECK-V2-2026-10-31.json` | 复检服务层：2 章小样本 |
-| `MEASURE-RECHECK-V2-PIPELINE.json` | 复检接进流水线：16 章 |
+| `MEASURE-RECHECK-V2-PIPELINE.json` | 复检接进流水线：整本《大奉打更人》922 文件 / 1669 候选 |
+| `verdicts-dfm-stage0.json` | 上一行的**逐条明细**（判词、答案、引文、位置、反证） |
+| `audit-dfm-stage0.json` | 上面这批 SUPPORTED 的 0 成本审计（章号闭包） |
+| `anchor-identity-dfm.json` | 锚点定位实测：3164 候选的范围命中 / 兜底 / 缺失四面计数 |
 | `MEASURE-CH16-LUNA.json` | 复检：真实 16 块 / 30 回，`codex/gpt-6-luna`，有界证据 |
 | `verdicts-20261101-luna.json` | 上一行的**逐条明细**（判词、答案、引文、位置、反证） |
 | `MEASURE-CH16-DS.json` | 复检对照：同批数据、旧口径（整本正文当证据），只有计数 |
 | `MEASURE-BUNDLE-SMOKE.json` | 有界证据包冒烟 |
 | `MEASURE-BATCHING.json` / `MEASURE-BATCHING-12.json` | 批量复检的批大小经济性 |
 | `MEASURE-FIXTURES-2026-11-01.json` | 四组已知答案的固定用例 |
+
+## 整本复检（阶段 0 收口）
+
+《大奉打更人》922 文件 / 4,185,982 字。判定模型 `codex/gpt-6-luna`（本地网关，
+思考档位 `low`），批 6、并发 4、调用上限 300。
+
+| 指标 | 值 |
+|---|---|
+| 候选（带锚点） | 1669 |
+| 调用数 | 280 |
+| 已核对 | 1664（99.7%） |
+| SUPPORTED / INSUFFICIENT / CONFLICT | 185 / 1414 / 65 |
+| INVALID | 0 |
+| 未核对（补问后仍未答） | 5 |
+| 无锚点、未进候选 | 210 |
+| 耗时 | 1866.6 s（其中候选构建约 11 分钟纯 CPU，见 issues.md） |
+| 章号闭包审计 | 185 条 SUPPORTED 中**0 条**引用证据之外的章号 |
+
+同批账本的锚点定位（`check_anchor_identity.py`）：3164 条带引文候选
+**3164 条范围命中（100%）**、兜底 0、全书缺失 0、定位失败 0；
+17 条与"全书最早出现"不同（差异样本已列在报告里）。
 
 ## 判定质量（C2）
 
