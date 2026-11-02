@@ -50,6 +50,7 @@ MEDIUM_FILES = (
 SMOKE_FILES = (
     "backend/tests/test_smoke_imports.py",          # backend 全模块导入（本文件配套）
     "backend/tests/test_tier_assignment.py",        # 本文件清单的守护用例
+    "backend/tests/test_architecture.py",           # 分层依赖规则的守护用例
     "backend/tests/test_models.py",
     "backend/tests/test_json_repair.py",
     "backend/tests/test_json_parse_boundaries.py",

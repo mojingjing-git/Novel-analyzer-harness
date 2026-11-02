@@ -312,12 +312,12 @@ async def analyze_block(
             # 文本通道按设计"永不判永久"，所以审核拦截这类
             # 只能在这里用专门嗅探器补一次，否则永久错误会被当成普通失败。
             try:
-                from backend.core import llm_client as core_llm
+                from backend.common import llm_signals
 
                 blob = f"{detail} {raw_text}"
                 permanent = bool(
-                    core_llm.moderation_hit_from_exception(result)
-                    or core_llm.is_moderation_message(blob)
+                    llm_signals.moderation_hit_from_exception(result)
+                    or llm_signals.is_moderation_message(blob)
                     # 余额/配额不足是**账户级**永久错误：重跑一万次也一样，
                     # 而且每跑一次都在烧钱：实测 HTTP 402 insufficient_balance
                     # 被漏判成可重试时，32 块在 5 秒内各烧一次。
