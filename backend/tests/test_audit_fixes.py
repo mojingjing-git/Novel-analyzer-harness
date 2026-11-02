@@ -109,6 +109,7 @@ def test_save_keeps_disk_key_without_env(tmp_path, monkeypatch):
 async def test_prompt_preview_read_block_list(tmp_path, monkeypatch):
     """prompt 预览：read_block 收到章号列表，chapter_limit 用真实章号"""
     import backend.api.routes_prompt as rp
+    import backend.services.prompt_preview as pp
     from backend.config.settings import AppConfig
 
     captured = {"chapters": None, "chapter_limit": None}
@@ -129,21 +130,22 @@ async def test_prompt_preview_read_block_list(tmp_path, monkeypatch):
     cfg.analysis.block_size = 2
     (tmp_path / "blocks").mkdir(exist_ok=True)  # 路由要求 blocks 目录存在
 
-    monkeypatch.setattr(rp, "FileProcessor", FakeFP)
-    monkeypatch.setattr(rp, "get_book_path", lambda bid: tmp_path)
-    monkeypatch.setattr(rp, "get_output_dir", lambda bid: tmp_path / "output")
+    # 业务编排下沉在 backend/services/prompt_preview.py，桩点随之
+    monkeypatch.setattr(pp, "FileProcessor", FakeFP)
+    monkeypatch.setattr(pp, "get_book_path", lambda bid: tmp_path)
+    monkeypatch.setattr(pp, "get_output_dir", lambda bid: tmp_path / "output")
 
     def fake_config_load(self):
         return cfg
 
-    monkeypatch.setattr(rp.ConfigManager, "load", fake_config_load)
+    monkeypatch.setattr(pp.ConfigManager, "load", fake_config_load)
 
     def fake_build_temp_knowledge(output_dir, chapter_limit=None):
         captured["chapter_limit"] = chapter_limit
         from backend.models.knowledge import KnowledgeBase
         return KnowledgeBase()
 
-    monkeypatch.setattr(rp.KnowledgeBaseManager, "build_temp_knowledge", fake_build_temp_knowledge)
+    monkeypatch.setattr(pp.KnowledgeBaseManager, "build_temp_knowledge", fake_build_temp_knowledge)
 
     req = rp.PromptPreviewRequest(book_id="test", chapter=1, max_chars=0)
     result = await rp.prompt_preview(req)

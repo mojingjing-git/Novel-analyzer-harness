@@ -13,7 +13,8 @@
 │   ├── main.py                   # 后端启动器
 │   ├── ws_events.py              # WebSocket 消息协议的唯一权威定义
 │   ├── progress_hub.py           # WebSocket 广播中枢（节流 + 慢消费者驱逐）
-│   ├── api/                      # 12 个路由模块 + auth.py + ws.py
+│   ├── api/                      # 12 个路由模块 + auth.py + ws.py（只做 HTTP 形态转换，
+│   │                             #   业务编排在 services；规则由 test_architecture.py 守护）
 │   ├── common/                   # 两层引擎共用的纯逻辑语义层：错误分类（error_types /
 │   │                             #   error_taxonomy）、审核标记（moderation）、LLM 错误信号
 │   │                             #   （llm_signals）——只依赖标准库，禁止引用 core/services/vnext

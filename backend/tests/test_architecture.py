@@ -32,6 +32,15 @@ VNEXT_FORWARD_WHITELIST = {"citations.py", "prompt_limits.py"}
 
 FORWARDED_MODULES = ("error_types.py", "error_taxonomy.py", "moderation.py")
 
+# api 层禁用的业务编排对象：路由只做 HTTP 形态转换，业务编排在 services。
+# 命中即说明有人在路由层直接编排引擎（历史案例：prompt_preview 曾在路由里
+# 组装 FileProcessor/KB/PromptBuilder 三件套）。
+FORBIDDEN_IN_API = re.compile(
+    r"^\s*from\s+backend\.core\.(file_processor|knowledge_base|prompt_builder|pipeline)"
+    r"|^\s*from\s+backend\.services\.(final_summary|recheck_v2)",
+    re.MULTILINE,
+)
+
 
 def _py_sources(rel_dir: str) -> dict[str, str]:
     pkg = BACKEND_DIR / rel_dir
@@ -65,6 +74,15 @@ def test_core_taxonomy_modules_are_forwarding_shims() -> None:
         assert "from ..common" in text, (
             f"core/{name} 应是 backend/common 的兼容转发层；"
             "若你在 core 里重新实现判定逻辑，请改到 common（权威）并让 core 转发。"
+        )
+
+
+def test_api_layer_delegates_to_services() -> None:
+    for name, text in _py_sources("api").items():
+        hit = FORBIDDEN_IN_API.search(text)
+        assert hit is None, (
+            f"api/{name} 直接编排业务引擎：{hit.group(0).strip()!r}。"
+            "业务编排放 services，路由层只做 HTTP 形态转换。"
         )
 
 
