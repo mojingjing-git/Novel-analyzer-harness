@@ -75,4 +75,9 @@ docs/plans/
 build/
 dist/
 
-.tmp_fullbook/
+# 临时测试与分析产物
+.tmp*
+!.tmp_measure_pipeline/
+_scan*
+_edits_*
+_apply.py
