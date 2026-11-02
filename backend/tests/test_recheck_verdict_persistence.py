@@ -44,10 +44,15 @@ def test_detail_keeps_every_summary_key_and_adds_verdicts():
     detail = outcome.detail()
 
     assert "verdicts" not in summary, "summary() 会进进度事件，不能带明细"
-    assert set(detail) == set(summary) | {"verdicts", "locate_records"}
+    # raw_sample 只在"0 判定落账"事故里有内容，但**键恒定存在**——
+    # 让消费方不必判断键在不在（2026-11-02 那次 280 次调用全废就是靠它取证）。
+    assert set(detail) == set(summary) | {"verdicts", "locate_records", "raw_sample"}
     # locate_records 在顶层：没进入候选的掉队条目没有 verdict 实例，
     # 它们的定位信息只能落在这里（AGY 复审 P1-3）
-    assert {k: v for k, v in detail.items() if k not in ("verdicts", "locate_records")} == summary
+    assert {
+        k: v for k, v in detail.items()
+        if k not in ("verdicts", "locate_records", "raw_sample")
+    } == summary
 
 
 def test_detail_verdicts_are_the_candidate_to_dict_payloads():

@@ -14,6 +14,7 @@ import asyncio
 import dataclasses
 import hashlib
 import json
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Awaitable, Callable, Iterable, Mapping, Sequence
@@ -31,6 +32,8 @@ from backend.vnext.resolution import (
     reduce_entity,
     render_recheck_schema,
 )
+
+logger = logging.getLogger(__name__)
 
 #: 判定结论 → 账本状态。只有 ``AUTO_RESOLVED`` 敢直接写 resolved。
 AUTO_RESOLVED = "AUTO_RESOLVED"
@@ -125,6 +128,9 @@ class RecheckOutcome:
     #: 与 verdicts 分开存——**没进入候选的条目（掉队条目）也要有定位记录**，
     #: 否则"锚点找不到"这类掉队在明细里彻底失灵（AGY 复审 P1-3）。
     locate_records: dict[str, dict] = field(default_factory=dict)
+    #: 首个非空原始回包（截断 2000 字）。只在"0 条判定落账"这类事故里才有价值：
+    #: 有了它就能分清"模型答了但格式不对"与"根本没答"。
+    raw_sample: str = ""
 
     def summary(self) -> dict:
         return {
@@ -152,12 +158,14 @@ class RecheckOutcome:
         48 条候选的全文引文挂在里面会把它们撑坏。
         """
         return {
-        **self.summary(),
-        "verdicts": [v.to_dict() for v in self.verdicts],
-        # 定位诊断放在**顶层**：没进入候选的条目（dropped_anchor_missing / dropped_no_anchor）
-        # 没有 verdict 实例，它们的定位信息只能落在这里，否则掉队条目在明细里彻底失灵。
-        "locate_records": dict(self.locate_records),
-    }
+            **self.summary(),
+            "verdicts": [v.to_dict() for v in self.verdicts],
+            # 定位诊断放在**顶层**：没进入候选的条目（dropped_anchor_missing / dropped_no_anchor）
+            # 没有 verdict 实例，它们的定位信息只能落在这里，否则掉队条目在明细里彻底失灵。
+            "locate_records": dict(self.locate_records),
+            # 0 条判定落账时的取证材料（正常轮次为空串）
+            "raw_sample": self.raw_sample,
+        }
 
 
 #: 逐条判定明细的落盘文件名（放在书的 output 目录里，和账本、审计报告同层）。
@@ -483,6 +491,9 @@ async def run_recheck_v2(
 
     def _consume(batch: list[dict], raw: str) -> set[str]:
         """解析一批回包，返回真正拿到判定的候选 id。"""
+        if raw and not outcome.raw_sample:
+            # 只留第一份非空样本：它的用途是"0 条判定时能看见模型到底回了什么"
+            outcome.raw_sample = raw[:2000]
         got: dict[str, Mapping[str, Any]] = {}
         for payload in _extract_payloads(raw):
             cid = payload.get("candidate_id")
@@ -620,6 +631,25 @@ async def run_recheck_v2(
         outcome.status_reason = (
             f"部分条目无可用证据（{dropped} 条未进入候选）"
             + (f"；存在未核对候选（{len(pending)} 条）" if pending else "")
+        )
+    # 「空判定」哨兵：调用发生了，却一条判定都没落账。
+    #
+    # 这个组合过去是**静默**的——2026-11-02 那轮整本复检 280 次调用全被官方
+    # 端点以 400 unknown model 拒绝，而失败被 `content or ""` 吞掉，于是只留下
+    # `calls=280 / checked=0` 的"PARTIAL"，跑了 28 分钟没人知道白跑。
+    # 现在一律记 ERROR，并把首包样本留在 detail 里。
+    zero_verdict = outcome.calls > 0 and int(outcome.coverage.get("checked", 0) or 0) == 0
+    if zero_verdict:
+        reason = (
+            f"{outcome.calls} 次调用全部未返回可解析判定"
+            "（检查判定模型是否被端点支持、以及网关/额度是否正常）"
+        )
+        outcome.status = "PARTIAL"
+        outcome.status_reason = (outcome.status_reason + "；" + reason) if outcome.status_reason else reason
+        logger.error(
+            "复检 0 判定落账：calls=%s failed_batches=%s retried_batches=%s；回包样本=%r",
+            outcome.calls, outcome.failed_batches, outcome.retried_batches,
+            outcome.raw_sample[:200],
         )
     if emit is not None:
         emit(outcome.summary())

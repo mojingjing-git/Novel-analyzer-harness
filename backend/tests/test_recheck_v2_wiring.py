@@ -55,8 +55,10 @@ def test_collect_book_text_without_blocks_returns_empty(tmp_path):
     assert FinalSummaryRunner._collect_book_text(runner) == ""
 
 
-def test_recheck_v2_switch_defaults_to_off():
-    # 默认关：真书验证通过前，1.x 行为保持不变
-    assert AnalysisConfig().recheck_v2_enabled is False
+def test_recheck_v2_switch_defaults_to_on():
+    # 真书验证已过（《大奉打更人》1669 候选：checked 1664、SUPPORTED 185），
+    # V2 成为默认路径；要回退 1.x 的老复检就把这个开关关掉。
+    assert AnalysisConfig().recheck_v2_enabled is True
     assert AnalysisConfig().recheck_max_calls == 300
-    assert AnalysisConfig().recheck_max_tokens == 60000
+    # 60000 会顶到部分上游的输出上限而被拒；判定回包（6 候选 JSON）约 2k token
+    assert AnalysisConfig().recheck_max_tokens == 32768

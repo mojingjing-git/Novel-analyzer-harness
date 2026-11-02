@@ -94,6 +94,19 @@ class EvidenceIndex:
 
     def __init__(self, chapters: Mapping[int, str]):
         self._chapters = {int(k): v or "" for k, v in chapters.items()}
+        #: 关键词 → 命中它的章号集合。**必须缓存**：检索在每条候选上都要跑一次，
+        #: 若每次都全书扫一遍就是 O(候选 × 全书)——整本实测 1669 条候选 × 921 段
+        #: ≈ 19 分钟纯 CPU（每条约 690ms），在脚本侧看起来就是"卡死"。
+        #: "某个词出现在哪些章"与候选无关，算一次就够。
+        self._term_chapters: dict[str, frozenset[int]] = {}
+
+    def _chapters_with(self, term: str) -> frozenset[int]:
+        """命中该词的章号集合（首次调用时扫一遍，之后命中缓存）。"""
+        hits = self._term_chapters.get(term)
+        if hits is None:
+            hits = frozenset(ch for ch, text in self._chapters.items() if term in text)
+            self._term_chapters[term] = hits
+        return hits
 
     def __len__(self) -> int:
         return len(self._chapters)
@@ -110,20 +123,23 @@ class EvidenceIndex:
             return []
         total = max(1, len(self._chapters))
         weights: dict[str, float] = {}
+        hits_by_term: dict[str, frozenset[int]] = {}
         for term in keywords:
-            df = sum(1 for t in self._chapters.values() if term in t)
+            hits = self._chapters_with(term)
+            df = len(hits)
             if not df:
                 continue  # 一次都没出现 = 用不上
+            hits_by_term[term] = hits
             # 平滑加权：到处都出现的词区分度低但不该直接丢弃——小语料里"唯一线索词
             # 恰好每章都有"很常见，全丢会导致检索直接返回空（实测踩过）。
             weights[term] = len(term) * math.log((total + 1) / (df + 0.5))
         if not weights:
             return []
         scored: list[tuple[float, int]] = []
-        for ch, text in self._chapters.items():
+        for ch, _text in self._chapters.items():
             if ch <= after:
                 continue
-            score = sum(w for term, w in weights.items() if term in text)
+            score = sum(w for term, w in weights.items() if ch in hits_by_term[term])
             if score:
                 scored.append((score, ch))
         scored.sort(key=lambda x: (-x[0], x[1]))

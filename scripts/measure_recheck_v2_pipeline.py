@@ -120,6 +120,13 @@ async def main() -> int:
     ap.add_argument("--concurrency", type=int, default=8)
     ap.add_argument("--block-size", type=int, default=1)
     ap.add_argument("--max-calls", type=int, default=12)
+    ap.add_argument(
+        "--limit-candidates",
+        type=int,
+        default=0,
+        help="只建前 N 条候选（0=全部）。候选构建是逐条扫全书的，冒烟时必须限流，"
+             "否则 --max-calls 很小也照样先算满整本",
+    )
     ap.add_argument("--batch-size", type=int, default=5)
     # 默认走**本地网关**而不是 config.json 里的官方通道：
     # 漏传 --base-url 时沿用 config.json 会直接打到官方 API（消耗官方额度）。
@@ -274,6 +281,12 @@ async def main() -> int:
     items = build_items(results)
     with_anchor = sum(1 for i in items if i.anchor_quote)
     print(f"账本候选 {len(items)} 条，带锚点 {with_anchor} 条")
+    if args.limit_candidates:
+        # 冒烟用：候选是**串行逐条**建的，每条都要拿自己的关键词扫一遍全书，
+        # 整本 1669 条约 10 分钟纯 CPU。--max-calls 管不住这段，
+        # 于是 `--max-calls 2` 也会先算满全书，看起来像"卡死"。
+        items = [i for i in items if (i.anchor_quote or "").strip()][: args.limit_candidates]
+        print(f"⚠️ --limit-candidates：本轮只建 {len(items)} 条候选（其余不建、不调）")
 
     # 按**物理单元**（文件）索引的原文：加载口径与生产路径共用同一个函数
     # （`backend/core/text_units.load_blocks_as_files`），避免两边排序/过滤规则不同。
@@ -311,6 +324,13 @@ async def main() -> int:
             messages=[{"role": "user", "content": prompt}],
             max_tokens=recheck_max_tokens,
         )
+        # 失败必须抛：`chat_auto` 对 400/401/404 返回 success=False + content="" 而
+        # **不抛异常**，只取 content 会让 failed_batches 永远是 0、整轮静默 0 判定
+        # （2026-11-02：280 次调用全被 400 unknown model 拒绝，却记成 0 失败）。
+        if not getattr(res, "success", True):
+            raise RuntimeError(
+                f"复检调用失败：{getattr(res, 'error', '') or '未知错误'}"
+            )
         if hasattr(res, "content"):
             return res.content or ""
         if isinstance(res, tuple):
@@ -323,6 +343,19 @@ async def main() -> int:
     else:
         recheck_concurrency = args.recheck_concurrency or cfg.analysis.concurrency
         print(f"复检并发={recheck_concurrency}，批大小={args.batch_size}，调用上限={args.max_calls}")
+        print("（先逐条建候选并定位引文：每条都要拿自己的关键词扫一遍全书，"
+              "整本约 10 分钟纯 CPU；这期间没有输出是正常的）", flush=True)
+
+        def _on_recheck(event: dict) -> None:
+            """波次进度：没有它，构建+调用全程静默，和"卡死"无法区分。"""
+            calls = event.get("calls")
+            if calls is None:
+                return
+            checked = event.get("checked")
+            if checked is None:  # 收尾那次给的是 summary()，覆盖数在 coverage 里
+                checked = (event.get("coverage") or {}).get("checked")
+            print(f"  · calls={calls} checked={checked}", flush=True)
+
         t1 = time.time()
         outcome = await run_recheck_v2(
             items,
@@ -334,11 +367,24 @@ async def main() -> int:
             unit_noun="文件",
             display_labels=build_display_labels(chapters),
             block_size=args.block_size,
+            emit=_on_recheck,
         )
         print(
             f"复检完成：{json.dumps(outcome.summary(), ensure_ascii=False)}，"
             f"用时 {time.time() - t1:.1f}s"
         )
+        # 「空判定」哨兵：调用发生了却一条判定都没落账，必须非 0 退出。
+        # 过去它只是一行 PARTIAL，于是 28 分钟白跑没人拦（2026-11-02 事故）。
+        if outcome.calls > 0 and int(outcome.coverage.get("checked", 0) or 0) == 0:
+            print(
+                f"❌ {outcome.calls} 次调用全部未返回可解析判定；"
+                f"failed_batches={outcome.failed_batches}；"
+                f"回包样本={outcome.raw_sample[:300]!r}",
+                file=sys.stderr,
+            )
+            print("   检查：判定模型是否被该端点支持（--recheck-model / --base-url 是否同源）",
+                  file=sys.stderr)
+            return 2
 
     out = ROOT / args.out
     out.write_text(
@@ -378,7 +424,8 @@ async def main() -> int:
             json.dumps(
                 {
                     "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                    "model": cfg.api.model,
+                    # 记**复检自己**的模型与通道，否则审计看到的是采集通道
+                    "model": args.recheck_model or cfg.api.model,
                     "base_url": cfg.api.base_url,
                     "chapters": len(results),
                     "evidence_mode": "bounded",

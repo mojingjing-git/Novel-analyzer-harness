@@ -37,6 +37,41 @@ logger = logging.getLogger(__name__)
 LEGACY_RECHECK_DETAIL_FILENAME = "recheck_legacy.json"
 
 
+def recheck_channel(config) -> tuple[str, str]:
+    """复检实际使用的 ``(model, base_url)``：未单独配置就跟随主通道。
+
+    明细归档必须记**复检自己**的通道，否则事后审计会把采集通道当成判定通道。
+    """
+    analysis = getattr(config, "analysis", None)
+    api = getattr(config, "api", None)
+    model = str(getattr(analysis, "recheck_model", "") or "").strip()
+    base_url = str(getattr(analysis, "recheck_base_url", "") or "").strip()
+    return (
+        model or str(getattr(api, "model", "") or ""),
+        base_url or str(getattr(api, "base_url", "") or ""),
+    )
+
+
+def recheck_conflict_reason(config) -> str:
+    """判定模型与判定通道**同源**校验；同源返回空串。
+
+    网关专用模型名（如 ``codex/gpt-6-luna``）打到官方厂商端点会得到
+    ``400 unknown model``，而流式路径把它变成空回包、失败又被 ``content or ""``
+    吞掉，整轮只剩 ``calls=N / checked=0``（2026-11-02 实测 280 次调用全废）。
+    配置冲突时**整轮不跑**，绝不静默降级到主模型——降级等于换口径还照收调用费。
+    """
+    analysis = getattr(config, "analysis", None)
+    model, base_url = recheck_channel(config)
+    if not getattr(analysis, "recheck_model", ""):
+        return ""
+    if "minimaxi.com" in base_url and "/" in model:
+        return (
+            f"配置冲突：判定通道 {base_url} 是官方端点，"
+            f"不接受判定模型 {model}，已阻断复检"
+        )
+    return ""
+
+
 def _recheck_progress_message(summary: dict) -> str:
     """复检进度文案：兼容 ``run_recheck_v2`` 的**两种** emit 载荷。
 
@@ -1480,25 +1515,58 @@ class FinalSummaryRunner:
         # `foreshadow_recheck_batch_size`（那个默认 40，是按"每批带全量卷摘要"
         # 调的；V2 每条候选带自己的有界证据包，40 条会把提示词顶爆）。
         batch_size = max(1, int(getattr(self.config.analysis, "recheck_v2_batch_size", 6) or 6))
-        # 并发跟随分析阶段的在途上限（analysis.concurrency）；recheck_concurrency
-        # 只用来把波次压得更窄，不能再抬高一档——账户上限只有一个。
+        # 复检并发：**显式配置才生效**，未配置就保留 run_recheck_v2 的默认（4）——
+        # 不能默认跟随 analysis.concurrency（8）：复检是"多批一次问完"，
+        # 一次 8 批会把网关和账户上限一起打满。压窄也不许抬高一档。
         recheck_config = int(getattr(self.config.analysis, "recheck_concurrency", 0) or 0)
-        recheck_concurrency = min(self.concurrency, recheck_config) if recheck_config > 0 else self.concurrency
+        recheck_kwargs: dict[str, int] = {}
+        if recheck_config > 0:
+            recheck_kwargs["concurrency"] = max(1, min(self.concurrency, recheck_config))
 
         # 复检可以用**另一个模型**：采集要覆盖面、判定要准确，两者偏好不同。
         # 留空就跟随 api.model（与旧行为一致）。
         recheck_client = self._llm
         recheck_model = str(getattr(self.config.analysis, "recheck_model", "") or "").strip()
+        recheck_base_url = str(getattr(self.config.analysis, "recheck_base_url", "") or "").strip()
+        recheck_effort = str(
+            getattr(self.config.analysis, "recheck_reasoning_effort", "") or ""
+        ).strip()
+        api_base_url = str(getattr(self.config.api, "base_url", "") or "")
+        conflict = recheck_conflict_reason(self.config)
+        if conflict:
+            logger.error(conflict)
+            self.last_recheck_summary = {
+                "status": "PARTIAL",
+                "status_reason": conflict,
+                "calls": 0,
+            }
+            return
         if recheck_model and recheck_model != str(getattr(self.config.api, "model", "") or ""):
             from backend.core.llm_client import LLMClient
 
-            recheck_client = LLMClient(replace(self.config.api, model=recheck_model))
-            logger.info(f"复检使用独立模型：{recheck_model}")
-
+            overrides = {"model": recheck_model}
+            if recheck_base_url:
+                overrides["base_url"] = recheck_base_url
+            if recheck_effort:
+                overrides["reasoning_effort"] = recheck_effort
+            recheck_client = LLMClient(replace(self.config.api, **overrides))
+            logger.info(
+                "复检使用独立通道：%s @ %s（思考档位 %s）",
+                recheck_model,
+                overrides.get("base_url", api_base_url),
+                recheck_effort or "(跟随配置)",
+            )
         async def _call_model(prompt: str) -> str:
             res = await recheck_client.chat_auto(
                 messages=[{"role": "user", "content": prompt}], max_tokens=max_tokens
             )
+            # 失败必须抛出去：`chat_auto` 在 400/401/404 时返回
+            # `success=False, content=""` 而**不抛异常**，只取 content 会让
+            # `failed_batches` 永远是 0、整轮静默 0 判定。
+            if not getattr(res, "success", True):
+                raise RuntimeError(
+                    f"复检调用失败：{getattr(res, 'error', '') or '未知错误'}"
+                )
             return getattr(res, "content", "") or ""
 
         self._emit_progress({"type": "status", "message": "正在核对伏笔证据..."})
@@ -1513,6 +1581,7 @@ class FinalSummaryRunner:
             unit_noun="文件",
             display_labels=build_display_labels(chapters),
             block_size=int(getattr(getattr(self.config, "analysis", None), "block_size", 4) or 4),
+            **recheck_kwargs,
             emit=lambda summary: self._emit_progress(
                 {"type": "status", "message": _recheck_progress_message(summary)}
             ),
@@ -1534,6 +1603,10 @@ class FinalSummaryRunner:
             f"逐条明细 {detail_path.name if detail_path else '落盘失败'}"
         )
 
+    def _recheck_channel(self) -> tuple[str, str]:
+        """复检实际使用的 ``(model, base_url)``（见模块级 ``recheck_channel``）。"""
+        return recheck_channel(self.config)
+
     def _persist_recheck_detail(self, outcome) -> Path | None:
         """把逐条判定写进 output 目录，成功返回路径，失败返回 ``None``。
 
@@ -1545,11 +1618,12 @@ class FinalSummaryRunner:
             dump_recheck_detail,
         )
 
+        detail_model, detail_base_url = self._recheck_channel()
         path = self.output_dir / RECHECK_DETAIL_FILENAME
         payload = dump_recheck_detail(
             outcome,
-            model=str(getattr(self.config.api, "model", "") or ""),
-            base_url=str(getattr(self.config.api, "base_url", "") or ""),
+            model=detail_model,
+            base_url=detail_base_url,
         )
         try:
             saved = safe_save_json(payload, path, ensure_ascii=False)

@@ -186,10 +186,12 @@ class AnalysisConfig:
     anchor_quote_enabled: bool = True        # 逐章采集 anchor_quote（关闭则复检退化为无证据模式）
     anchor_min_chars: int = 6                # 锚点最短字数；太短的长句子里必然命中
     recheck_max_calls: int = 300             # 一次复检最多调用次数（超出标 BUDGET_SKIPPED，可续跑）
-    recheck_max_tokens: int = 60000
+    #: 单次复检调用的输出上限。判定回包是 JSON 数组（6 候选约 2k token），32768 足够；
+    #: 旧值 60000 会顶到部分上游的输出上限而被拒。
+    recheck_max_tokens: int = 32768
     #: 复检并发：0 = 跟随 analysis.concurrency（共用同一个在途上限）；>0 只用来压窄波次
     recheck_concurrency: int = 0          # 复检同时在途的批次数上限；0 = 跟随 analysis.concurrency
-    recheck_v2_enabled: bool = False         # 阶段 2 换成带证据的复检（V2）；默认关，真书验证后再打开
+    recheck_v2_enabled: bool = True          # 带证据的复检（V2）是默认路径；关掉即回退到旧的全书复检
     #: V2 复检的批大小。**与旧路径的 ``foreshadow_recheck_batch_size`` 分开**：
     #: 旧路径每批带全量卷摘要，40 条是按"少调用"调的；V2 每条候选带自己的
     #: 有界证据包（实测 2.8k–4.7k 字/条），40 条会把提示词顶到十几万 token。
@@ -201,6 +203,13 @@ class AnalysisConfig:
     #: 出的伏笔条数是另一模型的近两倍，而判定质量明显更弱的模型会把
     #: 同一批证据判成"证据不足"。
     recheck_model: str = ""
+    #: 复检专用通道：留空 = 跟随 ``api.base_url``。判定模型与通道必须同源——
+    #: 网关专用模型名（如 ``codex/gpt-6-luna``）打到官方厂商端点会得到
+    #: ``400 unknown model``，而流式路径把它变成空回包，整轮只剩 ``checked=0``。
+    recheck_base_url: str = ""
+    #: 复检专用思考档位：留空 = 跟随 ``api.reasoning_effort``。
+    #: 判定是"读证据下结论"，不需要深度思考；默认 low 可显著压低耗时与费用。
+    recheck_reasoning_effort: str = "low"
     # 内容审核拦截处理：识别为审核拦截的章节重试1次后跳过并标记（不进失败集、不补跑）
     skip_moderation_blocked: bool = True
     # 知识库限制
