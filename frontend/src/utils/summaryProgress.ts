@@ -107,3 +107,46 @@ export function dictToJsonString(v: Record<string, unknown> | undefined | null):
 export function jsonStringToDict(s: string): Record<string, unknown> {
   try { return s === '{}' ? {} : JSON.parse(s) } catch { return {} }
 }
+
+// ============ 带证据复检（V2）的账：总结页结果卡 ============
+
+export interface RecheckAccountView {
+  status: string
+  status_reason: string
+  calls: number
+  checked: number
+  candidates_total: number
+  supported: number
+  insufficient: number
+  conflict: number
+  invalid: number
+  not_checked: number
+  dropped_no_anchor: number
+  verdicts_file: string
+}
+
+/**
+ * 从 summary/status 的 `recheck`（后端 outcome.summary() 的松散 dict）提取展示字段。
+ * 防御式取值：后端升级/降级都不至于让页面崩——缺键按 0/空串处理；
+ * `calls` 不存在视为"这轮没跑过复检"返回 null，不渲染结果卡。
+ */
+export function recheckAccountOf(r: Record<string, unknown> | undefined | null): RecheckAccountView | null {
+  if (!r || typeof r !== 'object' || r.calls === undefined) return null
+  const cov = (r.coverage && typeof r.coverage === 'object' ? r.coverage : {}) as Record<string, unknown>
+  const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
+  const str = (v: unknown): string => (typeof v === 'string' ? v : '')
+  return {
+    status: str(r.status),
+    status_reason: str(r.status_reason),
+    calls: num(r.calls),
+    checked: num(cov.checked),
+    candidates_total: num(cov.candidates_total),
+    supported: num(cov.supported),
+    insufficient: num(cov.insufficient),
+    conflict: num(cov.conflict),
+    invalid: num(cov.invalid),
+    not_checked: num(cov.not_checked),
+    dropped_no_anchor: num(r.dropped_no_anchor),
+    verdicts_file: str(r.verdicts_file),
+  }
+}

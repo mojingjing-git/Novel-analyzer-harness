@@ -6,7 +6,7 @@ import { describe, it, expect } from 'vitest'
 import {
   SUMMARY_PHASES, phaseLabelOf, phaseIndexOf, stepClassOf, overallPctOf,
   batchPctOf, elapsedTextOf, summaryTokenTextOf, showProgressOf,
-  dictToJsonString, jsonStringToDict,
+  dictToJsonString, jsonStringToDict, recheckAccountOf,
 } from './summaryProgress'
 import type { SummaryStatus } from '../api/client'
 
@@ -129,5 +129,47 @@ describe('summaryProgress 思考参数 JSON 转换', () => {
   it('往返一致', () => {
     const d = { reasoning_effort: 'none' }
     expect(jsonStringToDict(dictToJsonString(d))).toEqual(d)
+  })
+})
+
+describe('summaryProgress.recheckAccountOf（复检结果卡）', () => {
+  it('空/缺 calls → null：这轮没跑过复检，不渲染结果卡', () => {
+    expect(recheckAccountOf(undefined)).toBeNull()
+    expect(recheckAccountOf(null)).toBeNull()
+    expect(recheckAccountOf({})).toBeNull()
+  })
+
+  it('完整账 → 字段提取；coverage 缺键按 0 兜底', () => {
+    const v = recheckAccountOf({
+      status: 'PARTIAL',
+      status_reason: '存在未核对候选（5 条）',
+      calls: 280,
+      dropped_no_anchor: 210,
+      verdicts_file: 'output/recheck_verdicts.json',
+      coverage: { checked: 1664, candidates_total: 1669, supported: 185, insufficient: 1414, conflict: 65, not_checked: 5 },
+    })
+    expect(v).toEqual({
+      status: 'PARTIAL',
+      status_reason: '存在未核对候选（5 条）',
+      calls: 280,
+      checked: 1664,
+      candidates_total: 1669,
+      supported: 185,
+      insufficient: 1414,
+      conflict: 65,
+      invalid: 0,
+      not_checked: 5,
+      dropped_no_anchor: 210,
+      verdicts_file: 'output/recheck_verdicts.json',
+    })
+  })
+
+  it('防御式：coverage 非对象、字段类型不对都不崩', () => {
+    const v = recheckAccountOf({ calls: 'many', coverage: 'n/a', status: 7 })
+    expect(v).toEqual({
+      status: '', status_reason: '', calls: 0, checked: 0, candidates_total: 0,
+      supported: 0, insufficient: 0, conflict: 0, invalid: 0, not_checked: 0,
+      dropped_no_anchor: 0, verdicts_file: '',
+    })
   })
 })

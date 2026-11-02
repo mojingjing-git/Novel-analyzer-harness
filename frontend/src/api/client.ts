@@ -164,6 +164,16 @@ export interface AppConfigDto {
     summary_concurrency: number
     summary_batch_size: number
     foreshadow_recheck_batch_size: number
+    anchor_quote_enabled: boolean
+    anchor_min_chars: number
+    recheck_max_calls: number
+    recheck_max_tokens: number
+    recheck_concurrency: number
+    recheck_v2_enabled: boolean
+    recheck_v2_batch_size: number
+    recheck_model: string
+    recheck_base_url: string
+    recheck_reasoning_effort: string
     skip_moderation_blocked: boolean
     max_compressed_arcs: number
     max_recent_summaries: number
@@ -219,6 +229,8 @@ export interface SummaryStatus {
   started_at: number
   finished_at: number
   token_stats: Record<string, TokenCategory>
+  /** 带证据复检（V2）的账：status/coverage/verdicts_file；未跑过为空对象 */
+  recheck?: Record<string, unknown>
 }
 
 export interface LocationNormalizationStatus {

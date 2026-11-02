@@ -54,6 +54,9 @@ class SummaryService:
             "started_at": self._started_at,
             "finished_at": self._finished_at,
             "token_stats": self._runner.get_token_stats() if self._runner else {},
+            # 复检的账（状态/覆盖计数/明细文件）：总结页直接展示，跑完不用翻文件。
+            # getattr 容错：测试里的假 runner 不带这个属性，属正常形态
+            "recheck": (getattr(self._runner, "last_recheck_summary", None) or {}) if self._runner else {},
         }
 
     def start(self, book_id: str, start_chapter: int, end_chapter: int,

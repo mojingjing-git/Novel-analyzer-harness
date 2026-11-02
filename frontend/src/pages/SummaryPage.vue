@@ -8,7 +8,7 @@ import { renderMarkdown } from '../utils/markdown'
 import {
   SUMMARY_PHASES, phaseLabelOf, phaseIndexOf, stepClassOf, overallPctOf,
   batchPctOf, elapsedTextOf, summaryTokenTextOf, showProgressOf,
-  dictToJsonString, jsonStringToDict,
+  dictToJsonString, jsonStringToDict, recheckAccountOf,
 } from '../utils/summaryProgress'
 import {
   inferThinkingState, makeThinkingPresets, THINKING_DEPTH_PRESETS,
@@ -281,6 +281,9 @@ const elapsedText = computed(() => elapsedTextOf(summaryStatus.value, Date.now()
 
 const summaryTokenText = computed(() => summaryTokenTextOf(summaryStatus.value))
 
+// 带证据复检（V2）的账：总结状态接口带来，跑完（和复检进行中的每轮收尾）即可见
+const recheckAccount = computed(() => recheckAccountOf(summaryStatus.value?.recheck))
+
 const showProgress = computed(() => showProgressOf(summaryStatus.value))
 
 const summaryError = ref('')
@@ -451,6 +454,26 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
       </div>
 
       <div v-if="summaryTokenText" class="text-xs" style="color: var(--win-text-secondary)">{{ summaryTokenText }}</div>
+
+      <!-- 带证据复检（V2）结果卡：状态 + 覆盖计数 + 明细文件 -->
+      <div v-if="recheckAccount" class="glass-card p-3 space-y-1">
+        <div class="flex items-center gap-2 text-sm">
+          <span class="font-medium" style="color: var(--win-text-primary)">伏笔复检（带证据）</span>
+          <span
+            class="text-xs px-2 py-0.5 rounded"
+            :class="recheckAccount.status === 'COMPLETED' ? 'glass-tinted-green' : 'glass-tinted-orange'"
+          >{{ recheckAccount.status || '—' }}</span>
+          <span class="text-xs" style="color: var(--win-text-secondary)">{{ recheckAccount.calls }} 次调用</span>
+        </div>
+        <div class="text-xs" style="color: var(--win-text-secondary)">
+          已核对 <b>{{ recheckAccount.checked }}</b> / {{ recheckAccount.candidates_total }} ·
+          回收 {{ recheckAccount.supported }} · 证据不足 {{ recheckAccount.insufficient }} ·
+          冲突 {{ recheckAccount.conflict }}<template v-if="recheckAccount.invalid"> · 无效 {{ recheckAccount.invalid }}</template> ·
+          未核对 {{ recheckAccount.not_checked }}<template v-if="recheckAccount.dropped_no_anchor"> · 无证据未进候选 {{ recheckAccount.dropped_no_anchor }}</template>
+        </div>
+        <p v-if="recheckAccount.status_reason" class="text-xs" style="color: var(--win-warning)">{{ recheckAccount.status_reason }}</p>
+        <p v-if="recheckAccount.verdicts_file" class="text-xs" style="color: var(--win-text-disabled)">逐条判定明细：{{ recheckAccount.verdicts_file }}</p>
+      </div>
 
       <!-- 总结日志抽屉：阶段提示 + 技术明细（category=summary），报告区上方 -->
       <div class="glass-card">

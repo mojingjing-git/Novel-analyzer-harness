@@ -70,6 +70,20 @@ const categoryDefs = ref<CategoryDef[]>([])
 
 const keptSet = computed(() => new Set(config.value?.analysis.foreshadow_kept_categories ?? []))
 
+// ===== 复检（V2）通道同源提示 =====
+// 后端 final_summary.recheck_conflict_reason 会在"网关专用模型名 + 官方端点"组合下
+// 直接阻断复检（400 unknown model 且失败被吞的那类事故）。这里在保存前就把同一
+// 判据提示出来：生效通道 = recheck_base_url 非空否则主通道。
+const recheckConflictHint = computed(() => {
+  const a = config.value?.analysis
+  if (!a?.recheck_model?.trim()) return ''
+  const effectiveBase = (a.recheck_base_url || config.value?.api.base_url || '').trim()
+  if (effectiveBase.includes('minimaxi.com') && a.recheck_model.includes('/')) {
+    return `⚠ 判定模型 ${a.recheck_model.trim()} 是网关专用名，当前判定通道 ${effectiveBase} 是官方端点——这个组合会在开跑时被阻断（400 unknown model）。请把「判定通道」改成网关地址，或清空判定模型以跟随主模型。`
+  }
+  return ''
+})
+
 function toggleCategory(name: string) {
   if (!config.value) return
   // 增删逻辑在 utils/settingsForm.toggleCategoryIn（可独立 vitest）
@@ -623,6 +637,51 @@ onMounted(load)
         <div class="flex items-center gap-2"><label class="text-sm flex-1" style="color: var(--win-text-secondary)" title="importance=高 的伏笔最多保留多少（-1=无上限）">高 importance 上限:</label><input v-model.number="config.analysis.max_foreshadow_catalog_high" type="number" min="-1" class="glass-input" style="width: 110px" /></div>
         <div class="flex items-center gap-2"><label class="text-sm flex-1" style="color: var(--win-text-secondary)" title="importance=中 的伏笔最多保留多少（按综合权重排序截断）">中 importance 上限:</label><input v-model.number="config.analysis.max_foreshadow_catalog_mid" type="number" min="0" class="glass-input" style="width: 110px" /></div>
       </div>
+    </div>
+
+    <div class="glass-card p-4 space-y-3">
+      <h3 class="font-semibold pb-2" style="border-bottom: 1px solid var(--win-stroke); letter-spacing: -0.01em">伏笔复检（带证据 V2）</h3>
+      <ToggleSwitch v-model="config.analysis.recheck_v2_enabled" label="启用带证据复检（关闭 = 回退旧的全书复检）" />
+      <p class="text-xs" style="color: var(--win-text-secondary)">
+        总结阶段对每条伏笔用<b>原文证据</b>核对回收判定，逐条落盘到书的 output/recheck_verdicts.json。
+        判定模型与判定通道必须同源：网关专用模型名（如 codex/gpt-6-luna）配官方端点会被阻断。
+      </p>
+      <div class="grid grid-cols-2 gap-3">
+        <div class="flex items-center gap-2 col-span-2">
+          <label class="text-sm shrink-0 w-28" style="color: var(--win-text-secondary)" title="判定用的模型；留空 = 跟随上方主模型。判定要准确，采集要覆盖面，两者可以分开">判定模型:</label>
+          <input v-model="config.analysis.recheck_model" type="text" class="glass-input flex-1" placeholder="留空 = 跟随主模型（如 codex/gpt-6-luna）" />
+        </div>
+        <div class="flex items-center gap-2 col-span-2">
+          <label class="text-sm shrink-0 w-28" style="color: var(--win-text-secondary)" title="判定请求打到哪个端点；留空 = 跟随上方主通道。换模型通常要同时换通道">判定通道 (base_url):</label>
+          <input v-model="config.analysis.recheck_base_url" type="text" class="glass-input flex-1" placeholder="留空 = 跟随主通道" />
+        </div>
+        <div class="flex items-center gap-2">
+          <label class="text-sm flex-1" style="color: var(--win-text-secondary)" title="判定是读证据下结论，low 档显著压低耗时与费用；留空 = 跟随主模型的思考设置">判定思考档位:</label>
+          <select v-model="config.analysis.recheck_reasoning_effort" class="glass-select" style="width: 110px">
+            <option value="">跟随主模型</option>
+            <option value="low">low（推荐）</option>
+            <option value="medium">medium</option>
+            <option value="high">high</option>
+          </select>
+        </div>
+        <div class="flex items-center gap-2">
+          <label class="text-sm flex-1" style="color: var(--win-text-secondary)" title="复检同时在途的批次数；0 = 用默认 4。故意不跟随上面的并发数：一次 8 批会把网关和账户上限一起打满">复检并发:</label>
+          <input v-model.number="config.analysis.recheck_concurrency" type="number" min="0" max="20" class="glass-input" style="width: 110px" />
+        </div>
+        <div class="flex items-center gap-2">
+          <label class="text-sm flex-1" style="color: var(--win-text-secondary)" title="一次复检最多发多少次调用；超出记「未核对」，可续跑">调用上限:</label>
+          <input v-model.number="config.analysis.recheck_max_calls" type="number" min="1" class="glass-input" style="width: 110px" />
+        </div>
+        <div class="flex items-center gap-2">
+          <label class="text-sm flex-1" style="color: var(--win-text-secondary)" title="单次复检调用的输出上限（token）。判定回包是 JSON 数组，6 候选约 2k token">输出上限:</label>
+          <input v-model.number="config.analysis.recheck_max_tokens" type="number" min="1024" class="glass-input" style="width: 110px" />
+        </div>
+        <div class="flex items-center gap-2">
+          <label class="text-sm flex-1" style="color: var(--win-text-secondary)" title="每次调用让模型同时判定几条候选。6 条实测一次答满、每候选提示词最低；太大模型会串号">判定批大小:</label>
+          <input v-model.number="config.analysis.recheck_v2_batch_size" type="number" min="1" max="20" class="glass-input" style="width: 110px" />
+        </div>
+      </div>
+      <p v-if="recheckConflictHint" class="text-xs glass-tinted-red px-2 py-1 rounded" style="color: var(--win-danger)">{{ recheckConflictHint }}</p>
     </div>
 
     <div v-if="categoryDefs.length" class="glass-card p-4 space-y-3">
