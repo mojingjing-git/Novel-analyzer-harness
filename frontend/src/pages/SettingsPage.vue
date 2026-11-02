@@ -455,13 +455,15 @@ onMounted(load)
     <p class="text-sm" style="color: var(--win-danger)">设置加载失败：{{ loadError }}</p>
     <button class="glass-button" @click="load">重试</button>
   </div>
-  <div class="max-w-6xl columns-1 @2xl:columns-2 @2xl:gap-x-5" v-else-if="config">
-    <div class="[column-span:all] mb-5">
+  <div class="max-w-6xl" v-else-if="config">
+    <div class="mb-5">
       <h2 class="section-title">设置</h2>
       <p class="section-subtitle">API、分析、知识库限制等参数</p>
     </div>
 
-    <div class="glass-card p-4 space-y-3 [column-span:all] mb-5">
+    <!-- 全部卡片等宽流入两列（列高自动均衡）；窄窗口回退单列 -->
+    <div class="columns-1 @2xl:columns-2 @2xl:gap-x-5">
+    <div class="glass-card p-4 space-y-3 break-inside-avoid mb-5">
       <div class="flex items-center justify-between pb-2" style="border-bottom: 1px solid var(--win-stroke)">
         <h3 class="font-semibold" style="letter-spacing: -0.01em">API 配置</h3>
         <div class="flex items-center gap-2">
@@ -706,7 +708,7 @@ onMounted(load)
       </div>
     </div>
 
-    <div class="glass-card p-4 space-y-3 [column-span:all] mb-5">
+    <div class="glass-card p-4 space-y-3 break-inside-avoid mb-5">
       <h3 class="font-semibold pb-2" style="border-bottom: 1px solid var(--win-stroke); letter-spacing: -0.01em">伏笔复检（带证据 V2）</h3>
       <ToggleSwitch v-model="config.analysis.recheck_v2_enabled" label="启用带证据复检（关闭 = 回退旧的全书复检）" />
       <p class="text-xs" style="color: var(--win-text-secondary)">
@@ -808,7 +810,7 @@ onMounted(load)
       <p v-if="recheckConflictHint" class="text-xs glass-tinted-red px-2 py-1 rounded" style="color: var(--win-danger)">{{ recheckConflictHint }}</p>
     </div>
 
-    <div v-if="categoryDefs.length" class="glass-card p-4 space-y-3 [column-span:all] mb-5">
+    <div v-if="categoryDefs.length" class="glass-card p-4 space-y-3 break-inside-avoid mb-5 @container">
       <div class="flex items-center justify-between pb-2" style="border-bottom: 1px solid var(--win-stroke)">
         <h3 class="font-semibold" style="letter-spacing: -0.01em">伏笔分类（功能类别）</h3>
         <div class="flex gap-2">
@@ -820,7 +822,7 @@ onMounted(load)
         LLM 抽取伏笔时会自由产出 type 字符串（可能 100+ 种），系统会用 LLM 归一化到下列 50 个功能类别之一。
         未勾选的类别会被过滤掉。建议至少保留「其他」作为兜底。已选 {{ keptSet.size }} / {{ categoryDefs.length }}。
       </p>
-      <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+      <div class="grid grid-cols-2 gap-2 @2xl:grid-cols-4">
         <label
           v-for="cat in categoryDefs"
           :key="cat.name"
@@ -839,21 +841,8 @@ onMounted(load)
       </div>
     </div>
 
-    <div class="flex gap-3 items-center [column-span:all] mb-5">
-      <button @click="save" :disabled="saving" class="glass-button glass-button-primary btn-lg">
-        {{ saving ? '保存中...' : '保存设置' }}
-      </button>
-      <Transition name="modal">
-        <span v-if="saved" class="glass-badge badge-green" style="font-size: 12px"> 已保存</span>
-      </Transition>
-    </div>
-    <div v-if="saveError" class="glass-card p-3 space-y-1 [column-span:all] mb-5" style="border-color: var(--win-danger)">
-      <p class="text-sm font-medium" style="color: var(--win-danger)">保存失败</p>
-      <pre class="text-xs whitespace-pre-wrap" style="color: var(--win-danger)">{{ saveError }}</pre>
-    </div>
-
     <!-- 运行日志（完整）：存放真日志，分析队列页只展示简化版 -->
-    <div class="glass-card p-4 space-y-3 [column-span:all] mb-5">
+    <div class="glass-card p-4 space-y-3 break-inside-avoid mb-5">
       <div class="flex items-center justify-between">
         <h3 class="font-semibold pb-2" style="border-bottom: 1px solid var(--win-stroke); letter-spacing: -0.01em; flex: 1">运行日志（完整）</h3>
         <button @click="clearLogs" class="glass-button btn-danger-link">清空日志</button>
@@ -864,7 +853,24 @@ onMounted(load)
       <LogConsole :logs="storeLogs" class="settings-log" />
     </div>
   </div>
-</template>
+
+
+    </div>
+
+    <div class="flex gap-3 items-center mb-5">
+      <button @click="save" :disabled="saving" class="glass-button glass-button-primary btn-lg">
+        {{ saving ? '保存中...' : '保存设置' }}
+      </button>
+      <Transition name="modal">
+        <span v-if="saved" class="glass-badge badge-green" style="font-size: 12px"> 已保存</span>
+      </Transition>
+    </div>
+    <div v-if="saveError" class="glass-card p-3 space-y-1 mb-5" style="border-color: var(--win-danger)">
+      <p class="text-sm font-medium" style="color: var(--win-danger)">保存失败</p>
+      <pre class="text-xs whitespace-pre-wrap" style="color: var(--win-danger)">{{ saveError }}</pre>
+    </div>
+
+    </template>
 
 <style scoped>
 /* Win11 输入校验态：危险红 + 1px 焦点环 */
