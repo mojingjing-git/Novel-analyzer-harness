@@ -26,7 +26,7 @@
 
 ```
 .
-├── backend/                      # FastAPI 后端（生产代码 100 个 .py）
+├── backend/                      # FastAPI 后端（生产代码 103 个 .py）
 │   ├── app.py                    # FastAPI 工厂（CORS、静态托管、路由注册、lifespan 工作区扫描）
 │   ├── main.py                   # 后端启动器（127.0.0.1:8000）
 │   ├── ws_events.py              # WS 协议权威定义（WSType 11 种 / WSState 12 种 / PipelineStatus + payload 契约）
@@ -125,10 +125,8 @@
 │   │   └── docx_extract.py       # DOCX 正文抽取（纯标准库）
 │   └── tests/                    # 146 个测试文件（pytest 收集 backend/tests + tests）
 ├── frontend/src/                 # Vue 3 + TypeScript（80 个文件，含 32 个测试文件）
-│   ├── pages/                    # 14 个页面（router.ts）
+│   ├── pages/                    # 12 个页面（router.ts）
 │   │   ├── QueuePage.vue         # 分析队列
-│   │   ├── VnextPage.vue         # vnext 项目列表
-│   │   ├── VnextDetailPage.vue   # vnext 项目详情
 │   │   ├── SettingsPage.vue      # 设置
 │   │   ├── CharacterCardPage.vue # 角色卡
 │   │   ├── SummaryPage.vue       # 最终总结
@@ -140,15 +138,16 @@
 │   │   ├── TimelinePage.vue      # 时间线
 │   │   ├── GraphPage.vue         # 关系图
 │   │   └── MapPage.vue           # 地图
-│   ├── components/               # 12 个（AppLayout / BookSelector / ChapterDetailPanel /
+│   ├── components/               # 13 个（AppLayout / BookSelector / ChapterDetailPanel /
 │   │                             #   ChapterValue / ConfirmDialog / CountUp / DiscoveryFeed /
-│   │                             #   Icon / LaneView / LogConsole / ProgressBar / RunDashboard）
+│   │                             #   Icon / LaneView / LogConsole / ProgressBar / RunDashboard /
+│   │                             #   ToggleSwitch）
 │   ├── composables/              # useLocale / useLogStore / useRipple / vTooltip
-│   ├── api/                      # client.ts（63 个方法）/ sessionToken.ts / useProgressSocket.ts
-│   ├── utils/                    # 8 个纯函数模块（laneRegistry / markdown / queueFeed /
+│   ├── api/                      # client.ts（58 个方法）/ sessionToken.ts / useProgressSocket.ts
+│   ├── utils/                    # 9 个纯函数模块（laneRegistry / markdown / queueFeed /
 │   │                             #   settingsForm / splitterView / summaryLanes /
-│   │                             #   summaryProgress / workspaceView）
-│   ├── router.ts                 # 1 个根布局 + 14 条子路由
+│   │                             #   summaryProgress / theme / workspaceView）
+│   ├── router.ts                 # 1 个根布局 + 12 条子路由
 │   └── main.css                  # Win11 Fluent 设计系统（--win-* 变量）
 ├── desktop.py                    # pywebview 桌面入口（单实例锁 + 窗口控制 + 崩溃诊断）
 ├── scripts/                      # 测试与测量脚本（统一入口 run_tests.py，5 档分级）

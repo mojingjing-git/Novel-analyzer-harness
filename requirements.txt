@@ -5,6 +5,9 @@ websockets>=12.0
 openai>=1.0.0
 # Anthropic 格式端点支持（api.provider=anthropic 时使用，官方 /v1/messages 协议）
 anthropic>=0.28.0
+# 直接 import 的传递依赖：显式声明，避免随上游 SDK 更换 HTTP 后端而断
+pydantic>=2.0.0
+httpx>=0.27.0
 openpyxl>=3.0.0
 pywebview>=5.0.0
 # P1-6：LLM 输出畸形 JSON 修复链的依赖（parse_json_robust 策略4/7），
@@ -16,5 +19,4 @@ json-repair>=0.30.0
 # chardet>=5.0.0      # 文件编码自动检测（fallback 到逐编码尝试）
 # jieba>=0.42.0       # 写作风格分析的中文分词（fallback 到简易分词器）
 
-# 测试依赖
-pytest-asyncio>=1.4.0
+# 测试依赖见 requirements-dev.txt

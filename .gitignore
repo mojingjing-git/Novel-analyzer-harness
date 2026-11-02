@@ -4,6 +4,7 @@ config.json
 
 # 运行时数据
 workspace/
+/data/
 queue_state.json
 *.log
 *.log.*
@@ -50,7 +51,6 @@ settings_resp.txt
 _plan_*.md
 _pytest_*.txt
 _trash_*/
-v
 
 # 调试脚本与中间产物
 _dbg_*.py
@@ -70,6 +70,8 @@ scripts/_check.py
 docs/audit/
 docs/superpowers/plans/
 docs/plans/
+# 阶段性规划文档（过程材料不入库；已收口的 PLAN 由 git rm 移除）
+docs/PLAN-*
 
 # PyInstaller 打包产物（v0.1.0+：dist/ 里的 exe 单独走 gh release，不入库）
 build/
@@ -77,7 +79,6 @@ dist/
 
 # 临时测试与分析产物
 .tmp*
-!.tmp_measure_pipeline/
 _scan*
 _edits_*
 _apply.py

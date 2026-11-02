@@ -20,14 +20,14 @@
 │   ├── config/                   # constants.py（默认值与常量）/ settings.py（dataclass）/ presets.py
 │   ├── models/                   # AnalysisResult / KnowledgeBase
 │   ├── utils/                    # JSON 解析、聚合、Excel、角色卡、账本、文本工具
-│   └── tests/                    # 129 个测试文件
+│   └── tests/                    # 146 个测试文件
 ├── frontend/
 │   └── src/
-│       ├── pages/                # 14 个页面
-│       ├── components/           # 12 个组件
+│       ├── pages/                # 12 个页面
+│       ├── components/           # 13 个组件
 │       ├── composables/          # 4 个组合式函数
-│       ├── api/                  # client.ts（63 个方法）/ sessionToken.ts / useProgressSocket.ts
-│       ├── utils/                # 8 个工具模块
+│       ├── api/                  # client.ts（58 个方法）/ sessionToken.ts / useProgressSocket.ts
+│       ├── utils/                # 9 个工具模块
 │       └── router.ts
 ├── scripts/                      # 测试与测量脚本
 ├── config.json                   # 运行配置（密钥不入库）
