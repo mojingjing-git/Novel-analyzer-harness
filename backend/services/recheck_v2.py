@@ -835,3 +835,513 @@ def _apply_state(
     notes = getattr(item, "notes", None)
     if isinstance(notes, list) and any(v.verdict == INSUFFICIENT for v in group):
         notes.append("复检：证据不足")
+
+
+# ==================== audit 模式：存量回收清算 ====================
+# （PLAN-foreshadow-adjudication D-13/D-14/D-15；AGY 复审 R-1/R-3/R-6 已并入）
+#
+# 与 run_recheck_v2（open 模式）是**两套判定模式**，不是同一管线的资格过滤变体：
+# open 问"这条伏笔被回收了吗"，audit 问"账本里这条已有的回收结论是否成立"。
+# 两者提示词、判定核、门禁语义、结论枚举都不同，最关键的一处反转：
+# **open 里"SUPPORTED 却列了反证引文"只是降级为 INSUFFICIENT；
+#   audit 里反证引文恰恰是"自述不成立"的直接证据。**
+# 因此 audit 走独立管线与独立门禁，open 判定核（resolution.parse_recheck）一行不动。
+
+AUDIT_VERIFIED = "VERIFIED"
+AUDIT_QUESTIONED = "QUESTIONED"
+#: 质疑原因枚举。与 open 路径的 INSUFFICIENT 语义隔离：
+#: open 的 INSUFFICIENT 是"伏笔悬而未决"；audit 的 no_evidence 是"这份自述没能被证据支持"。
+AUDIT_REASONS = ("supported", "no_evidence", "contradicted", "off_topic")
+
+AUDIT_PROMPT_TEMPLATE = """你是长篇小说的伏笔审校员。任务：**复核一条已标记为"已回收"的伏笔**——
+账本里记录了一条回收结论（下称"自述"），请对照给出的原文判断这个结论是否成立。
+
+判定基准（必须遵守）：
+1. 自述成立 = ①自述所述的事实能在原文中找到支持，**且**②按"判定为已回答的标准"它确实回答了这条伏笔的问题。
+   自述是概括性文字，**不要**要求它与原文逐字对应；但也不要因为"原文里确实有那件事"就放行——
+   若它只是阶段性推进、尚未回答问题（对照 answer_criteria），应判 QUESTIONED(off_topic)。
+2. 只依据给出的原文；材料不足以判断时判 QUESTIONED(no_evidence)，不要用常理推测。
+3. 必须做**反证检索**：在原文里找"自述不成立"的迹象。`counter_search.performed` 标 true，
+   `checked_evidence_ids` 必须是 JSON 数组；`counter_quotes` 也是数组，没有反证就写 []。
+   **注意：这里找到的反证引文是"自述不成立"的直接证据**——找到了就写进 counter_quotes 并判
+   QUESTIONED(contradicted)，这不是自相矛盾，正是复核要找的东西。
+4. 判 VERIFIED 时 `supporting_quote` 必须从原文**逐字照抄**不少于 6 个字（支持自述的原句），
+   `evidence_id` 原样回填该段证据的值；找不到支持性原句 → 只能 QUESTIONED(no_evidence)。
+
+判定枚举（只能用这两个词之一）：
+- `VERIFIED`：自述成立，维持"已回收"
+- `QUESTIONED`：自述不成立或无法验证（reason_code 三选一：no_evidence / contradicted / off_topic）
+
+共 {count} 个候选，必须输出**长度 {count} 的 JSON 数组**，
+每个候选恰好一条，`candidate_id` 必须原样取自：{candidate_ids}。
+
+待复核候选：
+{items}
+
+输出：纯 JSON 数组，长度必须是 {count}。形状如下（数组元素同构，candidate_id 换成各候选的真实 id）：
+[
+  {{
+    "candidate_id": "...",
+    "verdict": "VERIFIED",
+    "reason_code": "supported",
+    "answer": "自述是否成立的一句话结论",
+    "supporting_quote": "原文逐字引文（判 QUESTIONED 时可留空）",
+    "evidence_id": "引文所在段的 evidence_id（判 QUESTIONED 时可留空）",
+    "counter_search": {{"performed": true, "checked_evidence_ids": ["..."], "counter_quotes": []}}
+  }},
+  {{ ... 第 2 条，直到 {count} 条 ... }}
+]
+"""
+
+AUDIT_ITEM_TEMPLATE = """### 候选 candidate_id={candidate_id}
+伏笔描述：{description}
+待交代事项（question）：{question}
+判定为已回答的标准（answer_criteria）：{answer_criteria}
+首次出现：第{first_seen}章
+原自述回收（待复核的结论）：{resolution}
+自述自报回收章：第{claimed_chapter}章
+
+以下 {segment_count} 段原文各自有 evidence_id（第 1 段是自报回收章的固定窗，其余为按
+"自述+问题+描述"检索出的命中段）。supporting_quote / counter_quotes 必须逐字取自
+其中一段，evidence_id 原样回填——不同段是不同的证据，不要混：
+
+{segments}
+{truncation_note}
+"""
+
+
+def _parse_audit_payload(
+    payload: Mapping[str, Any],
+    *,
+    candidate_id: str,
+    allowed_evidence_ids: Iterable[str],
+    locate: Callable[[str, str], Any],
+) -> CandidateVerdict:
+    """audit 门禁（D-13 + AGY 复审 R-3）：VERIFIED 三条件缺一不可，其余一律 QUESTIONED。
+
+    与 open 的 parse_recheck 的语义差异：
+    * 反证引文 = 质疑的直接证据（open 里只是降级 INSUFFICIENT）；
+    * 没有可重试中间态——静态文本下补问是确定性冗余，miss 就如实落 QUESTIONED(no_evidence)；
+    * 结论只有 VERIFIED/QUESTIONED 两态，reason_code 表达质疑原因。
+    """
+
+    def _questioned(reason: str, **kw: Any) -> CandidateVerdict:
+        return CandidateVerdict(candidate_id, AUDIT_QUESTIONED, reason=reason, **kw)
+
+    if not isinstance(payload, Mapping):
+        return _questioned("no_evidence")
+    model_verdict = payload.get("verdict")
+    answer = payload.get("answer")
+    answer = answer.strip() if isinstance(answer, str) else ""
+    counter = payload.get("counter_search")
+    performed = bool(isinstance(counter, Mapping) and counter.get("performed") is True)
+    counter_quotes: list[str] = []
+    if isinstance(counter, Mapping):
+        raw_quotes = counter.get("counter_quotes") or []
+        if isinstance(raw_quotes, list):
+            counter_quotes = [q.strip() for q in raw_quotes if isinstance(q, str) and q.strip()]
+    evidence_id = payload.get("evidence_id")
+    evidence_ok = isinstance(evidence_id, str) and evidence_id in set(allowed_evidence_ids)
+
+    if counter_quotes:
+        # 反证引文 = 自述不成立的直接证据（audit 门禁反转点）
+        return _questioned("contradicted", answer=answer, counter_search_performed=True)
+
+    quote = payload.get("supporting_quote")
+    quote = quote.strip() if isinstance(quote, str) else ""
+    quote_ok = False
+    located: tuple[int, int] | None = None
+    ambiguous = False
+    if evidence_ok and len(quote) >= 6:
+        result = locate(quote, evidence_id)
+        if result.found and not result.ambiguous:
+            quote_ok = True
+            located = (int(result.start), int(result.end))
+        elif result.found:
+            # 多处命中：audit 没有补问轮，宁可质疑也不误确认
+            ambiguous = True
+
+    if model_verdict == AUDIT_VERIFIED:
+        # 三条件：①答案非空；②反证已执行且 checked_evidence_ids 非空且属于本题；
+        # ③支持引文逐字落在点名的证据段里（不多处命中）。
+        if not answer:
+            return _questioned("no_evidence")
+        if not performed:
+            return _questioned("no_evidence")
+        checked_ids = counter.get("checked_evidence_ids") if isinstance(counter, Mapping) else None
+        allowed = set(allowed_evidence_ids)
+        if not isinstance(checked_ids, (list, tuple)) or not checked_ids:
+            return _questioned("no_evidence")
+        if any(not isinstance(x, str) or x not in allowed for x in checked_ids):
+            return _questioned("no_evidence")
+        if not evidence_ok or len(quote) < 6 or ambiguous or not quote_ok:
+            return _questioned("no_evidence")
+        return CandidateVerdict(
+            candidate_id,
+            AUDIT_VERIFIED,
+            answer=answer,
+            evidence_id=evidence_id,
+            located_span=located,
+            quote_hash=hashlib.sha256(quote.encode("utf-8")).hexdigest()[:12],
+            quote=quote,
+            counter_search_performed=True,
+            reason="supported",
+        )
+
+    # 模型自报 QUESTIONED（或响应无法识别）：统一质疑，原因取自报值（校验枚举）
+    rc = payload.get("reason_code")
+    if rc not in AUDIT_REASONS or rc == "supported":
+        rc = "no_evidence"
+    return _questioned(
+        rc,
+        answer=answer,
+        counter_search_performed=performed,
+        evidence_id=evidence_id if evidence_ok else None,
+        quote=quote or None,
+        quote_hash=hashlib.sha256(quote.encode("utf-8")).hexdigest()[:12] if quote else None,
+        located_span=located,
+    )
+
+
+def _apply_audit_state(item: Any, record: CandidateVerdict) -> None:
+    """audit 结论落账（D-13）：不改 status、不改 source_type——
+
+    quality 表达"这份回收有没有被证据复核过"，status 的开/关不受影响；
+    UNSUPPORTED 也不回 active（静态文本下重查是确定性冗余，重开交给人工出口）。
+    """
+    if record.verdict == AUDIT_VERIFIED:
+        item.resolution_quality = "verified"
+        item.needs_review = False
+        notes = getattr(item, "notes", None)
+        if isinstance(notes, list):
+            notes.append("audit：自述回收经原文复核成立")
+        return
+    item.resolution_quality = "questioned"
+    item.needs_review = True
+    notes = getattr(item, "notes", None)
+    if isinstance(notes, list):
+        notes.append(f"audit：自述回收未获原文支持（{record.reason}），待人工确认")
+
+
+async def run_recheck_audit(
+    items: Sequence[Any],
+    chapters: Mapping[int, str] | None,
+    call_model: Callable[[str], Awaitable[str]],
+    *,
+    max_calls: int,
+    batch_size: int = DEFAULT_BATCH_SIZE,
+    concurrency: int = DEFAULT_CONCURRENCY,
+    unit_noun: str = "章",
+    display_labels: Mapping[int, str] | None = None,
+    block_size: int = 4,
+    emit: Callable[[dict], None] | None = None,
+) -> RecheckOutcome:
+    """存量回收清算（audit 模式）：复核 llm_judged 的"已回收"是否成立。
+
+    资格（D-15，全量不抽样）：status=resolved 且 source_type=llm_judged 且
+    resolution_quality 为空 且带 ≥6 字锚点且非 lead。confidence 不作抽样层——
+    它是采集期变量，与回收期质量不相关。
+
+    产出语义（D-13）：VERIFIED→quality=verified（不改 source_type、清 needs_review）；
+    QUESTIONED→quality=questioned + needs_review=True（status 保持 resolved，
+    不回 active）。单轮不补问；预算耗尽/无锚点/定位失败如实落 not_checked。
+    audit 的候选与账本条目一一对应（复核对象就是条目自身的自述），不做实体归约。
+    """
+    outcome = RecheckOutcome()
+    outcome.input_total = len(items)
+    index = EvidenceIndex(chapters) if chapters else None
+    candidates: list[dict] = []
+    leads_skipped = 0
+
+    for item in items:
+        cid = str(getattr(item, "id", ""))
+        if getattr(item, "lead", False):
+            leads_skipped += 1
+            continue
+        if getattr(item, "status", "") != "resolved":
+            continue
+        if getattr(item, "source_type", "") != "llm_judged":
+            continue
+        if getattr(item, "resolution_quality", "") or "":
+            continue  # 已复审过，不重复清算
+        quote = (getattr(item, "anchor_quote", "") or "").strip()
+        chapter = int(getattr(item, "anchor_chapter", 0) or 0)
+        if index is None or not quote or chapter <= 0:
+            outcome.dropped_no_anchor += 1
+            outcome.not_checked.append(cid)
+            outcome.dropped_ids.append(cid)
+            continue
+        # 锚点定位（与 open 同一套 range 优先逻辑）：llm_judged 的锚点章同样可能是
+        # 合并块时代的"另一份同号章"，先修正再建锚窗
+        start = int(getattr(item, "first_seen_chapter", 0) or 0)
+        cand_range = (start, start + max(block_size, 1) - 1) if start > 0 else None
+        hit = locate_with_mode(
+            chapters or {},
+            quote,
+            candidate_range=cand_range,
+            display_labels=display_labels,
+            anchor_round=chapter or None,
+        )
+        unit = chapter
+        if hit.unit is not None:
+            located = locate_quote(quote, index.chapter_text(hit.unit))
+            if located is not None and located.found:
+                unit = hit.unit
+        outcome.locate_records[cid] = {
+            "unit": hit.unit,
+            "mode": hit.mode,
+            "source_chapter": start,
+            "range": list(cand_range) if cand_range else None,
+            "low_confidence": hit.mode != "range",
+        }
+        anchor_located = locate_quote(quote, index.chapter_text(unit))
+        if anchor_located is None or not anchor_located.found:
+            outcome.dropped_anchor_missing += 1
+            outcome.not_checked.append(cid)
+            outcome.dropped_ids.append(cid)
+            continue
+        candidates.append({
+            "item": item,
+            "candidate_id": cid,
+            "evidence_id": _evidence_id(unit, quote),
+            "chapter": unit,
+        })
+
+    outcome.leads_skipped = leads_skipped
+
+    if not candidates:
+        dropped = outcome.dropped_no_anchor + outcome.dropped_anchor_missing
+        outcome.coverage = {
+            "candidates_total": 0,
+            "verified": 0,
+            "questioned": 0,
+            "checked": 0,
+            "not_checked": len(outcome.not_checked),
+            "dropped_no_anchor": outcome.dropped_no_anchor,
+            "dropped_anchor_missing": outcome.dropped_anchor_missing,
+            "skipped_ineligible": max(
+                0, outcome.input_total - leads_skipped - dropped
+            ),
+        }
+        outcome.status = "PARTIAL" if dropped else "COMPLETED"
+        if dropped:
+            outcome.status_reason = f"没有可复核条目（{dropped} 条无可用证据）"
+        return outcome
+
+    texts_by_evidence: dict[str, str] = {}
+    chapter_by_evidence: dict[str, int] = {}
+
+    def _build_evidence(cand: dict) -> None:
+        if "segments" in cand:
+            return
+        item = cand["item"]
+        # D-14：hint 带 resolution 文本——它描述了"谁在哪交代了什么"，
+        # 是回收位置密度最高的检索线索
+        bundle = index.bundle_for(
+            anchor_chapter=cand["chapter"],
+            anchor_quote=(getattr(item, "anchor_quote", "") or "").strip(),
+            hint_texts=[
+                (getattr(item, "resolution", "") or ""),
+                getattr(item, "question", "") or "",
+                getattr(item, "description", "") or "",
+            ],
+            unit_noun=unit_noun,
+            display_labels=display_labels,
+        )
+        segments: list[dict] = []
+        for chapter, seg_start, seg_end in bundle.spans:
+            body = bundle.text[seg_start:seg_end].strip()
+            eid = _evidence_id(chapter, body)
+            texts_by_evidence[eid] = body
+            chapter_by_evidence[eid] = chapter
+            segments.append({"evidence_id": eid, "chapter": chapter, "text": body})
+        # D-14（AGY 复审 R-1）：自报回收章强制固定窗 1——实测仅靠文本 hint，
+        # 自报章进前三窗口的命中率只有 27.8%，排除它会让大多数条目连自述材料
+        # 都看不到而被误杀成 no_evidence。窗口只是材料，是否支持由判定核裁决。
+        claimed = int(getattr(item, "resolved_chapter", 0) or 0)
+        if claimed > 0 and all(ch != claimed for ch, _s, _e in bundle.spans):
+            body = index.window(claimed, needle=(getattr(item, "resolution", "") or "")[:12]).strip()
+            if body:
+                eid = _evidence_id(claimed, body)
+                texts_by_evidence[eid] = body
+                chapter_by_evidence[eid] = claimed
+                segments.insert(0, {"evidence_id": eid, "chapter": claimed, "text": body})
+        if not segments:
+            fallback_text = index.chapter_text(cand["chapter"])
+            eid = cand["evidence_id"]
+            texts_by_evidence[eid] = fallback_text
+            chapter_by_evidence[eid] = cand["chapter"]
+            segments.append({"evidence_id": eid, "chapter": cand["chapter"], "text": fallback_text})
+        cand["segments"] = segments
+        cand["truncated"] = bool(getattr(bundle, "truncated", False))
+        cand["omitted"] = int(getattr(bundle, "omitted", 0) or 0)
+
+    def _seg_label(ch: int) -> str:
+        if unit_noun == "章":
+            return f"第{ch}章"
+        return unit_label(ch, display_labels, noun="文件")
+
+    def _render_audit_batch(batch: list[dict]) -> str:
+        rendered = "".join(
+            AUDIT_ITEM_TEMPLATE.format(
+                candidate_id=c["candidate_id"],
+                description=getattr(c["item"], "description", ""),
+                question=getattr(c["item"], "question", "") or "（未提供）",
+                answer_criteria=getattr(c["item"], "answer_criteria", "") or "（未提供）",
+                first_seen=getattr(c["item"], "first_seen_chapter", 0),
+                resolution=(getattr(c["item"], "resolution", "") or "").strip() or "（无）",
+                claimed_chapter=getattr(c["item"], "resolved_chapter", 0) or 0,
+                segment_count=len(c["segments"]),
+                segments="\n".join(
+                    f'[evidence_id={seg["evidence_id"]} {_seg_label(seg["chapter"])}]\n"""\n'
+                    f'{seg["text"]}\n"""'
+                    for seg in c["segments"]
+                ),
+                truncation_note=(
+                    f"（注意：后文还有 {c.get('omitted', 0)} 处提到相关词但未展示，"
+                    "下结论时要考虑这一点）"
+                    if c.get("truncated")
+                    else ""
+                ),
+            )
+            for c in batch
+        )
+        return AUDIT_PROMPT_TEMPLATE.format(
+            count=len(batch),
+            items=rendered,
+            candidate_ids=", ".join(c["candidate_id"] for c in batch),
+        )
+
+    def _consume_audit(batch: list[dict], raw: str) -> set[str]:
+        if raw and not outcome.raw_sample:
+            outcome.raw_sample = raw[:2000]
+        got: dict[str, Mapping[str, Any]] = {}
+        for payload in _extract_payloads(raw):
+            cid = payload.get("candidate_id")
+            if isinstance(cid, str):
+                got[cid] = payload
+        done: set[str] = set()
+        for c in batch:
+            payload = got.get(c["candidate_id"])
+            if payload is None:
+                continue
+            payload = _normalize_payload(payload)
+            allowed = [seg["evidence_id"] for seg in c["segments"]]
+            if not payload.get("evidence_id") and len(allowed) == 1:
+                payload = {**payload, "evidence_id": allowed[0]}
+            record = _parse_audit_payload(
+                payload,
+                candidate_id=c["candidate_id"],
+                allowed_evidence_ids=allowed,
+                locate=lambda q, eid: locate_quote(q, texts_by_evidence.get(eid, "")),
+            )
+            for idx in range(len(outcome.verdicts) - 1, -1, -1):
+                if outcome.verdicts[idx].candidate_id == record.candidate_id:
+                    outcome.verdicts.pop(idx)
+                    break
+            outcome.verdicts.append(record)
+            # audit 结论全部终态（VERIFIED/QUESTIONED 都不再补问——静态文本
+            # 下补问是确定性冗余），落账即完成
+            done.add(c["candidate_id"])
+        return done
+
+    if index is not None:
+        # 检索位图后台线程构建，不冻结共用的事件循环
+        await asyncio.to_thread(index.ensure_indexed)
+
+    sem = asyncio.Semaphore(max(1, concurrency))
+
+    async def _ask(batch: list[dict]) -> tuple[list[dict], str]:
+        async with sem:
+            return batch, await call_model(_render_audit_batch(batch))
+
+    done: set[str] = set()
+    built_count = 0
+    step = max(batch_size, 1)
+    batches = [candidates[i : i + step] for i in range(0, len(candidates), step)]
+    width = max(1, concurrency)
+    for wave_at in range(0, len(batches), width):
+        if outcome.calls >= max_calls:
+            break
+        affordable = max_calls - outcome.calls
+        if affordable <= 0:
+            break
+        wave = batches[wave_at : wave_at + width][:affordable]
+        if not wave:
+            break
+        newly_built = 0
+        for b in wave:
+            for cand in b:
+                if "segments" not in cand:
+                    _build_evidence(cand)
+                    newly_built += 1
+        built_count += newly_built
+        if emit is not None and newly_built:
+            emit({"stage": "build_candidates", "built": built_count, "total": len(candidates)})
+        outcome.calls += len(wave)
+        results = await asyncio.gather(*(_ask(b) for b in wave), return_exceptions=True)
+        for result in results:
+            if isinstance(result, BaseException):
+                outcome.failed_batches += 1
+                continue
+            batch, raw = result
+            done |= _consume_audit(batch, raw)
+        if emit is not None:
+            emit({"stage": "recheck", "calls": outcome.calls, "checked": len(done)})
+
+    outcome.not_checked.extend(
+        c["candidate_id"] for c in candidates if c["candidate_id"] not in done
+    )
+
+    verified = sum(1 for v in outcome.verdicts if v.verdict == AUDIT_VERIFIED)
+    questioned = sum(1 for v in outcome.verdicts if v.verdict == AUDIT_QUESTIONED)
+    pending = [cid for cid in outcome.not_checked if cid not in set(outcome.dropped_ids)]
+    dropped = outcome.dropped_no_anchor + outcome.dropped_anchor_missing
+    outcome.coverage = {
+        "candidates_total": len(candidates),
+        "verified": verified,
+        "questioned": questioned,
+        "checked": verified + questioned,
+        # 只计候选中未核对的（掉队的在 dropped_* 单列，不重复计数）
+        "not_checked": len(pending),
+        "dropped_no_anchor": outcome.dropped_no_anchor,
+        "dropped_anchor_missing": outcome.dropped_anchor_missing,
+        # 资格不符被跳过的条目（非 resolved / 非 llm_judged / 已复审）——
+        # 没有这一栏，"输入总数"就追不到分母，守恒会开天窗
+        "skipped_ineligible": max(
+            0,
+            outcome.input_total - leads_skipped - len(candidates)
+            - outcome.dropped_no_anchor - outcome.dropped_anchor_missing,
+        ),
+    }
+
+    # audit 的候选与账本条目一一对应（复核对象就是条目自身的自述），逐条落账；
+    # source_type 与 status 均不改写，保留考古痕迹（AGY R-5）
+    by_cid = {c["candidate_id"]: c["item"] for c in candidates}
+    for verdict in outcome.verdicts:
+        outcome.applied[verdict.candidate_id] = (
+            "CONFIRMED" if verdict.verdict == AUDIT_VERIFIED else "UNSUPPORTED"
+        )
+        item = by_cid.get(verdict.candidate_id)
+        if item is not None:
+            _apply_audit_state(item, verdict)
+
+    pending = [cid for cid in outcome.not_checked if cid not in set(outcome.dropped_ids)]
+    outcome.status = "COMPLETED" if not pending and not dropped else "PARTIAL"
+    reasons: list[str] = []
+    if pending:
+        reasons.append(f"存在未核对候选（{len(pending)} 条）")
+    if dropped:
+        reasons.append(f"部分条目无可用证据（{dropped} 条未进入候选）")
+    outcome.status_reason = "；".join(reasons)
+    if outcome.calls > 0 and verified + questioned == 0:
+        reason = f"{outcome.calls} 次调用全部未返回可解析判定（检查判定通道与网关是否正常）"
+        outcome.status = "PARTIAL"
+        outcome.status_reason = (outcome.status_reason + "；" + reason) if outcome.status_reason else reason
+        logger.error(
+            "audit 0 判定落账：calls=%s failed_batches=%s；回包样本=%r",
+            outcome.calls, outcome.failed_batches, outcome.raw_sample[:200],
+        )
+    if emit is not None:
+        emit(outcome.summary())
+    return outcome
