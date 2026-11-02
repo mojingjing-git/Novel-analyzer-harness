@@ -73,6 +73,10 @@
 | `max_character_states` | int | `20` | 人物状态条目上限 |
 | `max_world_items` | int | `20` | 世界观条目上限 |
 | `max_foreshadow_entries` | int | `5` | 活跃伏笔条目上限 |
+| `max_relationships` | int | `15` | 人物关系条目上限（提示词窗口） |
+| `max_themes` | int | `8` | 主题条目上限（提示词窗口） |
+| `max_content_chars` | int | `30000` | 提示词携带的章节正文字符上限 |
+| `max_verified_facts_in_prompt` | int | `15` | 已证事实的提示词窗口上限（知识库裁剪字段 `max_verified_facts` 管"库里留多少"，这个管"提示词带多少"，两层分开） |
 
 ### 滚动总结
 

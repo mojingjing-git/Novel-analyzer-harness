@@ -35,6 +35,7 @@ from .error_types import (
     ErrorScope, SourceChannel,
 )
 from .llm_failure_logger import _get_failure_logger, redact as _redact
+from .breaker import Breaker
 from .llm_stream import (
     StreamChunk, StreamResult, estimate_token_count,
     parse_anthropic_response, parse_anthropic_stream_event, parse_openai_stream_event,
@@ -398,12 +399,57 @@ class LLMClient:
         self._cached_tokens = 0
         self._stop_requested = False  # 外部可设置，让进行中的重试链尽快退出
         self._stop_event = asyncio.Event()  # 触发后立即取消进行中的 API 请求
+        # 账户级熔断：欠费/认证失效等结构化判定的账户级永久错误第一次命中即跳闸，
+        # 之后本实例的所有调用入口零成本短路（见 backend/core/breaker.py 的三条边界）
+        self._breaker = Breaker()
+        self._tripped_verdict: Optional[ErrorVerdict] = None  # 触发跳闸的那次判定，短路回包复用
 
     def request_stop(self):
         """请求停止：让正在进行的 chat_with_retry 重试链在下一检查点退出，
         并立即取消当前进行中的 API 请求（不等超时）"""
         self._stop_requested = True
         self._stop_event.set()
+
+    def _breaker_observe(self, success: bool, verdict, error: str) -> None:
+        """把一次调用的结论喂给账户级熔断器（记账收敛点）。
+
+        非流式在 chat()（重试漏斗的每次尝试都经此入口，跳闸后剩余尝试在
+        chat() 闸门即时短路）；流式在 _build_stream_result（本漏斗唯一出口）。
+        只认结构化判定——字符串/None 一律不跳闸（见 core/breaker.py 三条边界）。
+        """
+        if success:
+            self._breaker.record_success()
+            return
+        if verdict is None:
+            return
+        if self._breaker.record_failure(verdict, detail=(error or "")[:80]):
+            self._tripped_verdict = verdict
+
+    def _breaker_blocked_result(self) -> LLMResult:
+        """熔断打开时的非流式短路回包。
+
+        tokens=None + UNKNOWN（结果对象校验组合）、attempts=0（未发生传输）、
+        verdict 复用跳闸时缓存的对象——pipeline 靠 is_permanent 登记致命块，
+        补跑轮据此跳过，不再重复计费。
+        """
+        return LLMResult(
+            success=False, content="",
+            error=f"熔断：{self._breaker.reason}（跳过本次调用）",
+            tokens=None, usage_status=UsageStatus.UNKNOWN,
+            call_stats={"attempts": 0, "failed_tokens": 0},
+            verdict=self._tripped_verdict, attempts=0,
+        )
+
+    def _breaker_blocked_stream_result(self) -> StreamResult:
+        """熔断打开时的流式短路回包（字段口径同 _breaker_blocked_result）。"""
+        return StreamResult(
+            success=False, content="",
+            error=f"熔断：{self._breaker.reason}（跳过本次调用）",
+            prompt_tokens=0, completion_tokens=0,
+            cached_tokens=0, reasoning_chars=0,
+            call_stats={"attempts": 0, "failed_tokens": 0},
+            verdict=self._tripped_verdict,
+        )
 
     @staticmethod
     def _strip_thinking(content: str) -> str:
@@ -518,11 +564,23 @@ class LLMClient:
     ) -> LLMResult:
         """非流式单次调用（返回 LLMResult 对象）。
 
-        tokens 只有真的拿到 usage 才有值；拿不到时是 None + usage_status=UNKNOWN
-        （与"确实消耗 0 token"可区分）。
-        verdict 在失败时携带现场分类结论（异常对象还在场，故结构化通道可用），
-        成功时为 None。attempts 由重试层按真实轮次覆盖，单次调用恒为 1。
+        熔断闸门：账户级永久错误跳闸后这里零成本短路。重试漏斗
+        （chat_with_retry）的每次尝试都经此入口，跳闸后同一漏斗内
+        剩余尝试即时退出，不再对已死的账户继续计费请求。
         """
+        if not self._breaker.allows():
+            return self._breaker_blocked_result()
+        result = await self._chat_once(messages, temperature=temperature, max_tokens=max_tokens)
+        self._breaker_observe(result.success, result.verdict, result.error)
+        return result
+
+    async def _chat_once(
+        self,
+        messages: List[dict],
+        temperature: float = 0.1,
+        max_tokens: Optional[int] = None
+    ) -> LLMResult:
+        """chat() 的原始实现（单次传输，无熔断逻辑——闸门在 chat() 包装层）。"""
         if max_tokens is None:
             max_tokens = self.config.max_tokens
 
@@ -1132,6 +1190,9 @@ class LLMClient:
         - 空响应按失败处理（moderation 嗅探）
         - partial content 保留：流式中断时 final_content 留作 9 级 JSON 容错链尝试
         """
+        if not self._breaker.allows():
+            # 熔断打开：零成本短路，不进重试循环
+            return self._breaker_blocked_stream_result()
         last_error = ""  # 关键：每次调用重置为 ""，不是 "未知错误"
         total_attempts = 0
         moderation_hits = 0
@@ -1157,13 +1218,17 @@ class LLMClient:
                           cached_tokens=0, reasoning_chars=0, verdict=None):
             # verdict 是本次决断用的 ClassVerdict（决策层形态），出口统一转成 ErrorVerdict
             # （跨层传输形态）；成功结果恒为 None，与 LLMResult 口径一致。
-            return StreamResult(
+            result = StreamResult(
                 success=success, content=content, error=error,
                 prompt_tokens=prompt_tok, completion_tokens=comp_tok,
                 cached_tokens=cached_tokens, reasoning_chars=reasoning_chars,
                 call_stats={"attempts": total_attempts, "failed_tokens": call_failed_tokens},
                 verdict=None if success else _as_error_verdict(verdict, error),
             )
+            # 熔断记账收敛点（流式）：本漏斗的每个出口都经此构造；
+            # 非流式路径由 chat() 逐次尝试自记，两处不可重复
+            self._breaker_observe(success, result.verdict, error)
+            return result
 
         def _record_validation_failure(validation_error, temp):
             nonlocal last_error, call_failed_tokens
@@ -1575,6 +1640,9 @@ class LLMClient:
         一次都没拿到 usage 就是 None + usage_status=UNKNOWN。
         verdict 由 _decide_retry 的决断结论带出，停止或最终失败时随结果返回，成功为 None。
         """
+        if not self._breaker.allows():
+            # 熔断打开：零成本短路，不进重试循环
+            return self._breaker_blocked_result()
         last_error = ""
         total_attempts = 0
         moderation_hits = 0  # 内容审核拦截连续命中次数（连续3次才短路，见下方短路判断）

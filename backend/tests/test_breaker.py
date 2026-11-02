@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from backend.vnext.breaker import CLOSED, OPEN, Breaker
+from backend.core.breaker import CLOSED, OPEN, Breaker
 from backend.core.error_types import (
     Confidence,
     ErrorClass,

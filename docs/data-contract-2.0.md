@@ -9,9 +9,9 @@
 
 | | 1.x 生产管线 | vnext |
 |---|---|---|
-| 代码 | `backend/core/pipeline.py`(1268) + `backend/services/final_summary.py`(1970) + `backend/utils/memory_state.py` + `backend/utils/foreshadow_ledger.py` | `backend/vnext/`（26 个模块 / 5734 行）+ `backend/services/vnext_service.py` + `backend/api/routes_vnext.py` |
+| 代码 | `backend/core/pipeline.py`(1268) + `backend/services/final_summary.py`(1970) + `backend/utils/memory_state.py` + `backend/utils/foreshadow_ledger.py` | `backend/vnext/`（25 个模块）+ `backend/services/vnext_service.py` + `backend/api/routes_vnext.py` |
 | 强项 | **作业层完整**：分块分析 → 滚动摘要 → 伏笔账本 → 四阶段总结 → 报告；前端 78 文件 / 12631 行 | **数据层语义强**：有序覆盖、排他快照、来源溯源、证据门禁、预算与缓存、熔断、原子写 |
-| 弱项 | 数据层语义弱（见下） | **没有作业层**：`run_analysis` 0 处生产调用；`breaker`/`cutoff_view`/`build_coverage`/`PromptLimits` 全部 0 调用 |
+| 弱项 | 数据层语义弱（见下） | **没有作业层**：`run_analysis` 0 处生产调用；`cutoff_view`/`build_coverage` 仍是 0 调用（`breaker`/`PromptLimits` 已收割进 core，见缺口表） |
 
 所以现状不是"新管线更好"，而是**旧管线跑得起来但语义不可靠，新管线语义可靠但跑不起来**。
 2.0 = 用 1.x 的作业层做骨架，把 vnext 的语义接进去，然后**只保留一条**。
@@ -23,8 +23,8 @@
 | 缺口 | 现状 | 影响 |
 |---|---|---|
 | `run_analysis` 没有生产入口 | 0 处非测试调用 | vnext 整条分析链在生产上跑不起来 |
-| `PromptLimits` 没接配置 | 0 处非测试调用 | 1.x 的 `analyzer.py:73-81` 只传了 7 个上限，`max_verified_facts`/`max_relationships`/`max_themes`/`max_content_chars` 无法配置 |
-| 账户级熔断没有调用方 | `backend/vnext/breaker.py` 0 处非测试调用 | 欠费/账户不可用时 1.x 会继续派发、继续烧钱（1.x 只有 `pipeline.py:755` 登记致命块供补跑剔除，不熔断） |
+| ~~`PromptLimits` 没接配置~~ 已接 | `backend/core/prompt_limits.py`，analyzer 全 9 项来自 config | 4 个新配置字段 `max_relationships` / `max_themes` / `max_content_chars` / `max_verified_facts_in_prompt`（与知识库裁剪字段 `max_verified_facts` 分层）；vnext 侧留转发桩 |
+| ~~账户级熔断没有调用方~~ 已接 | `backend/core/breaker.py`，`llm_client` 逐调用记账 + 各入口短路 | 欠费/认证失效第一次结构化命中即跳闸，同实例后续调用零成本短路，回包携带跳闸 verdict 供 pipeline 登记致命块；队列级提前停止未做（调用快速排空失败，零 API 成本） |
 | 排他快照没进知识库写入 | `cutoff_view` 0 处非测试调用 | 1.x 的滚动摘要与人物状态只有一个 `last_updated_chapter` 标量 → 越早补跑的块既进不了摘要，又会被后面高章号的结果覆盖 |
 | 有序覆盖没进 1.x | `build_coverage` 0 处非测试调用 | 覆盖表按"点数与文件集合不得变化"的旧口径冻结，抽公共调用函数就会失真 |
 | 子产物原子写 | `backend/utils/aggregate_utils.py` 约 10 处 `open(...,'w')+json.dump` | 写到一半中断会留下半个 JSON |
@@ -40,7 +40,7 @@
 | **账本** | `foreshadow_ledger.json`，`SCHEMA_VERSION = 5`（`foreshadow_ledger.py:24`） | 自有 `recheck_ledger.json` + `tasks.json`（`vnext/runner.py`） | 合并成一套，取 v5 的形状 |
 | **已知事实来源** | `verified_facts` 原样入账，无法溯源 | `SourceRef` 溯源 | 取 vnext |
 | **错误分类** | `backend/core/error_taxonomy.py` 一套枚举与置信度 | `backend/core/error_types.py` 的 `ErrorVerdict`/`ErrorScope` 4 值，判据只认结构化通道 | 取 vnext，并把 1.x 的 `llm_client` 四处重试决策收敛到单点 |
-| **提示词限额** | 5 项来自 config（`analyzer.py:74-79`），**4 项硬编码**（`prompt_builder.py:103-106`：`max_relationships=15`/`max_verified_facts=15`/`max_themes=8`/`max_content_chars=30000`） | 9 项统一在 `vnext/prompt_limits.py` 的不可变 dataclass | 取 vnext |
+| **提示词限额** | 9 项统一在 `backend/core/prompt_limits.py`，analyzer 全量接配置（`max_relationships` / `max_themes` / `max_content_chars` / `max_verified_facts_in_prompt` 为新增字段） | `backend/vnext/prompt_limits.py` 转发桩 | **已取 vnext** |
 | **证据 id** | `backend/core/evidence.py:84` | `backend/vnext/fingerprint.py` 的 `evidence_id`（内容哈希口径） | **两套同名实现**，合并时必须选一个 |
 | **裁剪时机** | 落盘前裁剪（`memory_state.py:414`）——"库里有什么取决于当初配了多大窗口" | 窗口是**读取时**的动作（`vnext/prompt_view.py`），裁剪时如实报告丢了什么 | 取 vnext |
 | 引用定位 | — | — | **已统一**（`vnext/citations.py` 已收敛到 `backend/core/citations.py`）✅ |
@@ -77,12 +77,14 @@
 | 类别 | 模块 | 数量 |
 |---|---|---|
 | 有生产调用方 | artifacts、blocks、constants、project、queue、registry、results、**resolution** | 8 / 25（其中 7 个只被 vnext 自己的 API 层调用，**只有 resolution 进了 1.x 生产路径**）|
-| 仅 `scripts/` 调用（实现完整、有验收脚本，但无产品入口） | budget、citations、context、foreshadow、knowledge、prompt_limits、prompt_view、recheck_plan、rolling、runner、tasks | 11 |
-| 无任何外部调用 | analyzer、breaker、concurrency、consistency、fingerprint、graph | 6 |
+| 已收敛到 `backend/core/`（vnext 留转发桩） | citations、prompt_limits、breaker | 3 |
+| 仅 `scripts/` 调用（实现完整、有验收脚本，但无产品入口） | budget、context、foreshadow、knowledge、prompt_view、recheck_plan、rolling、runner、tasks | 9 |
+| 无任何外部调用 | analyzer、concurrency、consistency、fingerprint、graph | 5 |
 
-最后那 6 个**不是死代码，是建好了还没人用的地基**——`breaker`（熔断）、`consistency`（原子提交）、
+最后那 5 个**不是死代码，是建好了还没人用的地基**——`consistency`（原子提交）、
 `graph`（共现/关系分表）、`fingerprint`（指纹口径）、`concurrency`（结算只认真结束），
-正是 2.0 最该接上的部分。
+正是 2.0 最该接上的部分。`breaker` 与 `prompt_limits` 已收割进 core 并接入 1.x
+（见缺口表）。
 
 详细盘点（含每条的 file:line 与 grep 证据）见
 [research/vnext-audit-2026-11-02.md](./research/vnext-audit-2026-11-02.md)。

@@ -155,6 +155,13 @@ class AnalysisConfig:
     max_character_states: int = DEFAULT_MAX_CHARACTER_STATES_IN_PROMPT
     max_world_items: int = DEFAULT_MAX_WORLD_ITEMS_IN_PROMPT
     max_foreshadow_entries: int = DEFAULT_MAX_FORESHADOW_ENTRIES_IN_PROMPT
+    # 提示词窗口上限（此前 4 项硬编码在 prompt_builder，配置写了也不生效）。
+    # 注意与知识库裁剪字段 max_verified_facts 分层：那个管"库里留多少"，
+    # 这里的 max_verified_facts_in_prompt 管"构建提示词时取前多少条"。
+    max_relationships: int = 15
+    max_themes: int = 8
+    max_content_chars: int = 30000
+    max_verified_facts_in_prompt: int = 15
     # 伏笔分类（治本核心）：50 类功能分类（人物/情节/冲突/关系/设定/主题/题材），
     # 通过 LLM 归一化把 LLM 自由产出的 type 字符串映射到这 50 类之一
     # 默认全启用（用户可取消勾选，但应保留"其他"作为兜底）

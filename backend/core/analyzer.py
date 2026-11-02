@@ -6,6 +6,7 @@
 流式模式下 on_progress 回调 broadcast token_delta 给前端）
 """
 
+import dataclasses
 import logging
 from typing import Optional, Tuple
 
@@ -13,6 +14,7 @@ from ..config.settings import AppConfig
 from ..models.analysis_result import AnalysisResult
 from ..models.knowledge import KnowledgeBase
 from .llm_client import LLMClient
+from .prompt_limits import PromptLimits
 from .stream_progress import make_stream_progress_callback
 from .prompt_builder import PromptBuilder
 from ..progress_hub import get_hub
@@ -69,14 +71,25 @@ class NovelAnalyzer:
         """
         self.config = config
         self.llm_client = LLMClient(config.api)
-        self.prompt_builder = PromptBuilder(
-            max_arc_length=config.analysis.max_arc_length,
+        # 9 项上限统一从 PromptLimits 走（此前 4 项硬编码在 prompt_builder 构造默认，
+        # 配置写了也不生效）。max_verified_facts_in_prompt 与知识库裁剪的
+        # max_verified_facts 是两层：一个管提示词窗口，一个管库里留多少。
+        limits = PromptLimits(
             max_arcs=config.analysis.max_arcs_in_prompt,
             max_summaries=config.analysis.max_summaries_in_prompt,
-            timeline_truncate=config.analysis.timeline_truncate,
             max_character_states=config.analysis.max_character_states,
             max_world_items=config.analysis.max_world_items,
             max_foreshadow_entries=config.analysis.max_foreshadow_entries,
+            max_relationships=config.analysis.max_relationships,
+            max_verified_facts=config.analysis.max_verified_facts_in_prompt,
+            max_themes=config.analysis.max_themes,
+            max_content_chars=config.analysis.max_content_chars,
+        )
+        logger.info(f"Prompt 限额：{limits.describe()}")
+        self.prompt_builder = PromptBuilder(
+            max_arc_length=config.analysis.max_arc_length,
+            timeline_truncate=config.analysis.timeline_truncate,
+            **dataclasses.asdict(limits),
         )
         self._is_stopped = False
 

@@ -13,15 +13,14 @@ import json
 
 import pytest
 
-from backend.vnext import prompt_limits
-from backend.vnext.prompt_limits import (
+from backend.core import prompt_limits
+from backend.core.prompt_limits import (
     DEFAULT_LIMITS,
     LIMIT_FIELDS,
     PromptLimits,
     from_dict,
     to_dict,
 )
-from backend.vnext.constants import ErrorCode, VnextFormatError
 
 
 # ---------------------------------------------------------------------------
@@ -97,78 +96,62 @@ def test_unknown_key_with_illegal_value_is_not_validated() -> None:
 
 def test_bool_true_is_rejected() -> None:
     """bool 是 int 的子类，但 ``True`` 不能被当成 1 悄悄接受。"""
-    with pytest.raises(VnextFormatError) as excinfo:
+    with pytest.raises(ValueError, match="max_arcs"):
         from_dict({"max_arcs": True})
-    assert excinfo.value.code == ErrorCode.INVALID_FIELD_VALUE
-    assert "max_arcs" in excinfo.value.detail
 
 
 def test_bool_false_is_rejected() -> None:
-    with pytest.raises(VnextFormatError) as excinfo:
+    with pytest.raises(ValueError, match="max_summaries"):
         from_dict({"max_summaries": False})
-    assert excinfo.value.code == ErrorCode.INVALID_FIELD_VALUE
-    assert "max_summaries" in excinfo.value.detail
 
 
 def test_float_is_rejected_even_when_integral() -> None:
     """``2.0`` 说明配置写错了，不做隐式转换。"""
-    with pytest.raises(VnextFormatError) as excinfo:
+    with pytest.raises(ValueError, match="max_character_states"):
         from_dict({"max_character_states": 2.0})
-    assert excinfo.value.code == ErrorCode.INVALID_FIELD_VALUE
-    assert "max_character_states" in excinfo.value.detail
 
 
 def test_non_integral_float_is_rejected() -> None:
-    with pytest.raises(VnextFormatError) as excinfo:
+    with pytest.raises(ValueError, match="max_themes"):
         from_dict({"max_themes": 8.5})
-    assert excinfo.value.code == ErrorCode.INVALID_FIELD_VALUE
-    assert "max_themes" in excinfo.value.detail
 
 
 def test_numeric_string_is_rejected() -> None:
     """字符串数字不做隐式转换。"""
-    with pytest.raises(VnextFormatError) as excinfo:
+    with pytest.raises(ValueError, match="max_arcs"):
         from_dict({"max_arcs": "30"})
-    assert excinfo.value.code == ErrorCode.INVALID_FIELD_VALUE
-    assert "max_arcs" in excinfo.value.detail
 
 
 def test_zero_is_rejected() -> None:
-    with pytest.raises(VnextFormatError) as excinfo:
+    with pytest.raises(ValueError, match="max_arcs"):
         from_dict({"max_arcs": 0})
-    assert excinfo.value.code == ErrorCode.INVALID_FIELD_VALUE
-    assert "max_arcs" in excinfo.value.detail
 
 
 def test_negative_value_is_rejected() -> None:
-    with pytest.raises(VnextFormatError) as excinfo:
+    with pytest.raises(ValueError, match="max_relationships"):
         from_dict({"max_relationships": -5})
-    assert excinfo.value.code == ErrorCode.INVALID_FIELD_VALUE
-    assert "max_relationships" in excinfo.value.detail
 
 
 def test_none_value_is_rejected() -> None:
-    with pytest.raises(VnextFormatError) as excinfo:
+    with pytest.raises(ValueError, match="max_content_chars"):
         from_dict({"max_content_chars": None})
-    assert excinfo.value.code == ErrorCode.INVALID_FIELD_VALUE
-    assert "max_content_chars" in excinfo.value.detail
 
 
-def test_error_detail_names_field_and_received_value() -> None:
-    """detail 必须说清是哪个字段、收到什么值。"""
-    with pytest.raises(VnextFormatError) as excinfo:
+def test_error_message_names_field_and_received_value() -> None:
+    """错误消息必须说清是哪个字段、收到什么值。"""
+    with pytest.raises(ValueError) as excinfo:
         from_dict({"max_themes": 0})
-    detail = excinfo.value.detail
-    assert "max_themes" in detail
-    assert "0" in detail
-    assert "正整数" in detail
+    message = str(excinfo.value)
+    assert "max_themes" in message
+    assert "0" in message
+    assert "正整数" in message
 
 
-def test_error_detail_reports_the_offending_field_only() -> None:
-    with pytest.raises(VnextFormatError) as excinfo:
+def test_error_message_reports_the_offending_field_only() -> None:
+    with pytest.raises(ValueError) as excinfo:
         from_dict({"max_verified_facts": -5, "max_arcs": 30})
-    assert "max_verified_facts" in excinfo.value.detail
-    assert "-5" in excinfo.value.detail
+    assert "max_verified_facts" in str(excinfo.value)
+    assert "-5" in str(excinfo.value)
 
 
 # ---------------------------------------------------------------------------
@@ -182,9 +165,8 @@ def test_error_detail_reports_the_offending_field_only() -> None:
     ids=["list", "list_of_str", "none", "str", "int", "float", "object"],
 )
 def test_non_mapping_payload_is_rejected(payload: object) -> None:
-    with pytest.raises(VnextFormatError) as excinfo:
+    with pytest.raises(ValueError, match="Mapping"):
         from_dict(payload)  # type: ignore[arg-type]
-    assert excinfo.value.code == ErrorCode.INVALID_FIELD_VALUE
 
 
 # ---------------------------------------------------------------------------
@@ -248,7 +230,10 @@ def test_dataclass_is_frozen() -> None:
         DEFAULT_LIMITS.max_arcs = 99  # type: ignore[misc]
 
 
-def test_module_exposes_expected_public_api() -> None:
-    assert prompt_limits.DEFAULT_LIMITS is DEFAULT_LIMITS
-    assert prompt_limits.from_dict is from_dict
-    assert prompt_limits.to_dict is to_dict
+def test_vnext_shim_reexports_core_objects() -> None:
+    """vnext 转发桩必须原样转发同一批对象（不产生第二份定义）。"""
+    from backend.vnext import prompt_limits as shim
+
+    assert shim.DEFAULT_LIMITS is DEFAULT_LIMITS
+    assert shim.from_dict is from_dict
+    assert shim.to_dict is to_dict

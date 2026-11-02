@@ -331,6 +331,10 @@ TAG_PREFIX = "u6-case:"
 #   text_billing   : 温度层 2 轮 + 退避 1 轮（文本通道恒不 stop）   → attempts=3
 #   rate_limit_429 : 温度层 2 轮 + 退避 max(1,3)=3 轮              → attempts=5
 #   server_500     : 温度层 2 轮 + 退避 1 轮                       → attempts=3
+# 注意：本用例里 402/401 都是账户级永久错误——llm_client 现在带账户级熔断，
+# 第一次结构化命中即跳闸、其余并发路收敛到跳闸 verdict（有意的新语义，
+# 由 test_breaker_wiring.py 锁）。本用例锁的是"无跳闸时判定不互串"，
+# 因此把熔断阈值拉满禁用跳闸，判定隔离的断言才能原样成立。
 CASES = ("success", "structured_402", "structured_401",
          "text_billing", "rate_limit_429", "server_500")
 
@@ -383,6 +387,9 @@ async def test_concurrent_chat_with_retry_verdicts_do_not_cross():
     """6 路并发：每路只携带自己的 cls/confidence/action/attempts，成功路 verdict 为 None。"""
     dispatcher, state = _make_dispatcher()
     client = LLMClient(_make_cfg())
+    # 熔断阈值拉满 = 禁用跳闸：402/401 在本用例里只是"两种失败"，
+    # 判定隔离语义归这里锁，跳闸收敛语义归 test_breaker_wiring.py 锁
+    client._breaker.open_after = 10 ** 9
     fake = MagicMock()
     fake.chat.completions.create = AsyncMock(side_effect=dispatcher)
     client.client = fake
