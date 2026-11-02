@@ -1,5 +1,5 @@
 /**
- * QueuePage 组件级测试：WS 状态机分发（H17）/ F-4 按回调分键防抖 / P2 按名称删书 / M-3 进度清零。
+ * QueuePage 组件级测试：WS 状态机分发 / 按回调分键防抖 / 按名称删书 / 进度清零。
  * WS 回调经 vi.mock ../api/useProgressSocket 捕获后直接喂消息；时间敏感统一 fake timers。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -26,6 +26,8 @@ vi.mock('../api/client', () => ({
     resetQueueItem: vi.fn(),
     clearQueue: vi.fn(),
     deleteBook: vi.fn(),
+    listBooks: vi.fn().mockResolvedValue({ books: [] }),
+    getLatestChapter: vi.fn().mockResolvedValue({ latest: 0 }),
   },
 }))
 
@@ -33,6 +35,7 @@ import { api } from '../api/client'
 import { useProgressSocket, type ProgressMessage } from '../api/useProgressSocket'
 import QueuePage from './QueuePage.vue'
 import RunDashboard from '../components/RunDashboard.vue'
+import ChapterDetailPanel from '../components/ChapterDetailPanel.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import { useLogStore } from '../composables/useLogStore'
 import type { AnalysisStatus, QueueItemDto } from '../api/client'
@@ -102,7 +105,7 @@ beforeEach(() => {
   })
 })
 
-describe('QueuePage WS 状态机（H17）', () => {
+describe('QueuePage WS 状态机', () => {
   it('block_start → 活跃块登记并透传给 RunDashboard', async () => {
     const wrapper = await mountPage()
     feed({ type: 'block_start', payload: { chapter: 9, range: 'ch9-ch10', progress: 0, total: 0, ts: 100 } })
@@ -111,7 +114,7 @@ describe('QueuePage WS 状态机（H17）', () => {
     expect(p.activeBlocks.get(9)?.range).toBe('ch9-ch10')
   })
 
-  it('block_done → 移出活跃 + 登记 finished + 清理该块速率（H17 P3 V2）', async () => {
+  it('block_done → 移出活跃 + 登记 finished + 清理该块速率', async () => {
     const wrapper = await mountPage()
     feed({ type: 'block_start', payload: { chapter: 9, range: 'ch9-ch10', progress: 0, total: 0, ts: 100 } })
     feed({ type: 'token_delta', payload: { context: 'analysis', session_id: 's', unit_idx: 9, delta: { output_tokens: 100, rate_tokens_per_sec: 55 }, timestamp: 0 } })
@@ -122,7 +125,7 @@ describe('QueuePage WS 状态机（H17）', () => {
     const p = dashProps(wrapper)
     expect(p.activeBlocks.has(9)).toBe(false)
     expect(p.finishedBlocks.get(9)?.ok).toBe(true)
-    // 修复语义：done 后聚合速率归零，尾速不再算进"当前聚合"
+    // 语义：done 后聚合速率归零，尾速不再算进"当前聚合"
     expect(p.aggregateRate).toBe(0)
   })
 
@@ -158,7 +161,7 @@ describe('QueuePage WS 状态机（H17）', () => {
   })
 })
 
-describe('QueuePage F-4 防抖刷新（按回调分键）', () => {
+describe('QueuePage 防抖刷新（按回调分键）', () => {
   it('多次 block_done 合并为一次 REST 刷新；token_stats 的刷新不被吞', async () => {
     const wrapper = await mountPage()
     const statusCalls = mockedApi.analysisStatus.mock.calls.length  // 挂载时 1 次
@@ -183,7 +186,7 @@ describe('QueuePage F-4 防抖刷新（按回调分键）', () => {
   })
 })
 
-describe('QueuePage 删除确认（P2 按名称解析索引）', () => {
+describe('QueuePage 删除确认：按名称解析索引', () => {
   const bookA = mkItem({ name: '《A》', status: 'done' })
   const bookB = mkItem({ name: '《B》', status: 'done' })
 
@@ -224,7 +227,7 @@ describe('QueuePage 删除确认（P2 按名称解析索引）', () => {
 })
 
 describe('QueuePage 进度语义', () => {
-  it('M-3：开始分析先清零上一轮进度残留', async () => {
+  it('开始分析先清零上一轮进度残留', async () => {
     const wrapper = await mountPage()
     feed({ type: 'progress', payload: { current: 5, total: 10, eta: '1m' } })
     await nextTick()
@@ -243,5 +246,20 @@ describe('QueuePage 进度语义', () => {
     }))
     const wrapper = await mountPage()  // 挂载即 refresh → 回填
     expect(dashProps(wrapper).progress).toMatchObject({ current: 10, total: 100 })
+  })
+
+  it('点击车道块 → 联动切换至 detail Tab 并设置 detailChapter', async () => {
+    const wrapper = await mountPage()
+    const dash = wrapper.findComponent(RunDashboard)
+    expect(dash.exists()).toBe(true)
+
+    // 触发 select-block(5)
+    await dash.vm.$emit('select-block', 5)
+    await nextTick()
+
+    // 自动切到 detail
+    const detail = wrapper.findComponent(ChapterDetailPanel)
+    expect(detail.exists()).toBe(true)
+    expect(detail.props('chapter')).toBe(5)
   })
 })

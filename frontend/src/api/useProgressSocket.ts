@@ -54,7 +54,7 @@ export interface WSTokenDeltaPayload {
   context: string
   session_id: string
   unit_idx: number
-  delta: { output_tokens: number; rate_tokens_per_sec: number; elapsed_sec?: number }
+  delta: { output_tokens: number; rate_tokens_per_sec: number; elapsed_sec?: number; is_thinking?: boolean }
   timestamp: number
 }
 

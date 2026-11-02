@@ -65,32 +65,163 @@ export function parseThinkingMode(val: string): Record<string, unknown> | null {
 
 // ============ 思考模式状态推断 ============
 
-export type ThinkingState = 'disabled' | 'default' | 'custom'
+export type ThinkingState =
+  | 'disabled'
+  | 'default'
+  | 'depth_low'
+  | 'depth_medium'
+  | 'depth_high'
+  | 'budget'
+  | 'custom'
 
 /**
  * 从 thinking_mode dict 推断当前状态（SettingsPage / SummaryPage 下拉旁的状态提示）。
  *
- * 覆盖五种禁用语法：三种顶层预设 + 探测动态选项可能写入的两种嵌套写法
- * （chat_template_kwargs.enable_thinking / reasoning.effort，llm_probe 候选）——
- * 漏判会把"探测实测有效"的配置显示成 custom，禁用正反馈就落空了。
+ * 核心逻辑：深度优先（Depth Overrides Disable）——
+ * 若配置了思考深度（low/medium/high/budget），优先提示受控深度，避免用户误解。
  *
  * `{}` 的语义按调用方区分：主模型 = 跟随端点默认（llm_client 不注入 extra_body），
  * 总结 = 回退全局 thinking_mode（final_summary.py 的 `or` 回退链）——"default"
- * 是否危险由调用方文案表达，本函数只管状态。
  */
 export function inferThinkingState(tm: Record<string, unknown> | null | undefined): ThinkingState {
   if (!tm || Object.keys(tm).length === 0) return 'default'
   const isObj = (v: unknown): v is Record<string, unknown> =>
     !!v && typeof v === 'object' && !Array.isArray(v)
+
+  // 1. 深度优先识别（用户强调：思考深度优先度高，防崩塌）
+  if (tm.reasoning_effort === 'low') return 'depth_low'
+  if (tm.reasoning_effort === 'medium') return 'depth_medium'
+  if (tm.reasoning_effort === 'high' || tm.reasoning_effort === 'max') return 'depth_high'
+
   const thinking = tm.thinking
-  if (isObj(thinking) && thinking.type === 'disabled') return 'disabled'
+  if (isObj(thinking)) {
+    if (thinking.type === 'enabled' && typeof thinking.budget_tokens === 'number') {
+      return 'budget'
+    }
+    if (thinking.type === 'disabled') return 'disabled'
+  }
+
+  // 2. 禁用模式识别
   if (tm.enable_thinking === false) return 'disabled'
   if (tm.reasoning_effort === 'none') return 'disabled'
   const ctk = tm.chat_template_kwargs
   if (isObj(ctk) && ctk.enable_thinking === false) return 'disabled'
   const reasoning = tm.reasoning
-  if (isObj(reasoning) && reasoning.effort === 'none') return 'disabled'
+  if (isObj(reasoning)) {
+    if (reasoning.effort === 'none') return 'disabled'
+    if (reasoning.effort === 'low') return 'depth_low'
+    if (reasoning.effort === 'medium') return 'depth_medium'
+    if (reasoning.effort === 'high' || reasoning.effort === 'max') return 'depth_high'
+  }
+
   return 'custom'
+}
+
+/** 思考深度预设选项（高优先级，避免完全关闭导致输出质量崩塌） */
+export const THINKING_DEPTH_PRESETS: { value: string; label: string }[] = [
+  { value: '', label: '默认（不限制深度 / 跟随模型）' },
+  { value: 'low', label: '浅度思考 (low) - 推荐！极速防崩' },
+  { value: 'medium', label: '中度思考 (medium) - 平衡质量' },
+  { value: 'high', label: '深度思考 (high) - 深度推理' },
+  { value: 'budget_1024', label: '预算限制: 1024 tok (Claude 3.7)' },
+]
+
+/** 完全禁用思考预设选项（低优先级，仅在深度为默认时生效） */
+export function makeThinkingDisablePresets(autoLabel: string): { value: string; label: string }[] {
+  return [
+    { value: '', label: autoLabel },
+    { value: 'thinking_disabled', label: 'thinking: disabled (MiniMax/GLM)' },
+    { value: 'reasoning_effort_none', label: 'reasoning_effort: none (OpenAI)' },
+    { value: 'enable_thinking_false', label: 'enable_thinking: false (DeepSeek/Qwen)' },
+    { value: 'chat_template_kwargs', label: 'chat_template_kwargs: false (vLLM)' },
+  ]
+}
+
+/**
+ * 两个开关合成最终 thinking_mode dict
+ *
+ * 核心原则：思考深度优先（Depth Overrides Disable）！
+ * 当指定了思考深度（如 low）时，绝对不写入 disabled 参数，
+ * 避免推理模型因强行关闭思考导致输出质量崩塌。
+ */
+export function composeThinkingMode(depth: string, disableParam: string, customJson?: string): Record<string, unknown> {
+  if (customJson && customJson !== '{}') {
+    try {
+      const parsed = JSON.parse(customJson)
+      if (parsed && typeof parsed === 'object') {
+        if (!depth) return parsed
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // 1. 深度优先
+  if (depth === 'low') return { reasoning_effort: 'low' }
+  if (depth === 'medium') return { reasoning_effort: 'medium' }
+  if (depth === 'high') return { reasoning_effort: 'high' }
+  if (depth === 'max') return { reasoning_effort: 'max' }
+  if (depth === 'budget_1024') return { thinking: { type: 'enabled', budget_tokens: 1024 } }
+  if (depth === 'budget_2048') return { thinking: { type: 'enabled', budget_tokens: 2048 } }
+
+  // 2. 深度为默认时，读取禁用设置
+  if (disableParam === 'thinking_disabled') return { thinking: { type: 'disabled' } }
+  if (disableParam === 'reasoning_effort_none') return { reasoning_effort: 'none' }
+  if (disableParam === 'enable_thinking_false') return { enable_thinking: false }
+  if (disableParam === 'chat_template_kwargs') return { chat_template_kwargs: { enable_thinking: false } }
+
+  return {}
+}
+
+/**
+ * 从已有的 thinking_mode dict 反解回深度与禁用开关状态
+ */
+export function decomposeThinkingMode(tm: Record<string, unknown> | null | undefined): {
+  depth: string
+  disableParam: string
+  isCustom: boolean
+} {
+  if (!tm || Object.keys(tm).length === 0) {
+    return { depth: '', disableParam: '', isCustom: false }
+  }
+  const isObj = (v: unknown): v is Record<string, unknown> =>
+    !!v && typeof v === 'object' && !Array.isArray(v)
+
+  // 1. 检查深度
+  if (tm.reasoning_effort === 'low') return { depth: 'low', disableParam: '', isCustom: false }
+  if (tm.reasoning_effort === 'medium') return { depth: 'medium', disableParam: '', isCustom: false }
+  if (tm.reasoning_effort === 'high') return { depth: 'high', disableParam: '', isCustom: false }
+  if (tm.reasoning_effort === 'max') return { depth: 'max', disableParam: '', isCustom: false }
+
+  const thinking = tm.thinking
+  if (isObj(thinking)) {
+    if (thinking.type === 'enabled' && thinking.budget_tokens === 1024) {
+      return { depth: 'budget_1024', disableParam: '', isCustom: false }
+    }
+    if (thinking.type === 'enabled' && thinking.budget_tokens === 2048) {
+      return { depth: 'budget_2048', disableParam: '', isCustom: false }
+    }
+    if (thinking.type === 'disabled') {
+      return { depth: '', disableParam: 'thinking_disabled', isCustom: false }
+    }
+  }
+
+  // 2. 检查禁用
+  if (tm.reasoning_effort === 'none') return { depth: '', disableParam: 'reasoning_effort_none', isCustom: false }
+  if (tm.enable_thinking === false) return { depth: '', disableParam: 'enable_thinking_false', isCustom: false }
+  const ctk = tm.chat_template_kwargs
+  if (isObj(ctk) && ctk.enable_thinking === false) {
+    return { depth: '', disableParam: 'chat_template_kwargs', isCustom: false }
+  }
+  const reasoning = tm.reasoning
+  if (isObj(reasoning)) {
+    if (reasoning.effort === 'none') return { depth: '', disableParam: 'reasoning_effort_none', isCustom: false }
+    if (reasoning.effort === 'low') return { depth: 'low', disableParam: '', isCustom: false }
+    if (reasoning.effort === 'medium') return { depth: 'medium', disableParam: '', isCustom: false }
+    if (reasoning.effort === 'high' || reasoning.effort === 'max') return { depth: 'high', disableParam: '', isCustom: false }
+  }
+
+  return { depth: '', disableParam: '', isCustom: true }
 }
 
 /**

@@ -12,6 +12,8 @@ vi.mock('../api/client', () => ({
     getForeshadowCategories: vi.fn(),
     previewModels: vi.fn(),
     probeThinking: vi.fn(),
+    getModelSpec: vi.fn().mockResolvedValue({ found: false, spec: null, catalog_version: '2026-11-01' }),
+    syncModelsCatalog: vi.fn().mockResolvedValue({ success: true, version: '2026-11-01', total_models: 2347 }),
   },
 }))
 
@@ -137,6 +139,23 @@ describe('SettingsPage 思考模式自动探测', () => {
     expect(wrapper.text()).not.toContain('探测中...')  // busy 复位
   })
 
+  it('best 命中思考深度参数（如 MiniMax M3.1 low）→ 自动切到浅度思考并展示青色徽标', async () => {
+    mockedApi.probeThinking.mockResolvedValue({
+      results: [],
+      best: { thinking_mode: { reasoning_effort: 'low' }, param: 'reasoning_effort: low' },
+      default_thinks: true,
+      default_detection_breakdown: { usage_reasoning_tokens: true },
+      model_type: 'always_on_reasoning',
+      note: 'MiniMax M3.1 Flash 常开思考模型',
+    } as unknown as Awaited<ReturnType<typeof api.probeThinking>>)
+    const wrapper = await mountPage()
+    const probeBtn = wrapper.findAll('button').find((b) => b.text().includes('自动探测'))
+    await probeBtn!.trigger('click')
+    await settle()
+    expect(wrapper.text()).toContain('浅度思考模式 (low)')
+    expect(wrapper.text()).toContain('(已由思考深度接管)')
+  })
+
   it('探测失败 → probeBusy 复位并显示错误，旧结果清空', async () => {
     mockedApi.probeThinking.mockRejectedValue(new Error('端点超时'))
     const wrapper = await mountPage()
@@ -173,6 +192,16 @@ describe('SettingsPage 思考模式状态提示：不点探测也可见', () => 
     const wrapper = await mountPage()
     expect(wrapper.text()).toContain('已显式禁用思考链')
   })
+
+  it('浅度思考配置 → 显示 ⚡ 浅度思考徽标并提示有效抑制思考膨胀', async () => {
+    mockedApi.getSettings.mockResolvedValue({
+      ...mkCfg(),
+      api: { ...mkCfg().api, thinking_mode: { reasoning_effort: 'low' } },
+    } as AppConfigDto)
+    const wrapper = await mountPage()
+    expect(wrapper.text()).toContain('浅度思考模式 (low)')
+    expect(wrapper.text()).toContain('有效抑制思考膨胀')
+  })
 })
 
 describe('SettingsPage API 预设覆盖语义', () => {
@@ -188,5 +217,44 @@ describe('SettingsPage API 预设覆盖语义', () => {
     await presetSelect.setValue('厂商A')
     expect((wrapper.findAll('input')[0].element as HTMLInputElement).value).toBe('https://a/v1')
     expect((apiKeyInput.element as HTMLInputElement).value).toBe('sk-a')
+  })
+})
+
+describe('SettingsPage models.dev 规格与自更新', () => {
+  it('匹配到 models.dev 规范时展示提示徽标（含思考控制与上下文上限）', async () => {
+    mockedApi.getModelSpec.mockResolvedValue({
+      found: true,
+      spec: {
+        id: 'minimax/minimax-m3.1-flash',
+        name: 'MiniMax M3.1 Flash',
+        family: 'minimax',
+        reasoning: true,
+        reasoning_type: 'effort',
+        effort_values: ['low', 'medium', 'high'],
+        recommended_mode: { reasoning_effort: 'low' },
+        limit: { context: 1000000, output: 512000 },
+        cost: { input: 0.15, output: 0.6 },
+      },
+      catalog_version: '2026-11-01',
+    })
+    const wrapper = await mountPage()
+    expect(wrapper.text()).toContain('models.dev 规范：MiniMax M3.1 Flash')
+    expect(wrapper.text()).toContain('支持思考控制（档位: low/medium/high）')
+    expect(wrapper.text()).toContain('上下文 1000k')
+  })
+
+  it('点击更新模型库按钮触发 syncModelsCatalog 并展示同步成功', async () => {
+    mockedApi.syncModelsCatalog.mockResolvedValue({
+      success: true,
+      version: '2026-11-02',
+      total_models: 2400,
+    })
+    const wrapper = await mountPage()
+    const syncBtn = wrapper.findAll('button').find((b) => b.text().includes('更新模型库'))
+    expect(syncBtn).toBeDefined()
+    await syncBtn!.trigger('click')
+    await settle()
+    expect(mockedApi.syncModelsCatalog).toHaveBeenCalled()
+    expect(wrapper.text()).toContain('同步成功 (共 2400 款)')
   })
 })

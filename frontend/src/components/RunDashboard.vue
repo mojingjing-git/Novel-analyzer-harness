@@ -1,10 +1,10 @@
 <script setup lang="ts">
 /**
- * RunDashboard 运行中实时仪表盘（H17 / S1 + Phase 3 V2 升级）
+ * RunDashboard 运行中实时仪表盘
  *
  * 容器组件：聚合指标（含 sparkline）+ LaneView + DiscoveryFeed
  * 数据源：父组件传入
- * H17 Phase 3 (2026-08-26)：聚合卡的"本会话输入/输出"改为 token_delta 真实累计
+ * 聚合卡的"本会话输入/输出"取 token_delta 真实累计
  */
 
 import { computed } from 'vue'
@@ -43,13 +43,12 @@ const props = withDefaults(defineProps<{
   activeBlocks?: Map<number, ActiveBlock>
   /** 已完成块（最近 N 个用于车道占位） */
   finishedBlocks?: Map<number, FinishedBlock>
-  /** 块级 token 累计（V2：车道进度条 + 卡死预警） */
-  tokenByBlock?: Map<number, { outputTokens: number; lastTokenAt: number }>
-  /** H17 Phase 3 V2：30 点速率 sparkline */
+  /** 块级 token 累计（车道进度条 + 卡死预警 + 思考态感知） */
+  tokenByBlock?: Map<number, { outputTokens: number; lastTokenAt: number; isThinking?: boolean }>
+  /** 30 点速率 sparkline */
   rateHistory?: number[]
-  /** H17 P3 V2 修复（2026-08-26）：所有活跃 block 的聚合速率（tok/s）
-   * 修复前 currentRate 是 rateHistory 最后一个值 = 某一个 block 的瞬时速率，
-   * 4 路并发时显示的是单 block 速率，不是系统总吞吐。 */
+  /** 所有活跃 block 的聚合速率（tok/s）：rateHistory 只保留单个 block 的瞬时速率，
+   * 4 路并发时拿它显示会得到单 block 速率而非系统总吞吐。 */
   aggregateRate?: number
   /** 卡死预警阈值（秒） */
   stallWarnSec?: number
@@ -69,12 +68,16 @@ const props = withDefaults(defineProps<{
   discoveries: () => [],
 })
 
+const emit = defineEmits<{
+  (e: 'select-block', blockId: number): void
+}>()
+
 const inputTokens = computed(() => props.sessionTokens?.input ?? 0)
 const outputTokens = computed(() => props.sessionTokens?.output ?? 0)
 const completed = computed(() => props.progress?.current ?? 0)
 const total = computed(() => props.progress?.total ?? 0)
 const eta = computed(() => props.progress?.eta ?? '—')
-// H17 P3 V2 修复：当前显示用 aggregateRate（所有活跃 block 聚合），
+// 当前显示用 aggregateRate（所有活跃 block 聚合），
 // rateHistory 仍驱动 sparkline 历史曲线
 const currentRate = computed(() => {
   if (props.aggregateRate !== undefined && props.aggregateRate > 0) {
@@ -86,13 +89,13 @@ const currentRate = computed(() => {
 
 function fmtNum(n: number): string {
   if (n >= 10000) return `${(n / 1000).toFixed(1)}k`
-  // P2 修复（2026-08-26）：Math.round 去掉 CountUp 动画中间帧的浮点
-  // 修复前 CountUp 在 t<1 时 display = from + delta * eased（浮点），
-  // String() 直接输出 "12.999759744828719" 这种 18 位小数
+  // Math.round 去掉 CountUp 动画中间帧的浮点：
+  // CountUp 在 t<1 时 display = from + delta * eased（浮点），
+  // String() 会直接输出 "12.999759744828719" 这种 18 位小数
   return String(Math.round(n))
 }
 
-// Sparkline polyline points（手写 SVG，30 点；H16 plan 决策：不引入 d3-shape）
+// Sparkline polyline points（手写 SVG，30 点；不引入 d3-shape）
 const sparklinePoints = computed(() => {
   const h = props.rateHistory
   if (h.length === 0) return ''
@@ -137,7 +140,7 @@ const sparklinePoints = computed(() => {
       </div>
     </div>
 
-    <!-- ② 实时速率 sparkline（V2 升级：30 点手写 polyline） -->
+    <!-- ② 实时速率 sparkline（30 点手写 polyline） -->
     <div class="rd-sparkline">
       <div class="rd-sparkline-head">
         <span class="rd-label">实时输出速率</span>
@@ -156,13 +159,14 @@ const sparklinePoints = computed(() => {
       <div v-else class="rd-sparkline-empty">尚无数据</div>
     </div>
 
-    <!-- ③ 并发车道（H17 Phase 3 V2：进度条 + 卡死预警） -->
+    <!-- ③ 并发车道（进度条 + 卡死预警） -->
     <LaneView
       :concurrency="concurrency"
       :active-blocks="activeBlocks"
       :finished-blocks="finishedBlocks"
       :token-by-block="tokenByBlock"
       :stall-warn-sec="stallWarnSec"
+      @select-block="emit('select-block', $event)"
     />
 
     <!-- ④ 发现流 -->
@@ -178,6 +182,8 @@ const sparklinePoints = computed(() => {
   flex-direction: column;
   gap: 12px;
   padding: 16px;
+  min-height: 0;
+  overflow-y: auto;
 }
 .rd-aggregate {
   display: grid;

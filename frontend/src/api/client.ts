@@ -91,6 +91,33 @@ export interface ProbeThinkingResult {
   note: string
 }
 
+export interface ModelSpecDto {
+  id: string
+  name: string
+  family: string
+  reasoning: boolean
+  reasoning_type: string
+  is_always_on?: boolean
+  effort_values: string[]
+  recommended_mode: Record<string, unknown>
+  limit: { context?: number; output?: number }
+  cost: { input?: number; output?: number; reasoning?: number; cache_read?: number; cache_write?: number }
+  provider?: string
+}
+
+export interface ModelSpecResponse {
+  found: boolean
+  spec: ModelSpecDto | null
+  catalog_version: string
+}
+
+export interface SyncModelsResponse {
+  success: boolean
+  version?: string
+  total_models?: number
+  error?: string
+}
+
 export interface AppConfigDto {
   api: {
     base_url: string
@@ -445,6 +472,10 @@ export const api = {
     request<{ models: string[] }>('/api/settings/preview/models', { method: 'POST', body: JSON.stringify(params) }),
   probeThinking: (params: { base_url?: string; api_key?: string; provider?: string; model?: string }) =>
     request<ProbeThinkingResult>('/api/settings/probe-thinking', { method: 'POST', body: JSON.stringify(params) }),
+  getModelSpec: (model: string) =>
+    request<ModelSpecResponse>(`/api/settings/model-spec?model=${encodeURIComponent(model)}`),
+  syncModelsCatalog: () =>
+    request<SyncModelsResponse>('/api/settings/models/sync', { method: 'POST' }),
 
   // 分析控制
   startAnalysis: () => request<{ ok: boolean }>('/api/analysis/start', { method: 'POST' }),

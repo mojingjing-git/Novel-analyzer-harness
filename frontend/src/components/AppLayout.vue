@@ -43,36 +43,125 @@ function winMax() {
   void refreshMaximizedFromBackend()
 }
 function winClose() { void (wvApi()?.close as (() => void) | undefined)?.() }
-function winTitlebarDblClick() {
+function winTitlebarDblClick(e: MouseEvent) {
+  if ((e.target as HTMLElement).closest('.titlebar-controls')) return
   // frameless 模式下没有 Win32 系统标题栏，双击最大化/还原由前端接管
   winMax()
 }
 
-// 标题栏拖拽移动窗口（桌面端）：按下记录起点，移动按增量调用 pywebview move
-// 注意：frameless + double-click 同时存在会冲突——浏览器对原生标题栏的双击放大是默认行为，
-// 但本应用是 WebView2 + 自定义标题栏，dblclick 不会自动触发 maximize；用 Vue 的
-// @dblclick 显式接管即可。
-let dragState: { sx: number; sy: number; lastX: number; lastY: number } | null = null
+// 自制一体化标题栏拖拽移动窗口（桌面端）：
+// 1. 记录按下时光标相对于窗口左上角的偏移 (initialX = clientX, initialY = clientY)；
+// 2. 移动时以绝对屏幕坐标 (screenX - initialX, screenY - initialY) 定位，彻底消除相对增量累积漂移；
+// 3. 优先使用 pywebview 内部快通道（pywebviewMoveWindow），避免 Python 频繁创建 Thread 引起卡顿；
+// 4. 以约 7ms（~140Hz）轻量节流：首帧 0 延迟即时跟手，同时避免 1000Hz 鼠标塞满 IPC。
+let dragState: { initialX: number; initialY: number } | null = null
+let lastMoveTime = 0
+
 function onTitlebarDown(e: MouseEvent) {
-  const api = wvApi()
-  if (!api?.move) return
-  if ((e.target as HTMLElement).closest('.tb-btn')) return // 不拖拽按钮
-  dragState = { sx: e.screenX, sy: e.screenY, lastX: e.screenX, lastY: e.screenY }
+  if (e.button !== 0) return // 仅响应鼠标左键，忽略右键/中键
+  if ((e.target as HTMLElement).closest('.tb-btn')) return // 排除标题栏按钮
+  if (isMaximized.value) return // 最大化状态下不拖拽（双击接管还原）
+
+  dragState = { initialX: e.clientX, initialY: e.clientY }
+  lastMoveTime = 0
   window.addEventListener('mousemove', onTitlebarMove)
   window.addEventListener('mouseup', onTitlebarUp)
 }
+
 function onTitlebarMove(e: MouseEvent) {
   if (!dragState) return
-  const dx = e.screenX - dragState.lastX
-  const dy = e.screenY - dragState.lastY
-  dragState.lastX = e.screenX
-  dragState.lastY = e.screenY
-  if (dx !== 0 || dy !== 0) void (wvApi()?.move as ((x: number, y: number) => void) | undefined)?.(dx, dy)
+  const now = performance.now()
+  if (now - lastMoveTime < 7) return
+  lastMoveTime = now
+
+  const targetX = Math.round(e.screenX - dragState.initialX)
+  const targetY = Math.round(e.screenY - dragState.initialY)
+
+  // 1) 优先调用 pywebview 内部快通道（无 Python 线程创建开销，直接同步调用 Win32 SetWindowPos）
+  const pw = (window as unknown as {
+    pywebview?: {
+      _jsApiCallback?: (fn: string, params: unknown[], id: string) => void
+      api?: Record<string, unknown>
+    }
+  })?.pywebview
+
+  if (pw?._jsApiCallback) {
+    pw._jsApiCallback('pywebviewMoveWindow', [targetX, targetY], 'move')
+    return
+  }
+
+  // 2) 降级：调用暴露在 js_api 上的 move_to 或 move
+  const api = pw?.api
+  if (api?.move_to) {
+    void (api.move_to as (x: number, y: number) => void)(targetX, targetY)
+  } else if (api?.move) {
+    void (api.move as (x: number, y: number) => void)(targetX, targetY)
+  }
 }
+
 function onTitlebarUp() {
   dragState = null
   window.removeEventListener('mousemove', onTitlebarMove)
   window.removeEventListener('mouseup', onTitlebarUp)
+}
+
+// 自制窗口自由缩放（桌面端 Corner Resize Grip + 单飞 IPC 门禁 + Pointer Capture）
+let resizeState: { startX: number; startY: number; startW: number; startH: number } | null = null
+let isResizingIpc = false
+let pendingTargetSize: { w: number; h: number } | null = null
+
+async function flushWindowResize() {
+  if (isResizingIpc || !pendingTargetSize) return
+  isResizingIpc = true
+  const { w, h } = pendingTargetSize
+  pendingTargetSize = null
+  try {
+    const fn = wvApi()?.resize_to as ((w: number, h: number) => Promise<void> | void) | undefined
+    if (fn) {
+      await fn(w, h)
+    }
+  } catch {
+  } finally {
+    isResizingIpc = false
+    if (pendingTargetSize) {
+      requestAnimationFrame(flushWindowResize)
+    }
+  }
+}
+
+function onResizeGripDown(e: PointerEvent) {
+  if (e.button !== 0) return
+  if (isMaximized.value) return
+  const el = e.currentTarget as HTMLElement
+  el.setPointerCapture(e.pointerId)
+
+  resizeState = {
+    startX: e.screenX,
+    startY: e.screenY,
+    startW: window.innerWidth,
+    startH: window.innerHeight,
+  }
+
+  const onPointerMove = (ev: PointerEvent) => {
+    if (!resizeState) return
+    const deltaX = ev.screenX - resizeState.startX
+    const deltaY = ev.screenY - resizeState.startY
+    const targetW = Math.max(960, Math.round(resizeState.startW + deltaX))
+    const targetH = Math.max(700, Math.round(resizeState.startH + deltaY))
+
+    pendingTargetSize = { w: targetW, h: targetH }
+    void flushWindowResize()
+  }
+
+  const onPointerUp = (ev: PointerEvent) => {
+    resizeState = null
+    try { el.releasePointerCapture(ev.pointerId) } catch {}
+    window.removeEventListener('pointermove', onPointerMove)
+    window.removeEventListener('pointerup', onPointerUp)
+  }
+
+  window.addEventListener('pointermove', onPointerMove)
+  window.addEventListener('pointerup', onPointerUp)
 }
 
 // 同步 isMaximized：走后端 Win32 IsZoomed(hwnd) 真实查询。
@@ -101,7 +190,7 @@ function onWindowResize() {
 
 onMounted(() => {
   isDesktop.value = !!wvApi()
-  // P2：WebView2/pywebview 可能晚于挂载注入（官方要求监听 pywebviewready）；
+  // WebView2/pywebview 可能晚于挂载注入（官方要求监听 pywebviewready）；
   // AppLayout 为常驻布局，采样失败则窗口控制整个会话缺失。
   window.addEventListener('pywebviewready', () => {
     isDesktop.value = !!wvApi()
@@ -122,6 +211,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  onTitlebarUp()
   window.removeEventListener('resize', onWindowResize)
   if (_resizeRaf) cancelAnimationFrame(_resizeRaf)
 })
@@ -141,7 +231,7 @@ onBeforeUnmount(() => {
         </div>
         <span class="titlebar-title">小说分析器</span>
       </div>
-      <div v-if="isDesktop" class="titlebar-controls">
+      <div v-if="isDesktop" class="titlebar-controls" @dblclick.stop>
         <button class="tb-btn" title="最小化" @click="winMin"><Icon name="minus" :size="10" /></button>
         <button class="tb-btn" :title="isMaximized ? '还原' : '最大化'" @click="winMax">
           <Icon :name="isMaximized ? 'restore' : 'maximize'" :size="9" />
@@ -162,9 +252,10 @@ onBeforeUnmount(() => {
             active-class="is-active"
             :exact-active-class="item.path === '/' ? 'is-active' : ''"
             :title="collapsed ? item.label : undefined"
+            v-slot="{ isActive, isExactActive }"
           >
             <span class="nav-icon-wrap">
-              <Icon :name="item.icon" :size="16" />
+              <Icon :name="item.icon" :size="16" :filled="item.path === '/' ? isExactActive : isActive" />
             </span>
             <span v-if="!collapsed" class="nav-label">{{ item.label }}</span>
           </router-link>
@@ -194,6 +285,23 @@ onBeforeUnmount(() => {
           </transition>
         </RouterView>
       </main>
+    </div>
+
+    <!-- 桌面端右下角 Corner Resize Grip（最大化时自动隐藏） -->
+    <div
+      v-if="isDesktop && !isMaximized"
+      class="win-resize-grip"
+      @pointerdown="onResizeGripDown"
+      title="拖拽调整窗口大小"
+    >
+      <svg class="win-resize-icon" viewBox="0 0 16 16" width="12" height="12">
+        <circle cx="13" cy="13" r="1.2" fill="currentColor" />
+        <circle cx="9" cy="13" r="1.2" fill="currentColor" />
+        <circle cx="13" cy="9" r="1.2" fill="currentColor" />
+        <circle cx="5" cy="13" r="1.2" fill="currentColor" />
+        <circle cx="9" cy="9" r="1.2" fill="currentColor" />
+        <circle cx="13" cy="5" r="1.2" fill="currentColor" />
+      </svg>
     </div>
   </div>
 </template>
@@ -252,19 +360,23 @@ html.dark .titlebar {
   display: flex;
   height: 100%;
   margin-left: auto;
-  align-items: center;
+  align-items: stretch;
+  flex-shrink: 0;
 }
 .tb-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 46px;
-  height: 32px;
+  height: 100%;
   border: none;
+  border-radius: 0;
+  margin: 0;
+  padding: 0;
   background: transparent;
   color: var(--win-text-primary);
   cursor: pointer;
-  transition: background var(--win-duration-fast) var(--win-ease);
+  transition: background var(--win-duration-fast) var(--win-ease), color var(--win-duration-fast) var(--win-ease);
 }
 .tb-btn:hover { background: var(--win-control-hover); }
 .tb-btn:active { background: var(--win-control-pressed); }
@@ -420,5 +532,31 @@ html.dark .sidebar {
   overflow-y: auto;
   padding: 24px;
   min-width: 0;
+}
+
+/* ===== 桌面端右下角 Corner Resize Grip =====
+   Win11 点阵手柄，固定在视窗右下角，仅桌面端非最大化显示 */
+.win-resize-grip {
+  position: fixed;
+  right: 2px;
+  bottom: 2px;
+  width: 16px;
+  height: 16px;
+  z-index: 9999;
+  cursor: nwse-resize;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  color: var(--win-text-disabled);
+  padding: 1px;
+  user-select: none;
+  touch-action: none;
+  transition: color var(--win-duration-fast) var(--win-ease);
+}
+.win-resize-grip:hover {
+  color: var(--win-accent);
+}
+.win-resize-icon {
+  display: block;
 }
 </style>

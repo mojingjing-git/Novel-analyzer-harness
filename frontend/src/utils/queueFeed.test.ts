@@ -5,6 +5,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   applyBlockStart, applyBlockDone, applyTokenDelta, appendDiscovery,
+  resolvePayloadBlockId,
   aggregateRate, fmt, fmtPercent, summarizeSession, resolveDeleteIndex,
   pickRunningBlockSize, FINISHED_BLOCKS_MAX, RATE_HISTORY_MAX, DISCOVERIES_MAX,
   type FeedActiveBlock, type FeedFinishedBlock, type FeedDiscoveryItem,
@@ -133,6 +134,30 @@ describe('queueFeed.applyTokenDelta', () => {
     const r = applyTokenDelta(tokens, new Map(), [], deltaMsg(-1, 10, 5), NOW)
     expect(r.tokenByBlock.size).toBe(0)
     expect(r.rateHistory).toEqual([5])
+  })
+
+  it('总结各阶段 ID 映射与 is_thinking 推理状态透传', () => {
+    // 风格分析 unit_idx=0 映射为 920001
+    const pStyle = {
+      context: 'summary_phase_3', session_id: 'b', unit_idx: 0,
+      delta: { output_tokens: 300, rate_tokens_per_sec: 15, is_thinking: true },
+      timestamp: NOW,
+    }
+    expect(resolvePayloadBlockId(pStyle)).toBe(920001)
+
+    const r = applyTokenDelta(new Map(), new Map(), [], pStyle, NOW)
+    const block3 = r.tokenByBlock.get(920001)
+    expect(block3).toBeDefined()
+    expect(block3?.outputTokens).toBe(300)
+    expect(block3?.isThinking).toBe(true)
+
+    // 总结阶段 1 (卷2) 映射为 900002
+    const pVol = {
+      context: 'summary_phase_1', session_id: 'b', unit_idx: 2,
+      delta: { output_tokens: 500, rate_tokens_per_sec: 25 },
+      timestamp: NOW,
+    }
+    expect(resolvePayloadBlockId(pVol)).toBe(900002)
   })
 })
 

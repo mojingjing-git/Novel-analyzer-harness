@@ -1,20 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import AppLayout from './components/AppLayout.vue'
-
 import QueuePage from './pages/QueuePage.vue'
-import SettingsPage from './pages/SettingsPage.vue'
-import CharacterCardPage from './pages/CharacterCardPage.vue'
-import SummaryPage from './pages/SummaryPage.vue'
-import SplitterPage from './pages/SplitterPage.vue'
-import WorkspacePage from './pages/WorkspacePage.vue'
-import PromptPreviewPage from './pages/PromptPreviewPage.vue'
-import StylePage from './pages/StylePage.vue'
-import StatsPage from './pages/StatsPage.vue'
-import TimelinePage from './pages/TimelinePage.vue'
-import GraphPage from './pages/GraphPage.vue'
-import MapPage from './pages/MapPage.vue'
-import VnextPage from './pages/VnextPage.vue'
-import VnextDetailPage from './pages/VnextDetailPage.vue'
 
 const routes = [
   {
@@ -22,19 +8,19 @@ const routes = [
     component: AppLayout,
     children: [
       { path: '', component: QueuePage },
-      { path: 'vnext', component: VnextPage },
-    { path: 'vnext/:bookId', component: VnextDetailPage },
-      { path: 'settings', component: SettingsPage },
-      { path: 'characters', component: CharacterCardPage },
-      { path: 'summary', component: SummaryPage },
-      { path: 'splitter', component: SplitterPage },
-      { path: 'workspace', component: WorkspacePage },
-      { path: 'prompt', component: PromptPreviewPage },
-      { path: 'style', component: StylePage },
-      { path: 'stats', component: StatsPage },
-      { path: 'timeline', component: TimelinePage },
-      { path: 'graph', component: GraphPage },
-      { path: 'map', component: MapPage },
+      { path: 'vnext', component: () => import('./pages/VnextPage.vue') },
+      { path: 'vnext/:bookId', component: () => import('./pages/VnextDetailPage.vue') },
+      { path: 'settings', component: () => import('./pages/SettingsPage.vue') },
+      { path: 'characters', component: () => import('./pages/CharacterCardPage.vue') },
+      { path: 'summary', component: () => import('./pages/SummaryPage.vue') },
+      { path: 'splitter', component: () => import('./pages/SplitterPage.vue') },
+      { path: 'workspace', component: () => import('./pages/WorkspacePage.vue') },
+      { path: 'prompt', component: () => import('./pages/PromptPreviewPage.vue') },
+      { path: 'style', component: () => import('./pages/StylePage.vue') },
+      { path: 'stats', component: () => import('./pages/StatsPage.vue') },
+      { path: 'timeline', component: () => import('./pages/TimelinePage.vue') },
+      { path: 'graph', component: () => import('./pages/GraphPage.vue') },
+      { path: 'map', component: () => import('./pages/MapPage.vue') },
     ],
   },
 ]

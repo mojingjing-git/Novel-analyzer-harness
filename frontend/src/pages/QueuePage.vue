@@ -278,6 +278,65 @@ function switchTab(tab: 'overview' | 'detail') {
   userSwitchedTab.value = true
 }
 
+function onSelectLaneBlock(blockId: number) {
+  detailChapter.value = blockId
+  switchTab('detail')
+}
+
+// 分栏高度动态自适应与手动拉伸手柄
+const splitGridRef = ref<HTMLElement | null>(null)
+const customSplitHeight = ref<number | null>((() => {
+  const saved = localStorage.getItem('novel_analyzer_queue_split_height')
+  if (saved) {
+    const val = Number(saved)
+    if (!isNaN(val) && val >= 520) return val
+  }
+  return null
+})())
+let isSplitResizing = false
+let splitStartY = 0
+let splitStartHeight = 0
+
+function onResizeBarPointerDown(e: PointerEvent) {
+  if (e.button !== 0 || !splitGridRef.value) return
+  const bar = e.currentTarget as HTMLElement
+  bar.setPointerCapture(e.pointerId)
+  isSplitResizing = false
+  splitStartY = e.clientY
+  splitStartHeight = splitGridRef.value.getBoundingClientRect().height
+
+  const onPointerMove = (ev: PointerEvent) => {
+    const deltaY = ev.clientY - splitStartY
+    if (!isSplitResizing && Math.abs(deltaY) > 3) {
+      isSplitResizing = true
+    }
+    if (isSplitResizing) {
+      const newHeight = Math.max(520, Math.min(window.innerHeight * 0.9, splitStartHeight + deltaY))
+      customSplitHeight.value = Math.round(newHeight)
+    }
+  }
+
+  const onPointerUp = (ev: PointerEvent) => {
+    bar.releasePointerCapture(ev.pointerId)
+    bar.removeEventListener('pointermove', onPointerMove)
+    bar.removeEventListener('pointerup', onPointerUp)
+    bar.removeEventListener('pointercancel', onPointerUp)
+    if (customSplitHeight.value) {
+      localStorage.setItem('novel_analyzer_queue_split_height', String(customSplitHeight.value))
+    }
+    isSplitResizing = false
+  }
+
+  bar.addEventListener('pointermove', onPointerMove)
+  bar.addEventListener('pointerup', onPointerUp)
+  bar.addEventListener('pointercancel', onPointerUp)
+}
+
+function onResetSplitHeight() {
+  customSplitHeight.value = null
+  localStorage.removeItem('novel_analyzer_queue_split_height')
+}
+
 const STALL_WARN_SEC = 480
 
 // 设置项 tooltip 字典：只覆盖"非一眼能看出"的字段；状态/操作按钮/进度文字不加
@@ -433,7 +492,11 @@ onUnmounted(() => {
       <button class="glass-button" style="font-size: 12px" v-tooltip="tooltips.download_logs" @click="handleDownloadLogs">下载日志</button>
     </div>
 
-    <div class="split-grid">
+    <div
+      ref="splitGridRef"
+      class="split-grid"
+      :style="customSplitHeight ? { height: customSplitHeight + 'px' } : {}"
+    >
       <!-- 左栏：tab 切换（运行概览 | 章节详情） -->
       <div class="split-col">
         <div class="col-head">
@@ -487,6 +550,7 @@ onUnmounted(() => {
           :stall-warn-sec="STALL_WARN_SEC"
           :discoveries="discoveries"
           class="split-detail"
+          @select-block="onSelectLaneBlock"
         />
         <ChapterDetailPanel
           v-else
@@ -496,8 +560,8 @@ onUnmounted(() => {
         />
       </div>
 
-      <!-- 右栏：简化日志（过滤 debug），撑满整列（腾出的空间由其填补） -->
-      <div class="split-col">
+      <!-- 右栏：简化日志（通过绝对定位脱离 Grid 行高计算，防止数百条日志撑爆 Grid 行） -->
+      <div class="split-col split-col-log">
         <div class="col-head">
           <div class="head-main">
             <span class="col-title">
@@ -514,7 +578,21 @@ onUnmounted(() => {
             <button @click="clear" class="glass-button" style="font-size: 12px">清空</button>
           </div>
         </div>
-        <LogConsole :logs="logs" :simplified="true" class="split-log" />
+        <div class="split-log-wrapper">
+          <LogConsole :logs="logs" :simplified="true" class="split-log" />
+        </div>
+      </div>
+    </div>
+
+    <!-- 分栏垂直高度调整条（支持拖拽拉高 / 双击重置） -->
+    <div
+      class="split-resize-bar"
+      @pointerdown="onResizeBarPointerDown"
+      @dblclick="onResetSplitHeight"
+      :title="customSplitHeight ? '拖动调节高度 / 双击恢复默认自适应' : '拖动调节高度'"
+    >
+      <div class="split-resize-handle">
+        <span class="split-resize-pill"></span>
       </div>
     </div>
 
@@ -624,18 +702,64 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
-/* 实时日志与章节详情各占一半宽度，等高且顶部对齐；工具栏移除后腾出的空间由日志整列撑满 */
+/* 实时日志与章节详情各占一半宽度，等高且顶部对齐；工具栏之外的空间由日志整列撑满 */
 .split-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 16px;
-  height: 64vh;
-  min-height: 460px;
+  min-height: 520px;
 }
 .split-col {
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+/* 右栏：关键！position: relative 配合 .split-log-wrapper 绝对定位，
+   防止右侧数百条日志参与 Grid 行高的 max-content 测算，让网格行高 100% 由左侧真实车道数自然主导 */
+.split-col-log {
+  position: relative;
+}
+.split-log-wrapper {
+  position: absolute;
+  top: 66px; /* 避开 col-head 56px + margin 10px */
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 垂直调整手柄条 */
+.split-resize-bar {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 12px;
+  margin: -6px 0 10px;
+  cursor: ns-resize;
+  user-select: none;
+  touch-action: none;
+}
+.split-resize-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+.split-resize-pill {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--win-stroke);
+  transition: background var(--win-duration-fast) var(--win-ease), width var(--win-duration-fast) var(--win-ease);
+}
+.split-resize-bar:hover .split-resize-pill {
+  background: var(--win-text-tertiary);
+  width: 48px;
+}
+.split-resize-bar:active .split-resize-pill {
+  background: var(--win-accent);
 }
 /* 两个分栏使用同等高度的标题条，保证下方内容框上沿、下沿都对齐
    H17 P3 V2 修复（2026-08-26）：min-height 38 → 56，容纳 2 行内容（标题 14px + 副标 11px + 行距）

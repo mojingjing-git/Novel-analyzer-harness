@@ -6,6 +6,7 @@ import {
   pruneEmptyStrings, mapFieldErrors, toggleCategoryIn,
   CATEGORY_CLEAR_FALLBACK, stringifyThinkingMode, parseThinkingMode,
   inferThinkingState, makeThinkingPresets, THINKING_ANTHROPIC_CAVEAT,
+  composeThinkingMode, decomposeThinkingMode, THINKING_DEPTH_PRESETS,
 } from './settingsForm'
 
 describe('settingsForm.pruneEmptyStrings：v-model.number 清空残留', () => {
@@ -88,6 +89,14 @@ describe('settingsForm.inferThinkingState（思考模式状态提示）', () => 
     expect(inferThinkingState({})).toBe('default')
   })
 
+  it('深度优先：reasoning_effort low/medium/high/max 与 budget → 识别为对应深度状态', () => {
+    expect(inferThinkingState({ reasoning_effort: 'low' })).toBe('depth_low')
+    expect(inferThinkingState({ reasoning_effort: 'medium' })).toBe('depth_medium')
+    expect(inferThinkingState({ reasoning_effort: 'high' })).toBe('depth_high')
+    expect(inferThinkingState({ reasoning_effort: 'max' })).toBe('depth_high')
+    expect(inferThinkingState({ thinking: { type: 'enabled', budget_tokens: 1024 } })).toBe('budget')
+  })
+
   it('三种顶层禁用语法 → disabled', () => {
     expect(inferThinkingState({ thinking: { type: 'disabled' } })).toBe('disabled')
     expect(inferThinkingState({ enable_thinking: false })).toBe('disabled')
@@ -97,12 +106,9 @@ describe('settingsForm.inferThinkingState（思考模式状态提示）', () => 
   it('探测动态选项的两种嵌套禁用写法 → disabled（漏判会把实测有效配置显示成 custom）', () => {
     expect(inferThinkingState({ chat_template_kwargs: { enable_thinking: false } })).toBe('disabled')
     expect(inferThinkingState({ reasoning: { effort: 'none' } })).toBe('disabled')
-    // 组合候选：thinking:disabled + reasoning_split 也是禁用
-    expect(inferThinkingState({ thinking: { type: 'disabled' }, reasoning: { effort: 'low' } })).toBe('disabled')
   })
 
   it('显式启用 / 未知自定义 → custom（不做语义判断）', () => {
-    expect(inferThinkingState({ thinking: { type: 'enabled', budget_tokens: 1024 } })).toBe('custom')
     expect(inferThinkingState({ some_vendor_key: 'x' })).toBe('custom')
   })
 
@@ -110,6 +116,43 @@ describe('settingsForm.inferThinkingState（思考模式状态提示）', () => 
     expect(inferThinkingState({ thinking: 'disabled' })).toBe('custom')
     expect(inferThinkingState({ chat_template_kwargs: 'enable_thinking' })).toBe('custom')
     expect(inferThinkingState({ reasoning: null })).toBe('custom')
+  })
+})
+
+describe('settingsForm.composeThinkingMode 与 decomposeThinkingMode（双开关合成引擎与优先级）', () => {
+  it('深度优先（Depth Overrides Disable）：只要指定了深度，绝对不输出 disabled 避免质量崩塌', () => {
+    // 即使 disableParam 选了 thinking_disabled，只要 depth 是 low，就输出 reasoning_effort: low
+    const res = composeThinkingMode('low', 'thinking_disabled')
+    expect(res).toEqual({ reasoning_effort: 'low' })
+    expect('thinking' in res).toBe(false)
+  })
+
+  it('深度为默认时，禁用开关生效', () => {
+    expect(composeThinkingMode('', 'thinking_disabled')).toEqual({ thinking: { type: 'disabled' } })
+    expect(composeThinkingMode('', 'reasoning_effort_none')).toEqual({ reasoning_effort: 'none' })
+    expect(composeThinkingMode('', 'enable_thinking_false')).toEqual({ enable_thinking: false })
+  })
+
+  it('深度与禁用皆为默认时，返回空对象 {}', () => {
+    expect(composeThinkingMode('', '')).toEqual({})
+  })
+
+  it('decomposeThinkingMode 正确反解深度与禁用状态', () => {
+    expect(decomposeThinkingMode({ reasoning_effort: 'low' })).toEqual({
+      depth: 'low', disableParam: '', isCustom: false,
+    })
+    expect(decomposeThinkingMode({ thinking: { type: 'disabled' } })).toEqual({
+      depth: '', disableParam: 'thinking_disabled', isCustom: false,
+    })
+    expect(decomposeThinkingMode({})).toEqual({
+      depth: '', disableParam: '', isCustom: false,
+    })
+    expect(decomposeThinkingMode({ thinking: { type: 'enabled', budget_tokens: 1024 } })).toEqual({
+      depth: 'budget_1024', disableParam: '', isCustom: false,
+    })
+    expect(decomposeThinkingMode({ other_key: 123 })).toEqual({
+      depth: '', disableParam: '', isCustom: true,
+    })
   })
 })
 

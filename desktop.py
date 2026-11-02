@@ -437,6 +437,52 @@ class Api:
         except Exception:
             pass
 
+    def resize_to(self, width: int, height: int):
+        """按逻辑像素调整窗口宽高（带高 DPI 换算与 Win32 原生加速）"""
+        import ctypes
+        hwnd = _get_hwnd()
+        if hwnd is None:
+            return
+        user32 = ctypes.windll.user32
+        # 若处于最大化状态，直接拒绝缩放
+        if user32.IsZoomed(hwnd):
+            return
+        # 最小尺寸防线保护（逻辑像素 960x700）
+        w = max(960, int(width))
+        h = max(700, int(height))
+        try:
+            dpi = user32.GetDpiForWindow(hwnd) or 96
+        except Exception:
+            dpi = 96
+        scale = dpi / 96.0
+        phys_w = int(w * scale)
+        phys_h = int(h * scale)
+        # SWP_NOMOVE (0x0002) | SWP_NOZORDER (0x0004) | SWP_NOACTIVATE (0x0010) = 0x0016
+        SWP_FLAGS = 0x0002 | 0x0004 | 0x0010
+        user32.SetWindowPos(hwnd, 0, 0, 0, phys_w, phys_h, SWP_FLAGS)
+
+    def get_window_size(self) -> dict:
+        """获取窗口当前逻辑像素宽高"""
+        import ctypes
+        hwnd = _get_hwnd()
+        if hwnd is None:
+            return {"width": 1600, "height": 900}
+        user32 = ctypes.windll.user32
+        rect = (ctypes.c_long * 4)()  # left, top, right, bottom
+        if not user32.GetWindowRect(hwnd, rect):
+            return {"width": 1600, "height": 900}
+        phys_w = rect[2] - rect[0]
+        phys_h = rect[3] - rect[1]
+        try:
+            dpi = user32.GetDpiForWindow(hwnd) or 96
+        except Exception:
+            dpi = 96
+        scale = dpi / 96.0
+        return {
+            "width": int(phys_w / scale),
+            "height": int(phys_h / scale)
+        }
+
     def get_session_token(self) -> str:
         """返回会话 token，前端 fetch 据此附加 X-Session-Token header。
 

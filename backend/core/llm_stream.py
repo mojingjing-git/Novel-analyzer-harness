@@ -41,8 +41,27 @@ class StreamChunk:
     usage_completion_tokens: int = 0
     usage_cached_tokens: int = 0
     is_final: bool = False
+    is_thinking: bool = False
     error: str = ""
     verdict: Optional[ErrorVerdict] = None
+
+
+def estimate_token_count(text: str) -> int:
+    """快速估算文本 token 数：
+    - 中文/全角标点：1 字符 ≈ 1.2 tokens
+    - 英文/ASCII：1 token ≈ 4 字符（满足既有英文测试合同）
+    """
+    if not text:
+        return 0
+    cjk_count = sum(
+        1 for c in text
+        if '\u4e00' <= c <= '\u9fff'
+        or '\u3000' <= c <= '\u303f'
+        or '\uff01' <= c <= '\uffee'
+        or '\u201c' <= c <= '\u2026'
+    )
+    ascii_count = len(text) - cjk_count
+    return int(cjk_count * 1.2 + ascii_count / 4.0)
 
 
 @dataclass
@@ -107,13 +126,34 @@ def parse_openai_stream_event(event) -> Optional[StreamChunk]:
     if not delta:
         return None
 
-    text = getattr(delta, "content", "") or ""
-    reasoning = getattr(delta, "reasoning_content", "") or ""
+    raw_text = getattr(delta, "content", "")
+    text = raw_text if isinstance(raw_text, str) else ""
+
+    raw_reasoning = getattr(delta, "reasoning_content", "")
+    reasoning = raw_reasoning if isinstance(raw_reasoning, str) else ""
+
+    if not reasoning:
+        details = getattr(delta, "reasoning_details", None)
+        if isinstance(details, str):
+            reasoning = details
+        elif isinstance(details, list):
+            reasoning = "".join(
+                str(d.get("text", "") if isinstance(d, dict) else d)
+                for d in details
+                if isinstance(d, (str, dict))
+            )
+        elif isinstance(details, dict):
+            reasoning = str(details.get("text", "") or "")
+
+    if not reasoning:
+        raw_r = getattr(delta, "reasoning", "")
+        if isinstance(raw_r, str):
+            reasoning = raw_r
 
     if reasoning:
-        return StreamChunk(type="reasoning", reasoning_text=reasoning)
+        return StreamChunk(type="reasoning", reasoning_text=reasoning, is_thinking=True)
     if text:
-        return StreamChunk(type="content", text=text)
+        return StreamChunk(type="content", text=text, is_thinking=False)
     return None
 
 
@@ -132,9 +172,9 @@ def parse_anthropic_stream_event(event) -> Optional[StreamChunk]:
             return None
         dtype = getattr(delta, "type", "")
         if dtype == "text":
-            return StreamChunk(type="content", text=getattr(delta, "text", "") or "")
+            return StreamChunk(type="content", text=getattr(delta, "text", "") or "", is_thinking=False)
         if dtype == "thinking":
-            return StreamChunk(type="reasoning", reasoning_text=getattr(delta, "thinking", "") or "")
+            return StreamChunk(type="reasoning", reasoning_text=getattr(delta, "thinking", "") or "", is_thinking=True)
     elif etype == "message_delta":
         usage = getattr(event, "usage", None)
         if usage:

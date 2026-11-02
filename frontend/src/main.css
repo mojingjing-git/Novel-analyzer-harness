@@ -30,6 +30,8 @@
   /* 背景 / 图层 */
   --win-bg-base: #F3F3F3;            /* 窗口基底，模拟 Mica */
   --win-layer: #FFFFFF;              /* 内容层/卡片 */
+  --win-layer-acrylic: rgba(255, 255, 255, 0.85); /* In-app Acrylic 浅色浮层 */
+  --win-acrylic-stroke: rgba(0, 0, 0, 0.08);
   --win-control-alt: #F9F9F9;        /* 控件默认背景 */
   --win-control-hover: #F0F0F0;      /* 控件悬停 */
   --win-control-pressed: #E9E9E9;    /* 控件按下 */
@@ -99,6 +101,8 @@ html.dark {
 
   --win-bg-base: #202020;
   --win-layer: #323232;
+  --win-layer-acrylic: rgba(44, 44, 44, 0.85); /* In-app Acrylic 深色浮层 */
+  --win-acrylic-stroke: rgba(255, 255, 255, 0.10);
   --win-control-alt: #2B2B2B;
   --win-control-hover: #3A3A3A;
   --win-control-pressed: #353535;
@@ -189,21 +193,9 @@ html.dark ::-webkit-scrollbar-thumb:hover {
   background-color: rgba(255, 255, 255, 0.34);
 }
 
-/* ===== Win11 真 Mica（desktop.py DWM 启用成功时注入 mica-on）=====
-   页面/侧边栏/标题栏底色让位系统 Mica 背景，卡片保持不透明形成浮层。
-   DWM 失败时无 mica-on 类，以上纯色背景完整回退。 */
-html.mica-on body {
-  background-color: transparent;
-  background-image: none;
-}
-html.mica-on .sidebar {
-  background-color: transparent;
-  background-image: none;
-}
-html.mica-on .titlebar {
-  background-color: transparent;
-  background-image: none;
-}
+/* ============================================================
+   2.2 核心材质表面
+   ============================================================ */
 
 /* Mica 表面（侧边栏/标题栏/主区背景）：基底灰 + 极淡壁纸色调，内容卡片白色叠加其上 */
 .mica-surface {
@@ -296,6 +288,7 @@ html.mica-on .titlebar {
   border: 1px solid var(--win-stroke);
   border-radius: var(--win-radius-overlay);
   box-shadow: var(--win-shadow-flyout);
+  overflow: hidden;
 }
 
 /* 控件次级背景 */

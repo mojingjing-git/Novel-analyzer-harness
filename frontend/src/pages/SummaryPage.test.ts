@@ -20,6 +20,8 @@ vi.mock('../api/client', async () => ({
     exportAggregateExcel: vi.fn(),
     getBooks: vi.fn(async () => ({ books: [] })),
     probeThinking: vi.fn(),
+    getModelSpec: vi.fn(async () => ({ found: false, spec: null, catalog_version: '2026-11-01' })),
+    syncModelsCatalog: vi.fn(async () => ({ success: true, version: '2026-11-01', total_models: 2347 })),
   },
 }))
 // stub 成可控发射器（真实组件会自请求书目列表）
@@ -172,6 +174,33 @@ describe('SummaryPage 思考模式探测：总结模型独立探测', () => {
     await vi.advanceTimersByTimeAsync(700)
     const last = mockedApi.putSettings.mock.calls[mockedApi.putSettings.mock.calls.length - 1][0]
     expect(last.api!.summary_thinking_mode).toEqual({ chat_template_kwargs: { enable_thinking: false } })
+  })
+
+  it('探测命中深度参数（MiniMax M3.1 low）→ 自动切到思考深度并回写 reasoning_effort: low', async () => {
+    mockedApi.probeThinking.mockResolvedValue({
+      results: [],
+      best: { thinking_mode: { reasoning_effort: 'low' }, param: 'reasoning_effort: low' },
+      default_thinks: true,
+      default_detection_breakdown: { usage_reasoning_tokens: true },
+      model_type: 'always_on_reasoning',
+      note: 'MiniMax M3.1 Flash 常开思考模型',
+    } as unknown as Awaited<ReturnType<typeof api.probeThinking>>)
+    const wrapper = await mountPage()
+    const modelSelect = wrapper.findAll('select')[1]
+    modelSelect.setValue('m-a')
+    await settle()
+    const btn = wrapper.findAll('button').find((b) => b.text().includes('自动探测'))
+    await btn!.trigger('click')
+    await settle()
+
+    // 状态提示显示总结浅度思考徽标
+    expect(wrapper.text()).toContain('总结浅度思考 (low)')
+    expect(wrapper.text()).toContain('(深度接管)')
+
+    // 触发防抖回写
+    await vi.advanceTimersByTimeAsync(700)
+    const last = mockedApi.putSettings.mock.calls[mockedApi.putSettings.mock.calls.length - 1][0]
+    expect(last.api!.summary_thinking_mode).toEqual({ reasoning_effort: 'low' })
   })
 
   it('总结模型为空时探测按钮禁用（防呆）', async () => {

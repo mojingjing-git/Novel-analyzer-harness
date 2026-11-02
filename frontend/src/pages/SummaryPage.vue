@@ -2,7 +2,8 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import BookSelector from '../components/BookSelector.vue'
 import LogConsole, { type LogEntry } from '../components/LogConsole.vue'
-import { api, type SummaryStatus } from '../api/client'
+import Icon from '../components/Icon.vue'
+import { api, type SummaryStatus, type ModelSpecDto } from '../api/client'
 import { renderMarkdown } from '../utils/markdown'
 import {
   SUMMARY_PHASES, phaseLabelOf, phaseIndexOf, stepClassOf, overallPctOf,
@@ -10,7 +11,8 @@ import {
   dictToJsonString, jsonStringToDict,
 } from '../utils/summaryProgress'
 import {
-  inferThinkingState, makeThinkingPresets, THINKING_ANTHROPIC_CAVEAT,
+  inferThinkingState, makeThinkingPresets, THINKING_DEPTH_PRESETS,
+  composeThinkingMode, decomposeThinkingMode, THINKING_ANTHROPIC_CAVEAT,
   type ThinkingState,
 } from '../utils/settingsForm'
 import { useLogStore } from '../composables/useLogStore'
@@ -69,24 +71,54 @@ async function exportExcel() {
 // ===== 区块二：最终总结 =====
 const startCh = ref(1)
 const endCh = ref(99999)
-// 0802 spec：批次/并发参数持久化到后端 config.json（取代 localStorage）
+// 批次/并发参数持久化到后端 config.json（取代 localStorage）
 const batchSize = ref(30)
 const concurrency = ref(2)
 // 总结专用模型/思考覆盖：空=跟随全局设置
 const summaryModel = ref('')
 const summaryThinking = ref('{}')
+const summaryDepth = ref('')
 const modelOptions = ref<string[]>([])
 let paramsLoaded = false
 let persistTimer: ReturnType<typeof setTimeout> | null = null
 let persistVersion = 0
 const paramSaveError = ref('')
+const summaryModelSpec = ref<ModelSpecDto | null>(null)
+
+async function fetchSummaryModelSpec(modelName?: string) {
+  const m = (modelName ?? summaryModel.value ?? '').trim()
+  if (!m) {
+    summaryModelSpec.value = null
+    return
+  }
+  try {
+    const res = await api.getModelSpec?.(m)
+    if (res?.found && res.spec) {
+      summaryModelSpec.value = res.spec
+    } else {
+      summaryModelSpec.value = null
+    }
+  } catch {
+    summaryModelSpec.value = null
+  }
+}
+
 watch(batchSize, () => { if (paramsLoaded) schedulePersist() })
 watch(concurrency, () => { if (paramsLoaded) schedulePersist() })
-watch(summaryModel, () => { if (paramsLoaded) schedulePersist() })
+watch(summaryModel, (m) => {
+  fetchSummaryModelSpec(m)
+  if (paramsLoaded) schedulePersist()
+})
 watch(summaryThinking, () => { if (paramsLoaded) schedulePersist() })
+watch(summaryDepth, () => { if (paramsLoaded) schedulePersist() })
+
+// 两个开关合成最终 thinking_mode dict（思考深度优先）
+const effectiveSummaryThinkingDict = computed(() => {
+  return composeThinkingMode(summaryDepth.value, '', summaryThinking.value)
+})
 
 // 防抖 + 版本号串行化：连续修改只触发一次写入；写入时重新读服务器最新配置再全量回写，
-// 避免多个并发 PUT 基于旧快照互相覆盖（旧实现的竞态：快速改两个参数会丢其中一个）。
+// 避免多个并发 PUT 基于旧快照互相覆盖（快速改两个参数会丢其中一个）。
 function schedulePersist() {
   persistVersion++
   const myVersion = persistVersion
@@ -107,7 +139,7 @@ async function persistSummaryParams() {
     cfg.analysis.summary_batch_size = batchSize.value
     cfg.analysis.summary_concurrency = concurrency.value
     cfg.api.summary_model = summaryModel.value
-    cfg.api.summary_thinking_mode = jsonStringToDict(summaryThinking.value)
+    cfg.api.summary_thinking_mode = effectiveSummaryThinkingDict.value
     await api.putSettings(cfg)
   } catch (e) {
     // 分析运行中 PUT 会返回 409：显式提示，避免用户以为改成功
@@ -122,13 +154,17 @@ async function persistSummaryParams() {
 const THINKING_OPTIONS = makeThinkingPresets('自动（跟随全局设置）')
 
 // 状态提示（不点探测也可见）：总结 `{}` 的实际效果取决于全局值，
-// 两级组合显示防误报——全局已显式禁用时不再报"可能开启"（M3 事故教训 10.18）
+// 两级组合显示防误报——全局已显式禁用时不再报"可能开启"
 const globalThinking = ref<Record<string, unknown> | undefined>(undefined)
 const summaryThinkingState = computed<ThinkingState>(() =>
-  inferThinkingState(jsonStringToDict(summaryThinking.value)))
+  inferThinkingState(effectiveSummaryThinkingDict.value))
 const globalThinkingState = computed<ThinkingState>(() => inferThinkingState(globalThinking.value))
 const globalThinkingLabel = computed(() => {
   if (globalThinkingState.value === 'disabled') return '✓ 已显式禁用'
+  if (globalThinkingState.value === 'depth_low') return '⚡ 浅度思考 (low)'
+  if (globalThinkingState.value === 'depth_medium') return '⚡ 中度思考 (medium)'
+  if (globalThinkingState.value === 'depth_high') return '⚡ 深度思考 (high)'
+  if (globalThinkingState.value === 'budget') return '⚡ 预算限制'
   if (globalThinkingState.value === 'default') return '⚠ 跟随端点默认（可能开启思考链）'
   return '已自定义'
 })
@@ -153,11 +189,18 @@ async function runProbeThinking() {
     dynamicThinkingOptions.value = []
     if (res.best?.thinking_mode) {
       const s = JSON.stringify(res.best.thinking_mode)
-      if (!THINKING_OPTIONS.some((o) => o.value === s)) {
-        dynamicThinkingOptions.value = [{ value: s, label: `探测命中: ${res.best.param || s}` }]
+      const dec = decomposeThinkingMode(res.best.thinking_mode)
+      if (dec.depth) {
+        summaryDepth.value = dec.depth
+        summaryThinking.value = '{}'
+      } else {
+        summaryDepth.value = ''
+        if (!THINKING_OPTIONS.some((o) => o.value === s)) {
+          dynamicThinkingOptions.value = [{ value: s, label: `探测命中: ${res.best.param || s}` }]
+        }
+        // 命中自动写入（与 SettingsPage 一致）；summaryThinking 是字符串 ref，经 dict 转换回写
+        summaryThinking.value = dictToJsonString(res.best.thinking_mode)
       }
-      // 命中自动写入（与 SettingsPage 一致）；summaryThinking 是字符串 ref，经 dict 转换回写
-      summaryThinking.value = dictToJsonString(res.best.thinking_mode)
       if (paramsLoaded) schedulePersist()
     }
   } catch (e) {
@@ -176,8 +219,15 @@ async function loadSummaryParams() {
     batchSize.value = cfg.analysis.summary_batch_size ?? 30
     concurrency.value = cfg.analysis.summary_concurrency ?? 2
     summaryModel.value = cfg.api.summary_model ?? ''
-    summaryThinking.value = dictToJsonString(cfg.api.summary_thinking_mode)
+    const dec = decomposeThinkingMode(cfg.api.summary_thinking_mode)
+    summaryDepth.value = dec.depth
+    if (dec.depth) {
+      summaryThinking.value = '{}'
+    } else {
+      summaryThinking.value = dictToJsonString(cfg.api.summary_thinking_mode)
+    }
     globalThinking.value = cfg.api.thinking_mode  // 供 `{}` 两级组合状态提示判定实际效果
+    await fetchSummaryModelSpec(summaryModel.value)
     // 当前模型不在列表时补一项（支持列表接口没返回的自定义模型）
     if (summaryModel.value && !modelOptions.value.includes(summaryModel.value)) {
       modelOptions.value.push(summaryModel.value)
@@ -307,17 +357,50 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
           </select>
         </div>
         <div class="flex items-center gap-2">
-          <label class="text-sm shrink-0" style="color: var(--win-text-secondary)" title="总结专用思考控制，空=跟随全局；M3/mimo/GLM 用 thinking 参数，DeepSeek/Qwen 用 enable_thinking（M2.x 关不掉思考）">思考模式:</label>
-          <select v-model="summaryThinking" class="glass-input flex-1">
+          <label class="text-sm shrink-0" style="color: var(--win-text-secondary)" title="总结专用思考控制，空=跟随全局；仅在未指定思考深度时生效">思考控制:</label>
+          <select v-model="summaryThinking" :disabled="Boolean(summaryDepth)" class="glass-input flex-1" :title="summaryDepth ? '已启用思考深度控制，禁用开关被高优先级覆盖' : '仅在未指定思考深度时生效'">
             <option v-for="o in [...THINKING_OPTIONS, ...dynamicThinkingOptions]" :key="o.value" :value="o.value">{{ o.label }}</option>
           </select>
-          <button @click="runProbeThinking" :disabled="probeBusy || !summaryModel.trim()" class="glass-button btn-sm" title="对总结专用模型发几次微请求，实测哪个禁用思考参数有效，命中后自动填入上方下拉（复用全局 base_url/api_key）">
+        </div>
+        <div class="flex items-center gap-2">
+          <label class="text-sm shrink-0" style="color: var(--win-text-secondary)" title="总结思考深度控制。浅度思考(low)可兼顾逻辑连贯与速度，避免模型输出崩塌">思考深度:</label>
+          <select v-model="summaryDepth" class="glass-input flex-1">
+            <option v-for="d in THINKING_DEPTH_PRESETS" :key="d.value" :value="d.value">{{ d.label }}</option>
+          </select>
+        </div>
+        <div class="flex items-center gap-2">
+          <button @click="runProbeThinking" :disabled="probeBusy || !summaryModel.trim()" class="glass-button btn-sm" title="对总结专用模型发几次微请求，实测有效思考控制/深度参数，命中后自动应用">
             {{ probeBusy ? '探测中...' : '自动探测' }}
           </button>
+          <span v-if="summaryDepth" class="text-xs shrink-0" style="color: var(--win-text-disabled)">
+            (深度接管)
+          </span>
         </div>
       </div>
+      <!-- models.dev 规范徽标（纯 div/span，无表单标签，完全保证 DOM 索引稳定性） -->
+      <div v-if="summaryModelSpec" class="text-xs px-2 py-1 rounded glass-tinted-blue flex items-center gap-2 flex-wrap" style="color: var(--win-accent, #0078d4)">
+        <span>💡 models.dev 规范：{{ summaryModelSpec.name }}</span>
+        <span v-if="summaryModelSpec.reasoning">
+          · 思考控制（{{ summaryModelSpec.reasoning_type === 'effort' ? '档位: ' + (summaryModelSpec.effort_values?.join('/') || 'low/medium/high') : (summaryModelSpec.reasoning_type === 'budget_tokens' ? 'Token 预算' : '开/关') }}）
+        </span>
+        <span v-else style="color: var(--win-text-secondary)">· 原生无思考链</span>
+        <span v-if="summaryModelSpec.limit?.context">· 上下文 {{ (summaryModelSpec.limit.context / 1000).toFixed(0) }}k</span>
+        <span v-if="summaryModelSpec.cost?.input">· 费率 ${{ summaryModelSpec.cost.input }}/MIn</span>
+      </div>
       <!-- 状态提示：`{}` 两级组合显示（总结 `{}` 回退全局——风险措辞仅当全局也是"默认"时出现） -->
-      <div v-if="summaryThinkingState === 'default'" class="text-xs px-2 py-1 rounded" :class="globalThinkingState === 'default' ? 'glass-tinted-red' : 'glass-tinted-green'">
+      <div v-if="summaryThinkingState === 'depth_low'" class="text-xs glass-tinted-blue px-2 py-1 rounded" style="color: var(--win-accent, #0078d4)">
+        ⚡ 总结浅度思考 (low)：有效抑制长篇总结思考膨胀与耗时，保障逻辑连贯与输出质量
+      </div>
+      <div v-else-if="summaryThinkingState === 'depth_medium'" class="text-xs glass-tinted-blue px-2 py-1 rounded" style="color: var(--win-accent, #0078d4)">
+        ⚡ 总结中度思考 (medium)：平衡总结推理深度与输出速度
+      </div>
+      <div v-else-if="summaryThinkingState === 'depth_high'" class="text-xs glass-tinted-blue px-2 py-1 rounded" style="color: var(--win-accent, #0078d4)">
+        ⚡ 总结深度思考 (high)：完整长程链式思考，耗时较长
+      </div>
+      <div v-else-if="summaryThinkingState === 'budget'" class="text-xs glass-tinted-blue px-2 py-1 rounded" style="color: var(--win-accent, #0078d4)">
+        ⚡ 总结思考 Token 预算限制模式
+      </div>
+      <div v-else-if="summaryThinkingState === 'default'" class="text-xs px-2 py-1 rounded" :class="globalThinkingState === 'default' ? 'glass-tinted-red' : 'glass-tinted-green'">
         <span v-if="globalThinkingState === 'default'" style="color: var(--win-warning)">
           ⚠ 跟随全局设置（当前全局：{{ globalThinkingLabel }}）——总结模型直接暴露在端点默认行为下
         </span>

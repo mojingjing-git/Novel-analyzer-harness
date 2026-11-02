@@ -91,24 +91,59 @@ export function applyBlockDone(
 
 // ============ token_delta：块级累计 + 速率 ============
 
+export interface BlockTokenInfo {
+  outputTokens: number
+  lastTokenAt: number
+  isThinking?: boolean
+}
+
+/**
+ * 转换 token_delta 的 blockId：
+ * - context="analysis": 直接使用 unit_idx 章节号
+ * - context="summary_phase_*": 映射到 900000+ 合成车道 ID，与 summaryLanes.ts 契约对齐
+ */
+export function resolvePayloadBlockId(p: WSTokenDeltaPayload): number {
+  const context = p.context ?? 'analysis'
+  const rawIdx = Number(p.unit_idx ?? -1)
+
+  if (context === 'analysis') {
+    return rawIdx
+  }
+  if (context === 'summary_phase_1') {
+    return 900000 + (rawIdx > 0 ? rawIdx : 1)
+  }
+  if (context === 'summary_phase_2') {
+    return 910000 + (rawIdx > 0 ? rawIdx : 1)
+  }
+  if (context === 'summary_phase_3') {
+    return 920001
+  }
+  if (context === 'summary_phase_4') {
+    return 930001
+  }
+  return rawIdx
+}
+
 /** 实时 token 增量 → 块级累计（取最大非相加）+ per-block 最新速率 + 全局 sparkline 历史 */
 export function applyTokenDelta(
-  tokenByBlock: Map<number, { outputTokens: number; lastTokenAt: number }>,
+  tokenByBlock: Map<number, BlockTokenInfo>,
   rateByBlock: Map<number, number>,
   rateHistory: number[],
   p: WSTokenDeltaPayload,
   nowMs: number,
-): { tokenByBlock: Map<number, { outputTokens: number; lastTokenAt: number }>; rateByBlock: Map<number, number>; rateHistory: number[] } {
+): { tokenByBlock: Map<number, BlockTokenInfo>; rateByBlock: Map<number, number>; rateHistory: number[] } {
   const d = p.delta
-  const blockId = Number(p.unit_idx ?? -1)
+  const blockId = resolvePayloadBlockId(p)
   const outTokens = Number(d.output_tokens ?? 0)
   const rate = Number(d.rate_tokens_per_sec ?? 0)
+  const isThinking = Boolean(d.is_thinking)
   const nextTokens = new Map(tokenByBlock)
   const nextRate = new Map(rateByBlock)
-  if (blockId > 0) {
+  if (blockId >= 0) {
     const cur = nextTokens.get(blockId) || { outputTokens: 0, lastTokenAt: 0 }
     cur.outputTokens = Math.max(cur.outputTokens, outTokens)  // 累计取最大
     cur.lastTokenAt = nowMs
+    cur.isThinking = isThinking
     nextTokens.set(blockId, cur)
     // 注意：rate 可能 < 0 / = 0（停止 / 出错），也照更新以反映"该 block 当前不输出"
     nextRate.set(blockId, rate)

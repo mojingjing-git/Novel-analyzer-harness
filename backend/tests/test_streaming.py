@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from backend.config.settings import APIConfig
 from backend.core.llm_client import LLMClient, detect_provider
 from backend.core.llm_stream import (
-    StreamChunk, StreamResult,
+    StreamChunk, StreamResult, estimate_token_count,
     parse_openai_stream_event,
 )
 from backend.core.llm_probe import probe_thinking_params
@@ -129,6 +129,41 @@ class TestParseOpenAIStreamEvent:
         ev = make_event()
         ev.usage = None
         assert parse_openai_stream_event(ev) is None
+
+    def test_parse_reasoning_details_str_and_list(self):
+        """兼容 MiniMax 等模型返回的 reasoning_details 字段（字符串与列表字典形态）"""
+        # 字符串形态
+        d1 = MagicMock()
+        d1.content = ""
+        d1.reasoning_content = ""
+        d1.reasoning_details = "thinking in details"
+        ev1 = make_event(choices=[MagicMock(delta=d1)])
+        chunk1 = parse_openai_stream_event(ev1)
+        assert chunk1 is not None
+        assert chunk1.type == "reasoning"
+        assert chunk1.reasoning_text == "thinking in details"
+        assert chunk1.is_thinking is True
+
+        # 列表形态
+        d2 = MagicMock()
+        d2.content = ""
+        d2.reasoning_content = ""
+        d2.reasoning_details = [{"text": "step 1 "}, {"text": "step 2"}]
+        ev2 = make_event(choices=[MagicMock(delta=d2)])
+        chunk2 = parse_openai_stream_event(ev2)
+        assert chunk2 is not None
+        assert chunk2.type == "reasoning"
+        assert chunk2.reasoning_text == "step 1 step 2"
+
+    def test_estimate_token_count(self):
+        """双模 token 估算器：中文标点 1.2x，纯英文 ASCII 0.25x"""
+        assert estimate_token_count("") == 0
+        # 英文：11 chars / 4 = 2 tokens
+        assert estimate_token_count("hello world") == 2
+        # 中文：4 汉字 * 1.2 = 4.8 -> 4 tokens
+        assert estimate_token_count("这是小说") == 4
+        # 中文全角标点同样覆盖：6 字符 * 1.2 = 7.2 -> 7 tokens
+        assert estimate_token_count("“，。！？”") == 7
 
 
 # ============================ chat_stream 流式基础 ============================
@@ -324,6 +359,82 @@ class TestChatStreamWithRetry:
         # 实际是 "hello"(5) + " world"(6) = 11 char
         assert progress_values[0] == 5 // 4
         assert progress_values[1] == 11 // 4
+
+    async def test_reasoning_accumulates_output_tokens_and_is_thinking(self):
+        """推理阶段 chunk.type='reasoning' 也能累加 output_tokens 并携带 is_thinking"""
+        client = LLMClient(make_config(temperature_max_retries=1, backoff_max_retries=0))
+
+        async def mock_reasoning_stream():
+            yield StreamChunk(type="reasoning", reasoning_text="思考逻辑分析中...", is_thinking=True)
+            yield StreamChunk(type="content", text='{"status": "ok"}', is_thinking=False)
+            yield StreamChunk(type="usage", usage_prompt_tokens=10, usage_completion_tokens=20, is_final=True)
+
+        async def mock_chat_stream(*args, **kwargs):
+            async for c in mock_reasoning_stream():
+                yield c
+
+        progress_reports = []
+
+        async def on_progress(chunk: StreamChunk):
+            progress_reports.append((chunk.estimated_total_tokens, chunk.is_thinking))
+
+        client.chat_stream = mock_chat_stream
+        result = await client.chat_stream_with_retry(
+            [{"role": "user", "content": "hi"}],
+            on_progress=on_progress,
+        )
+
+        assert result.success is True
+        # 思考阶段即有 token 累加，且标记 is_thinking=True
+        assert len(progress_reports) == 3
+        assert progress_reports[0][0] > 0
+        assert progress_reports[0][1] is True
+        # 正文阶段 token 进一步增加，且 is_thinking=False
+        assert progress_reports[1][0] > progress_reports[0][0]
+        assert progress_reports[1][1] is False
+
+    async def test_retry_resets_accumulated_output_tokens(self):
+        """重试时单次 attempt 累加器清零，避免将前一次尝试污染到下一次"""
+        client = LLMClient(make_config(temperature_max_retries=2, backoff_max_retries=0))
+        attempt_reports = []
+
+        async def mock_stream_chunks_att1():
+            yield StreamChunk(type="content", text="bad response with lots of tokens")
+
+        async def mock_stream_chunks_att2():
+            yield StreamChunk(type="content", text='{"good": "json"}')
+            yield StreamChunk(type="usage", usage_prompt_tokens=1, usage_completion_tokens=1, is_final=True)
+
+        call_count = [0]
+        async def mock_chat_stream(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                async for c in mock_stream_chunks_att1():
+                    yield c
+            else:
+                async for c in mock_stream_chunks_att2():
+                    yield c
+
+        async def on_progress(chunk: StreamChunk):
+            attempt_reports.append(chunk.estimated_total_tokens)
+
+        def validator(content):
+            if "good" in content:
+                return True, ""
+            return False, "retry"
+
+        client.chat_stream = mock_chat_stream
+        result = await client.chat_stream_with_retry(
+            [{"role": "user", "content": "hi"}],
+            validate_response=validator,
+            on_progress=on_progress,
+        )
+
+        assert result.success is True
+        # attempt 2 的第一个 progress report 应该是小值（att2自身估算），而不是 att1 累加后的暴涨值
+        att1_val = attempt_reports[0]
+        att2_val = attempt_reports[1]
+        assert att2_val < att1_val, f"Attempt 2 report ({att2_val}) should not inherit Attempt 1 tokens ({att1_val})"
 
     async def test_validation_failure_triggers_retry_with_hint(self):
         """验证失败 → 注入 retry_messages_builder 的 hint → 重试成功"""

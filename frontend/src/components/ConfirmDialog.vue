@@ -37,7 +37,7 @@ function onCancel() { emit('cancel') }
 </template>
 
 <style scoped>
-/* Win11 ContentDialog：浅色背板 + 8px 圆角 + 衬底 sm 阴影 */
+/* Win11 ContentDialog：浅色/深色半透背板 + 8px 圆角 + In-app Acrylic 浮层卡片 */
 .confirm-mask {
   position: fixed;
   inset: 0;
@@ -45,13 +45,12 @@ function onCancel() { emit('cancel') }
   display: flex;
   align-items: center;
   justify-content: center;
-  /* Win11 标准 Dialog 浅色背板（场景遮罩，比深色更不抢戏） */
-  background: rgba(243, 243, 243, 0.6);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  /* Win11 标准 Dialog 遮罩：柔和半透，不再嵌套 blur，由 card 独立呈现 Acrylic 亚克力材质 */
+  background: rgba(0, 0, 0, 0.35);
+  transition: opacity var(--win-duration-normal) var(--win-ease);
 }
 html.dark .confirm-mask {
-  background: rgba(32, 32, 32, 0.6);
+  background: rgba(0, 0, 0, 0.55);
 }
 
 .confirm-card {
@@ -60,6 +59,7 @@ html.dark .confirm-mask {
   /* Win11 ContentDialog 标准圆角 */
   border-radius: 8px;
   overflow: hidden;
+  background-clip: padding-box;
   /* Win11 Dialog 阴影：flyout 之上，更远更软 */
   box-shadow: var(--win-shadow-dialog);
 }

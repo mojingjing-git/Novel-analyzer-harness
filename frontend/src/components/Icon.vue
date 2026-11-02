@@ -9,10 +9,12 @@ interface Props {
   name: string
   size?: number | string
   strokeWidth?: number
+  filled?: boolean
 }
 const props = withDefaults(defineProps<Props>(), {
   size: 18,
   strokeWidth: 1.5,
+  filled: false,
 })
 
 // SVG 路径数据（来自 Phosphor Icons 的 line 变体，简化版）
@@ -72,7 +74,30 @@ const ICONS: Record<string, string> = {
   restore: '<rect x="9" y="9" width="11" height="11" rx="1.5"/><rect x="4" y="4" width="11" height="11" rx="1.5"/>',
 }
 
-const path = computed(() => ICONS[props.name] || ICONS.info || '')
+// Windows 11 Fluent 激活填充态变体（未登记的图标平滑回退至描边线框）
+const FILLED_ICONS: Record<string, string> = {
+  queue: '<path d="M6.5 4h11A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5v-11A2.5 2.5 0 0 1 6.5 4z" fill="currentColor" stroke="none"/><path d="M8 10h8M8 14h6" stroke="var(--win-layer, #fff)" stroke-width="1.8" stroke-linecap="round"/><circle cx="6.2" cy="10" r="0.8" fill="var(--win-layer, #fff)" stroke="none"/><circle cx="6.2" cy="14" r="0.8" fill="var(--win-layer, #fff)" stroke="none"/>',
+  settings: '<path d="M12 1a2 2 0 0 1 2 2v.2a7.9 7.9 0 0 1 1.9.8l.2-.2a2 2 0 0 1 2.8 0l1.4 1.4a2 2 0 0 1 0 2.8l-.2.2c.4.6.6 1.2.8 1.9h.2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-.2a7.9 7.9 0 0 1-.8 1.9l.2.2a2 2 0 0 1 0 2.8l-1.4 1.4a2 2 0 0 1-2.8 0l-.2-.2a7.9 7.9 0 0 1-1.9.8v.2a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2v-.2a7.9 7.9 0 0 1-1.9-.8l-.2.2a2 2 0 0 1-2.8 0l-1.4-1.4a2 2 0 0 1 0-2.8l.2-.2a7.9 7.9 0 0 1-.8-1.9H3a2 2 0 0 1-2-2v-2a2 2 0 0 1 2-2h.2c.2-.7.4-1.3.8-1.9l-.2-.2a2 2 0 0 1 0-2.8l1.4-1.4a2 2 0 0 1 2.8 0l.2.2c.6-.4 1.2-.6 1.9-.8V3a2 2 0 0 1 2-2h2zm0 8a3 3 0 1 0 0 6 3 3 0 0 0 0-6z" fill="currentColor" stroke="none"/>',
+  workspace: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" fill="currentColor" stroke="none"/>',
+  folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" fill="currentColor" stroke="none"/>',
+  summary: '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6z" fill="currentColor" stroke="none"/><line x1="8" y1="13" x2="16" y2="13" stroke="var(--win-layer, #fff)" stroke-width="1.8" stroke-linecap="round"/><line x1="8" y1="17" x2="13" y2="17" stroke="var(--win-layer, #fff)" stroke-width="1.8" stroke-linecap="round"/>',
+  file: '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6z" fill="currentColor" stroke="none"/>',
+  characters: '<circle cx="12" cy="8" r="4" fill="currentColor" stroke="none"/><path d="M4 21a8 8 0 0 1 16 0z" fill="currentColor" stroke="none"/>',
+  chapter: '<path d="M4 5a2 2 0 0 1 2-2h12v17H6a2 2 0 0 0-2 2V5z" fill="currentColor" stroke="none"/><path d="M18 20H6a2 2 0 0 1 0-4h12" stroke="var(--win-layer, #fff)" stroke-width="1.8"/>',
+  prompt: '<path d="M21 12a8 8 0 0 1-11.5 7.2L4 21l1.8-5.5A8 8 0 1 1 21 12z" fill="currentColor" stroke="none"/>',
+  stats: '<line x1="4" y1="20" x2="20" y2="20" stroke-width="2"/><rect x="6" y="13" width="3" height="7" fill="currentColor" stroke="none"/><rect x="11" y="9" width="3" height="11" fill="currentColor" stroke="none"/><rect x="16" y="5" width="3" height="15" fill="currentColor" stroke="none"/>',
+  timeline: '<circle cx="12" cy="12" r="9" fill="currentColor" stroke="none"/><polyline points="12 7 12 12 15 14" stroke="var(--win-layer, #fff)" stroke-width="2" stroke-linecap="round"/>',
+  map: '<path d="M12 22s-8-7-8-13a8 8 0 0 1 16 0c0 6-8 13-8 13z" fill="currentColor" stroke="none"/><circle cx="12" cy="9" r="2.5" fill="var(--win-layer, #fff)" stroke="none"/>',
+  stop: '<rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor" stroke="none"/>',
+  play: '<polygon points="6 4 20 12 6 20 6 4" fill="currentColor" stroke="none"/>',
+}
+
+const path = computed(() => {
+  if (props.filled && FILLED_ICONS[props.name]) {
+    return FILLED_ICONS[props.name]
+  }
+  return ICONS[props.name] || ICONS.info || ''
+})
 </script>
 
 <template>

@@ -44,15 +44,18 @@ def make_stream_progress_callback(
             return
         elapsed = _time.monotonic() - started_at
         output_tokens = chunk.estimated_total_tokens or 0
+        delta = {
+            "output_tokens": output_tokens,
+            "rate_tokens_per_sec": output_tokens / max(elapsed, 0.1),
+            "elapsed_sec": elapsed,
+        }
+        if getattr(chunk, "is_thinking", False):
+            delta["is_thinking"] = True
         await hub.broadcast_token_delta(
             context=context,
             session_id=session_id or "unknown",
             unit_idx=unit_idx,
-            delta={
-                "output_tokens": output_tokens,
-                "rate_tokens_per_sec": output_tokens / max(elapsed, 0.1),
-                "elapsed_sec": elapsed,
-            },
+            delta=delta,
         )
 
     return on_progress
