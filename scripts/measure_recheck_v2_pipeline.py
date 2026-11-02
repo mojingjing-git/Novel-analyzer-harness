@@ -343,11 +343,12 @@ async def main() -> int:
     else:
         recheck_concurrency = args.recheck_concurrency or cfg.analysis.concurrency
         print(f"复检并发={recheck_concurrency}，批大小={args.batch_size}，调用上限={args.max_calls}")
-        print("（先逐条建候选并定位引文：每条都要拿自己的关键词扫一遍全书，"
-              "整本约 10 分钟纯 CPU；这期间没有输出是正常的）", flush=True)
 
         def _on_recheck(event: dict) -> None:
-            """波次进度：没有它，构建+调用全程静默，和"卡死"无法区分。"""
+            """构建/波次进度：没有它，构建+调用全程静默，和"卡死"无法区分。"""
+            if event.get("stage") == "build_candidates":
+                print(f"  · 构建 {event.get('built')}/{event.get('total')}", flush=True)
+                return
             calls = event.get("calls")
             if calls is None:
                 return

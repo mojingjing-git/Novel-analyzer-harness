@@ -89,24 +89,90 @@ class Bundle:
         return [(chapter, self.text[start:end].strip()) for chapter, start, end in self.spans]
 
 
+class _GramIndex:
+    """``2-gram → 段号位图``（Python 大整数），可惰性构建。
+
+    为什么是位图而不是 set / array（AGY 复审 R-2）：set 版实测 226 MB；
+    位图每键一个 ~921-bit 整数（约 150 B），交集是**单条 C 级按位与**，
+    段号包含判定是 O(1) 的 ``(mask >> i) & 1``。
+    """
+
+    def __init__(self, keys: list[int], texts: list[str]):
+        self._keys = keys
+        self._texts = texts
+        self._bits: dict[str, int] | None = None
+
+    @property
+    def built(self) -> bool:
+        return self._bits is not None
+
+    def build(self) -> None:
+        """全书扫描一遍建位图。整本 418 万字约 20s 纯 CPU——**必须在后台线程调**，
+        别在事件循环里同步调（R-1）。"""
+        if self._bits is not None:
+            return
+        bits: dict[str, int] = {}
+        for i, text in enumerate(self._texts):
+            bit = 1 << i
+            for j in range(len(text) - 1):
+                g = text[j : j + 2]
+                bits[g] = bits.get(g, 0) | bit
+        self._bits = bits
+
+    def mask(self, term: str) -> int:
+        """候选段位图。2 字词**精确**；≥3 字词是"其首/尾 2-gram 都出现"的段的
+        超集——词出现则它的全部 2-gram 必出现，故交集**无漏报**，只需再验证。"""
+        assert self._bits is not None
+        if len(term) == 2:
+            return self._bits.get(term, 0)
+        return self._bits.get(term[:2], 0) & self._bits.get(term[-2:], 0)
+
+    @staticmethod
+    def ordinals(mask: int):
+        m = mask
+        while m:
+            low = m & -m
+            yield low.bit_length() - 1
+            m ^= low
+
+    def key(self, ordinal: int) -> int:
+        return self._keys[ordinal]
+
+    def text(self, ordinal: int) -> str:
+        return self._texts[ordinal]
+
+
 class EvidenceIndex:
     """按章号检索关键词并取原文窗口；建一次索引，全书复用。"""
 
     def __init__(self, chapters: Mapping[int, str]):
         self._chapters = {int(k): v or "" for k, v in chapters.items()}
-        #: 关键词 → 命中它的章号集合。**必须缓存**：检索在每条候选上都要跑一次，
-        #: 若每次都全书扫一遍就是 O(候选 × 全书)——整本实测 1669 条候选 × 921 段
-        #: ≈ 19 分钟纯 CPU（每条约 690ms），在脚本侧看起来就是"卡死"。
-        #: "某个词出现在哪些章"与候选无关，算一次就够。
-        self._term_chapters: dict[str, frozenset[int]] = {}
+        keys = sorted(self._chapters)
+        self._gram = _GramIndex(keys, [self._chapters[k] for k in keys])
 
-    def _chapters_with(self, term: str) -> frozenset[int]:
-        """命中该词的章号集合（首次调用时扫一遍，之后命中缓存）。"""
-        hits = self._term_chapters.get(term)
-        if hits is None:
-            hits = frozenset(ch for ch, text in self._chapters.items() if term in text)
-            self._term_chapters[term] = hits
-        return hits
+    def ensure_indexed(self) -> None:
+        """预构建 2-gram 倒排位图。整本约 20s 纯 CPU——**放后台线程跑**
+        （``asyncio.to_thread``），并在事件循环里 await 它。"""
+        self._gram.build()
+
+    def _hit_chapters(self, term: str) -> frozenset[int]:
+        """该词**精确**命中的段号集合。
+
+        索引就绪：2 字词查位图即精确；≥3 字词用首/尾 2-gram 交集做过滤器
+        （交集必含全部真命中，无漏报），再逐段 ``term in text`` 验证。
+        索引未构建（小语料、或未达预构建阈值）：逐段扫——几百 KB 的语料本就是微秒级。
+        """
+        if not self._gram.built:
+            return frozenset(ch for ch, text in self._chapters.items() if term in text)
+        if len(term) == 2:
+            return frozenset(
+                self._gram.key(i) for i in self._gram.ordinals(self._gram.mask(term))
+            )
+        hits: set[int] = set()
+        for i in self._gram.ordinals(self._gram.mask(term)):
+            if term in self._gram.text(i):
+                hits.add(self._gram.key(i))
+        return frozenset(hits)
 
     def __len__(self) -> int:
         return len(self._chapters)
@@ -125,7 +191,7 @@ class EvidenceIndex:
         weights: dict[str, float] = {}
         hits_by_term: dict[str, frozenset[int]] = {}
         for term in keywords:
-            hits = self._chapters_with(term)
+            hits = self._hit_chapters(term)
             df = len(hits)
             if not df:
                 continue  # 一次都没出现 = 用不上

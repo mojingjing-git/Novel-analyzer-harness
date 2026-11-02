@@ -116,3 +116,105 @@ async def test_fenced_json_with_comma_strings_still_parses():
     assert outcome.coverage["supported"] == 1
     assert outcome.status == "COMPLETED"
     assert outcome.verdicts and outcome.verdicts[0].counter_search_performed is True
+
+
+# ==================== 惰性构建（A）的记账契约 ====================
+
+BOOK_TEXT = "\n\n".join(
+    f"第{i}段：主角{i}号做了一件前文从未出现的事{i}，谁也没料到后续。" for i in range(1, 13)
+)
+
+
+def _many_items(n: int = 12):
+    items = []
+    for i in range(1, n + 1):
+        items.append(
+            ForeshadowItem(
+                id=f"fs_{i:02d}",
+                description=f"第{i}段的独有伏笔",
+                first_seen_chapter=1,
+                first_seen_batch=0,
+                last_seen_chapter=1,
+                last_seen_batch=0,
+                status="active",
+                anchor_quote=f"主角{i}号做了一件前文从未出现的事{i}",
+                anchor_chapter=1,
+            )
+        )
+    return items
+
+
+async def _answer_everything(prompt: str) -> str:
+    """对批内每个候选回一条合法 SUPPORTED（引文取其证据段首行前 12 字，必逐字命中）。"""
+    quote_re = re.compile(r"\[evidence_id=([0-9a-f]{12})[^\n]*\]\n\"\"\"\n([^\n]{1,12})")
+    payloads = []
+    for block in prompt.split("### 候选 candidate_id=")[1:]:
+        cid = block.split("\n", 1)[0].strip()
+        m = quote_re.search(block)
+        if m is None:
+            continue
+        eid, quote = m.group(1), m.group(2)
+        payloads.append({
+            "candidate_id": cid,
+            "verdict": "SUPPORTED",
+            "answer": "mock",
+            "supporting_quote": quote,
+            "evidence_id": eid,
+            "counter_search": {"performed": True, "checked_evidence_ids": [eid], "counter_quotes": []},
+        })
+    return json.dumps(payloads, ensure_ascii=False)
+
+
+@pytest.mark.asyncio
+async def test_budget_exhaustion_leaves_unbuilt_in_not_checked():
+    """调用预算耗尽：没建也没查的候选必须落 not_checked，定位记录仍要齐全。
+
+    这是惰性构建（A）最容易错的地方——"没建"不能变成"凭空消失"，
+    否则 coverage 守恒被打破、报告的分母悄悄变小。
+    """
+    outcome = await run_recheck_v2(
+        _many_items(12),
+        book_text=BOOK_TEXT,
+        call_model=_answer_everything,
+        max_calls=1,
+        batch_size=6,
+    )
+
+    assert outcome.calls == 1
+    assert outcome.coverage["checked"] == 6
+    assert outcome.coverage["candidates_total"] == 12
+    assert len(outcome.not_checked) == 6
+    # 守恒：每个候选恰好落一个桶
+    total = (
+        outcome.coverage["supported"]
+        + outcome.coverage["insufficient"]
+        + outcome.coverage["conflict"]
+        + outcome.coverage["invalid"]
+        + outcome.coverage["stale"]
+        + outcome.coverage["not_checked"]
+    )
+    assert total == 12
+    # 骨架段（定位/记账）对全部 12 条都要完成，与"建没建证据"无关
+    assert len(outcome.locate_records) == 12
+    assert outcome.status == "PARTIAL"
+
+
+@pytest.mark.asyncio
+async def test_build_progress_events_are_emitted():
+    """构建进度事件：构建期不能静默（上一轮"卡死"事故的直接教训）。"""
+    events: list[dict] = []
+    outcome = await run_recheck_v2(
+        _many_items(12),
+        book_text=BOOK_TEXT,
+        call_model=_answer_everything,
+        max_calls=5,
+        batch_size=6,
+        emit=events.append,
+    )
+
+    builds = [e for e in events if e.get("stage") == "build_candidates"]
+    assert builds, "没有任何构建进度事件"
+    assert builds[-1]["built"] == builds[-1]["total"] == 12
+    waves = [e for e in events if e.get("stage") == "recheck"]
+    assert waves, "没有任何波次进度事件"
+    assert outcome.coverage["checked"] == 12

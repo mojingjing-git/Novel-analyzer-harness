@@ -73,13 +73,17 @@ def recheck_conflict_reason(config) -> str:
 
 
 def _recheck_progress_message(summary: dict) -> str:
-    """复检进度文案：兼容 ``run_recheck_v2`` 的**两种** emit 载荷。
+    """复检进度文案：兼容 ``run_recheck_v2`` 的**三种** emit 载荷。
 
-    波次进度是 ``{"stage", "calls", "checked"}``，收尾才是 ``outcome.summary()``
-    （带 ``coverage``）。消费方若只认 ``coverage``，第一波跑完就 ``KeyError``——
-    而复检阶段在 ``run()`` 里没有 try/except 兜着，这一崩就是整轮总结崩，
-    "把 recheck_v2_enabled 打开"这件事因此一步也走不了。
+    - 波次进度 ``{"stage", "calls", "checked"}``；
+    - 证据构建进度 ``{"stage": "build_candidates", "built", "total"}``——不单独给文案
+      的话，它没有 ``checked`` 键，会回退成"已核对 0 条"，构建期整个 UI 都在撒谎；
+    - 收尾是 ``outcome.summary()``（带 ``coverage``）。消费方若只认 ``coverage``，
+      第一波跑完就 ``KeyError``——而复检阶段在 ``run()`` 里没有 try/except 兜着，
+      这一崩就是整轮总结崩，"把 recheck_v2_enabled 打开"这件事因此一步也走不了。
     """
+    if summary.get("stage") == "build_candidates":
+        return f"伏笔复检：构建证据 {summary.get('built', 0)}/{summary.get('total', 0)} 条"
     checked = summary.get("checked")
     if checked is None:
         checked = (summary.get("coverage") or {}).get("checked", 0)

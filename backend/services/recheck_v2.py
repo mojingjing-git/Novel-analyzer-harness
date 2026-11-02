@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 import asyncio
-import dataclasses
 import hashlib
 import json
 import logging
@@ -295,17 +294,6 @@ async def run_recheck_v2(
     # 全书搜索只允许 `str.find`：绝不能在这里调 `locate_quote`——
     # 它找不到时会回退 `core/citations.py:174` 的 `difflib.SequenceMatcher`，
     # 那是 O(N·M)，拿 435 万字符去跑单次就能卡住几十秒到几分钟。
-    global_text = ""
-    chapter_spans: list[tuple[int, int, int]] = []
-    if index is not None:
-        parts: list[str] = []
-        cursor = 0
-        for ch in sorted(chapters):
-            body = index.chapter_text(ch)
-            chapter_spans.append((ch, cursor, cursor + len(body)))
-            parts.append(body)
-            cursor += len(body) + 2
-        global_text = "\n\n".join(parts)
 
     leads_skipped = 0
     outcome.input_total = len(items)
@@ -401,16 +389,23 @@ async def run_recheck_v2(
 
     # 证据按**段**编号：一条伏笔的埋设处在第 2 章、答案在第 9 章，若把两段当成
     # 一份证据，模型只能回填埋设处那个 id，"引文落在被点名证据里"这条门禁就永远过不了。
+    #
+    # 组装是**惰性**的：`_build_evidence` 在波次循环里、发请求前才对本波候选调用。
+    # 它是每条候选最贵的一步（每条都要拿自己的检索词扫一遍全书选证据章），
+    # 提前建完全部候选既拖慢首调用，又让 `--max-calls` 很小的运行白算全书。
     texts_by_evidence: dict[str, str] = {}
     chapter_by_evidence: dict[str, int] = {}
-    for cand in candidates:
+
+    def _build_evidence(cand: dict) -> None:
+        if "segments" in cand:
+            return
         if index is None:
             texts_by_evidence[cand["evidence_id"]] = book_text
             chapter_by_evidence[cand["evidence_id"]] = cand["chapter"]
             cand["segments"] = [
                 {"evidence_id": cand["evidence_id"], "chapter": cand["chapter"], "text": book_text}
             ]
-            continue
+            return
         item = cand["item"]
         bundle = index.bundle_for(
             anchor_chapter=cand["chapter"],
@@ -437,6 +432,10 @@ async def run_recheck_v2(
                 {"evidence_id": cand["evidence_id"], "chapter": cand["chapter"], "text": fallback_text}
             )
         cand["segments"] = segments
+
+    if index is not None:
+        # 检索位图只在后台线程建（整本约 2s 纯 CPU），不冻结与卷摘要/风格共用的事件循环
+        await asyncio.to_thread(index.ensure_indexed)
 
     by_id = {c["candidate_id"]: c for c in candidates}
 
@@ -542,6 +541,7 @@ async def run_recheck_v2(
             return batch, await call_model(_render_batch(batch))
 
     done: set[str] = set()
+    built_count = 0
     for attempt in range(2):
         queue = [c for c in candidates if c["candidate_id"] not in done]
         if not queue:
@@ -561,6 +561,21 @@ async def run_recheck_v2(
             if affordable <= 0:
                 break
             wave = wave[:affordable]
+            # 惰性构建：只建**本波**要用的证据包——这是每条候选最贵的一步，
+            # 预算耗尽后未建的候选永远不用付这笔钱
+            newly_built = 0
+            for b in wave:
+                for cand in b:
+                    if "segments" not in cand:
+                        _build_evidence(cand)
+                        newly_built += 1
+            built_count += newly_built
+            if emit is not None and newly_built:
+                emit({
+                    "stage": "build_candidates",
+                    "built": built_count,
+                    "total": len(candidates),
+                })
             # 先记账再发：并发下"先发后记"会超预算，而超支是**已经花掉的钱**，
             # 事后记账会把账做平却掩盖了超支事实。
             outcome.calls += len(wave)
