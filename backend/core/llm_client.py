@@ -13,6 +13,7 @@ import inspect
 import logging
 import threading
 from dataclasses import replace
+from types import SimpleNamespace
 from collections import namedtuple
 from typing import AsyncIterator, Tuple, Optional, List, Callable, Awaitable
 from openai import AsyncOpenAI, APITimeoutError, APIError, AuthenticationError
@@ -100,6 +101,18 @@ _STOP_ERROR_TYPES = {
 RetryDecision = namedtuple(
     "RetryDecision", ("action", "error", "moderation_hits", "wait_time", "verdict")
 )
+
+# 单次尝试的统一出口（_retry_chain 骨架与流式/非流式适配器之间的协议）。
+# kind:
+#   "done"   —— 终态（成功 / 用户取消）：result 携带适配器构造好的返回对象，骨架原样返回
+#   "error"  —— API 错误：error/verdict 交骨架走 _decide_retry 决断树
+#   "retry_soon" —— 验证失败 / 空响应等"固定语义重试"：不走决断树；适配器已完成
+#               记账与失败登记及各自的附加等待（温度层 3*(attempt+1)、退避层无），
+#               骨架只更新 last_error 并进入下一轮
+_AttemptOutcome = namedtuple(
+    "_AttemptOutcome", ("kind", "result", "error", "verdict")
+)
+_AttemptOutcome.__new__.__defaults__ = (None, "", None)
 
 
 # 类目 → 作用域（仅对可信通道生效，键为类目字符串值）：
@@ -1158,6 +1171,148 @@ class LLMClient:
             next_wait = 3 * (attempt + 1)
         return RetryDecision("continue", error, moderation_hits, next_wait, verdict)
 
+    async def _retry_chain(
+        self,
+        messages: List[dict],
+        *,
+        max_tokens: Optional[int],
+        try_once,
+        hooks,
+        moderation_log_temperature: str,
+        moderation_log_backoff: str,
+    ):
+        """流式/非流式共用的重试骨架：温度退火 → 指数退避。
+
+        骨架只拥有控制流（stop 检查 / 尝试计数 / 温度计算 / 决策树调用 / 等待 / 汇总），
+        两条链的差异全部收敛在适配器闭包里：
+
+        - ``try_once(temp, attempt, total_attempts, phase, wait_time=None)`` 执行单次
+          尝试并处理成功路径（验证 / 记账 / 成功构造），返回 :class:`_AttemptOutcome`；
+        - ``hooks.on_stop()`` —— 用户停止的终态结果；
+        - ``hooks.on_decision_stop(decision)`` —— 决策树判停的终态结果；
+        - ``hooks.on_moderation_short_circuit(last_error, total_attempts, final_temp)``
+          —— 温度层审核连续命中后的退避层短路；
+        - ``hooks.on_final_failure(last_error, total_attempts, backoff_rounds)``
+          —— 所有轮次耗尽的终态结果。
+
+        行为保真备注：退避层决策传入的 ``attempt`` 是温度层最后一轮下标（原实现
+        两链皆如此，``_decide_retry`` 在 backoff 相不使用该参数）；退避层等待秒数
+        的 ``30 * (retry_num + 1)`` 基数与温度层决策里的 ``30 * (attempt + 1)``
+        是两个口径，不得互串。
+        """
+        messages_length = len(str(messages))
+        last_error = ""
+        total_attempts = 0
+        moderation_hits = 0
+        temp_attempt = 0  # 温度层最后一轮下标（退避层决策沿用，见 docstring）
+
+        # === 温度退火层 ===
+        for attempt in range(self.config.temperature_max_retries):
+            if self._stop_requested:
+                logger.info("⛔ 检测到停止请求，终止重试链")
+                return await hooks.on_stop(total_attempts)
+            total_attempts += 1
+            with self._stats_lock:
+                self._attempts += 1
+
+            temp = max(0.0, self.config.temperature - attempt * self.config.temperature_step)
+            logger.info(f"\n[温度退火] 尝试 {total_attempts}，"
+                        f"temperature={temp} (第{attempt + 1}/{self.config.temperature_max_retries}次)")
+
+            outcome = await try_once(temp, attempt, total_attempts, "temperature")
+            if outcome.kind == "done":
+                return outcome.result
+            last_error = outcome.error
+            temp_attempt = attempt
+            if outcome.kind == "retry_soon":
+                # 附加等待（3*(attempt+1)）由适配器按各自原行为完成
+                continue
+
+            decision = self._decide_retry(
+                outcome.error,
+                moderation_hits=moderation_hits,
+                verdict=outcome.verdict,
+                attempt=attempt,
+                total_attempts=total_attempts,
+                temperature=temp,
+                messages_length=messages_length,
+                phase="temperature",
+                moderation_log=moderation_log_temperature,
+            )
+            moderation_hits = decision.moderation_hits
+            last_error = decision.error
+            notified = getattr(hooks, "on_decided", None)
+            if notified:
+                await notified(decision)
+            if decision.action == "stop":
+                return await hooks.on_decision_stop(decision, total_attempts)
+
+            if attempt < self.config.temperature_max_retries - 1:
+                await self._sleep(decision.wait_time)
+
+        # === 指数退避层（429 限流时额外多试几轮：限流通常是暂时的，快速放弃会丢块）===
+        final_temp = max(
+            0.0,
+            self.config.temperature
+            - (self.config.temperature_max_retries - 1) * self.config.temperature_step,
+        )
+        # 限流判定走分类结论
+        backoff_rounds = (
+            max(self.config.backoff_max_retries, 3)
+            if classify_message(last_error).cls is ErrorClass.RATE_LIMIT
+            else self.config.backoff_max_retries
+        )
+        for retry_num in range(backoff_rounds):
+            if self._stop_requested:
+                logger.info("⛔ 检测到停止请求，终止重试链")
+                return await hooks.on_stop(total_attempts)
+            # 温度循环已连续命中审核拦截 → 直接放弃，不进指数退避，
+            # 避免对"永久拒绝"白等 30 分钟
+            if is_moderation_error(last_error) and moderation_hits >= 2:
+                return await hooks.on_moderation_short_circuit(
+                    last_error, total_attempts, final_temp
+                )
+            total_attempts += 1
+            with self._stats_lock:
+                self._attempts += 1
+
+            if classify_message(last_error).cls is ErrorClass.RATE_LIMIT:
+                wait_time = min(self._retry_after_seconds(last_error) or 30 * (retry_num + 1), 120)
+            else:
+                wait_time = min(2 ** (retry_num + 1), 60)
+
+            logger.info(f"\n[指数退避] 尝试 {total_attempts}，"
+                        f"等待{wait_time}秒，temperature={final_temp} "
+                        f"(第{retry_num + 1}/{backoff_rounds}次)")
+            await self._sleep(wait_time)
+
+            outcome = await try_once(final_temp, retry_num, total_attempts, "backoff", wait_time)
+            if outcome.kind == "done":
+                return outcome.result
+            last_error = outcome.error
+            if outcome.kind == "error":
+                decision = self._decide_retry(
+                    outcome.error,
+                    moderation_hits=moderation_hits,
+                    verdict=outcome.verdict,
+                    attempt=temp_attempt,
+                    total_attempts=total_attempts,
+                    temperature=final_temp,
+                    messages_length=messages_length,
+                    phase="backoff",
+                    moderation_log=moderation_log_backoff,
+                    wait_time=wait_time,
+                )
+                moderation_hits = decision.moderation_hits
+                last_error = decision.error
+                notified = getattr(hooks, "on_decided", None)
+                if notified:
+                    await notified(decision)
+                if decision.action == "stop":
+                    return await hooks.on_decision_stop(decision, total_attempts)
+
+        return await hooks.on_final_failure(last_error, total_attempts, backoff_rounds)
+
     async def chat_stream_with_retry(
         self,
         messages: List[dict],
@@ -1166,24 +1321,22 @@ class LLMClient:
         retry_messages_builder: Optional[Callable] = None,
         on_progress: Optional[Callable[[StreamChunk], Awaitable[None]]] = None,
     ) -> StreamResult:
-        """流式重试包装：完整对齐 chat_with_retry 行为契约
+        """流式重试包装：行为契约与 chat_with_retry 完全一致
         （温度退火 → 指数退避；429 Retry-After；审核短路；认证即停；FailureLogger；统计累加）。
 
-        关键设计：
-        - 同步/异步 validator 双兼容（_call_validate_response 包裹）
-        - stop 语义：每 attempt 顶部检查 _stop_requested；chunk 循环内 chat_stream 自身也检查
-        - 累计值：on_progress 传 accumulated_output_tokens
-        - 空响应按失败处理（moderation 嗅探）
-        - partial content 保留：流式中断时 final_content 留作 9 级 JSON 容错链尝试
+        控制流（stop 检查 / 计数 / 决策树 / 等待 / 汇总）在 _retry_chain 骨架；
+        本方法只提供流式特有的三件事：
+
+        - 单次尝试：_run_stream_attempt（chunk 消费 / 取消检测 / partial content 保留）；
+        - 成功路径：思考链剥离 → token 记账 → 空响应嗅探 → 同步/异步双兼容验证
+          （_call_validate_response）；
+        - 结果构造：_build_stream_result（StreamResult 口径 + 熔断记账收敛点）。
         """
         if not self._breaker.allows():
             # 熔断打开：零成本短路，不进重试循环
             return self._breaker_blocked_stream_result()
-        last_error = ""  # 关键：每次调用重置为 ""，不是 "未知错误"
-        total_attempts = 0
-        moderation_hits = 0
-        call_failed_tokens = 0
         messages_length = len(str(messages))
+        call_failed_tokens = 0
         last_consumed_tokens: Tuple[int, int] = (0, 0)
         accumulated_output_tokens = 0  # 累计值
         final_content = ""  # 保留 partial content
@@ -1201,7 +1354,8 @@ class LLMClient:
         logger.info("=" * 60)
 
         def _build_stream_result(success, content, error, prompt_tok, comp_tok,
-                          cached_tokens=0, reasoning_chars=0, verdict=None):
+                          cached_tokens=0, reasoning_chars=0, verdict=None,
+                          total_attempts=0):
             # verdict 是本次决断用的 ClassVerdict（决策层形态），出口统一转成 ErrorVerdict
             # （跨层传输形态）；成功结果恒为 None，与 LLMResult 口径一致。
             result = StreamResult(
@@ -1216,9 +1370,8 @@ class LLMClient:
             self._breaker_observe(success, result.verdict, error)
             return result
 
-        def _record_validation_failure(validation_error, temp):
-            nonlocal last_error, call_failed_tokens
-            last_error = f"响应验证失败: {validation_error}"
+        def _record_validation_failure(validation_error, temp, total_attempts):
+            nonlocal call_failed_tokens
             if last_consumed_tokens[0] > 0 or last_consumed_tokens[1] > 0:
                 with self._stats_lock:
                     self._failed_tokens += last_consumed_tokens[0] + last_consumed_tokens[1]
@@ -1228,13 +1381,14 @@ class LLMClient:
                 max_retries=self.config.temperature_max_retries + self.config.backoff_max_retries,
                 temperature=temp,
                 error_type="ValidationFailed",
-                error_message=last_error,
+                error_message=f"响应验证失败: {validation_error}",
                 wait_time=0,
                 messages_length=messages_length,
             )
 
         async def _run_stream_attempt(temp):
-            """单次流式 attempt：返回 (status, content, reasoning, usage_chunk, err, verdict)。
+            """单次流式 attempt：返回 (status, content, reasoning, usage, err, verdict)。
+
             status ∈ {"ok", "error", "cancelled"}；
             verdict 是错误块自带的 ErrorVerdict（chat_stream 在异常现场算好后挂在 chunk 上），
             正常结束为 None——结论随块流转。"""
@@ -1283,62 +1437,27 @@ class LLMClient:
                         attempt_error, attempt_verdict)
             return ("ok", attempt_content, attempt_reasoning, last_usage, "", None)
 
-        # === 温度退火重试层 ===
-        for attempt in range(self.config.temperature_max_retries):
-            if self._stop_requested:
-                logger.info("⛔ 检测到停止请求，终止重试链")
-                return _build_stream_result(False, final_content, "用户请求停止",
-                                     last_consumed_tokens[0], last_consumed_tokens[1])
-            total_attempts += 1
-            with self._stats_lock:
-                self._attempts += 1
-
-            temp = max(0.0, self.config.temperature - attempt * self.config.temperature_step)
-            logger.info(f"\n[温度退火] 尝试 {total_attempts}，temperature={temp} "
-                        f"(第{attempt + 1}/{self.config.temperature_max_retries}次)")
-
+        async def try_once(temp, attempt, total_attempts, phase, wait_time=None):
+            """单次流式尝试 + 成功路径处理；错误/验证失败交还骨架控制流。"""
+            nonlocal messages, call_failed_tokens
             status, content, reasoning, usage, err, chunk_verdict = \
                 await _run_stream_attempt(temp)
 
             if status == "cancelled":
-                return _build_stream_result(False, content, err, 0, 0, reasoning_chars=len(reasoning))
+                return _AttemptOutcome("done", result=_build_stream_result(
+                    False, content, err, 0, 0, reasoning_chars=len(reasoning),
+                    total_attempts=total_attempts))
 
             if status == "error":
-                last_error = err
-                logger.warning(f"❌ 尝试失败: {err}")
+                logger.warning(f"❌ 尝试失败: {err}" if phase == "temperature"
+                               else f"❌ 重试失败: {err}")
                 if last_consumed_tokens[0] > 0 or last_consumed_tokens[1] > 0:
                     with self._stats_lock:
                         self._failed_tokens += last_consumed_tokens[0] + last_consumed_tokens[1]
                     call_failed_tokens += last_consumed_tokens[0] + last_consumed_tokens[1]
+                return _AttemptOutcome("error", error=err, verdict=chunk_verdict)
 
-                # 错误分类决策（收敛到 _decide_retry 单点）：审核短路
-                # （INPUT/structured 首次、text 连续第3次）/ 结构化 stop 类立即停 /
-                # 其余按退避继续。沿用 _build_stream_result 保证统计契约
-                decision = self._decide_retry(
-                    err,
-                    moderation_hits=moderation_hits,
-                    verdict=chunk_verdict,
-                    attempt=attempt,
-                    total_attempts=total_attempts,
-                    temperature=temp,
-                    messages_length=messages_length,
-                    phase="temperature",
-                    moderation_log="⛔ 内容审核拦截，跳过该章节（结构化/输入侧首次命中，或文本连续3次）",
-                )
-                moderation_hits = decision.moderation_hits
-                last_verdict = decision.verdict
-                if decision.action == "stop":
-                    return _build_stream_result(False, final_content, decision.error,
-                                         last_consumed_tokens[0], last_consumed_tokens[1], verdict=decision.verdict)
-                err = last_error = decision.error
-
-                if attempt < self.config.temperature_max_retries - 1:
-                    wait_time = decision.wait_time
-                    logger.info(f"⏳ 等待{wait_time}秒后进行下一次温度尝试...")
-                    await self._sleep(wait_time)
-                continue
-
-            # status == "ok"：剥离思考链 + 累计成功 token + 验证
+            # status == "ok"：剥离思考链 + 累计成功 token
             stripped = self._strip_thinking(content)
             if stripped:
                 content = stripped
@@ -1349,166 +1468,101 @@ class LLMClient:
                     if usage:
                         self._cached_tokens += usage.usage_cached_tokens
 
-            # 空响应检测（moderation 嗅探）
+            # 空响应检测（moderation 嗅探）：温度层登记 EmptyResponse 并冷却，退避层直接重试
             if not content.strip():
                 error_msg = "API返回空内容（可能触发内容过滤）"
                 if usage and (is_moderation_message(str(usage)) or is_moderation_error(error_msg)):
                     error_msg = mark_moderation(error_msg)
                 logger.warning(error_msg)
-                last_error = error_msg
-                _get_failure_logger().record_failure(
-                    attempt_num=total_attempts,
-                    max_retries=self.config.temperature_max_retries + self.config.backoff_max_retries,
-                    temperature=temp, error_type="EmptyResponse",
-                    error_message=error_msg, messages_length=messages_length,
-                )
-                if attempt < self.config.temperature_max_retries - 1:
-                    await self._sleep(3 * (attempt + 1))
-                continue
-
-            if validate_response:
-                is_valid, validation_error = await self._call_validate_response(validate_response, content, timeout=30)
-                if not is_valid:
-                    logger.warning(f"❌ 响应验证失败: {validation_error}")
-                    if retry_messages_builder:
-                        messages = retry_messages_builder(validation_error, messages)
-                    _record_validation_failure(validation_error, temp)
+                if phase == "temperature":
+                    _get_failure_logger().record_failure(
+                        attempt_num=total_attempts,
+                        max_retries=self.config.temperature_max_retries + self.config.backoff_max_retries,
+                        temperature=temp, error_type="EmptyResponse",
+                        error_message=error_msg, messages_length=messages_length,
+                    )
                     if attempt < self.config.temperature_max_retries - 1:
                         await self._sleep(3 * (attempt + 1))
-                    continue
-
-            # 成功
-            logger.info(f"✅ API请求成功（第{total_attempts}次尝试）")
-            logger.info(f"使用Tokens: {last_consumed_tokens}")
-            logger.info("=" * 60)
-            return _build_stream_result(
-                True, content, "",
-                last_consumed_tokens[0], last_consumed_tokens[1],
-                cached_tokens=usage.usage_cached_tokens if usage else 0,
-                reasoning_chars=len(reasoning),
-            )
-
-        # === 指数退避重试层（429 时额外多 3 轮）===
-        final_temp = max(0.0, self.config.temperature -
-                         (self.config.temperature_max_retries - 1) * self.config.temperature_step)
-        # 限流判定走分类结论（"1429" 之类不再误判为限流而加码退避）
-        _last_cls = classify_message(last_error).cls
-        backoff_rounds = max(self.config.backoff_max_retries, 3) \
-            if _last_cls is ErrorClass.RATE_LIMIT else self.config.backoff_max_retries
-
-        for retry_num in range(backoff_rounds):
-            if self._stop_requested:
-                logger.info("⛔ 检测到停止请求，终止重试链")
-                return _build_stream_result(False, final_content, "用户请求停止",
-                                     last_consumed_tokens[0], last_consumed_tokens[1])
-            if is_moderation_error(last_error) and moderation_hits >= 2:
-                _get_failure_logger().record_failure(
-                    attempt_num=total_attempts,
-                    max_retries=self.config.temperature_max_retries + self.config.backoff_max_retries,
-                    temperature=final_temp, error_type="ModerationBlocked",
-                    error_message=last_error, messages_length=messages_length,
-                )
-                logger.warning("⛔ 内容审核拦截（重试1次后仍拦截），跳过该章节")
-                return _build_stream_result(False, final_content, last_error,
-                                     last_consumed_tokens[0], last_consumed_tokens[1], verdict=last_verdict or classify_message(last_error))
-
-            total_attempts += 1
-            with self._stats_lock:
-                self._attempts += 1
-
-            if classify_message(last_error).cls is ErrorClass.RATE_LIMIT:
-                wait_time = min(self._retry_after_seconds(last_error) or 30 * (retry_num + 1), 120)
-            else:
-                wait_time = min(2 ** (retry_num + 1), 60)
-            logger.info(f"\n[指数退避] 尝试 {total_attempts}，等待{wait_time}秒，"
-                        f"temperature={final_temp} (第{retry_num + 1}/{backoff_rounds}次)")
-            await self._sleep(wait_time)
-
-            status, content, reasoning, usage, err, chunk_verdict = \
-                await _run_stream_attempt(final_temp)
-
-            if status == "cancelled":
-                return _build_stream_result(False, content, err, 0, 0, reasoning_chars=len(reasoning))
-
-            if status == "error":
-                last_error = err
-                logger.warning(f"❌ 重试失败: {err}")
-                if last_consumed_tokens[0] > 0 or last_consumed_tokens[1] > 0:
-                    with self._stats_lock:
-                        self._failed_tokens += last_consumed_tokens[0] + last_consumed_tokens[1]
-                    call_failed_tokens += last_consumed_tokens[0] + last_consumed_tokens[1]
-
-                # 退避层同构决策（stop 类在退避轮命中同样立即停，不再烧剩余轮次）
-                decision = self._decide_retry(
-                    err,
-                    moderation_hits=moderation_hits,
-                    verdict=chunk_verdict,
-                    attempt=attempt,
-                    total_attempts=total_attempts,
-                    temperature=final_temp,
-                    messages_length=messages_length,
-                    phase="backoff",
-                    moderation_log="⛔ 内容审核拦截，跳过该章节",
-                    wait_time=wait_time,
-                )
-                moderation_hits = decision.moderation_hits
-                last_verdict = decision.verdict
-                if decision.action == "stop":
-                    return _build_stream_result(False, final_content, decision.error,
-                                         last_consumed_tokens[0], last_consumed_tokens[1], verdict=decision.verdict)
-                err = last_error = decision.error
-                continue
-
-            # status == "ok"
-            stripped = self._strip_thinking(content)
-            if stripped:
-                content = stripped
-
-            if last_consumed_tokens[0] > 0 or last_consumed_tokens[1] > 0:
-                with self._stats_lock:
-                    self._total_tokens += last_consumed_tokens[0] + last_consumed_tokens[1]
-                    if usage:
-                        self._cached_tokens += usage.usage_cached_tokens
-
-            if not content.strip():
-                error_msg = "API返回空内容（可能触发内容过滤）"
-                if usage and (is_moderation_message(str(usage)) or is_moderation_error(error_msg)):
-                    error_msg = mark_moderation(error_msg)
-                logger.warning(error_msg)
-                last_error = error_msg
-                continue
+                return _AttemptOutcome("retry_soon", error=error_msg)
 
             if validate_response:
-                is_valid, validation_error = await self._call_validate_response(validate_response, content, timeout=30)
+                is_valid, validation_error = await self._call_validate_response(
+                    validate_response, content, timeout=30)
                 if not is_valid:
                     logger.warning(f"❌ 响应验证失败: {validation_error}")
                     if retry_messages_builder:
                         messages = retry_messages_builder(validation_error, messages)
-                    _record_validation_failure(validation_error, final_temp)
-                    continue
+                    _record_validation_failure(validation_error, temp, total_attempts)
+                    if phase == "temperature" and attempt < self.config.temperature_max_retries - 1:
+                        await self._sleep(3 * (attempt + 1))
+                    return _AttemptOutcome("retry_soon",
+                                           error=f"响应验证失败: {validation_error}")
 
             # 成功
             logger.info(f"✅ API请求成功（第{total_attempts}次尝试）")
             logger.info(f"使用Tokens: {last_consumed_tokens}")
             logger.info("=" * 60)
-            return _build_stream_result(
+            return _AttemptOutcome("done", result=_build_stream_result(
                 True, content, "",
                 last_consumed_tokens[0], last_consumed_tokens[1],
                 cached_tokens=usage.usage_cached_tokens if usage else 0,
                 reasoning_chars=len(reasoning),
-            )
+                total_attempts=total_attempts,
+            ))
 
-        final_msg = (f"所有重试均失败（温度退火{self.config.temperature_max_retries}次 + "
-                     f"指数退避{backoff_rounds}次 = 共{total_attempts}次）。最后错误: {last_error}")
-        logger.error("\n" + "=" * 60)
-        logger.error(f"⛔ API调用最终失败")
-        logger.error(f"总尝试次数: {total_attempts}")
-        logger.error(f"最后错误: {last_error}")
-        summary = _get_failure_logger().get_summary()
-        logger.error(f"失败统计: {summary}")
-        logger.error("=" * 60)
-        return _build_stream_result(False, final_content, final_msg,
-                             last_consumed_tokens[0], last_consumed_tokens[1], verdict=last_verdict or classify_message(last_error))
+        async def on_stop(total_attempts):
+            return _build_stream_result(False, final_content, "用户请求停止",
+                                 last_consumed_tokens[0], last_consumed_tokens[1],
+                                 total_attempts=total_attempts)
+
+        async def on_decided(decision):
+            nonlocal last_verdict
+            last_verdict = decision.verdict
+
+        async def on_decision_stop(decision, total_attempts):
+            return _build_stream_result(False, final_content, decision.error,
+                                 last_consumed_tokens[0], last_consumed_tokens[1],
+                                 verdict=decision.verdict, total_attempts=total_attempts)
+
+        async def on_moderation_short_circuit(short_error, total_attempts, final_temp):
+            _get_failure_logger().record_failure(
+                attempt_num=total_attempts,
+                max_retries=self.config.temperature_max_retries + self.config.backoff_max_retries,
+                temperature=final_temp, error_type="ModerationBlocked",
+                error_message=short_error, messages_length=messages_length,
+            )
+            logger.warning("⛔ 内容审核拦截（重试1次后仍拦截），跳过该章节")
+            return _build_stream_result(False, final_content, short_error,
+                                 last_consumed_tokens[0], last_consumed_tokens[1],
+                                 verdict=last_verdict or classify_message(short_error),
+                                 total_attempts=total_attempts)
+
+        async def on_final_failure(last_error, total_attempts, backoff_rounds):
+            final_msg = (f"所有重试均失败（温度退火{self.config.temperature_max_retries}次 + "
+                         f"指数退避{backoff_rounds}次 = 共{total_attempts}次）。最后错误: {last_error}")
+            logger.error("\n" + "=" * 60)
+            logger.error("⛔ API调用最终失败")
+            logger.error(f"总尝试次数: {total_attempts}")
+            logger.error(f"最后错误: {last_error}")
+            summary = _get_failure_logger().get_summary()
+            logger.error(f"失败统计: {summary}")
+            logger.error("=" * 60)
+            return _build_stream_result(False, final_content, final_msg,
+                                 last_consumed_tokens[0], last_consumed_tokens[1],
+                                 verdict=last_verdict or classify_message(last_error),
+                                 total_attempts=total_attempts)
+
+        hooks = SimpleNamespace(
+            on_stop=on_stop, on_decided=on_decided, on_decision_stop=on_decision_stop,
+            on_moderation_short_circuit=on_moderation_short_circuit,
+            on_final_failure=on_final_failure,
+        )
+        return await self._retry_chain(
+            messages, max_tokens=max_tokens, try_once=try_once, hooks=hooks,
+            moderation_log_temperature=(
+                "⛔ 内容审核拦截，跳过该章节（结构化/输入侧首次命中，或文本连续3次）"),
+            moderation_log_backoff="⛔ 内容审核拦截，跳过该章节",
+        )
 
     async def chat_auto(
         self,
@@ -1625,16 +1679,15 @@ class LLMClient:
         tokens 保留"最后一次已扣费但未被采用"的用量（验证失败/后续全失败时也在），
         一次都没拿到 usage 就是 None + usage_status=UNKNOWN。
         verdict 由 _decide_retry 的决断结论带出，停止或最终失败时随结果返回，成功为 None。
+
+        控制流在 _retry_chain 骨架；本方法只提供单次尝试（chat() 调用 + 线程化验证）
+        与结果构造（_build_result，attempts / prior_known_tokens 口径）。
         """
         if not self._breaker.allows():
             # 熔断打开：零成本短路，不进重试循环
             return self._breaker_blocked_result()
-        last_error = ""
-        total_attempts = 0
-        moderation_hits = 0  # 内容审核拦截连续命中次数（连续3次才短路，见下方短路判断）
-        # 本次调用的失败 token 累计（并发安全：不再依赖客户端全局计数做差分归因）
-        call_failed_tokens = 0
         messages_length = len(str(messages))
+        call_failed_tokens = 0
         # 跟踪最后一次 API 成功调用消耗的 tokens（即使 JSON 验证失败，API 已扣费）
         # 一次都没拿到 usage 时是 None，不用 (0, 0) 冒充"零消耗"
         # 三种口径必须分开，混用会让"本次未知"冒充"本次已知"。
@@ -1654,24 +1707,9 @@ class LLMClient:
             logger.info(f"启用响应验证回调")
         logger.info("=" * 60)
 
-        # 温度退火重试
-        for attempt in range(self.config.temperature_max_retries):
-            if self._stop_requested:
-                logger.info("⛔ 检测到停止请求，终止重试链")
-                return self._build_result(
-                    False, "", "用户请求停止", attempt_tokens,
-                    total_attempts=total_attempts, failed_tokens=call_failed_tokens,
-                    prior_tokens=prior_known_tokens,
-                )
-            total_attempts += 1
-            with self._stats_lock:
-                self._attempts += 1
-
-            temp = max(0.0, self.config.temperature - attempt * self.config.temperature_step)
-
-            logger.info(f"\n[温度退火] 尝试 {total_attempts}，"
-                       f"temperature={temp} (第{attempt + 1}/{self.config.temperature_max_retries}次)")
-
+        async def try_once(temp, attempt, total_attempts, phase, wait_time=None):
+            nonlocal messages, call_failed_tokens
+            nonlocal attempt_tokens, prior_known_tokens, last_consumed_tokens
             result = await self.chat(
                 messages, temperature=temp, max_tokens=max_tokens
             )
@@ -1704,7 +1742,7 @@ class LLMClient:
                             # 这次的确花了钱，但产出被丢弃：记进"历史已知"，不进本次 tokens
                             prior_known_tokens = _add_tokens(prior_known_tokens, tokens)
                             last_consumed_tokens = tokens
-                        last_error = f"响应验证失败: {validation_error}"
+                        last_error_msg = f"响应验证失败: {validation_error}"
                         # 构建带格式修正提示的messages用于重试
                         if retry_messages_builder:
                             messages = retry_messages_builder(validation_error, messages)
@@ -1713,214 +1751,98 @@ class LLMClient:
                             max_retries=self.config.temperature_max_retries + self.config.backoff_max_retries,
                             temperature=temp,
                             error_type="ValidationFailed",
-                            error_message=last_error,
-                            wait_time=0,
-                            messages_length=messages_length
+                            error_message=last_error_msg,
+                            wait_time=0 if phase == "temperature" else (wait_time or 0),
+                            messages_length=messages_length,
                         )
-                        if attempt < self.config.temperature_max_retries - 1:
-                            wait_time = 3 * (attempt + 1)
-                            logger.info(f"⏳ 等待{wait_time}秒后进行下一次温度尝试...")
-                            await self._sleep(wait_time)
-                        continue
+                        if phase == "temperature" and attempt < self.config.temperature_max_retries - 1:
+                            wait = 3 * (attempt + 1)
+                            logger.info(f"⏳ 等待{wait}秒后进行下一次温度尝试...")
+                            await self._sleep(wait)
+                        return _AttemptOutcome("retry_soon", error=last_error_msg)
 
                 logger.info(f"✅ API请求成功（第{total_attempts}次尝试）")
                 logger.info(f"使用Tokens: {tokens}")
                 logger.info("=" * 60)
-                return self._build_result(
+                return _AttemptOutcome("done", result=self._build_result(
                     True, content, "", tokens,
                     total_attempts=total_attempts, failed_tokens=call_failed_tokens,
                     prior_tokens=prior_known_tokens,
-                )
+                ))
 
-            last_error = error = result.error
-            logger.warning(f"❌ 尝试失败: {error}")
+            error = result.error
+            logger.warning(f"❌ 尝试失败: {error}" if phase == "temperature"
+                           else f"❌ 重试失败: {error}")
 
-            # 错误分类决策（收敛到 _decide_retry 单点）：审核短路 /
-            # 结构化 stop 类立即停 / 其余按退避继续。
-            # 审核 text 置信维持"连续 3 次短路"（该阈值只适用于文本模糊匹配；
-            # structured/输入侧无瞬时误判风险，首次即停）
-            decision = self._decide_retry(
-                error,
-                moderation_hits=moderation_hits,
-                verdict=result.verdict,
-                attempt=attempt,
-                total_attempts=total_attempts,
-                temperature=temp,
-                messages_length=messages_length,
-                phase="temperature",
-                moderation_log="⛔ 内容审核拦截，跳过该章节，不再重试",
-            )
-            moderation_hits = decision.moderation_hits
-
-            # 本次尝试若真的扣了费，记进"历史已知"；它不会被当成下一次尝试的用量
+            # 本次尝试若真的扣了费，记进"历史已知"；它不会被当成下一次尝试的用量。
+            # （原实现退避层只更新 last_consumed、不进 prior_known，保持原口径。）
             if attempt_tokens is not None and (attempt_tokens[0] > 0 or attempt_tokens[1] > 0):
-                prior_known_tokens = _add_tokens(prior_known_tokens, attempt_tokens)
+                if phase == "temperature":
+                    prior_known_tokens = _add_tokens(prior_known_tokens, attempt_tokens)
                 last_consumed_tokens = attempt_tokens
+            return _AttemptOutcome("error", error=error, verdict=result.verdict)
 
-            error = last_error = decision.error
-            if decision.action == "stop":
-                return self._build_result(
-                    False, "", error, attempt_tokens,
-                    total_attempts=total_attempts, failed_tokens=call_failed_tokens,
-                    prior_tokens=prior_known_tokens,
-                    verdict=decision.verdict,
-                )
-
-            if attempt < self.config.temperature_max_retries - 1:
-                wait_time = decision.wait_time
-                logger.info(f"⏳ 等待{wait_time}秒后进行下一次温度尝试...")
-                await self._sleep(wait_time)
-
-        # 指数退避重试（429 限流时额外多试几轮：限流通常是暂时的，快速放弃会丢块）
-        final_temp = max(0.0, self.config.temperature - (self.config.temperature_max_retries - 1) * self.config.temperature_step)
-        # 限流判定走分类结论
-        _last_cls = classify_message(last_error).cls
-        backoff_rounds = max(self.config.backoff_max_retries, 3) \
-            if _last_cls is ErrorClass.RATE_LIMIT else self.config.backoff_max_retries
-        for retry_num in range(backoff_rounds):
-            if self._stop_requested:
-                logger.info("⛔ 检测到停止请求，终止重试链")
-                return self._build_result(
-                    False, "", "用户请求停止", attempt_tokens,
-                    total_attempts=total_attempts, failed_tokens=call_failed_tokens,
-                    prior_tokens=prior_known_tokens,
-                )
-            # 温度循环已连续 3 次命中审核拦截（含 temperature_max_retries<3 的配置）→ 直接放弃，
-            # 不进入指数退避，避免对"永久拒绝"白等 30 分钟
-            if is_moderation_error(last_error) and moderation_hits >= 2:
-                _get_failure_logger().record_failure(
-                    attempt_num=total_attempts,
-                    max_retries=self.config.temperature_max_retries + self.config.backoff_max_retries,
-                    temperature=final_temp,
-                    error_type="ModerationBlocked",
-                    error_message=last_error,
-                    messages_length=messages_length,
-                )
-                logger.warning("⛔ 内容审核拦截（重试1次后仍拦截），跳过该章节，不再重试")
-                return self._build_result(
-                    False, "", last_error, attempt_tokens,
-                    total_attempts=total_attempts, failed_tokens=call_failed_tokens,
-                    prior_tokens=prior_known_tokens,
-                    verdict=classify_message(last_error),
-                )
-            total_attempts += 1
-            with self._stats_lock:
-                self._attempts += 1
-
-            if classify_message(last_error).cls is ErrorClass.RATE_LIMIT:
-                wait_time = min(self._retry_after_seconds(last_error) or 30 * (retry_num + 1), 120)
-            else:
-                wait_time = min(2 ** (retry_num + 1), 60)
-
-            logger.info(f"\n[指数退避] 尝试 {total_attempts}，"
-                       f"等待{wait_time}秒，temperature={final_temp} "
-                       f"(第{retry_num + 1}/{backoff_rounds}次)")
-            await self._sleep(wait_time)
-
-            result = await self.chat(
-                messages,
-                temperature=final_temp,
-                max_tokens=max_tokens
+        async def on_stop(total_attempts):
+            return self._build_result(
+                False, "", "用户请求停止", attempt_tokens,
+                total_attempts=total_attempts, failed_tokens=call_failed_tokens,
+                prior_tokens=prior_known_tokens,
             )
-            content = result.content
-            tokens = result.tokens
-            attempt_tokens = tokens
 
-            if result.success:
-                if validate_response:
-                    # 在线程中运行验证，避免 json5/ast.literal_eval 等同步解析器阻塞事件循环
-                    try:
-                        is_valid, validation_error = await asyncio.wait_for(
-                            asyncio.to_thread(validate_response, content),
-                            timeout=30
-                        )
-                    except asyncio.TimeoutError:
-                        logger.warning("❌ 响应验证超时（30秒），视为验证失败")
-                        is_valid, validation_error = False, "验证超时（30秒）"
-                    except Exception as e:
-                        logger.warning(f"❌ 响应验证异常: {e}")
-                        is_valid, validation_error = False, f"验证异常: {e}"
-                    if not is_valid:
-                        logger.warning(f"❌ 响应验证失败: {validation_error}")
-                        logger.info(f"[DEBUG] LLM响应(全文): {repr(content)}")
-                        # 累加失败 tokens（API 已消耗，但响应无效）
-                        if tokens is not None:
-                            with self._stats_lock:
-                                self._failed_tokens += tokens[0] + tokens[1]
-                            call_failed_tokens += tokens[0] + tokens[1]
-                            prior_known_tokens = _add_tokens(prior_known_tokens, tokens)
-                            last_consumed_tokens = tokens
-                        last_error = f"响应验证失败: {validation_error}"
-                        # 构建带格式修正提示的messages用于重试
-                        if retry_messages_builder:
-                            messages = retry_messages_builder(validation_error, messages)
-                        _get_failure_logger().record_failure(
-                            attempt_num=total_attempts,
-                            max_retries=self.config.temperature_max_retries + self.config.backoff_max_retries,
-                            temperature=final_temp,
-                            error_type="ValidationFailed",
-                            error_message=last_error,
-                            wait_time=wait_time,
-                            messages_length=messages_length
-                        )
-                        continue
+        async def on_decision_stop(decision, total_attempts):
+            return self._build_result(
+                False, "", decision.error, attempt_tokens,
+                total_attempts=total_attempts, failed_tokens=call_failed_tokens,
+                prior_tokens=prior_known_tokens,
+                verdict=decision.verdict,
+            )
 
-                logger.info(f"✅ API请求成功（第{total_attempts}次尝试）")
-                logger.info(f"使用Tokens: {tokens}")
-                logger.info("=" * 60)
-                return self._build_result(
-                    True, content, "", tokens,
-                    total_attempts=total_attempts, failed_tokens=call_failed_tokens,
-                    prior_tokens=prior_known_tokens,
-                )
-
-            last_error = error = result.error
-            logger.warning(f"❌ 重试失败: {error}")
-
-            # 保留 API 调用消耗的 tokens
-            if tokens is not None and (tokens[0] > 0 or tokens[1] > 0):
-                last_consumed_tokens = tokens
-
-            # 退避层同构决策（stop 类立即停，不再烧剩余轮次）
-            decision = self._decide_retry(
-                error,
-                moderation_hits=moderation_hits,
-                verdict=result.verdict,
-                attempt=attempt,
-                total_attempts=total_attempts,
+        async def on_moderation_short_circuit(short_error, total_attempts, final_temp):
+            _get_failure_logger().record_failure(
+                attempt_num=total_attempts,
+                max_retries=self.config.temperature_max_retries + self.config.backoff_max_retries,
                 temperature=final_temp,
+                error_type="ModerationBlocked",
+                error_message=short_error,
                 messages_length=messages_length,
-                phase="backoff",
-                moderation_log="⛔ 内容审核拦截，跳过该章节，不再重试",
-                wait_time=wait_time,
             )
-            moderation_hits = decision.moderation_hits
-            error = last_error = decision.error
-            if decision.action == "stop":
-                return self._build_result(
-                    False, "", error, attempt_tokens,
-                    total_attempts=total_attempts, failed_tokens=call_failed_tokens,
-                    prior_tokens=prior_known_tokens,
-                    verdict=decision.verdict,
-                )
+            logger.warning("⛔ 内容审核拦截（重试1次后仍拦截），跳过该章节，不再重试")
+            return self._build_result(
+                False, "", short_error, attempt_tokens,
+                total_attempts=total_attempts, failed_tokens=call_failed_tokens,
+                prior_tokens=prior_known_tokens,
+                verdict=classify_message(short_error),
+            )
 
-        final_msg = f"所有重试均失败（温度退火{self.config.temperature_max_retries}次 + " \
-                   f"指数退避{self.config.backoff_max_retries}次 = 共{total_attempts}次）。" \
-                   f"最后错误: {last_error}"
-        logger.error("\n" + "=" * 60)
-        logger.error(f"⛔ API调用最终失败")
-        logger.error(f"总尝试次数: {total_attempts}")
-        logger.error(f"最后错误: {last_error}")
+        async def on_final_failure(last_error, total_attempts, backoff_rounds):
+            final_msg = f"所有重试均失败（温度退火{self.config.temperature_max_retries}次 + " \
+                        f"指数退避{self.config.backoff_max_retries}次 = 共{total_attempts}次）。" \
+                        f"最后错误: {last_error}"
+            logger.error("\n" + "=" * 60)
+            logger.error(f"⛔ API调用最终失败")
+            logger.error(f"总尝试次数: {total_attempts}")
+            logger.error(f"最后错误: {last_error}")
 
-        summary = _get_failure_logger().get_summary()
-        logger.error(f"失败统计: {summary}")
-        logger.error("=" * 60)
+            summary = _get_failure_logger().get_summary()
+            logger.error(f"失败统计: {summary}")
+            logger.error("=" * 60)
 
-        return self._build_result(
-            False, "", final_msg, attempt_tokens,
-            total_attempts=total_attempts, failed_tokens=call_failed_tokens,
-                    prior_tokens=prior_known_tokens,
-            verdict=classify_message(last_error),
+            return self._build_result(
+                False, "", final_msg, attempt_tokens,
+                total_attempts=total_attempts, failed_tokens=call_failed_tokens,
+                prior_tokens=prior_known_tokens,
+                verdict=classify_message(last_error),
+            )
+
+        hooks = SimpleNamespace(
+            on_stop=on_stop, on_decision_stop=on_decision_stop,
+            on_moderation_short_circuit=on_moderation_short_circuit,
+            on_final_failure=on_final_failure,
+        )
+        return await self._retry_chain(
+            messages, max_tokens=max_tokens, try_once=try_once, hooks=hooks,
+            moderation_log_temperature="⛔ 内容审核拦截，跳过该章节，不再重试",
+            moderation_log_backoff="⛔ 内容审核拦截，跳过该章节，不再重试",
         )
 
     def get_stats(self) -> dict:
