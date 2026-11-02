@@ -391,11 +391,11 @@ def _is_permanent(exc: BaseException) -> bool:
         except TypeError:  # 属性不是方法
             return bool(is_permanent)
     # 内容审核拦截：厂商把它塞在 422 的 body 里（MiniMax: `input new_sensitive (1026)`），
-    # 走 error_taxonomy 的码表未必能认出来，但 core 里已有专门嗅探器，直接复用。
+    # 走 error_taxonomy 的码表未必能认出来，但 common 里已有专门嗅探器，直接复用。
     try:
-        from backend.core import llm_client
+        from backend.common import llm_signals
 
-        if llm_client.moderation_hit_from_exception(exc):
+        if llm_signals.moderation_hit_from_exception(exc):
             return True
     except Exception:  # noqa: BLE001
         pass
@@ -409,7 +409,7 @@ def _is_permanent(exc: BaseException) -> bool:
     except Exception:  # noqa: BLE001
         pass
     try:
-        from backend.core import error_taxonomy
+        from backend.common import error_taxonomy
 
         return bool(error_taxonomy.classify_exception(exc).is_permanent())
     except Exception:  # noqa: BLE001 - 判定不了就当非永久（保守：不跳）

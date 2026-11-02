@@ -23,6 +23,9 @@ from ..config.settings import APIConfig
 from ..core.moderation import (
     mark_moderation, is_moderation_message, is_moderation_error,
 )
+from ..common.llm_signals import (  # noqa: F401  （兼容导出：vnext 经 common 引用，1.x 历史路径不变）
+    moderation_hit_from_exception,
+)
 from .error_taxonomy import (
     ErrorClass, ClassVerdict,
     classify_exception, classify_message,
@@ -68,25 +71,8 @@ def detect_provider(config: APIConfig) -> str:
 
 
 # FailureLogger 在 llm_failure_logger.py：类 + 进程级单例 + _get_failure_logger 访问器，
-# 本文件经导入使用。
-
-
-def moderation_hit_from_exception(e) -> bool:
-    """从 API 异常嗅探内容审核拦截信号（纯函数，供单测）。
-
-    结构化判定委托 classify_exception。OpenAI SDK 的 APIStatusError.body 是 Any 类型，
-    聚合网关可能返回字符串/数组错误体，非 dict body 必须防御性跳过，
-    否则 .get("code") 会抛 AttributeError 且无人捕获，导致整批章节零重试直接报废；
-    body message 文本兜底同样保留。"""
-    verdict = classify_exception(e)
-    if verdict is not None:
-        return verdict.cls in (ErrorClass.MODERATION_INPUT, ErrorClass.MODERATION_OUTPUT)
-    body = getattr(e, 'body', None) or {}
-    body_msg = ""
-    if isinstance(body, dict):
-        err_inner = body.get("error") or {}
-        body_msg = str(err_inner.get("message", "")) if isinstance(err_inner, dict) else str(body)
-    return is_moderation_message(body_msg) or is_moderation_message(str(e))
+# 本文件经导入使用。moderation_hit_from_exception 的实现已下沉 backend/common/llm_signals.py，
+# 由上方 import 兼容导出（test_llm_moderation_sniff 等历史路径不变）。
 
 
 _MODERATION_CLASSES = (ErrorClass.MODERATION_INPUT, ErrorClass.MODERATION_OUTPUT)

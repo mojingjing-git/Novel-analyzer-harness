@@ -26,12 +26,13 @@
 
 ```
 .
-├── backend/                      # FastAPI 后端（生产代码 103 个 .py）
+├── backend/                      # FastAPI 后端（生产代码 109 个 .py）
 │   ├── app.py                    # FastAPI 工厂（CORS、静态托管、路由注册、lifespan 工作区扫描）
 │   ├── main.py                   # 后端启动器（127.0.0.1:8000）
 │   ├── ws_events.py              # WS 协议权威定义（WSType 11 种 / WSState 12 种 / PipelineStatus + payload 契约）
 │   ├── progress_hub.py           # 进度广播中枢（分级驱逐慢消费者 + token_delta 150ms 节流 + log 转发）
-│   ├── core/                     # 18 个模块
+│   ├── common/                   # 两层引擎共用纯逻辑层（错误分类 / 审核标记 / LLM 错误信号；只依赖标准库）
+│   ├── core/                     # 1.x 引擎（error_types / error_taxonomy / moderation 为 common 的兼容转发层）
 │   │   ├── pipeline.py           # 主分析流水线（预热 / 并发 / checkpoint / 滚动总结 / 失败补跑）
 │   │   ├── analyzer.py           # 单章分析引擎（LLM 调用 + 校验回调 + 知识库更新）
 │   │   ├── llm_client.py         # LLM 客户端（OpenAI/Anthropic 双协议 + 温度退火与指数退避 + 流式/非流式）
