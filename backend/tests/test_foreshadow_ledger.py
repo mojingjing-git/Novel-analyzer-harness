@@ -74,7 +74,7 @@ def test_apply_reconciliation_no_last_seen_advance():
 
 
 def test_apply_reconciliation_resolved_updates():
-    """回收分支：状态/章节/批次更新，且默认高置信不标 needs_review"""
+    """自述回收降为提名：status 保持 active，自述内容/自报章节入账待裁决，last_seen 推进到批末"""
     from backend.services.final_summary import FinalSummaryRunner
 
     ledger = ForeshadowLedger()
@@ -89,14 +89,16 @@ def test_apply_reconciliation_resolved_updates():
         }],
     })
     item = ledger.items[0]
-    assert item.status == "resolved"
+    assert item.status == "active"
+    assert item.needs_review is True
+    assert item.resolution == "真相揭晓"
     assert item.resolved_chapter == 85
     assert item.last_seen_chapter == 90
-    assert item.needs_review is False
+    assert any("待证据裁决" in n for n in item.notes)
 
 
 def test_low_confidence_sets_needs_review():
-    """低置信回收（confidence=中/低）→ needs_review=True"""
+    """置信度不再分支：高/低置信的自述回收一律降为提名（裁决权在 V2 复检）"""
     from backend.services.final_summary import FinalSummaryRunner
 
     ledger = ForeshadowLedger()
@@ -112,9 +114,9 @@ def test_low_confidence_sets_needs_review():
         }],
     })
     item = ledger.items[0]
-    assert item.status == "resolved"
+    assert item.status == "active"
     assert item.needs_review is True
-    assert any("建议人工复核" in n for n in item.notes)
+    assert any("待证据裁决" in n for n in item.notes)
 
 
 def test_reconcile_uses_total_chapters_fallback():

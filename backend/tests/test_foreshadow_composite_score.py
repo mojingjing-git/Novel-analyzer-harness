@@ -1,5 +1,4 @@
 """伏笔组合因子排序 + composite_score 保留测试"""
-import pytest
 from backend.utils.foreshadow_ledger import ForeshadowItem, SCHEMA_VERSION
 
 
@@ -35,5 +34,5 @@ def test_foreshadow_item_from_dict_backward_compat():
 
 
 def test_schema_version_bumped():
-    """SCHEMA_VERSION 升级到 5（v5 加 question/answer_criteria/lead；v4 加锚点与 entity_key）"""
-    assert SCHEMA_VERSION == 5
+    """SCHEMA_VERSION 升级到 6（v6 加 resolution_quality；v5 加 question/answer_criteria/lead）"""
+    assert SCHEMA_VERSION == 6

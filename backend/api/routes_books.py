@@ -170,6 +170,8 @@ async def get_foreshadow_ranking(book_id: str) -> dict:
                 "evidence_chapters": item.get("evidence_chapters", []),
                 "resolution": item.get("resolution"),
                 "resolved_chapter": item.get("resolved_chapter"),
+                "needs_review": bool(item.get("needs_review", False)),
+                "resolution_quality": item.get("resolution_quality", ""),
             })
 
         # 按分数降序

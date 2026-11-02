@@ -72,6 +72,33 @@ def recheck_conflict_reason(config) -> str:
     return ""
 
 
+def split_lifecycle(items: list[dict]) -> dict[str, list[dict]]:
+    """按生命周期分组供报告呈现。
+
+    分组规则与 ForeshadowLedger.lifecycle_bars 的七栏底表一致：
+    活跃组排除 needs_review 条目——它们是"复检判证据不足/自述待裁决"，不是
+    "待逐一核对是否回收"；把两者混进同一组会让 FINAL prompt 用错误的指令
+    消费几百条已经核对过的条目。
+    """
+    groups: dict[str, list[dict]] = {
+        "active": [],
+        "pending": [],
+        "resolved": [],
+        "dormant": [],
+        "frozen": [],
+    }
+    for item in items:
+        status = item.get("status")
+        needs_review = bool(item.get("needs_review"))
+        if status == "active":
+            (groups["pending" if needs_review else "active"]).append(item)
+        elif status == "resolved":
+            groups["resolved"].append(item)
+        elif status == "dormant":
+            (groups["frozen" if needs_review else "dormant"]).append(item)
+    return groups
+
+
 def _recheck_progress_message(summary: dict) -> str:
     """复检进度文案：兼容 ``run_recheck_v2`` 的**三种** emit 载荷。
 
@@ -1026,18 +1053,23 @@ class FinalSummaryRunner:
     def _build_active_foreshadows_block(self, ch_start: int, ch_end: int, foreshadow_catalog: list = None) -> str:
         """构建【当前伏笔清单】文本块，使用伏笔总表的原始 clue"""
         if foreshadow_catalog:
-            # 从伏笔总表取截至本批的条目；仅保留账本中仍为 active 的条目——
+            # 从伏笔总表取截至本批的条目；仅保留账本中仍为 active 且未获提名的条目——
             # 已回收伏笔不再进入后续批次的 reconciliation，避免反复重审（token 浪费）
-            # 与"翻案"式状态抖动。
+            # 与"翻案"式状态抖动；已提名（自述回收待证据裁决）的条目同样跳过，
+            # 否则会在后续 10~20 批里被反复提问、并用新自述覆写已有提名。
             ledger_map = {i.id: i for i in self.ledger.items}
             items = [
                 c for c in foreshadow_catalog
                 if c["first_seen"] <= ch_end
-                and (c["id"] not in ledger_map or ledger_map[c["id"]].status == 'active')
+                and (c["id"] not in ledger_map or (
+                    ledger_map[c["id"]].status == 'active'
+                    and not ledger_map[c["id"]].needs_review
+                ))
             ]
         else:
-            # 降级：用账本活跃列表
-            active_items = [i for i in self.ledger.items if i.status == 'active']
+            # 降级：用账本活跃列表（同样排除已提名条目）
+            active_items = [i for i in self.ledger.items
+                            if i.status == 'active' and not i.needs_review]
             items = [{"id": i.id, "clue": i.description, "evidence_chapters": i.evidence_chapters,
                       "first_seen": i.first_seen_chapter, "last_seen": i.last_seen_chapter}
                      for i in active_items]
@@ -1085,6 +1117,7 @@ class FinalSummaryRunner:
                     "status": ledger_item.status if ledger_item else "active",
                     "resolution": ledger_item.resolution if ledger_item else None,
                     "resolved_chapter": ledger_item.resolved_chapter if ledger_item else None,
+                    "needs_review": bool(ledger_item.needs_review) if ledger_item else False,
                 })
 
         # 补充账本中有但总表中没有的条目（兜底）
@@ -1099,17 +1132,24 @@ class FinalSummaryRunner:
                     "status": item.status,
                     "resolution": item.resolution,
                     "resolved_chapter": item.resolved_chapter,
+                    "needs_review": bool(item.needs_review),
                 })
 
         if not all_items:
             return ""
 
-        active = [i for i in all_items if i["status"] == "active"]
-        resolved = [i for i in all_items if i["status"] == "resolved"]
-        dormant = [i for i in all_items if i["status"] == "dormant"]
+        groups = split_lifecycle(all_items)
+        active = groups["active"]
+        pending = groups["pending"]
+        resolved = groups["resolved"]
+        dormant = groups["dormant"]
+        frozen = groups["frozen"]
 
         parts = []
-        parts.append(f"## 伏笔总表（共{len(all_items)}条：活跃{len(active)} / 已回收{len(resolved)} / 休眠{len(dormant)}）\n")
+        parts.append(
+            f"## 伏笔总表（共{len(all_items)}条：活跃{len(active)} / 待确认{len(pending)} / "
+            f"已回收{len(resolved)} / 休眠{len(dormant)} / 冻结待审{len(frozen)}）\n"
+        )
 
         if resolved:
             parts.append("### 已回收伏笔")
@@ -1119,6 +1159,13 @@ class FinalSummaryRunner:
                 res = item.get("resolution") or "未记录"
                 rch = item.get("resolved_chapter") or "?"
                 parts.append(f'  - 回收: ch{rch}, {res}')
+            parts.append("")
+
+        if pending:
+            parts.append("### 待确认伏笔（复检判定证据不足或冲突 / 采集自述待裁决）")
+            for item in pending:
+                chapters_str = ",".join(str(c) for c in item["evidence_chapters"][:5])
+                parts.append(f'- [{item["id"]}] {item["clue"]} (ch{chapters_str})')
             parts.append("")
 
         if active:
@@ -1134,11 +1181,19 @@ class FinalSummaryRunner:
                 parts.append(f'- [{item["id"]}] {item["clue"]} (ch{item["first_seen"]}-{item["last_seen"]})')
             parts.append("")
 
+        if frozen:
+            parts.append("### 冻结待审伏笔（复检后待人工确认，已被冻结）")
+            for item in frozen:
+                parts.append(f'- [{item["id"]}] {item["clue"]} (ch{item["first_seen"]}-{item["last_seen"]})')
+            parts.append("")
+
         parts.append("请在报告中特别关注：")
         parts.append('1. 标记为"已回收"的伏笔，分析其回收质量')
         parts.append('2. 标记为"休眠"的伏笔，这些可能是作者遗忘的伏笔')
         parts.append('3. 标记为"活跃"的伏笔——**请逐一核对**，判断它们在全书中是否实际上已经被回收了')
-        parts.append("4. 所有伏笔结论必须带证据章节号")
+        parts.append('4. 标记为"待确认/冻结待审"的伏笔**不需要再逐一核对**——复检已给出"证据不足"结论，'
+                     '请在报告中指出它们当前的进展、以及后文是否存在可能的真正回收位置')
+        parts.append("5. 所有伏笔结论必须带证据章节号")
 
         return "\n".join(parts)
 
@@ -1399,19 +1454,20 @@ class FinalSummaryRunner:
             is_resolved = bool(item.get('is_resolved_in_this_batch', False))
             if is_resolved:
                 if existing:
-                    existing.status = 'resolved'
+                    # 采集自述回收降为提名（PLAN-foreshadow-adjudication D-11）：
+                    # "模型觉得答对了"不是证据——自述只记录为待裁决线索（resolution 文本
+                    # 保留，供复检作检索 hint），status 保持 active，由 V2 复检按
+                    # answer_criteria 裁决后才置 resolved。低置信不再单独分支：
+                    # 置信度与回收质量不相关，所有自述一律待裁决。
                     existing.resolution = item.get('resolution_summary') or item.get('reason') or ''
                     existing.resolved_chapter = item.get('resolved_chapter') or ch_end
-                    existing.resolved_batch = batch_idx
-                    existing.source_type = 'llm_judged'
                     existing.last_seen_chapter = ch_end
                     existing.last_seen_batch = batch_idx
-                    # 低置信回收（confidence 非"高"）→ 标人工复核（防 fs_001 式错位直接入库）
-                    confidence = item.get('confidence', '高')
-                    if confidence != '高' or not existing.resolution:
-                        existing.needs_review = True
-                        existing.notes.append(f"回收置信度={confidence}，建议人工复核（批次{batch_idx}）")
-                    logger.info(f"LLM标记伏笔回收: {foreshadow_id} (第{existing.resolved_chapter}章)")
+                    existing.needs_review = True
+                    existing.notes.append(
+                        f"自述回收待证据裁决（批次{batch_idx}）：自报 ch{existing.resolved_chapter}"
+                    )
+                    logger.info(f"自述回收降为提名: {foreshadow_id} (自报第{existing.resolved_chapter}章)")
             # 未回收分支不推进 last_seen_chapter/batch：把"本批未标记回收"当成
             # "本批出现过"会让休眠判定的章距条件永远 ≈0，休眠机制形同虚设。
             # last_seen 语义 = 伏笔最后出现的真实章节，只由 catalog 证据章维护；

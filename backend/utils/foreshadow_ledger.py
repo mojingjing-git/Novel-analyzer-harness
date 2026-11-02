@@ -21,7 +21,10 @@ logger = logging.getLogger(__name__)
 #     v4: 含 anchor_quote / anchor_chapter / entity_key
 #     anchor_quote 是**原文逐字引文**，复检要靠它核对；entity_key 是"这是同一件事"的稳定身份，
 #     一旦登记就持久化——指纹只用于去重，不能用来改号（改号等于把历史线索拆成两条）。
-SCHEMA_VERSION = 5
+# v6: ForeshadowItem 含 resolution_quality（verified/questioned/空=未复审）：
+#     "回收是否成立"的裁决结论落点。status 只说开/关，quality 说"关得有没有证据"——
+#     旧 llm_judged 的 resolved 与 V2 亲证的 resolved 必须可区分，否则六栏统计失真。
+SCHEMA_VERSION = 6
 
 # 休眠阈值
 # 休眠以章距为主判据：批次阈值相对批次数（10-20 批）不可达，
@@ -50,6 +53,7 @@ class ForeshadowItem:
     confidence: float = 0.8                # 置信度 0-1
     notes: List[str] = field(default_factory=list)  # 备注
     needs_review: bool = False             # 是否需要人工复核（低置信度 / 存疑时标记）
+    resolution_quality: str = ""           # 回收裁决：verified（证据复核成立）/questioned（已质疑）/空=未复审
     composite_score: int = 0               # 组合因子分数（imp×100 + conf×10 + evi≤50 + span≤49）
     importance: str = "中"                 # 重要度（高/中/低，从 catalog 同步）
     anchor_quote: str = ""                 # 建成时的原文锚点（逐字；没有则复检无法核对）
@@ -132,6 +136,10 @@ class ForeshadowLedger:
         for item in self.items:
             if item.status != 'active':
                 continue
+            if item.needs_review:
+                # 待人工确认的条目（复检判"证据不足"或采集自述待裁决）不由自动机制改变状态——
+                # 冻结它们等于让"请人工确认"永远没有人工环节（2026-11-03 生产账本 221 条事故）
+                continue
 
             if current_chapter is not None:
                 chapter_span = (current_chapter - item.last_seen_chapter) >= DORMANT_CHAPTER_THRESHOLD
@@ -141,6 +149,36 @@ class ForeshadowLedger:
             if chapter_span:
                 item.status = 'dormant'
                 item.notes.append(f"批次{batch_idx}时自动标记为休眠（{DORMANT_CHAPTER_THRESHOLD}章未见）")
+
+    def lifecycle_bars(self) -> dict[str, int]:
+        """生命周期七栏底表：互斥且完备（加总 = 条目总数），全部由账本字段自足推导。
+
+        对外呈现（报告/前端）聚合为四栏：活跃=①；已回收=③；待确认=②+④+⑦；休眠=⑤。
+        "待验证"（从未被证据复审）与"已质疑"（audit 判不成立）统计口径不同，必须分栏。
+        """
+        bars = {
+            "active_open": 0,          # ① 未回收
+            "active_review": 0,        # ② 活跃·待确认（复检证据不足 / 采集自述待裁决）
+            "resolved_verified": 0,    # ③ 已回收·已验证
+            "resolved_questioned": 0,  # ④ 已回收·已质疑（audit 判自述不成立）
+            "resolved_unverified": 0,  # ⑤ 已回收·未复审（旧 llm_judged 等）
+            "dormant_plain": 0,        # ⑥ 休眠
+            "dormant_review": 0,       # ⑦ 冻结待审
+        }
+        for item in self.items:
+            quality = getattr(item, "resolution_quality", "") or ""
+            if item.status == "active":
+                bars["active_review" if item.needs_review else "active_open"] += 1
+            elif item.status == "resolved":
+                if quality == "verified":
+                    bars["resolved_verified"] += 1
+                elif quality == "questioned":
+                    bars["resolved_questioned"] += 1
+                else:
+                    bars["resolved_unverified"] += 1
+            elif item.status == "dormant":
+                bars["dormant_review" if item.needs_review else "dormant_plain"] += 1
+        return bars
 
     def audit_text_for_report(self) -> str:
         """

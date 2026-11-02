@@ -89,8 +89,8 @@ def test_dedup_carries_question_and_criteria():
     assert catalog[0]["answer_criteria"] == "后文明确交代动匣底的人"
 
 
-def test_ledger_v5_holds_contract_fields(tmp_path):
-    assert SCHEMA_VERSION == 5
+def test_ledger_v6_holds_contract_fields(tmp_path):
+    assert SCHEMA_VERSION == 6
     item = ForeshadowItem(
         id="fs_001",
         description="铜匣",
@@ -110,7 +110,7 @@ def test_ledger_v5_holds_contract_fields(tmp_path):
     loaded = ForeshadowLedger.load(path)
     assert loaded.items[0].question == "谁先动过匣底"
     assert loaded.items[0].answer_criteria == "后文明确交代动匣底的人"
-    assert json.loads(path.read_text(encoding="utf-8"))["schema_version"] == 5
+    assert json.loads(path.read_text(encoding="utf-8"))["schema_version"] == 6
 
 
 def test_ledger_v4_payload_still_loads(tmp_path):
