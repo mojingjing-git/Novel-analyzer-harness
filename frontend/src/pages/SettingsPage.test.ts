@@ -12,6 +12,7 @@ vi.mock('../api/client', () => ({
     getForeshadowCategories: vi.fn(),
     previewModels: vi.fn(),
     probeThinking: vi.fn(),
+    probeRecheck: vi.fn(),
     getModelSpec: vi.fn().mockResolvedValue({ found: false, spec: null, catalog_version: '2026-11-01' }),
     syncModelsCatalog: vi.fn().mockResolvedValue({ success: true, version: '2026-11-01', total_models: 2347 }),
   },

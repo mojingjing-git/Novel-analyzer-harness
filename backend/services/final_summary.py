@@ -59,17 +59,47 @@ def recheck_conflict_reason(config) -> str:
     ``400 unknown model``，而流式路径把它变成空回包、失败又被 ``content or ""``
     吞掉，整轮只剩 ``calls=N / checked=0``（2026-11-02 实测 280 次调用全废）。
     配置冲突时**整轮不跑**，绝不静默降级到主模型——降级等于换口径还照收调用费。
+
+    判定对象是 ``recheck_channel`` **解析后**的 (model, base_url)：判定模型
+    留空=跟随主模型，主模型是网关专用名而复检通道指向官方端点时同样冲突，
+    不能因为"复检模型字段为空"就跳过校验。
     """
-    analysis = getattr(config, "analysis", None)
     model, base_url = recheck_channel(config)
-    if not getattr(analysis, "recheck_model", ""):
-        return ""
     if "minimaxi.com" in base_url and "/" in model:
         return (
             f"配置冲突：判定通道 {base_url} 是官方端点，"
             f"不接受判定模型 {model}，已阻断复检"
         )
     return ""
+
+
+def recheck_overrides(config) -> dict:
+    """复检通道 overrides：``recheck_*`` 字段非空才写键，空 = 跟随主配置。
+
+    返回空 dict 表示没有任何复检通道配置，复检直接复用总结客户端；
+    非空时调用方以 ``LLMClient(replace(config.api, **overrides))`` 构造
+    独立客户端。**基底是 ``config.api``（采集模型/超时/协议）**，与总结
+    客户端 ``_llm``（summary_model / summary_timeout / json_mode=default）
+    是两个口径——"跟随主模型"跟随的是采集模型，不是总结模型。
+    """
+    a = getattr(config, "analysis", None)
+    overrides: dict = {}
+
+    def put(key: str, value) -> None:
+        text = str(value or "").strip()
+        if text:
+            overrides[key] = text
+
+    put("model", getattr(a, "recheck_model", ""))
+    put("base_url", getattr(a, "recheck_base_url", ""))
+    put("api_key", getattr(a, "recheck_api_key", ""))
+    put("provider", getattr(a, "recheck_provider", ""))
+    put("json_mode", getattr(a, "recheck_json_mode", ""))
+    timeout = int(getattr(a, "recheck_timeout", 0) or 0)
+    if timeout > 0:
+        overrides["timeout"] = timeout
+    put("reasoning_effort", getattr(a, "recheck_reasoning_effort", ""))
+    return overrides
 
 
 def split_lifecycle(items: list[dict]) -> dict[str, list[dict]]:
@@ -1583,15 +1613,11 @@ class FinalSummaryRunner:
         if recheck_config > 0:
             recheck_kwargs["concurrency"] = max(1, min(self.concurrency, recheck_config))
 
-        # 复检可以用**另一个模型**：采集要覆盖面、判定要准确，两者偏好不同。
-        # 留空就跟随 api.model（与旧行为一致）。
-        recheck_client = self._llm
-        recheck_model = str(getattr(self.config.analysis, "recheck_model", "") or "").strip()
-        recheck_base_url = str(getattr(self.config.analysis, "recheck_base_url", "") or "").strip()
-        recheck_effort = str(
-            getattr(self.config.analysis, "recheck_reasoning_effort", "") or ""
-        ).strip()
-        api_base_url = str(getattr(self.config.api, "base_url", "") or "")
+        # 复检可以用**另一套通道**：模型/端点/Key/协议/超时/JSON 模式独立配置，
+        # 留空 = 跟随主配置。采集要覆盖面，判定要准确，两者偏好不同。
+        # 注意基底是 config.api（采集口径），与总结客户端 _llm（summary_model /
+        # summary_timeout）是两个口径——"跟随主模型"跟随的是采集模型。
+        overrides = recheck_overrides(self.config)
         conflict = recheck_conflict_reason(self.config)
         if conflict:
             logger.error(conflict)
@@ -1601,20 +1627,18 @@ class FinalSummaryRunner:
                 "calls": 0,
             }
             return
-        if recheck_model and recheck_model != str(getattr(self.config.api, "model", "") or ""):
+        recheck_client = self._llm
+        if overrides:
             from backend.core.llm_client import LLMClient
 
-            overrides = {"model": recheck_model}
-            if recheck_base_url:
-                overrides["base_url"] = recheck_base_url
-            if recheck_effort:
-                overrides["reasoning_effort"] = recheck_effort
             recheck_client = LLMClient(replace(self.config.api, **overrides))
+            effective_model, effective_base = recheck_channel(self.config)
             logger.info(
-                "复检使用独立通道：%s @ %s（思考档位 %s）",
-                recheck_model,
-                overrides.get("base_url", api_base_url),
-                recheck_effort or "(跟随配置)",
+                "复检使用独立通道：%s @ %s（思考档位 %s，超时 %s）",
+                overrides.get("model", f"(跟随主模型 {effective_model})"),
+                overrides.get("base_url", f"(跟随主通道)"),
+                overrides.get("reasoning_effort", "(跟随配置)"),
+                overrides.get("timeout", "(跟随配置)"),
             )
         async def _call_model(prompt: str) -> str:
             res = await recheck_client.chat_auto(

@@ -173,6 +173,10 @@ export interface AppConfigDto {
     recheck_v2_batch_size: number
     recheck_model: string
     recheck_base_url: string
+    recheck_api_key: string
+    recheck_provider: string
+    recheck_timeout: number
+    recheck_json_mode: string
     recheck_reasoning_effort: string
     skip_moderation_blocked: boolean
     max_compressed_arcs: number
@@ -396,6 +400,9 @@ export const api = {
     request<{ models: string[] }>('/api/settings/preview/models', { method: 'POST', body: JSON.stringify(params) }),
   probeThinking: (params: { base_url?: string; api_key?: string; provider?: string; model?: string }) =>
     request<ProbeThinkingResult>('/api/settings/probe-thinking', { method: 'POST', body: JSON.stringify(params) }),
+  /** 探测复检判定通道（三级回退：请求字段 > 复检专用通道 > 主配置） */
+  probeRecheck: (params: { base_url?: string; api_key?: string; provider?: string; model?: string }) =>
+    request<ProbeThinkingResult>('/api/settings/probe-recheck', { method: 'POST', body: JSON.stringify(params) }),
   getModelSpec: (model: string) =>
     request<ModelSpecResponse>(`/api/settings/model-spec?model=${encodeURIComponent(model)}`),
   syncModelsCatalog: () =>

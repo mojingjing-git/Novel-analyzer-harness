@@ -137,12 +137,16 @@
 | `recheck_concurrency` | int | `0` | 复检同时在途的批次数上限；0 = 跟随主 `concurrency` |
 | `recheck_model` | str | `""` | 判定模型；留空跟随主模型。判定要准确，可换用网关专用模型名 |
 | `recheck_base_url` | str | `""` | 判定请求端点；留空跟随主通道。换模型通常要同源换通道 |
-| `recheck_reasoning_effort` | str | `"low"` | 判定思考档位；留空跟随主模型 |
+| `recheck_api_key` | str | `""` | 判定通道的 API Key；留空跟随主 Key。换第三方端点时必配 |
+| `recheck_provider` | str | `""` | 判定协议格式；空=完全跟随主配置，`auto`=按判定端点特征检测 |
+| `recheck_timeout` | int | `0` | 判定请求超时（秒）；0 = 跟随 `api.timeout` |
+| `recheck_json_mode` | str | `""` | 判定 JSON 输出约束；空=跟随 `api.json_mode`（判定通道是本地地址时整体跳过） |
+| `recheck_reasoning_effort` | str | `""` | 判定思考档位；空=跟随主配置的思考设置（low/medium/high 显式覆盖） |
 | `foreshadow_recheck_batch_size` | int | `40` | **仅旧路径**：全书复检每次调用携带的活跃伏笔数 |
 | `anchor_quote_enabled` | bool | `true` | 逐章采集锚点引文；关掉则复检退化为无证据模式 |
 | `anchor_min_chars` | int | `6` | 锚点引文的最短字数 |
 
-复检开关、判定通道三件套（model / base_url / effort）与并发、批大小、调用/输出上限在设置页「伏笔复检（带证据 V2）」分组可改；锚点两项只能手改 `config.json`。
+复检开关、判定通道全参数（预设 / base_url / api_key / model / provider / timeout / json_mode / effort）与并发、批大小、调用/输出上限在设置页「伏笔复检（带证据 V2）」分组可改；锚点两项只能手改 `config.json`。
 
 判定模型与判定通道必须同源：网关专用模型名（含 `/`，如 `codex/gpt-6-luna`）配官方端点会在运行时被阻断（复检记 `PARTIAL`）。
 

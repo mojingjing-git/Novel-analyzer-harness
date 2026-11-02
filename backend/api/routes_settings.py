@@ -88,6 +88,31 @@ async def probe_thinking(req: ModelPreviewRequest) -> dict:
         raise HTTPException(status_code=502, detail=str(e))
 
 
+@router.post("/probe-recheck")
+async def probe_recheck(req: ModelPreviewRequest) -> dict:
+    """探测**复检判定通道**（微请求，不写配置）。
+
+    三级回退：请求字段 > analysis.recheck_*（复检专用通道）> 主 api.*。
+    用于在保存前验证"判定模型 + 判定端点"组合可用，并拿到该端点认的
+    思考控制参数——判定模型换家族时（网关专用名/第三方端点）尤其需要。"""
+    from backend.core.llm_probe import probe_thinking_params
+    service = get_service()
+    config = service.config_manager.load()
+    a = config.analysis
+
+    def resolve(explicit: Optional[str], recheck_val, main_val) -> str:
+        return (explicit or str(recheck_val or "") or str(main_val or "")).strip()
+
+    base_url = resolve(req.base_url, a.recheck_base_url, config.api.base_url)
+    api_key = resolve(req.api_key, a.recheck_api_key, config.api.api_key)
+    provider = resolve(req.provider, a.recheck_provider, config.api.provider)
+    model = resolve(req.model, a.recheck_model, config.api.model)
+    try:
+        return await probe_thinking_params(base_url, api_key, model, provider)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
 @router.get("/model-spec")
 async def get_model_spec(model: str = "") -> dict:
     """获取指定模型的 models.dev 规范（思考能力、上下文上限、Token 计费）。

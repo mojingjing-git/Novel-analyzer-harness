@@ -214,9 +214,22 @@ class AnalysisConfig:
     #: 网关专用模型名（如 ``codex/gpt-6-luna``）打到官方厂商端点会得到
     #: ``400 unknown model``，而流式路径把它变成空回包，整轮只剩 ``checked=0``。
     recheck_base_url: str = ""
-    #: 复检专用思考档位：留空 = 跟随 ``api.reasoning_effort``。
-    #: 判定是"读证据下结论"，不需要深度思考；默认 low 可显著压低耗时与费用。
-    recheck_reasoning_effort: str = "low"
+    #: 复检专用 Key：留空 = 跟随 ``api.api_key``。换第三方端点时必配；
+    #: 明文落 config.json，与主 ``api_key`` 同现状。
+    recheck_api_key: str = ""
+    #: 复检专用协议格式：空 = 完全跟随主配置（含主配置显式指定的 anthropic）；
+    #: ``auto`` = 按复检通道特征重新检测；``openai`` / ``anthropic`` = 显式指定。
+    recheck_provider: str = ""
+    #: 复检专用请求超时（秒）：0 = 跟随 ``api.timeout``。判定是单次长 prompt
+    #: 请求，独立设值可避免与采集链路互相牵制。
+    recheck_timeout: int = 0
+    #: 复检专用 JSON 模式：空 = 跟随 ``api.json_mode``。判定模型换家族时需要
+    #: 对应的 response_format 提示（default/qwen/deepseek/glm47）。
+    recheck_json_mode: str = ""
+    #: 复检专用思考档位：空 = 跟随主配置的思考设置（thinking_mode +
+    #: reasoning_effort 原样继承）；low/medium/high 显式覆盖档位。
+    #: 判定是"读证据下结论"，low 可显著压低耗时与费用。
+    recheck_reasoning_effort: str = ""
     # 内容审核拦截处理：识别为审核拦截的章节重试1次后跳过并标记（不进失败集、不补跑）
     skip_moderation_blocked: bool = True
     # 知识库限制

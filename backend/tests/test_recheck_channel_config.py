@@ -12,7 +12,11 @@
 from __future__ import annotations
 
 from backend.config.settings import AppConfig
-from backend.services.final_summary import recheck_channel, recheck_conflict_reason
+from backend.services.final_summary import (
+    recheck_channel,
+    recheck_conflict_reason,
+    recheck_overrides,
+)
 
 
 def _cfg(**recheck) -> AppConfig:
@@ -55,7 +59,69 @@ def test_no_conflict_when_channel_and_model_match():
     assert recheck_conflict_reason(cfg) == ""
 
 
-def test_no_conflict_when_recheck_model_not_configured():
-    """没配复检模型 = 跟随主通道，任何 base_url 都不该被拦。"""
+def test_model_follows_main_gateway_name_conflicts_with_official_endpoint():
+    """判定模型留空 = 跟随主模型：主模型是网关专用名而复检指向官方端点 = 冲突。
+
+    回归锁定：同源校验在 recheck_channel **解析后**的 (model, base_url) 上做，
+    不因"复检模型字段为空"就跳过——否则跟随主网关模型 + 官方端点会绕过阻断
+    （400 unknown model 刷屏的老事故换个入口重演）。
+    """
+    cfg = _cfg(recheck_model="", recheck_base_url="https://api.minimaxi.com/v1")
+    cfg.api.model = "codex/gpt-6-luna"
+    reason = recheck_conflict_reason(cfg)
+    assert "配置冲突" in reason and "codex/gpt-6-luna" in reason
+
+
+def test_model_follows_main_official_name_no_conflict():
+    """判定模型留空且主模型是官方名：跟随意味着同源，不拦。"""
     cfg = _cfg(recheck_model="", recheck_base_url="https://api.minimaxi.com/v1")
     assert recheck_conflict_reason(cfg) == ""
+
+
+# ---------------------------------------------------------------------------
+# recheck_overrides：通道字段 → replace(config.api, **overrides) 的组装
+# ---------------------------------------------------------------------------
+
+
+def test_overrides_empty_when_nothing_configured():
+    """全部留空 = 没有任何复检通道配置，复检直接复用总结客户端。"""
+    assert recheck_overrides(AppConfig()) == {}
+
+
+def test_overrides_include_every_set_channel_field():
+    cfg = _cfg(
+        recheck_model="judge-x",
+        recheck_base_url="http://127.0.0.1:3425/v1",
+        recheck_api_key="sk-recheck",
+        recheck_provider="openai",
+        recheck_timeout=90,
+        recheck_json_mode="qwen",
+        recheck_reasoning_effort="high",
+    )
+    assert recheck_overrides(cfg) == {
+        "model": "judge-x",
+        "base_url": "http://127.0.0.1:3425/v1",
+        "api_key": "sk-recheck",
+        "provider": "openai",
+        "timeout": 90,
+        "json_mode": "qwen",
+        "reasoning_effort": "high",
+    }
+
+
+def test_base_url_override_applies_even_when_model_follows_main():
+    """回归：只换通道不换模型时 base_url 必须生效。
+
+    旧实现的条件是 `recheck_model and recheck_model != api.model`——同模型名
+    换端点时整个 override 被跳过，复检静默打回主通道。
+    """
+    cfg = _cfg(recheck_base_url="http://127.0.0.1:3425/v1")
+    ov = recheck_overrides(cfg)
+    assert ov.get("base_url") == "http://127.0.0.1:3425/v1"
+    assert "model" not in ov
+
+
+def test_blank_strings_and_zero_timeout_mean_follow():
+    """空白串/0 都按"跟随主配置"处理，不产生空键。"""
+    cfg = _cfg(recheck_api_key="  ", recheck_timeout=0, recheck_json_mode="")
+    assert recheck_overrides(cfg) == {}

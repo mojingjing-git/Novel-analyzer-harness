@@ -76,13 +76,52 @@ const keptSet = computed(() => new Set(config.value?.analysis.foreshadow_kept_ca
 // 判据提示出来：生效通道 = recheck_base_url 非空否则主通道。
 const recheckConflictHint = computed(() => {
   const a = config.value?.analysis
-  if (!a?.recheck_model?.trim()) return ''
+  if (!a) return ''
+  // 判定模型留空 = 跟随主模型——同源校验在"解析后"的 (模型, 通道) 上做，
+  // 主模型是网关专用名而复检指向官方端点时同样会阻断
+  const effectiveModel = (a.recheck_model || config.value?.api.model || '').trim()
   const effectiveBase = (a.recheck_base_url || config.value?.api.base_url || '').trim()
-  if (effectiveBase.includes('minimaxi.com') && a.recheck_model.includes('/')) {
-    return `⚠ 判定模型 ${a.recheck_model.trim()} 是网关专用名，当前判定通道 ${effectiveBase} 是官方端点——这个组合会在开跑时被阻断（400 unknown model）。请把「判定通道」改成网关地址，或清空判定模型以跟随主模型。`
+  if (effectiveBase.includes('minimaxi.com') && effectiveModel.includes('/')) {
+    const src = a.recheck_model.trim() ? `判定模型 ${effectiveModel}` : `判定模型留空（跟随主模型 ${effectiveModel}）`
+    return `⚠ ${src} 是网关专用名，当前判定通道 ${effectiveBase} 是官方端点——这个组合会在开跑时被阻断（400 unknown model）。请把判定通道改成网关地址，或改用官方端点支持的模型名。`
   }
   return ''
 })
+
+// ===== 复检判定通道：预设填充 + 通道探测 =====
+const recheckProbeBusy = ref(false)
+const recheckProbeError = ref('')
+const recheckProbeResult = ref<Awaited<ReturnType<typeof api.probeRecheck>> | null>(null)
+
+function onRecheckPreset(name: string) {
+  const p = presets.value[name]
+  if (p && config.value) {
+    config.value.analysis.recheck_base_url = p.base_url
+    config.value.analysis.recheck_model = p.model
+    if (p.api_key) config.value.analysis.recheck_api_key = p.api_key
+  }
+}
+
+async function runRecheckProbe() {
+  const a = config.value?.analysis
+  if (!a) return
+  recheckProbeBusy.value = true
+  recheckProbeError.value = ''
+  recheckProbeResult.value = null
+  try {
+    // 只带表单已填的复检字段；留空交给端点做三级回退（复检通道 > 主配置）
+    const body: Record<string, string> = {}
+    if (a.recheck_base_url.trim()) body.base_url = a.recheck_base_url.trim()
+    if (a.recheck_api_key.trim()) body.api_key = a.recheck_api_key.trim()
+    if (a.recheck_provider.trim()) body.provider = a.recheck_provider.trim()
+    if (a.recheck_model.trim()) body.model = a.recheck_model.trim()
+    recheckProbeResult.value = await api.probeRecheck(body)
+  } catch (e) {
+    recheckProbeError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    recheckProbeBusy.value = false
+  }
+}
 
 function toggleCategory(name: string) {
   if (!config.value) return
@@ -645,25 +684,86 @@ onMounted(load)
       <p class="text-xs" style="color: var(--win-text-secondary)">
         总结阶段对每条伏笔用<b>原文证据</b>核对回收判定，逐条落盘到书的 output/recheck_verdicts.json。
         判定模型与判定通道必须同源：网关专用模型名（如 codex/gpt-6-luna）配官方端点会被阻断。
+        所有留空字段跟随主 API 配置。
       </p>
+
+      <div class="text-xs font-medium pt-1" style="color: var(--win-text-secondary)">判定通道</div>
       <div class="grid grid-cols-2 gap-3">
         <div class="flex items-center gap-2 col-span-2">
-          <label class="text-sm shrink-0 w-28" style="color: var(--win-text-secondary)" title="判定用的模型；留空 = 跟随上方主模型。判定要准确，采集要覆盖面，两者可以分开">判定模型:</label>
-          <input v-model="config.analysis.recheck_model" type="text" class="glass-input flex-1" placeholder="留空 = 跟随主模型（如 codex/gpt-6-luna）" />
+          <label class="text-sm shrink-0 w-28" style="color: var(--win-text-secondary)" title="选一个厂商预设，自动填下面的端点/Key/模型——判定模型与主采集模型可以用同一家不同档">判定预设:</label>
+          <select @change="onRecheckPreset(($event.target as HTMLSelectElement).value)" class="glass-select flex-1">
+            <option value="">选择预设...</option>
+            <option v-for="(_, name) in presets" :key="name" :value="name">{{ name }}</option>
+          </select>
         </div>
         <div class="flex items-center gap-2 col-span-2">
-          <label class="text-sm shrink-0 w-28" style="color: var(--win-text-secondary)" title="判定请求打到哪个端点；留空 = 跟随上方主通道。换模型通常要同时换通道">判定通道 (base_url):</label>
+          <label class="text-sm shrink-0 w-28" style="color: var(--win-text-secondary)" title="判定请求打到哪个端点；留空 = 跟随主通道。换模型通常要同时换通道">判定 Base URL:</label>
           <input v-model="config.analysis.recheck_base_url" type="text" class="glass-input flex-1" placeholder="留空 = 跟随主通道" />
         </div>
+        <div class="flex items-center gap-2 col-span-2">
+          <label class="text-sm shrink-0 w-28" style="color: var(--win-text-secondary)" title="判定通道的 API Key；留空 = 跟随主 Key。换第三方端点时必配；明文存 config.json，与主 Key 同现状">判定 API Key:</label>
+          <input v-model="config.analysis.recheck_api_key" type="password" class="glass-input flex-1" placeholder="留空 = 跟随主 Key" />
+        </div>
+        <div class="flex items-center gap-2 col-span-2">
+          <label class="text-sm shrink-0 w-28" style="color: var(--win-text-secondary)" title="判定用的模型；留空 = 跟随主模型。判定要准确，采集要覆盖面，两者可以分开">判定模型:</label>
+          <input v-model="config.analysis.recheck_model" type="text" class="glass-input flex-1" placeholder="留空 = 跟随主模型" />
+        </div>
+        <div class="flex items-center gap-2 col-span-2">
+          <label class="text-sm shrink-0 w-28" style="color: var(--win-text-secondary)" title="判定请求的协议格式；跟随主配置 = 主配置显式指定的协议原样继承；auto = 按判定端点特征重新检测">协议格式:</label>
+          <select v-model="config.analysis.recheck_provider" class="glass-select flex-1">
+            <option value="">跟随主配置</option>
+            <option value="auto">auto（按判定端点检测）</option>
+            <option value="openai">openai（OpenAI 兼容）</option>
+            <option value="anthropic">anthropic（/v1/messages）</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="text-xs font-medium pt-1" style="color: var(--win-text-secondary)">调用参数</div>
+      <div class="grid grid-cols-2 gap-3">
         <div class="flex items-center gap-2">
-          <label class="text-sm flex-1" style="color: var(--win-text-secondary)" title="判定是读证据下结论，low 档显著压低耗时与费用；留空 = 跟随主模型的思考设置">判定思考档位:</label>
-          <select v-model="config.analysis.recheck_reasoning_effort" class="glass-select" style="width: 110px">
+          <label class="text-sm flex-1" style="color: var(--win-text-secondary)" title="单次判定调用的输出上限（token）。判定回包是 JSON 数组，6 候选约 2k token">判定 Max Tokens:</label>
+          <input v-model.number="config.analysis.recheck_max_tokens" type="number" min="1024" class="glass-input" style="width: 110px" />
+        </div>
+        <div class="flex items-center gap-2">
+          <label class="text-sm flex-1" style="color: var(--win-text-secondary)" title="单次判定调用的超时（秒）；0 = 跟随主配置的分析 Timeout">判定 Timeout (s):</label>
+          <input v-model.number="config.analysis.recheck_timeout" type="number" min="0" class="glass-input" style="width: 110px" />
+        </div>
+        <div class="flex items-center gap-2 col-span-2">
+          <label class="text-sm shrink-0 w-28" style="color: var(--win-text-secondary)" title="判定请求的 JSON 输出约束；跟随主配置 = 与主链路同款。注意：判定通道是本地地址时该约束整体跳过">JSON 模式:</label>
+          <select v-model="config.analysis.recheck_json_mode" class="glass-select flex-1">
+            <option value="">跟随主配置</option>
+            <option value="default">default - 通用</option>
+            <option value="qwen">qwen - Qwen系列</option>
+            <option value="deepseek">deepseek - DeepSeek V4</option>
+            <option value="glm47">glm47 - GLM-4.7</option>
+          </select>
+        </div>
+        <div class="flex items-center gap-2 col-span-2">
+          <label class="text-sm shrink-0 w-28" style="color: var(--win-text-secondary)" title="判定是读证据下结论，low 档显著压低耗时与费用；跟随主模型 = 思考设置原样继承主配置">思考控制:</label>
+          <select v-model="config.analysis.recheck_reasoning_effort" class="glass-select flex-1">
             <option value="">跟随主模型</option>
             <option value="low">low（推荐）</option>
             <option value="medium">medium</option>
             <option value="high">high</option>
           </select>
+          <button @click="runRecheckProbe" :disabled="recheckProbeBusy" class="glass-button btn-sm" title="对判定通道发几次微请求：验证模型/端点/Key 组合可用，并实测该端点认的思考控制参数">
+            {{ recheckProbeBusy ? '探测中...' : '探测判定通道' }}
+          </button>
         </div>
+      </div>
+      <div v-if="recheckProbeError" class="ml-30 text-xs glass-tinted-red px-2 py-1 rounded" style="color: var(--win-danger)">{{ recheckProbeError }}</div>
+      <div v-if="recheckProbeResult" class="ml-30 text-xs space-y-1">
+        <p :class="recheckProbeResult.best ? 'glass-tinted-green px-2 py-1 rounded' : 'glass-tinted-orange px-2 py-1 rounded'">
+          {{ recheckProbeResult.note || (recheckProbeResult.best ? '判定通道可用' : '通道可达，但未探测到可用的思考控制参数') }}
+        </p>
+        <p v-if="recheckProbeResult.best" style="color: var(--win-text-secondary)">
+          命中参数：{{ recheckProbeResult.best.param }}
+        </p>
+      </div>
+
+      <div class="text-xs font-medium pt-1" style="color: var(--win-text-secondary)">预算</div>
+      <div class="grid grid-cols-2 gap-3">
         <div class="flex items-center gap-2">
           <label class="text-sm flex-1" style="color: var(--win-text-secondary)" title="复检同时在途的批次数；0 = 用默认 4。故意不跟随上面的并发数：一次 8 批会把网关和账户上限一起打满">复检并发:</label>
           <input v-model.number="config.analysis.recheck_concurrency" type="number" min="0" max="20" class="glass-input" style="width: 110px" />
@@ -671,10 +771,6 @@ onMounted(load)
         <div class="flex items-center gap-2">
           <label class="text-sm flex-1" style="color: var(--win-text-secondary)" title="一次复检最多发多少次调用；超出记「未核对」，可续跑">调用上限:</label>
           <input v-model.number="config.analysis.recheck_max_calls" type="number" min="1" class="glass-input" style="width: 110px" />
-        </div>
-        <div class="flex items-center gap-2">
-          <label class="text-sm flex-1" style="color: var(--win-text-secondary)" title="单次复检调用的输出上限（token）。判定回包是 JSON 数组，6 候选约 2k token">输出上限:</label>
-          <input v-model.number="config.analysis.recheck_max_tokens" type="number" min="1024" class="glass-input" style="width: 110px" />
         </div>
         <div class="flex items-center gap-2">
           <label class="text-sm flex-1" style="color: var(--win-text-secondary)" title="每次调用让模型同时判定几条候选。6 条实测一次答满、每候选提示词最低；太大模型会串号">判定批大小:</label>
