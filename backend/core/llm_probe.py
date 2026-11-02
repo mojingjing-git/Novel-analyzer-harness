@@ -12,6 +12,7 @@ import time
 from typing import List, Tuple
 
 from openai import AsyncOpenAI
+from backend.core.model_catalog import lookup_model_spec
 
 logger = logging.getLogger(__name__)
 
@@ -114,32 +115,48 @@ async def probe_thinking_params(base_url: str, api_key: str, model: str,
     client = AsyncOpenAI(base_url=base_url, api_key=api_key if api_key else "empty")
     prompt = "计算 123456789 * 987654321 的结果，只输出数字。"
 
-    # 候选参数：覆盖 2025-2026 主流厂商的禁用 thinking 语法
+    # 候选参数：覆盖 2025-2026 主流厂商的禁用 thinking 语法（Phase 1: 禁用探测）
     candidates = [
-        {"param": "无参数（基线）", "thinking_mode": None, "extra": {}},
+        {"param": "无参数（基线）", "thinking_mode": None, "extra": {}, "is_depth": False},
         # 三个基础关闭写法
         {"param": "thinking: disabled", "thinking_mode": {"thinking": {"type": "disabled"}},
-         "extra": {"extra_body": {"thinking": {"type": "disabled"}}}},
+         "extra": {"extra_body": {"thinking": {"type": "disabled"}}}, "is_depth": False},
         {"param": "reasoning_effort: none", "thinking_mode": {"reasoning_effort": "none"},
-         "extra": {"extra_body": {"reasoning_effort": "none"}}},
+         "extra": {"extra_body": {"reasoning_effort": "none"}}, "is_depth": False},
         {"param": "enable_thinking: false", "thinking_mode": {"enable_thinking": False},
-         "extra": {"extra_body": {"enable_thinking": False}}},
+         "extra": {"extra_body": {"enable_thinking": False}}, "is_depth": False},
         # MiniMax M3 完整关闭（thinking + reasoning_split 联合）
         {"param": "thinking: disabled + reasoning_split",
          "thinking_mode": {"thinking": {"type": "disabled"}, "reasoning_split": True},
-         "extra": {"extra_body": {"thinking": {"type": "disabled"}, "reasoning_split": True}}},
+         "extra": {"extra_body": {"thinking": {"type": "disabled"}, "reasoning_split": True}}, "is_depth": False},
         # Qwen3 / GLM vLLM 走 chat_template_kwargs
         {"param": "chat_template_kwargs: enable_thinking=false",
          "thinking_mode": {"chat_template_kwargs": {"enable_thinking": False}},
-         "extra": {"extra_body": {"chat_template_kwargs": {"enable_thinking": False}}}},
+         "extra": {"extra_body": {"chat_template_kwargs": {"enable_thinking": False}}}, "is_depth": False},
         # OpenAI Responses 风格
         {"param": "reasoning: effort=none",
          "thinking_mode": {"reasoning": {"effort": "none"}},
-         "extra": {"extra_body": {"reasoning": {"effort": "none"}}}},
+         "extra": {"extra_body": {"reasoning": {"effort": "none"}}}, "is_depth": False},
+    ]
+
+    # 深度控制候选（Phase 2: 针对 MiniMax M3.1 Flash / OpenAI o1 等常开思考模型）
+    depth_candidates = [
+        {"param": "reasoning_effort: low（浅度思考，推荐）",
+         "thinking_mode": {"reasoning_effort": "low"},
+         "extra": {"extra_body": {"reasoning_effort": "low"}},
+         "is_depth": True, "depth_level": "low"},
+        {"param": "reasoning_effort: medium（中度思考）",
+         "thinking_mode": {"reasoning_effort": "medium"},
+         "extra": {"extra_body": {"reasoning_effort": "medium"}},
+         "is_depth": True, "depth_level": "medium"},
+        {"param": "reasoning_effort: high（深度思考）",
+         "thinking_mode": {"reasoning_effort": "high"},
+         "extra": {"extra_body": {"reasoning_effort": "high"}},
+         "is_depth": True, "depth_level": "high"},
     ]
 
     logger.info(f"开始探测禁用思考参数 - Model: {model}, 端点: {base_url}, "
-                f"候选 {len(candidates)} 个（并发发送，各 30s 超时）")
+                f"Phase 1 候选 {len(candidates)} 个（并发发送，各 30s 超时）")
 
     def _detect(msg, usage: dict) -> tuple:
         """返回 (any_detected, breakdown_dict, reasoning_chars, content_chars, think_tag_chars, reasoning_token_count)"""
@@ -216,8 +233,14 @@ async def probe_thinking_params(base_url: str, api_key: str, model: str,
             })
             if cand["thinking_mode"] is None:
                 result["worked"] = None  # 基线不判定
+            elif cand.get("is_depth", False):
+                # 深度候选参数有效 = HTTP 200 成功响应、无异常且正文有产出（content_chars > 0）
+                if not result["error"] and c_chars > 0:
+                    result["worked"] = True
+                elif c_chars == 0 and r_chars > 0:
+                    result["error"] = "content 为空、思考全在 reasoning_content"
             else:
-                # 候选参数有效 = 所有检测模式都未命中
+                # 禁用候选参数有效 = 所有检测模式都未命中
                 if not detected:
                     result["worked"] = True
                 elif c_chars == 0 and r_chars > 0:
@@ -239,30 +262,107 @@ async def probe_thinking_params(base_url: str, api_key: str, model: str,
                         + (f"，原因: {result['error']}" if result['error'] else ""))
         return result
 
-    # 所有候选并发发送
-    results = list(await asyncio.gather(*(probe_one(c) for c in candidates)))
+    # 1. 优先探测基线
+    baseline = await probe_one(candidates[0])
+    results = [baseline]
 
-    baseline = results[0]
     default_thinks = any(baseline["detection_breakdown"].values())
     default_breakdown = baseline["detection_breakdown"]
     best = None
+    best_disable = None
+    best_depth = None
+    model_type = "non_reasoning"
     note = ""
+
     if not default_thinks:
-        note = "该模型默认不输出思考链，无需禁用思考"
+        note = "该模型默认不输出思考链，无需禁用思考或控制深度"
+        model_type = "non_reasoning"
     else:
-        for r in results[1:]:
-            if r["worked"]:
-                best = {"thinking_mode": r["thinking_mode"], "param": r["param"]}
-                break
-        if best is None:
-            # 分情况给 note：M2.x 系类是 known limitation
-            # 这里没有 model → provider 映射，保守给通用提示
-            note = ("未探测到有效的禁用思考参数。可能是：①M2.x 系类官方不支持（"
-                    "MiniMax M2/M2.5/M2.7 等思考强制开启）；②需要尝试更多参数组合。"
-                    "考虑临时切到同厂商其他模型（如 M3）或非思考模型。")
+        # L1: 检查 models.dev 规范
+        spec = lookup_model_spec(model)
+        targeted_succeeded = False
+
+        # 仅针对明确为常开思考模型（如 MiniMax M3.1 Flash 等）执行 L2 靶向优先深度探测
+        if spec and spec.get("is_always_on") and spec.get("recommended_mode"):
+            rec_mode = spec["recommended_mode"]
+            is_depth = (spec.get("reasoning_type") == "effort" or "reasoning_effort" in rec_mode)
+
+            if is_depth:
+                target_cand = {
+                    "param": "reasoning_effort: low（浅度思考，推荐）" if rec_mode.get("reasoning_effort") == "low" else f"reasoning_effort: {rec_mode.get('reasoning_effort', 'low')}",
+                    "thinking_mode": rec_mode,
+                    "extra": {"extra_body": rec_mode},
+                    "is_depth": True,
+                    "depth_level": rec_mode.get("reasoning_effort", "low"),
+                }
+            else:
+                target_param = "enable_thinking: false" if "enable_thinking" in rec_mode else "thinking: disabled"
+                target_cand = {
+                    "param": target_param,
+                    "thinking_mode": rec_mode,
+                    "extra": {"extra_body": rec_mode},
+                    "is_depth": False,
+                }
+
+            logger.info(f"L1 命中模型能力库 [{spec.get('name', model)}]，启动 L2 靶向优先探测: {target_cand['param']}")
+            target_res = await probe_one(target_cand)
+            results.append(target_res)
+
+            if target_res["worked"]:
+                targeted_succeeded = True
+                if is_depth:
+                    best_depth = {"thinking_mode": target_res["thinking_mode"], "param": target_res["param"]}
+                    best = best_depth
+                    model_type = "always_on_reasoning"
+                    note = ("检测为常开思考模型（如 MiniMax M3.1 Flash），官方无法完全关闭思考。"
+                            "已探测到深度控制参数有效：推荐优先启用【浅度思考 (low)】，大幅降低耗时与 Token，避免质量崩塌。")
+                else:
+                    best_disable = {"thinking_mode": target_res["thinking_mode"], "param": target_res["param"]}
+                    best = best_disable
+                    model_type = "switchable_reasoning"
+                    note = f"探测到有效的禁用思考参数: [{best_disable['param']}]"
+
+        # L3: 若未命中 L1 规范或 L2 靶向单测失败，回退全量盲测
+        if not targeted_succeeded:
+            if spec and spec.get("recommended_mode"):
+                logger.warning("L2 靶向单测未生效，自动降级至 L3 全量盲探...")
+
+            # Phase 1: 并发发送禁用候选（复用基线，不重复发送基线）
+            disable_resps = list(await asyncio.gather(*(probe_one(c) for c in candidates[1:])))
+            results.extend(disable_resps)
+
+            for r in disable_resps:
+                if r["worked"]:
+                    best_disable = {"thinking_mode": r["thinking_mode"], "param": r["param"]}
+                    break
+
+            if best_disable:
+                best = best_disable
+                model_type = "switchable_reasoning"
+                note = f"探测到有效的禁用思考参数: [{best_disable['param']}]"
+            else:
+                # Phase 2（按需触发）：禁用参数全部失败，启动深度控制探测（针对 MiniMax M3.1 Flash / OpenAI o1 等）
+                logger.info("Phase 1 禁用参数均失效，启动 Phase 2 深度控制探测 (reasoning_effort: low/medium/high)...")
+                depth_results = list(await asyncio.gather(*(probe_one(c) for c in depth_candidates)))
+                results.extend(depth_results)
+
+                for dr in depth_results:
+                    if dr["worked"]:
+                        best_depth = {"thinking_mode": dr["thinking_mode"], "param": dr["param"]}
+                        break
+
+                if best_depth:
+                    model_type = "always_on_reasoning"
+                    best = best_depth
+                    note = ("检测为常开思考模型（如 MiniMax M3.1 Flash），官方无法完全关闭思考。"
+                            "已探测到深度控制参数有效：推荐优先启用【浅度思考 (low)】，大幅降低耗时与 Token，避免质量崩塌。")
+                else:
+                    model_type = "always_on_reasoning"
+                    note = ("未探测到有效的禁用或深度控制参数。可能是：①M2.x 等常开系列官方不支持或端点不接受参数调节；"
+                            "②需要尝试自定义 extra_body 参数组合。")
 
     if best:
-        logger.info(f"探测完成: 默认思考={default_thinks}, 推荐参数=[{best['param']}] → "
+        logger.info(f"探测完成: 模型类型={model_type}, 默认思考={default_thinks}, 推荐参数=[{best['param']}] → "
                     f"{json.dumps(best['thinking_mode'], ensure_ascii=False)}")
     else:
         logger.warning(f"探测完成: 默认思考={default_thinks}, 未命中有效参数 - {note}")
@@ -270,6 +370,9 @@ async def probe_thinking_params(base_url: str, api_key: str, model: str,
     return {
         "results": results,
         "best": best,
+        "best_disable": best_disable,
+        "best_depth": best_depth,
+        "model_type": model_type,
         "default_thinks": default_thinks,
         "default_detection_breakdown": default_breakdown,
         "note": note,

@@ -243,6 +243,87 @@ async def test_probe_thinking_none_works():
     print("✅ test_probe_thinking_none_works passed")
 
 
+async def test_probe_always_on_reasoning_minimax_m31():
+    """探测：MiniMax M3.1 Flash 常开思考模型 —— 禁用全部失败，但 depth(low) 成功 → 推荐 reasoning_effort: low"""
+    from backend.core.llm_probe import probe_thinking_params
+    fake_client = MagicMock()
+
+    def make_resp(content_len, reasoning_len):
+        resp = MagicMock()
+        msg = MagicMock()
+        msg.content = "x" * content_len
+        msg.reasoning_content = "r" * reasoning_len
+        resp.choices = [MagicMock(message=msg)]
+        return resp
+
+    # Phase 1: 基线(有思考) + 6个禁用全部失败(仍有思考，模拟 M3.1 无法完全关闭)
+    phase1_resps = [make_resp(5, 200) for _ in range(7)]
+    # Phase 2: depth_candidates (low, medium, high)
+    phase2_resps = [
+        make_resp(10, 50),   # low: 浅度思考
+        make_resp(10, 150),  # medium
+        make_resp(10, 300),  # high
+    ]
+
+    fake_client.chat.completions.create = AsyncMock(side_effect=phase1_resps + phase2_resps)
+    with patch("backend.core.llm_probe.AsyncOpenAI", return_value=fake_client):
+        result = await probe_thinking_params("https://api.minimax.chat", "k", "MiniMax-M3.1-Flash", "auto")
+
+    assert result["default_thinks"] is True
+    assert result["model_type"] == "always_on_reasoning"
+    assert result["best"] == {"thinking_mode": {"reasoning_effort": "low"}, "param": "reasoning_effort: low（浅度思考，推荐）"}
+    assert result["best_depth"] is not None
+    assert result["best_disable"] is None
+    assert "常开思考模型" in result["note"]
+    # 验证 L2 靶向加速：仅 2 次调用（基线 + 靶向）即命中完成
+    assert fake_client.chat.completions.create.call_count == 2
+    print("✅ test_probe_always_on_reasoning_minimax_m31 passed")
+
+
+async def test_probe_targeted_fail_falls_back_to_l3_full():
+    """L2 靶向探测失败（如中转站魔改返回空内容）→ 自动降级回退到 L3 全量盲探"""
+    from backend.core.llm_probe import probe_thinking_params
+    fake_client = MagicMock()
+
+    def make_resp(content_len, reasoning_len):
+        resp = MagicMock()
+        msg = MagicMock()
+        msg.content = "x" * content_len
+        msg.reasoning_content = "r" * reasoning_len
+        resp.choices = [MagicMock(message=msg)]
+        return resp
+
+    # Call 1: 基线 (有思考)
+    # Call 2: L2 靶向 (模拟中转站 400 失败或 content=0 失败)
+    # Calls 3-8: Phase 1 禁用候选 (6 个，全部仍有思考失败)
+    # Calls 9-11: Phase 2 深度候选 (low 成功)
+    fake_client.chat.completions.create = AsyncMock(side_effect=[
+        make_resp(5, 200),  # 1. 基线
+        make_resp(0, 200),  # 2. L2 靶向 (失败: content=0)
+        make_resp(5, 200),  # 3. Phase 1 c1
+        make_resp(5, 200),  # 4. Phase 1 c2
+        make_resp(5, 200),  # 5. Phase 1 c3
+        make_resp(5, 200),  # 6. Phase 1 c4
+        make_resp(5, 200),  # 7. Phase 1 c5
+        make_resp(5, 200),  # 8. Phase 1 c6
+        make_resp(10, 50),  # 9. Phase 2 depth low (成功!)
+        make_resp(10, 150), # 10. Phase 2 depth medium
+        make_resp(10, 300), # 11. Phase 2 depth high
+    ])
+
+    with patch("backend.core.llm_probe.AsyncOpenAI", return_value=fake_client):
+        result = await probe_thinking_params("https://api.relay.com", "k", "MiniMax-M3.1-Flash", "auto")
+
+    assert result["default_thinks"] is True
+    assert result["model_type"] == "always_on_reasoning"
+    assert result["best"] == {"thinking_mode": {"reasoning_effort": "low"}, "param": "reasoning_effort: low（浅度思考，推荐）"}
+    assert result["best_depth"] is not None
+    # 验证时序保留了「基线 + 靶向失败项 + 补测候选」
+    assert len(result["results"]) == 1 + 1 + 6 + 3
+    assert fake_client.chat.completions.create.call_count == 11
+    print("✅ test_probe_targeted_fail_falls_back_to_l3_full passed")
+
+
 async def test_probe_thinking_model_no_think():
     """探测：模型默认不思考 → 无需禁用"""
     from backend.core.llm_probe import probe_thinking_params

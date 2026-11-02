@@ -88,6 +88,32 @@ async def probe_thinking(req: ModelPreviewRequest) -> dict:
         raise HTTPException(status_code=502, detail=str(e))
 
 
+@router.get("/model-spec")
+async def get_model_spec(model: str = "") -> dict:
+    """获取指定模型的 models.dev 规范（思考能力、上下文上限、Token 计费）。
+    未匹配时返回 {"found": False, "spec": None}，不抛 404/500。"""
+    from backend.core.model_catalog import lookup_model_spec, get_catalog_version
+    if not model.strip():
+        return {"found": False, "spec": None, "catalog_version": get_catalog_version()}
+    spec = lookup_model_spec(model)
+    return {
+        "found": spec is not None,
+        "spec": spec,
+        "catalog_version": get_catalog_version(),
+    }
+
+
+@router.post("/models/sync")
+async def sync_models() -> dict:
+    """从 models.dev 在线同步最新模型库至用户数据目录 data/models_dev.json。"""
+    from backend.core.model_catalog import sync_models_from_remote
+    try:
+        res = sync_models_from_remote()
+        return res
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @router.get("")
 async def get_settings() -> dict:
     service = get_service()

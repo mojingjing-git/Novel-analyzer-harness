@@ -51,3 +51,34 @@ class TestProbeThinkingModelParam:
         assert r.status_code == 200
         assert len(probe_spy) == 1
         assert probe_spy[0], "回退模型不应为空（config.json 必有 api.model）"
+
+
+class TestModelSpecRoutes:
+    def test_get_model_spec_matched(self, client):
+        """已知模型 → 返回 found=True，包含 limit/cost/reasoning 规格"""
+        r = client.get("/api/settings/model-spec?model=MiniMax-M3.1-Flash")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["found"] is True
+        assert data["spec"]["reasoning"] is True
+        assert data["spec"]["recommended_mode"] == {"reasoning_effort": "low"}
+        assert data["spec"]["limit"]["context"] >= 1000000
+
+    def test_get_model_spec_unmatched_returns_found_false(self, client):
+        """未知模型 → 返回 found=False，spec=None，状态码 200（不报错）"""
+        r = client.get("/api/settings/model-spec?model=unknown-xyz-999")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["found"] is False
+        assert data["spec"] is None
+        assert "catalog_version" in data
+
+    def test_sync_models_route(self, client, monkeypatch):
+        """POST /api/settings/models/sync 成功调用"""
+        monkeypatch.setattr(
+            "backend.core.model_catalog.sync_models_from_remote",
+            lambda: {"success": True, "version": "test", "total_models": 100},
+        )
+        r = client.post("/api/settings/models/sync")
+        assert r.status_code == 200
+        assert r.json() == {"success": True, "version": "test", "total_models": 100}
