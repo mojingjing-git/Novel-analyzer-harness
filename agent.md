@@ -16,7 +16,8 @@
 - **后端**：FastAPI（异步），Python 3.11+
 - **桌面壳**：pywebview + WebView2（Windows）
 - **LLM 兼容**：任何 OpenAI 兼容 API（10 个厂商预设），以及 Anthropic 协议
-- **测试**：后端 1588 个用例 / 134 个测试文件（backend/tests 129 + 顶层 tests 5）；前端 32 个测试文件。
+- **测试**：后端 1823 个用例 / 146 个测试文件，分 5 档（T0 冒烟 → T4 全仓，见
+  [docs/testing.md](./docs/testing.md)）；前端 33 个测试文件。
   数量以 `pytest --collect-only -q` 与 `npm run test:coverage` 实时为准
 
 ---
@@ -122,7 +123,7 @@
 │   │   ├── export_utils.py       # Markdown 导出
 │   │   ├── text_utils.py         # 编码检测 / 文本工具
 │   │   └── docx_extract.py       # DOCX 正文抽取（纯标准库）
-│   └── tests/                    # 129 个测试文件
+│   └── tests/                    # 146 个测试文件（pytest 收集 backend/tests + tests）
 ├── frontend/src/                 # Vue 3 + TypeScript（80 个文件，含 32 个测试文件）
 │   ├── pages/                    # 14 个页面（router.ts）
 │   │   ├── QueuePage.vue         # 分析队列
@@ -150,7 +151,9 @@
 │   ├── router.ts                 # 1 个根布局 + 14 条子路由
 │   └── main.css                  # Win11 Fluent 设计系统（--win-* 变量）
 ├── desktop.py                    # pywebview 桌面入口（单实例锁 + 窗口控制 + 崩溃诊断）
-├── scripts/                      # 测试与测量脚本
+├── scripts/                      # 测试与测量脚本（统一入口 run_tests.py，5 档分级）
+├── pytest_tiers.py               # 测试 5 档分级的规则与清单（T0 冒烟 → T4 全仓）
+├── pytest_isolation.py           # pytest 会话级隔离原语（cwd/NOVEL_ROOT 双隔离 + 代理净化）
 ├── docs/                         # 文档（见 docs/README.md）
 ├── agent.md                      # 本文件
 ├── README.md                     # 项目说明
@@ -171,7 +174,7 @@
 | pywebview | 桌面 WebView2 壳 |
 | openpyxl | Excel 导出（懒加载） |
 | json5 / json_repair | JSON 容错解析 |
-| pytest | 默认收集 `backend/tests/` + 顶层 `tests/`；数量以 `pytest --collect-only -q` 为准 |
+| pytest | 默认收集 `backend/tests/` + 顶层 `tests/`；`--tier 0-4` 按档过滤（pytest_tiers.py）；数量以 `pytest --collect-only -q` 为准 |
 
 ### 前端
 | 组件 | 版本/说明 |
@@ -524,8 +527,13 @@ pip install -r requirements.txt
 # 启动后端（开发）
 python -m uvicorn backend.app:app --reload --port 8000
 
-# 运行测试
-python -m pytest
+# 运行测试（统一入口，5 档分级，规则与清单见 pytest_tiers.py / docs/testing.md）
+python scripts/run_tests.py --tier 0        # 冒烟（~12s）：backend 全模块导入 + 核心纯函数
+python scripts/run_tests.py --tier 1        # 快速单测（~25s）：T0 + 默认档单测
+python scripts/run_tests.py --tier 2        # 标准门禁（~30s 并行）：T1 + 中速文件 + 顶层语料基线
+python scripts/run_tests.py --tier 3        # pytest 全量（~90s 并行）：T2 + 慢速重试链路
+python scripts/run_tests.py                 # 全仓验证（~2min）：T3 + 前端 vitest
+python scripts/run_tests.py --list-tiers    # 查看各档文件/用例分布
 # （测试全程运行在 cwd/NOVEL_ROOT 双隔离的会话临时根：根目录 conftest.py + pytest_isolation.py
 #   在任何 backend.* import 前生效，真实 config.json/queue_state.json/日志/workspace 零写入；
 #   守卫见 backend/tests/test_runtime_isolation.py。不要在测试里依赖真实工作区数据。）
@@ -533,31 +541,32 @@ python -m pytest
 # 运行指定测试
 python -m pytest backend/tests/test_pipeline_inflight.py -v
 
-# 迭代期：只跑与本次改动相关的测试（约 3 秒 ~ 1 分钟，替代 12 分钟全量）
-python scripts/pytest_related.py              # 先看会跑哪些
-python scripts/pytest_related.py --run        # 直接跑
-python scripts/pytest_related.py --run --base HEAD~3   # 与某个基线比较
+# 迭代期：只跑与本次改动相关的测试（秒级），可与档位组合
+python scripts/run_tests.py --related               # 选择 + 执行
+python scripts/run_tests.py --related --tier 2      # 相关集 ∩ 档位
+python scripts/pytest_related.py --run --base HEAD~3  # 独立用法（与某基线比较）
 
-# 批次收口 / 推送前：全量并行（1588 例约 100 秒，替代 12 分钟）
-python scripts/run_tests.py            # xdist 版（推荐）
-python scripts/pytest_split.py -n 8     # 切组版（不依赖 xdist 插件）
+# 备选：切组并行（不依赖 xdist 插件）
+python scripts/pytest_split.py -n 8
 
-# 只有在需要逐条输出时，才用单进程全量（约 4 分钟）
+# 只有在需要逐条输出时，才用单进程全量
 python -m pytest -o addopts= -q
 ```
 
-> **测试节奏**：
-> 1. **迭代期只用相关集**：`scripts/pytest_related.py --run`（秒级）。不要每改二十行就全量。
-> 2. **提交/推送前用并行全量**：`scripts/run_tests.py`（实测 1588 例 100–116 秒）。
->    备选 `scripts/pytest_split.py -n 8`（121–142 秒，不依赖 xdist 插件）。
-> 3. 单进程全量 `python -m pytest` 只在需要完整逐条日志时用，平时不要跑。
-> 4. 相关集是"我的改动没弄坏自己"，全量是"没弄坏别人"——**宣布完成必须有一遍全量**
->    （并行跑的也算），并在提交信息或 PR 描述里写明跑的是全量还是相关集。
+> **测试节奏（按档选用）**：
+> 1. **改几行 → T0**（~12s 冒烟）：确认模块能导入、核心纯函数没炸。
+> 2. **改完一个功能点 → T1 或相关集**：`--tier 1`（~25s）或 `--related`（秒级）。
+> 3. **提交前 → T2**（标准门禁）：相关集是"没弄坏自己"，T2 是"没弄坏别人"的最低门槛。
+> 4. **宣布完成 / 推送 → T3 或 T4**：T3 是 pytest 全量，T4 再加前端 vitest（无参数即 T4）。
+>    **宣布完成必须有一遍 T3/T4**，并在提交信息或 PR 描述里写明跑的是哪一档。
+> 5. 新测试文件自动落 T1；实测超过 1s 的文件必须移进 pytest_tiers.py 的
+>    `MEDIUM_FILES`，否则 T1 会被悄悄拖慢（守护见 test_tier_assignment.py）。
 >
-> **为什么绕开 pytest-xdist**：本仓库的 `pytest_isolation` 在导入期 chdir 到临时目录
+> **为什么绕开 pytest-xdist 的坑**：本仓库的 `pytest_isolation` 在导入期 chdir 到临时目录
 > 并按 testpaths 建占位目录，xdist 每个 worker 都这么干一遍，主进程就看不到用例了
 > （`-n 8` 直接 "no tests ran"）。绕法是**用绝对路径 + 显式 `-c` 指定 ini**
 > （`scripts/run_tests.py` 已封装）；`pytest_split.py` 则改成按文件切组、各起独立进程。
+> **小档默认串行**：xdist worker 各自做隔离 + 全量收集，T0/T1 用例少时并行反而慢。
 > **切组必须核对用例总数**：`run_tests.py` 跑前先数一遍、跑后对账——分组过滤写错时
 > 会漏掉整份测试文件，却仍报"全组通过"。
 
@@ -633,11 +642,14 @@ grep -RIn "sweep\|shimmer" frontend/src || true
 
 ### 后端改动
 ```bash
-# 迭代期：只跑相关集（秒级）
-python scripts/pytest_related.py --run
+# 迭代期：改几行跑冒烟，改完功能点跑相关集或 T1
+python scripts/run_tests.py --tier 0
+python scripts/run_tests.py --related
 
-# 收口：全量并行（1588 例约 100 秒）
-python scripts/run_tests.py
+# 提交前：标准门禁；宣布完成/推送前：pytest 全量或全仓
+python scripts/run_tests.py --tier 2
+python scripts/run_tests.py --tier 3
+python scripts/run_tests.py            # T4 = pytest 全量 + 前端 vitest
 
 # 类型检查（如有 mypy）
 mypy backend/

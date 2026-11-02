@@ -10,6 +10,7 @@
 | [architecture.md](./architecture.md) | 系统结构、数据流、流水线与各子系统的职责边界 |
 | [api.md](./api.md) | 全部 HTTP 端点与 WebSocket 消息协议 |
 | [configuration.md](./configuration.md) | `config.json` 全部配置项的默认值与语义 |
+| [testing.md](./testing.md) | 测试 5 档分级（T0 冒烟 → T4 全仓）、统一入口与底层机制 |
 | [troubleshooting.md](./troubleshooting.md) | 日志位置、常见故障的排查路径与调优建议 |
 | [build.md](./build.md) | PyInstaller 打包流程、产物布局与打包期问题 |
 | [data-contract-vnext.md](./data-contract-vnext.md) | vnext 数据空间的语义契约（格式、指纹、裁决、账本） |

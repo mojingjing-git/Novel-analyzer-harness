@@ -119,6 +119,7 @@ cd frontend && npm run dev                                 # 前端 http://local
 | [docs/architecture.md](./docs/architecture.md) | 系统结构与数据流 |
 | [docs/api.md](./docs/api.md) | 全部 HTTP 端点与 WebSocket 协议 |
 | [docs/configuration.md](./docs/configuration.md) | 配置项默认值与语义 |
+| [docs/testing.md](./docs/testing.md) | 测试 5 档分级与统一入口 |
 | [docs/troubleshooting.md](./docs/troubleshooting.md) | 排障路径 |
 | [docs/build.md](./docs/build.md) | 打包发布 |
 | [docs/data-contract-vnext.md](./docs/data-contract-vnext.md) | vnext 数据契约 |
@@ -176,15 +177,20 @@ cd frontend && npm run dev                                 # 前端 http://local
 ## 开发
 
 ```bash
-# 全量测试（并行）
+# 全仓验证（pytest 全量 + 前端 vitest，约 2 分钟）
 python scripts/run_tests.py
 
-# 只跑与本次改动相关的用例
-python scripts/pytest_related.py --run
+# 按档位跑：T0 冒烟(~12s) / T1 快速单测(~25s) / T2 标准门禁(~30s) / T3 pytest 全量(~90s)
+python scripts/run_tests.py --tier 1
+
+# 只跑与本次改动相关的用例（秒级）
+python scripts/run_tests.py --related
 ```
 
-测试覆盖：LLM 重试链、JSON 容错、模型序列化、队列状态机、总结 checkpoint 断点续跑、
-知识库快照隔离、伏笔去重、vnext 数据契约与复检裁决等。
+测试分 5 档（T0 冒烟 → T4 全仓），规则与清单见 [docs/testing.md](./docs/testing.md)。
+测试覆盖：模块导入冒烟、LLM 重试链、JSON 容错、模型序列化、队列状态机、总结 checkpoint
+断点续跑、知识库快照隔离、伏笔去重、vnext 数据契约与复检裁决等；前端 33 个 Vitest
+测试文件覆盖 API 客户端、页面与工具模块。
 
 修改后端后重启进程生效；修改前端后跑 `npm run build` 重新生成 `frontend/dist/`。新加
 `APIConfig` / `AnalysisConfig` dataclass 字段后，前端 `AppConfigDto` 必须同步补类型。
