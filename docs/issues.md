@@ -130,9 +130,22 @@ vnext 侧的 `backend/vnext/foreshadow.py` 用 `cutoff_view(cutoff_ordinal=)` �
 4. **文档 §8 错误码表缺 `NOT_FOUND`**：`backend/vnext/constants.py` 有这个码，
    `backend/api/routes_vnext.py:42` 把它映射成 404。
 5. **账本版本号对不上**：`backend/vnext/__init__.py:4` 写"伏笔账本 v3"，1.x 的
-   `SCHEMA_VERSION` 已经是 5（`backend/utils/foreshadow_ledger.py:24`）。
+   `SCHEMA_VERSION` 已经是 6（`backend/utils/foreshadow_ledger.py:24`）。
 6. **数据根互不相干**：文档说 `workspace_vnext/` 是独立数据根、由 `config_vnext.json` 管；
    而 `backend/config/settings.py:233` 只有通用的 `workspace_dir`——两者没有任何联动。
+
+### 复检"待确认"条目的人工出口待 GUI
+
+复检对证据不足/冲突的条目只置 `needs_review`（status 不动），休眠收尾也已跳过
+它们；但"待确认"目前没有人工处置入口——无 UI、无 API 写点、
+`human_override` 这个 source_type 从未被赋值。存量可见不可操作：
+冻结待审 221 条（历史冻结，出路只能走 GUI）+ 质疑 326 条（audit 批产物）。
+人工出口（confirm/reject + 四栏呈现）随前端接线落地。
+
+### 43 条无锚点的旧回收无法自动复审
+
+`llm_judged` 的已回收条目里 43 条没有可用锚点引文，证据复检进不去，
+只能等锚点迁移（D-1 的 `anchor_file_index`/`anchor_content_hash`）或人工处理。
 
 ### 账户级熔断两条管线都没有
 

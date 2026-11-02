@@ -41,7 +41,7 @@ for _k in ("NO_PROXY", "no_proxy"):
 from backend.config.settings import ConfigManager  # noqa: E402
 from backend.core.llm_client import LLMClient  # noqa: E402
 from backend.core.text_units import build_display_labels, load_blocks_as_files  # noqa: E402
-from backend.services.recheck_v2 import run_recheck_audit  # noqa: E402
+from backend.services.recheck_v2 import migrate_auto_recheck_quality, run_recheck_audit  # noqa: E402
 from backend.utils.foreshadow_ledger import ForeshadowItem, ForeshadowLedger  # noqa: E402
 
 
@@ -68,12 +68,25 @@ async def main() -> int:
     ap.add_argument("--batch-size", type=int, default=6)
     ap.add_argument("--concurrency", type=int, default=4)
     ap.add_argument("--limit", type=int, default=0, help="只复核前 N 条合格条目（0=全量）")
+    ap.add_argument("--migrate-auto-recheck", action="store_true",
+                    help="v6 一次性迁移：auto_recheck 条目补 quality=verified 后退出")
     ap.add_argument("--dry-run", action="store_true", help="只统计资格与七栏，不发调用")
     args = ap.parse_args()
 
     cfg = ConfigManager(ROOT / "config.json").load()
     ledger_path = Path(args.ledger)
     ledger = ForeshadowLedger.load(ledger_path)
+
+    if args.migrate_auto_recheck:
+        n = migrate_auto_recheck_quality(ledger.items)
+        backup = ledger_path.with_suffix(".json.bak-migrate")
+        shutil.copy2(ledger_path, backup)
+        ledger.schema_version = 6
+        ledger.save(ledger_path)
+        print(f"已迁移 auto_recheck 条目 {n} 条 → quality=verified（备份：{backup.name}）")
+        print(f"七栏：{json.dumps(ledger.lifecycle_bars(), ensure_ascii=False)}")
+        return 0
+
     bars_before = ledger.lifecycle_bars()
     eligible = [it for it in ledger.items if _eligible(it)]
     print(f"账本 {len(ledger.items)} 条；七栏（改前）：{json.dumps(bars_before, ensure_ascii=False)}")
@@ -88,8 +101,14 @@ async def main() -> int:
         print("没有可复核条目，结束")
         return 0
 
-    chapters, excluded = load_blocks_as_files(Path(args.blocks))
+    chapters_path = Path(args.blocks)
+    if not chapters_path.is_absolute():
+        chapters_path = ROOT / chapters_path
+    chapters, excluded = load_blocks_as_files(chapters_path)
     print(f"正文单元 {len(chapters)} 个（排除 {len(excluded)} 个非正文文件）")
+    if not chapters:
+        print(f"❌ 正文单元为 0——检查 --blocks 是否正确：{chapters_path}")
+        return 3
 
     api = cfg.api
     if args.recheck_model:
@@ -165,6 +184,12 @@ async def main() -> int:
     if outcome.calls > 0 and cov.get("checked", 0) == 0:
         print(f"❌ {outcome.calls} 次调用全部未返回可解析判定；failed_batches={outcome.failed_batches}")
         return 2
+    if eligible and cov.get("candidates_total", 0) == 0:
+        # 合格条目存在却一条都没进候选：几乎总是正文未加载/锚点系统性问题，
+        # 这不是"合法的空结果"，必须报错——否则整个清算静默白跑
+        print(f"❌ 合格 {len(eligible)} 条却 0 条进入候选（dropped_no_anchor={cov.get('dropped_no_anchor')}）"
+              "——检查正文 blocks 与锚点数据")
+        return 3
     return 0
 
 

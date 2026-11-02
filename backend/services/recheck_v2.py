@@ -1023,6 +1023,24 @@ def _apply_audit_state(item: Any, record: CandidateVerdict) -> None:
         notes.append(f"audit：自述回收未获原文支持（{record.reason}），待人工确认")
 
 
+def migrate_auto_recheck_quality(items: list[Any]) -> int:
+    """D-12 存量迁移（v6 一次性）：V2 open 复检亲证的条目补 quality=verified。
+
+    auto_recheck 的 resolved 本来就是过全证据门禁（逐字引文 + 反证检索）的结论，
+    v6 加字段后它们默认落"未复审"栏是口径错误。返回迁移条数。
+    """
+    n = 0
+    for item in items:
+        if (
+            getattr(item, "status", "") == "resolved"
+            and getattr(item, "source_type", "") == "auto_recheck"
+            and not (getattr(item, "resolution_quality", "") or "")
+        ):
+            item.resolution_quality = "verified"
+            n += 1
+    return n
+
+
 async def run_recheck_audit(
     items: Sequence[Any],
     chapters: Mapping[int, str] | None,

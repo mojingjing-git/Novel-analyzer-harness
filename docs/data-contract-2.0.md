@@ -37,7 +37,7 @@
 | **快照与覆盖** | 标量上界（`pipeline.py:448,1069` 的 `last_updated_chapter`） | 排他快照 `exclusive_before`（`vnext/knowledge.py:148-198,341`） | 取 vnext |
 | **共现与关系** | 同章两两配对直接写成关系（`memory_state.py:388-394`） | 共现与语义关系分表（`vnext/graph.py`：`CooccurrenceEdge` vs `SemanticRelationship`，"共现不是关系"） | 取 vnext |
 | **伏笔终态** | dormant 判死（`foreshadow_ledger.py:142`；`final_summary.py:1487-1489` 因 active=0 直接跳过全书复检） | `cutoff_view`（`vnext/foreshadow.py`）按故事位置出候选、**不判死** | 取 vnext；复检用**带证据**那条（`recheck_v2`），不是旧的无阻断路径 |
-| **账本** | `foreshadow_ledger.json`，`SCHEMA_VERSION = 5`（`foreshadow_ledger.py:24`） | 自有 `recheck_ledger.json` + `tasks.json`（`vnext/runner.py`） | 合并成一套，取 v5 的形状 |
+| **账本** | `foreshadow_ledger.json`，`SCHEMA_VERSION = 6`（v6 增 `resolution_quality`：verified/questioned/空=未复审；七栏生命周期底表见 `lifecycle_bars()`） | 自有 `recheck_ledger.json` + `tasks.json`（`vnext/runner.py`） | 合并成一套，取 v5 形状 + v6 的质量字段 |
 | **已知事实来源** | `verified_facts` 原样入账，无法溯源 | `SourceRef` 溯源 | 取 vnext |
 | **错误分类** | `backend/core/error_taxonomy.py` 一套枚举与置信度 | `backend/core/error_types.py` 的 `ErrorVerdict`/`ErrorScope` 4 值，判据只认结构化通道 | 取 vnext，并把 1.x 的 `llm_client` 四处重试决策收敛到单点 |
 | **提示词限额** | 9 项统一在 `backend/core/prompt_limits.py`，analyzer 全量接配置（`max_relationships` / `max_themes` / `max_content_chars` / `max_verified_facts_in_prompt` 为新增字段） | `backend/vnext/prompt_limits.py` 转发桩 | **已取 vnext** |
