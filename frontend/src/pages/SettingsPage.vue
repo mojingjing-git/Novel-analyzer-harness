@@ -455,13 +455,13 @@ onMounted(load)
     <p class="text-sm" style="color: var(--win-danger)">设置加载失败：{{ loadError }}</p>
     <button class="glass-button" @click="load">重试</button>
   </div>
-  <div class="grid grid-cols-1 gap-5 items-start max-w-6xl @2xl:grid-cols-2" v-else-if="config">
-    <div class="@2xl:col-span-2">
+  <div class="max-w-6xl columns-1 @2xl:columns-2 @2xl:gap-x-5" v-else-if="config">
+    <div class="[column-span:all] mb-5">
       <h2 class="section-title">设置</h2>
       <p class="section-subtitle">API、分析、知识库限制等参数</p>
     </div>
 
-    <div class="glass-card p-4 space-y-3 @2xl:col-span-2">
+    <div class="glass-card p-4 space-y-3 [column-span:all] mb-5">
       <div class="flex items-center justify-between pb-2" style="border-bottom: 1px solid var(--win-stroke)">
         <h3 class="font-semibold" style="letter-spacing: -0.01em">API 配置</h3>
         <div class="flex items-center gap-2">
@@ -641,7 +641,7 @@ onMounted(load)
       <p v-if="probeError" class="ml-32 glass-tinted-red px-3 py-2 rounded text-xs">{{ probeError }}</p>
     </div>
 
-    <div class="glass-card p-4 space-y-3 @container">
+    <div class="glass-card p-4 space-y-3 break-inside-avoid mb-5 @container">
       <h3 class="font-semibold pb-2" style="border-bottom: 1px solid var(--win-stroke); letter-spacing: -0.01em">温度退火 & 重试</h3>
       <div class="grid grid-cols-1 gap-3 @2xl:grid-cols-2">
         <div class="flex items-center gap-2"><label class="text-sm flex-1" style="color: var(--win-text-secondary)" v-tooltip="tooltips.temperature">初始温度:</label><input v-model.number="config.api.temperature" :class="errCls('temperature')" type="number" step="0.01" class="glass-input" style="width: 110px" /></div>
@@ -651,7 +651,35 @@ onMounted(load)
       </div>
     </div>
 
-    <div class="glass-card p-4 space-y-3 @container">
+    <div class="glass-card p-4 space-y-3 break-inside-avoid mb-5 @container">
+      <h3 class="font-semibold pb-2" style="border-bottom: 1px solid var(--win-stroke); letter-spacing: -0.01em">滚动总结参数</h3>
+      <div class="grid grid-cols-1 gap-3 @2xl:grid-cols-2">
+        <div class="flex items-center gap-2"><label class="text-sm flex-1" style="color: var(--win-text-secondary)" v-tooltip="tooltips.rolling_early_chapters">触发章数:</label><input v-model.number="config.analysis.rolling_early_chapters" type="number" class="glass-input" style="width: 110px" /></div>
+        <div class="flex items-center gap-2"><label class="text-sm flex-1" style="color: var(--win-text-secondary)" v-tooltip="tooltips.rolling_max_milestones">里程碑上限:</label><input v-model.number="config.analysis.rolling_max_milestones" type="number" class="glass-input" style="width: 110px" /></div>
+        <div class="flex items-center gap-2"><label class="text-sm flex-1" style="color: var(--win-text-secondary)" v-tooltip="tooltips.rolling_max_momentum">势头上限:</label><input v-model.number="config.analysis.rolling_max_momentum" type="number" class="glass-input" style="width: 110px" /></div>
+        <div class="flex items-center gap-2"><label class="text-sm flex-1" style="color: var(--win-text-secondary)" v-tooltip="tooltips.checkpoint_interval">Checkpoint:</label><input v-model.number="config.analysis.checkpoint_interval" type="number" min="0" max="100" class="glass-input" style="width: 110px" /></div>
+      </div>
+      <div class="space-y-3 pt-1">
+        <div v-tooltip="tooltips.auto_archive">
+          <ToggleSwitch v-model="config.analysis.auto_archive" label="自动归档" />
+        </div>
+        <div v-tooltip="tooltips.auto_summary">
+          <ToggleSwitch v-model="config.analysis.auto_summary" label="队列完成后自动总结" />
+        </div>
+        <div v-tooltip="tooltips.skip_moderation_blocked">
+          <ToggleSwitch v-model="config.analysis.skip_moderation_blocked" label="跳过内容审核拦截章节" />
+        </div>
+      </div>
+      <div class="grid grid-cols-1 gap-3 @2xl:grid-cols-2">
+        <div class="flex items-center gap-2"><label class="text-sm flex-1" style="color: var(--win-text-secondary)" v-tooltip="tooltips.summary_concurrency">总结并发数:</label><input v-model.number="config.analysis.summary_concurrency" type="number" min="1" max="20" class="glass-input" style="width: 110px" /></div>
+        <div class="flex items-center gap-2"><label class="text-sm flex-1" style="color: var(--win-text-secondary)" v-tooltip="tooltips.summary_batch_size">总结批次大小:</label><input v-model.number="config.analysis.summary_batch_size" type="number" min="5" class="glass-input" style="width: 110px" /></div>
+        <div class="flex items-center gap-2"><label class="text-sm flex-1" style="color: var(--win-text-secondary)" title="仅当关闭上方『启用带证据复检』时生效（旧的全书复检路径，每次调用携带的活跃伏笔数）。带证据复检的批大小见上方复检分组的『判定批大小』">旧复检批大小:</label><input v-model.number="config.analysis.foreshadow_recheck_batch_size" type="number" min="10" max="200" class="glass-input" style="width: 110px" /></div>
+      </div>
+    </div>
+
+    
+
+<div class="glass-card p-4 space-y-3 break-inside-avoid mb-5 @container">
       <h3 class="font-semibold pb-2" style="border-bottom: 1px solid var(--win-stroke); letter-spacing: -0.01em">分析配置</h3>
       <div class="grid grid-cols-1 gap-3 @2xl:grid-cols-2">
         <div class="flex items-center gap-2"><label class="text-sm flex-1" style="color: var(--win-text-secondary)" v-tooltip="tooltips.concurrency">并发数:</label><input v-model.number="config.analysis.concurrency" type="number" min="1" max="20" class="glass-input" style="width: 110px" /></div>
@@ -678,7 +706,7 @@ onMounted(load)
       </div>
     </div>
 
-    <div class="glass-card p-4 space-y-3 @2xl:col-span-2">
+    <div class="glass-card p-4 space-y-3 [column-span:all] mb-5">
       <h3 class="font-semibold pb-2" style="border-bottom: 1px solid var(--win-stroke); letter-spacing: -0.01em">伏笔复检（带证据 V2）</h3>
       <ToggleSwitch v-model="config.analysis.recheck_v2_enabled" label="启用带证据复检（关闭 = 回退旧的全书复检）" />
       <p class="text-xs" style="color: var(--win-text-secondary)">
@@ -780,7 +808,7 @@ onMounted(load)
       <p v-if="recheckConflictHint" class="text-xs glass-tinted-red px-2 py-1 rounded" style="color: var(--win-danger)">{{ recheckConflictHint }}</p>
     </div>
 
-    <div v-if="categoryDefs.length" class="glass-card p-4 space-y-3 @2xl:col-span-2">
+    <div v-if="categoryDefs.length" class="glass-card p-4 space-y-3 [column-span:all] mb-5">
       <div class="flex items-center justify-between pb-2" style="border-bottom: 1px solid var(--win-stroke)">
         <h3 class="font-semibold" style="letter-spacing: -0.01em">伏笔分类（功能类别）</h3>
         <div class="flex gap-2">
@@ -811,33 +839,7 @@ onMounted(load)
       </div>
     </div>
 
-    <div class="glass-card p-4 space-y-3 @container">
-      <h3 class="font-semibold pb-2" style="border-bottom: 1px solid var(--win-stroke); letter-spacing: -0.01em">滚动总结参数</h3>
-      <div class="grid grid-cols-1 gap-3 @2xl:grid-cols-2">
-        <div class="flex items-center gap-2"><label class="text-sm flex-1" style="color: var(--win-text-secondary)" v-tooltip="tooltips.rolling_early_chapters">触发章数:</label><input v-model.number="config.analysis.rolling_early_chapters" type="number" class="glass-input" style="width: 110px" /></div>
-        <div class="flex items-center gap-2"><label class="text-sm flex-1" style="color: var(--win-text-secondary)" v-tooltip="tooltips.rolling_max_milestones">里程碑上限:</label><input v-model.number="config.analysis.rolling_max_milestones" type="number" class="glass-input" style="width: 110px" /></div>
-        <div class="flex items-center gap-2"><label class="text-sm flex-1" style="color: var(--win-text-secondary)" v-tooltip="tooltips.rolling_max_momentum">势头上限:</label><input v-model.number="config.analysis.rolling_max_momentum" type="number" class="glass-input" style="width: 110px" /></div>
-        <div class="flex items-center gap-2"><label class="text-sm flex-1" style="color: var(--win-text-secondary)" v-tooltip="tooltips.checkpoint_interval">Checkpoint:</label><input v-model.number="config.analysis.checkpoint_interval" type="number" min="0" max="100" class="glass-input" style="width: 110px" /></div>
-      </div>
-      <div class="space-y-3 pt-1">
-        <div v-tooltip="tooltips.auto_archive">
-          <ToggleSwitch v-model="config.analysis.auto_archive" label="自动归档" />
-        </div>
-        <div v-tooltip="tooltips.auto_summary">
-          <ToggleSwitch v-model="config.analysis.auto_summary" label="队列完成后自动总结" />
-        </div>
-        <div v-tooltip="tooltips.skip_moderation_blocked">
-          <ToggleSwitch v-model="config.analysis.skip_moderation_blocked" label="跳过内容审核拦截章节" />
-        </div>
-      </div>
-      <div class="grid grid-cols-1 gap-3 @2xl:grid-cols-2">
-        <div class="flex items-center gap-2"><label class="text-sm flex-1" style="color: var(--win-text-secondary)" v-tooltip="tooltips.summary_concurrency">总结并发数:</label><input v-model.number="config.analysis.summary_concurrency" type="number" min="1" max="20" class="glass-input" style="width: 110px" /></div>
-        <div class="flex items-center gap-2"><label class="text-sm flex-1" style="color: var(--win-text-secondary)" v-tooltip="tooltips.summary_batch_size">总结批次大小:</label><input v-model.number="config.analysis.summary_batch_size" type="number" min="5" class="glass-input" style="width: 110px" /></div>
-        <div class="flex items-center gap-2"><label class="text-sm flex-1" style="color: var(--win-text-secondary)" title="仅当关闭上方『启用带证据复检』时生效（旧的全书复检路径，每次调用携带的活跃伏笔数）。带证据复检的批大小见上方复检分组的『判定批大小』">旧复检批大小:</label><input v-model.number="config.analysis.foreshadow_recheck_batch_size" type="number" min="10" max="200" class="glass-input" style="width: 110px" /></div>
-      </div>
-    </div>
-
-    <div class="flex gap-3 items-center @2xl:col-span-2">
+    <div class="flex gap-3 items-center [column-span:all] mb-5">
       <button @click="save" :disabled="saving" class="glass-button glass-button-primary btn-lg">
         {{ saving ? '保存中...' : '保存设置' }}
       </button>
@@ -845,13 +847,13 @@ onMounted(load)
         <span v-if="saved" class="glass-badge badge-green" style="font-size: 12px"> 已保存</span>
       </Transition>
     </div>
-    <div v-if="saveError" class="glass-card p-3 space-y-1 @2xl:col-span-2" style="border-color: var(--win-danger)">
+    <div v-if="saveError" class="glass-card p-3 space-y-1 [column-span:all] mb-5" style="border-color: var(--win-danger)">
       <p class="text-sm font-medium" style="color: var(--win-danger)">保存失败</p>
       <pre class="text-xs whitespace-pre-wrap" style="color: var(--win-danger)">{{ saveError }}</pre>
     </div>
 
     <!-- 运行日志（完整）：存放真日志，分析队列页只展示简化版 -->
-    <div class="glass-card p-4 space-y-3 @2xl:col-span-2">
+    <div class="glass-card p-4 space-y-3 [column-span:all] mb-5">
       <div class="flex items-center justify-between">
         <h3 class="font-semibold pb-2" style="border-bottom: 1px solid var(--win-stroke); letter-spacing: -0.01em; flex: 1">运行日志（完整）</h3>
         <button @click="clearLogs" class="glass-button btn-danger-link">清空日志</button>
