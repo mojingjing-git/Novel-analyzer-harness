@@ -7,7 +7,7 @@ import type { SummaryStatus } from '../api/client'
 
 export const SUMMARY_PHASES = [
   { key: 'batch', label: '分卷分析 + 伏笔调和', weight: 0.7 },
-  { key: 'recheck', label: '全书伏笔复检', weight: 0.12 },
+  { key: 'recheck', label: '伏笔复检', weight: 0.12 },
   { key: 'style', label: '写作风格分析', weight: 0.08 },
   { key: 'report', label: '生成全书脉络报告', weight: 0.1 },
 ] as const
@@ -15,7 +15,7 @@ export const SUMMARY_PHASES = [
 export const PHASE_LABELS: Record<string, string> = {
   starting: '准备中...',
   batch: '分卷分析 + 伏笔调和',
-  recheck: '全书伏笔复检',
+  recheck: '伏笔复检',
   style: '写作风格分析',
   report: '生成全书脉络报告',
   complete: '完成',
@@ -77,7 +77,7 @@ export function elapsedTextOf(s: SummaryStatus | null, nowSec: number): string {
 }
 
 const SUMMARY_TOKEN_LABELS: Record<string, string> = {
-  summary: '分卷摘要', reconciliation: '伏笔调和', recheck: '全书复检', style: '风格分析', final: '最终报告',
+  summary: '分卷摘要', reconciliation: '伏笔调和', recheck: '伏笔复检', style: '风格分析', final: '最终报告',
 }
 
 export function summaryTokenTextOf(s: SummaryStatus | null): string {

@@ -122,17 +122,25 @@
 
 ### 伏笔复检
 
+总结第 2 阶段对每条伏笔用原文证据核对回收判定。带证据复检（V2）是默认路径；关掉 `recheck_v2_enabled` 即回退旧的全书复检。
+
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `foreshadow_recheck_batch_size` | int | `40` | 全书伏笔复检时，单次调用携带多少条活跃伏笔 |
-| `recheck_max_calls` | int | `300` | 一次复检最多调用多少次，超出记 `BUDGET_SKIPPED` |
-| `recheck_max_tokens` | int | `60000` | 单次复检调用的输出上限，给足量才能拿到完整 JSON |
-| `recheck_concurrency` | int | `0` | 0 = 跟随 `concurrency`；大于 0 只用来压窄并发波次 |
+| `recheck_v2_enabled` | bool | `true` | 带证据复检开关（关闭回退旧路径） |
+| `recheck_v2_batch_size` | int | `6` | 每次调用让判定模型同时核对几条候选（与旧路径批大小分开） |
+| `recheck_max_calls` | int | `300` | 一次复检最多调用多少次，超出的候选记「未核对」，可续跑 |
+| `recheck_max_tokens` | int | `32768` | 单次复检调用的输出上限；判定回包（6 候选 JSON）约 2k token |
+| `recheck_concurrency` | int | `0` | 复检同时在途的批次数上限；0 = 跟随主 `concurrency` |
+| `recheck_model` | str | `""` | 判定模型；留空跟随主模型。判定要准确，可换用网关专用模型名 |
+| `recheck_base_url` | str | `""` | 判定请求端点；留空跟随主通道。换模型通常要同源换通道 |
+| `recheck_reasoning_effort` | str | `"low"` | 判定思考档位；留空跟随主模型 |
+| `foreshadow_recheck_batch_size` | int | `40` | **仅旧路径**：全书复检每次调用携带的活跃伏笔数 |
 | `anchor_quote_enabled` | bool | `true` | 逐章采集锚点引文；关掉则复检退化为无证据模式 |
 | `anchor_min_chars` | int | `6` | 锚点引文的最短字数 |
-| `recheck_v2_enabled` | bool | `false` | 总结第 2 阶段改用带证据的复检（V2）。默认关闭 |
 
-这几项在设置页都没有输入框，只能手改 `config.json`。
+复检开关、判定通道三件套（model / base_url / effort）与并发、批大小、调用/输出上限在设置页「伏笔复检（带证据 V2）」分组可改；锚点两项只能手改 `config.json`。
+
+判定模型与判定通道必须同源：网关专用模型名（含 `/`，如 `codex/gpt-6-luna`）配官方端点会在运行时被阻断（复检记 `PARTIAL`）。
 
 ### 内容审核
 

@@ -1564,6 +1564,10 @@ class FinalSummaryRunner:
             res = await recheck_client.chat_auto(
                 messages=[{"role": "user", "content": prompt}], max_tokens=max_tokens
             )
+            # 记账必须在成败判断之前：校验失败/流中断重试耗尽的回包里
+            # `res.tokens` 仍持有已扣费的 token，先抛就把真实花费丢了
+            # （与 summary/final/reconciliation 各调用点"先记账后判成败"同序）。
+            self._record_tokens("recheck", getattr(res, "tokens", None))
             # 失败必须抛出去：`chat_auto` 在 400/401/404 时返回
             # `success=False, content=""` 而**不抛异常**，只取 content 会让
             # `failed_batches` 永远是 0、整轮静默 0 判定。
@@ -1573,6 +1577,12 @@ class FinalSummaryRunner:
                 )
             return getattr(res, "content", "") or ""
 
+        # phase 事件只标阶段切换、不带 total_batches：V2 按调用次数记进度而非批索引，
+        # LaneView 对 recheck+totalBatches=0 只做阶段切换不合成批块（前端已确认）
+        self._emit_progress({
+            "type": "phase", "phase": "recheck", "phase_label": "带证据伏笔复检",
+            "message": "[阶段2/4] 带证据伏笔复检...",
+        })
         self._emit_progress({"type": "status", "message": "正在核对伏笔证据..."})
         outcome = await run_recheck_v2(
             self.ledger.items,

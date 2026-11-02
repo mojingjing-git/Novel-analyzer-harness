@@ -9,6 +9,7 @@ import ConfirmDialog from '../components/ConfirmDialog.vue'
 import CountUp from '../components/CountUp.vue'
 import RunDashboard, { type DiscoveryItem, type ActiveBlock, type FinishedBlock } from '../components/RunDashboard.vue'
 import { applySummaryProgress } from '../utils/summaryLanes'
+import { phaseLabelOf } from '../utils/summaryProgress'
 import { gcActiveBlocks, reconcileActiveBlocks } from '../utils/laneRegistry'
 import {
   applyBlockStart, applyBlockDone, applyTokenDelta, appendDiscovery,
@@ -123,11 +124,8 @@ function onMessage(msg: ProgressMessage) {
       // 合成逻辑全部抽到 utils/summaryLanes.ts（可独立 vitest）。
       const p = msg.payload
       const phase = String(p.phase ?? '')
-      const phaseLabel: Record<string, string> = {
-        batch: '分卷分析+伏笔调和', recheck: '全书伏笔复检',
-        style: '写作风格分析', report: '生成全书脉络报告', complete: '已完成',
-      }
-      const phLabel = phaseLabel[phase] || phase
+      // 阶段中文名与总结页共用一份映射（PHASE_LABELS），避免两处措辞漂移
+      const phLabel = phaseLabelOf(phase)
       const bd = Number(p.batches_done ?? 0)
       const tb = Number(p.total_batches ?? 0)
       const extra = p.message ? `（${String(p.message)}）` : ''
