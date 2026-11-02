@@ -8,6 +8,7 @@ import BookSelector from '../components/BookSelector.vue'
 import { api, type GraphNode, type GraphEdge } from '../api/client'
 import { useRouter } from 'vue-router'
 import { escapeHtml } from '../utils/markdown'
+import { themeColors, onThemeChange } from '../utils/theme'
 
 echarts.use([GraphChart, TooltipComponent, DataZoomComponent, LegendComponent, SVGRenderer])
 
@@ -27,17 +28,9 @@ const chartContainer = ref<HTMLDivElement>()
 const initialized = ref(false)
 let chart: echarts.ECharts | null = null
 
-// 主题色（与 main.css --win-* 一致，硬编码 hex）
-const COLORS = {
-  accent: '#0067C0',
-  success: '#0F7B0F',
-  warning: '#9D5D00',
-  strokeStrong: '#D0D0D0',
-  layer: '#F3F3F3',
-  textPrimary: 'rgba(0,0,0,1)',
-  textSecondary: 'rgba(0,0,0,0.6)',
-  textDisabled: 'rgba(0,0,0,0.36)',
-}
+// 主题切换时重绘：ECharts 的颜色在 setOption 时固化，CSS 变量帮不上忙，
+// 必须重新取当前主题的 --win-* 调色板并整图重渲染
+let unwatchTheme: (() => void) | null = null
 
 async function loadData() {
   const bid = bookId.value
@@ -94,6 +87,8 @@ function renderChart() {
   if (nodes.value.length === 0) return
   initChart()
   if (!chart) return
+  // 每次渲染都重新解析：拿到的一定是当前主题的配色
+  const COLORS = themeColors()
   const maxCount = Math.max(...nodes.value.map(n => n.event_count || 1), 1)
   const maxWeight = Math.max(...edges.value.map(e => e.weight || 1), 1)
 
@@ -206,9 +201,14 @@ function initChart() {
 
 onMounted(() => {
   // chartContainer 此时在 v-else 内未挂载（首屏 !bookId），init 推迟到 renderChart
+  // 图已画出的情况下切主题 → 用新调色板整图重绘
+  unwatchTheme = onThemeChange(() => {
+    if (nodes.value.length > 0) renderChart()
+  })
 })
 
 onBeforeUnmount(() => {
+  unwatchTheme?.()
   window.removeEventListener('resize', handleResize)
   chart?.dispose()
   chart = null
