@@ -279,9 +279,7 @@ onBeforeUnmount(() => {
       <!-- 主内容区：Mica 基底，24px 内边距，独立滚动 -->
       <main class="main-area">
         <RouterView v-slot="{ Component, route }">
-          <transition name="page" mode="out-in">
-            <component :is="Component" :key="route.path" />
-          </transition>
+          <component :is="Component" :key="route.path" />
         </RouterView>
       </main>
     </div>

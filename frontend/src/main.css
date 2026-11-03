@@ -749,14 +749,6 @@ html.dark ::-webkit-scrollbar-thumb:hover {
 .transition-spring { transition: all 400ms var(--win-ease); }
 .transition-fluid  { transition: all 265ms var(--win-ease); }
 
-/* 页面切换：opacity + translateY(6px→0) 250ms */
-.page-enter-active,
-.page-leave-active {
-  transition: opacity 330ms var(--win-ease), transform 330ms var(--win-ease);
-}
-.page-enter-from { opacity: 0; transform: translateY(6px); }
-.page-leave-to   { opacity: 0; transform: translateY(0); }
-
 /* 对话框：opacity + scale(0.95→1) 300ms */
 .modal-enter-active,
 .modal-leave-active {
