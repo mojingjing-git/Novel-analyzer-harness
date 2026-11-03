@@ -86,6 +86,7 @@ async def test_supported_with_located_quote_marks_resolved():
     assert item.status == "resolved"
     assert item.source_type == "auto_recheck"
     assert item.needs_review is False
+    assert item.resolution_quality == "verified"  # V2 亲证回收落账即 verified，不留"未复审"
     assert item.resolution == "后文交代了旧契的归还承诺"
     assert outcome.applied["fs_001"] == AUTO_RESOLVED
 

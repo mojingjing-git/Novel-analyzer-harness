@@ -823,6 +823,9 @@ def _apply_state(
             located_chapter or getattr(item, "anchor_chapter", 0) or 0
         )
         item.source_type = "auto_recheck"
+        # V2 全证据门禁（逐字引文 + 反证检索）亲证的回收，落账即 verified——
+        # 不留空到"未复审"栏再靠一次性迁移补（道诡异仙跑批暴露的漏）
+        item.resolution_quality = "verified"
         item.needs_review = False
         return
     if state == PROPOSED_RESOLVED:
