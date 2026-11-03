@@ -558,7 +558,8 @@ async def layer_b_verify(call_model, candidates: list[dict], prereg: dict,
             reg = prereg.get(fid) or {"branches": [], "closing": {"type": "UNCERTAIN"}}
             segments = build_evidence(cand, blocks_dir)
             if not segments:
-                results.append({"fs_id": fid, "outcome": "format_reject", "reason": "no_evidence_text"})
+                results.append({"fs_id": fid, "outcome": "format_reject", "reason": "no_evidence_text",
+                                "source_block_id": cand["source_block_id"]})
                 stats["format_rejects"] += 1
                 return
             for s in segments:
@@ -578,7 +579,8 @@ async def layer_b_verify(call_model, candidates: list[dict], prereg: dict,
             try:
                 raw = await call_model(prompt)
             except Exception as e:
-                results.append({"fs_id": fid, "outcome": "call_failed", "reason": str(e)[:200]})
+                results.append({"fs_id": fid, "outcome": "call_failed", "reason": str(e)[:200],
+                                "source_block_id": cand["source_block_id"]})
                 return
             stats["calls"] += 1
             rows = raw if isinstance(raw, list) else extract_json_object(raw)
@@ -588,7 +590,8 @@ async def layer_b_verify(call_model, candidates: list[dict], prereg: dict,
             elif isinstance(rows, dict):
                 payload = rows
             if not isinstance(payload, dict):
-                results.append({"fs_id": fid, "outcome": "format_reject", "reason": "unparseable_response"})
+                results.append({"fs_id": fid, "outcome": "format_reject", "reason": "unparseable_response",
+                                "source_block_id": cand["source_block_id"]})
                 stats["format_rejects"] += 1
                 return
             record = _parse_audit_payload(payload, candidate_id=fid,
@@ -599,7 +602,8 @@ async def layer_b_verify(call_model, candidates: list[dict], prereg: dict,
                 if not hits:
                     # B7：VERIFIED 无 branch_hits = schema 违规 → format_reject
                     results.append({"fs_id": fid, "outcome": "format_reject",
-                                    "reason": "branch_hits_missing", "record": record})
+                                    "reason": "branch_hits_missing", "record": record,
+                                    "source_block_id": cand["source_block_id"]})
                     stats["format_rejects"] += 1
                     return
                 sat = closing_satisfied(reg.get("closing") or {}, hits, reg)
@@ -754,6 +758,8 @@ async def main() -> int:
     ap.add_argument("--concurrency", type=int, default=4)
     ap.add_argument("--max-layer-b-calls", type=int, default=300,
                     help="Layer B 调用硬顶（full 模式防候选爆炸白花钱）")
+    ap.add_argument("--retry-failed", default="",
+                    help="复用某次明细的预登记/候选清单，只重跑其中 call_failed 的候选")
     args = ap.parse_args()
     # 切正账是人工流程（§2.4：diff 报告 → 人工确认 → 备份 → 原子替换），不提供命令行直写
 
@@ -793,39 +799,58 @@ async def main() -> int:
 
     call_model = make_call_model(cfg, args)
 
-    # Stage 1：criteria 预登记
-    t0 = time.time()
-    log("== Stage 1：criteria 预登记 ==")
-    questions = load_questions(eligible, skip_ids=set())
-    prereg = await preregister_criteria(call_model, questions)
-    uncertain = [k for k, v in prereg.items() if (v.get("closing") or {}).get("type") == "UNCERTAIN"]
-    log(f"预登记完成（{time.time() - t0:.0f}s）：UNCERTAIN 转人工 {len(uncertain)} 条"
-        f"（{len(uncertain) / max(len(prereg), 1):.0%}）")
-
-    # Stage 2：Layer A 匹配（全部资格条目；UNCERTAIN 不参与 Layer B）
-    t0 = time.time()
-    log("== Stage 2：Layer A 蒸馏层匹配 ==")
-    stream = load_distilled_stream(output_dir)
-    max_chapter = max((int(p.stem.split("_")[1]) for p in output_dir.glob("chapter_*_result.json")),
-                      default=1046)
-    log(f"蒸馏块 {len(stream)} 个，匹配面 {sum(len(c['text']) for c in stream):,} 字")
-    a_questions = [q for q in questions if (prereg.get(q["fs_id"]) or {}).get("closing", {}).get("type") != "UNCERTAIN"]
-    candidates, a_stats = await layer_a_match(call_model, a_questions, stream, max_chapter=max_chapter)
-    log(f"Layer A 完成（{time.time() - t0:.0f}s）：候选 {len(candidates)}")
-
-    # Stage 3：范围选择（保留每条伏笔的**全部**候选，不按 fs_id 收敛——同一伏笔可多条证据）
-    if args.mode == "pilot":
-        picked_set = set(stratified_sample(eligible, args.sample, args.seed))
-        scope = [c for c in candidates if c["fs_id"] in picked_set]
-        smoke_ids = {"fs_001", "fs_002"} - picked_set
-        smoke = [c for c in candidates if c["fs_id"] in smoke_ids]
-        scope.extend(smoke)
-        log(f"pilot 抽样 {len(picked_set)} 条：{len(scope) - len(smoke)} 条候选记录（"
-            f"{len({c['fs_id'] for c in scope if c['fs_id'] in picked_set})} 条唯一伏笔）；冒烟 {len(smoke)} 条")
+    if args.retry_failed:
+        # 定向重试：复用冻结的预登记与候选清单，只重跑上次 call_failed 的候选
+        prev = json.loads(Path(args.retry_failed).read_text(encoding="utf-8"))
+        prereg = prev.get("prereg") or {}
+        candidates = prev.get("candidates") or []
+        failed_keys = {(r["fs_id"], r.get("source_block_id"))
+                       for r in prev.get("results") or [] if r.get("outcome") == "call_failed"}
+        # 旧明细的失败记录可能没有 source_block_id —— 按 fs_id 兜底重试该伏笔的全部候选
+        failed_fs = {r["fs_id"] for r in prev.get("results") or []
+                     if r.get("outcome") == "call_failed"}
+        scope = [c for c in candidates
+                 if (c["fs_id"], c["source_block_id"]) in failed_keys or c["fs_id"] in failed_fs]
+        uncertain = [k for k, v in prereg.items() if (v.get("closing") or {}).get("type") == "UNCERTAIN"]
+        a_stats = {"reused_from": args.retry_failed, "reused_candidates": len(candidates)}
+        log(f"== 定向重试：{len(scope)} 条 call_failed 候选（复用预登记 {len(prereg)} 条）==")
+        if not scope:
+            log("无可重试候选，结束")
+            return 0
     else:
-        scope = candidates[:args.max_layer_b_calls]
-        if len(candidates) > len(scope):
-            log(f"⚠️ 候选 {len(candidates)} 超过硬顶 {args.max_layer_b_calls}，截断（优先级=Layer A 顺序）")
+        # Stage 1：criteria 预登记
+        t0 = time.time()
+        log("== Stage 1：criteria 预登记 ==")
+        questions = load_questions(eligible, skip_ids=set())
+        prereg = await preregister_criteria(call_model, questions)
+        uncertain = [k for k, v in prereg.items() if (v.get("closing") or {}).get("type") == "UNCERTAIN"]
+        log(f"预登记完成（{time.time() - t0:.0f}s）：UNCERTAIN 转人工 {len(uncertain)} 条"
+            f"（{len(uncertain) / max(len(prereg), 1):.0%}）")
+
+        # Stage 2：Layer A 匹配（全部资格条目；UNCERTAIN 不参与 Layer B）
+        t0 = time.time()
+        log("== Stage 2：Layer A 蒸馏层匹配 ==")
+        stream = load_distilled_stream(output_dir)
+        max_chapter = max((int(p.stem.split("_")[1]) for p in output_dir.glob("chapter_*_result.json")),
+                          default=1046)
+        log(f"蒸馏块 {len(stream)} 个，匹配面 {sum(len(c['text']) for c in stream):,} 字")
+        a_questions = [q for q in questions if (prereg.get(q["fs_id"]) or {}).get("closing", {}).get("type") != "UNCERTAIN"]
+        candidates, a_stats = await layer_a_match(call_model, a_questions, stream, max_chapter=max_chapter)
+        log(f"Layer A 完成（{time.time() - t0:.0f}s）：候选 {len(candidates)}")
+
+        # Stage 3：范围选择（保留每条伏笔的**全部**候选，不按 fs_id 收敛——同一伏笔可多条证据）
+        if args.mode == "pilot":
+            picked_set = set(stratified_sample(eligible, args.sample, args.seed))
+            scope = [c for c in candidates if c["fs_id"] in picked_set]
+            smoke_ids = {"fs_001", "fs_002"} - picked_set
+            smoke = [c for c in candidates if c["fs_id"] in smoke_ids]
+            scope.extend(smoke)
+            log(f"pilot 抽样 {len(picked_set)} 条：{len(scope) - len(smoke)} 条候选记录（"
+                f"{len({c['fs_id'] for c in scope if c['fs_id'] in picked_set})} 条唯一伏笔）；冒烟 {len(smoke)} 条")
+        else:
+            scope = candidates[:args.max_layer_b_calls]
+            if len(candidates) > len(scope):
+                log(f"⚠️ 候选 {len(candidates)} 超过硬顶 {args.max_layer_b_calls}，截断（优先级=Layer A 顺序）")
     log(f"== Stage 3：Layer B 验证 {len(scope)} 条候选记录"
         f"（{len({c['fs_id'] for c in scope})} 条唯一伏笔）==")
     t0 = time.time()
