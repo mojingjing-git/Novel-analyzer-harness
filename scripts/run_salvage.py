@@ -98,13 +98,26 @@ def load_questions(items: list, skip_ids: set[str]) -> list[dict]:
 def make_call_model(cfg, args):
     from dataclasses import replace as dc_replace
 
+    # 通道：默认走 config 的 recheck 通道（独立于采集通道），CLI 显式覆盖优先
     api = cfg.api
+    recheck_model = getattr(cfg.analysis, "recheck_model", "") or ""
+    recheck_url = getattr(cfg.analysis, "recheck_base_url", "") or ""
+    recheck_key = getattr(cfg.analysis, "recheck_api_key", "") or ""
+    if recheck_model:
+        api = dc_replace(api, model=recheck_model)
+    if recheck_url:
+        api = dc_replace(api, base_url=recheck_url)
+    if recheck_key:
+        api = dc_replace(api, api_key=recheck_key)
+    effort = (args.reasoning_effort
+              or getattr(cfg.analysis, "recheck_reasoning_effort", "")
+              or "low")
     if args.recheck_model:
         api = dc_replace(api, model=args.recheck_model)
     if args.base_url:
         api = dc_replace(api, base_url=args.base_url)
-    api = dc_replace(api, reasoning_effort=args.reasoning_effort)
-    log(f"判定通道：{api.model} @ {api.base_url}（effort={args.reasoning_effort}）")
+    api = dc_replace(api, reasoning_effort=effort)
+    log(f"判定通道：{api.model} @ {api.base_url}（effort={effort}）")
     llm = LLMClient(api)
     max_tokens = int(cfg.analysis.recheck_max_tokens)
 
@@ -167,10 +180,10 @@ PREREG_PROMPT = """你是判定标准分析员。下面每条伏笔有一条 ans
 
 规则：
 1. branch_id 固定为 c1、c2…（按原文顺序），text 必须逐字摘自 criteria 的对应片段；
-2. criteria 顶层含"或"且分支可独立满足 → closing = {"type": "OR", "closable": [可独立关闭的 branch_id...]}；
-3. 多个"？"的多联问且无"或" → closing = {"type": "AND"}（全部分支满足才算回收）；
+2. criteria 顶层含"或"且分支可独立满足 → closing = {{"type": "OR", "closable": [可独立关闭的 branch_id...]}}；
+3. 多个"？"的多联问且无"或" → closing = {{"type": "AND"}}（全部分支满足才算回收）；
 4. 引号内的"或"不算分隔符；"还是/以及/、"按语义判断；
-5. 无法确定切分或关闭语义 → closing = {"type": "UNCERTAIN"}（该条转人工，不参与自动打捞）。
+5. 无法确定切分或关闭语义 → closing = {{"type": "UNCERTAIN"}}（该条转人工，不参与自动打捞）。
 
 共 {count} 条，fs_id 必须原样取自：{ids}。
 输入条目：
@@ -629,7 +642,8 @@ async def main() -> int:
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--base-url", default="")
     ap.add_argument("--recheck-model", default="")
-    ap.add_argument("--reasoning-effort", default="low")
+    ap.add_argument("--reasoning-effort", default="",
+                    help="默认取 config 的 recheck_reasoning_effort")
     ap.add_argument("--concurrency", type=int, default=4)
     ap.add_argument("--max-layer-b-calls", type=int, default=300,
                     help="Layer B 调用硬顶（full 模式防候选爆炸白花钱）")
