@@ -736,6 +736,7 @@ async def main() -> int:
         "eligible_total": len(eligible), "uncertain_to_human": len(uncertain),
         "candidates_total": len(candidates), "layer_a_stats": a_stats,
         "layer_b_stats": b_stats, "actions": actions,
+        "candidates": candidates,
         "results": [{k: v for k, v in r.items() if k != "record"} |
                     {"reason": r["record"].reason, "answer": r["record"].answer,
                      "quote": r["record"].quote}
