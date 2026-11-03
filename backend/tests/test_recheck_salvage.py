@@ -23,6 +23,7 @@ from scripts.run_salvage import (  # noqa: E402
     load_distilled_stream,
     load_questions,
     stratified_sample,
+    validate_prereg_row,
 )
 from backend.utils.foreshadow_ledger import ForeshadowItem, ForeshadowLedger  # noqa: E402
 
@@ -354,6 +355,108 @@ def test_da_protection_records_but_never_flips():
     assert actions["applied"] == 0 and actions["da_protected"] == 1
     assert item.status == "active" and item.needs_review is True
     assert any("DIFFERENT_ANSWER" in n for n in item.notes)
+
+
+# ---------------------------------------------------------------- 预登记后验校验
+
+
+def test_prereg_rejects_fragment_branches():
+    """碎分支（只抽主语/人物名）→ 校验拒绝，转 UNCERTAIN。
+
+    实测缺陷：criteria"丹阳子或瓶女之爹对瓶碎事件的发现与追查"被拆成
+    "丹阳子"/"瓶女之爹"/"对事件的发现与追查"，只命中人物就会误关闭。
+    """
+    criteria = "丹阳子或瓶女之爹对瓶碎事件的发现与追查"
+    bad = {"branches": [{"branch_id": "c1", "text": "丹阳子"},
+                        {"branch_id": "c2", "text": "瓶女之爹"},
+                        {"branch_id": "c3", "text": "对瓶碎事件的发现与追查"}],
+           "closing": {"type": "OR", "closable": ["c1", "c2", "c3"]}}
+    ok, why = validate_prereg_row(bad, criteria)
+    assert not ok and why.startswith("fragment_branch")
+
+    good = {"branches": [{"branch_id": "c1", "text": "丹阳子对瓶碎事件的发现与追查"},
+                         {"branch_id": "c2", "text": "瓶女之爹对瓶碎事件的发现与追查"}],
+            "closing": {"type": "OR", "closable": ["c1", "c2"]}}
+    ok2, why2 = validate_prereg_row(good, criteria)
+    assert ok2, why2
+
+
+def test_prereg_rejects_non_verbatim_and_bad_closable():
+    criteria = "解释玉佩传送的机制"
+    non_verbatim = {"branches": [{"branch_id": "c1", "text": "解释玉佩如何跨越两界机制"}],
+                    "closing": {"type": "AND"}}
+    assert validate_prereg_row(non_verbatim, criteria)[0] is False
+    bad_or = {"branches": [{"branch_id": "c1", "text": "解释玉佩传送的机制"}],
+              "closing": {"type": "OR", "closable": ["c9"]}}
+    assert validate_prereg_row(bad_or, criteria)[0] is False
+    uncertain = {"branches": [], "closing": {"type": "UNCERTAIN"}}
+    assert validate_prereg_row(uncertain, criteria)[0] is True
+
+
+# ---------------------------------------------------------------- 反证定位
+
+
+@pytest.mark.asyncio
+async def test_contradicted_requires_located_counter_quote(tmp_path):
+    """反证引文必须能逐字定位；定位不到 → 降级 no_evidence（不许当已验证反证）。"""
+    _write_block(tmp_path, 1, RESOLUTION_TEXT)
+    item = _item("fs_001")
+    prereg = {"fs_001": _prereg("OR")}
+
+    async def call_model(prompt):
+        ev_id = prompt.split("evidence_id=")[1].split("（")[0].strip()
+        return json.dumps({
+            "candidate_id": "fs_001", "verdict": "QUESTIONED", "reason_code": "contradicted",
+            "answer": "该处只说还没有解释",
+            "counter_search": {"performed": True, "checked_evidence_ids": [ev_id],
+                               "counter_quotes": ["这句反证根本不在原文里出现过的"]},
+        })
+
+    results, stats = await layer_b_verify(call_model, [_candidate()], prereg,
+                                          {"fs_001": item}, tmp_path / "blocks", concurrency=1)
+    r = results[0]
+    assert r["outcome"] == "questioned"
+    assert r["reason_final"] == "no_evidence"        # 降级
+    assert r["counter_quotes"][0]["located"] is False
+    assert stats["contradiction_unlocated"] == 1
+
+
+@pytest.mark.asyncio
+async def test_contradicted_kept_when_quote_locates(tmp_path):
+    _write_block(tmp_path, 1, RESOLUTION_TEXT)
+    item = _item("fs_001")
+
+    async def call_model(prompt):
+        ev_id = prompt.split("evidence_id=")[1].split("（")[0].strip()
+        return json.dumps({
+            "candidate_id": "fs_001", "verdict": "QUESTIONED", "reason_code": "contradicted",
+            "answer": "原文明确说尚未交代",
+            "counter_search": {"performed": True, "checked_evidence_ids": [ev_id],
+                               "counter_quotes": ["记忆与行为两边同步"]},
+        })
+
+    results, stats = await layer_b_verify(call_model, [_candidate()], {"fs_001": _prereg("OR")},
+                                          {"fs_001": item}, tmp_path / "blocks", concurrency=1)
+    assert results[0]["reason_final"] == "contradicted"
+    assert results[0]["counter_quotes"][0]["located"] is True
+    assert stats["contradicted"] == 1
+
+
+# ---------------------------------------------------------------- 多候选归并
+
+
+def test_multiple_verified_candidates_apply_once():
+    """同一伏笔多候选都通过：只落账一次，其余计 duplicate_verified（不重复累加）。"""
+    item = _item("fs_001")
+    shadow = ForeshadowLedger()
+    shadow.items = [item]
+    rec = type("R", (), {"reason": "supported", "answer": "答案"})()
+    results = [{"fs_id": "fs_001", "outcome": "verified", "record": rec, "chapter": 5},
+               {"fs_id": "fs_001", "outcome": "verified", "record": rec, "chapter": 900}]
+    actions = apply_to_shadow(shadow, results, {"fs_001": item})
+    assert actions["applied"] == 1
+    assert actions["duplicate_verified"] == 1
+    assert item.resolved_chapter == 5  # 第一条通过的为准
 
 
 # ---------------------------------------------------------------- 落账规则
