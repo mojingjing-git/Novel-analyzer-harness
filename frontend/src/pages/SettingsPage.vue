@@ -123,6 +123,48 @@ async function runRecheckProbe() {
   }
 }
 
+// ===== 判定模型：从复检通道拉取模型列表（preview/models 按字段回退：复检已填 > 主配置） =====
+const recheckModels = ref<string[]>([])
+const showRecheckModelList = ref(false)
+const recheckModelFilter = ref('')
+const recheckModelsBusy = ref(false)
+const recheckModelsError = ref('')
+
+const filteredRecheckModels = computed(() => {
+  const f = recheckModelFilter.value.trim().toLowerCase()
+  if (!f) return recheckModels.value
+  return recheckModels.value.filter((m: string) => m.toLowerCase().includes(f))
+})
+
+async function loadRecheckModels() {
+  const a = config.value?.analysis
+  if (!a || recheckModelsBusy.value) return
+  recheckModelsBusy.value = true
+  recheckModelsError.value = ''
+  try {
+    const body: Record<string, string> = {}
+    if (a.recheck_base_url.trim()) body.base_url = a.recheck_base_url.trim()
+    if (a.recheck_api_key.trim()) body.api_key = a.recheck_api_key.trim()
+    if (a.recheck_provider.trim()) body.provider = a.recheck_provider.trim()
+    recheckModels.value = (await api.previewModels(body)).models
+    showRecheckModelList.value = true
+  } catch (e) {
+    recheckModelsError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    recheckModelsBusy.value = false
+  }
+}
+
+function pickRecheckModel(m: string) {
+  if (config.value) config.value.analysis.recheck_model = m
+  recheckModelFilter.value = ''
+  showRecheckModelList.value = false
+}
+
+function onRecheckModelBlur() {
+  setTimeout(() => { showRecheckModelList.value = false }, 120)
+}
+
 function toggleCategory(name: string) {
   if (!config.value) return
   // 增删逻辑在 utils/settingsForm.toggleCategoryIn（可独立 vitest）
@@ -736,8 +778,39 @@ onMounted(load)
         </div>
         <div class="flex items-center gap-2 col-span-2">
           <label class="text-sm shrink-0 w-28" style="color: var(--win-text-secondary)" title="判定用的模型；留空 = 跟随主模型。判定要准确，采集要覆盖面，两者可以分开">判定模型:</label>
-          <input v-model="config.analysis.recheck_model" type="text" class="glass-input flex-1" placeholder="留空 = 跟随主模型" />
+          <div class="relative flex-1">
+            <input
+              v-model="config.analysis.recheck_model"
+              type="text"
+              class="glass-input w-full"
+              placeholder="留空 = 跟随主模型"
+              @focus="showRecheckModelList = true"
+              @click="showRecheckModelList = true"
+              @input="showRecheckModelList = true; recheckModelFilter = config?.analysis.recheck_model || ''"
+              @blur="onRecheckModelBlur()"
+            />
+            <div
+              v-if="showRecheckModelList"
+              class="absolute z-20 mt-1 w-full max-h-60 overflow-auto p-1 space-y-0.5 glass-elevated"
+            >
+              <div v-if="filteredRecheckModels.length === 0" class="px-2 py-1.5 text-xs" style="color: var(--win-text-disabled)">
+                点「获取模型」从判定通道拉取列表，或直接输入模型名
+              </div>
+              <button
+                v-for="m in filteredRecheckModels"
+                :key="m"
+                type="button"
+                @mousedown.prevent="pickRecheckModel(m)"
+                class="model-option block w-full text-left px-2 py-1.5 rounded-md text-sm"
+                style="color: var(--win-text-primary)"
+              >{{ m }}</button>
+            </div>
+          </div>
+          <button @click="loadRecheckModels" :disabled="recheckModelsBusy" class="glass-button btn-sm" title="从判定通道拉取可用模型列表：用上方判定的端点/Key/协议，留空回退主通道">
+            {{ recheckModelsBusy ? '获取中...' : '获取模型' }}
+          </button>
         </div>
+        <p v-if="recheckModelsError" class="col-span-2 text-xs glass-tinted-red px-2 py-1 rounded" style="color: var(--win-danger)">{{ recheckModelsError }}</p>
         <div class="flex items-center gap-2 col-span-2">
           <label class="text-sm shrink-0 w-28" style="color: var(--win-text-secondary)" title="判定请求的协议格式；跟随主配置 = 主配置显式指定的协议原样继承；auto = 按判定端点特征重新检测">协议格式:</label>
           <select v-model="config.analysis.recheck_provider" class="glass-select flex-1">
