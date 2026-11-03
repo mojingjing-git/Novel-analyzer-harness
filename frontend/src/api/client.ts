@@ -69,6 +69,30 @@ export interface SessionCostEstimate {
   catalog_version?: string
 }
 
+export interface UsageModelRow {
+  model: string
+  in: number
+  out: number
+  cached: number
+  usd: number | null
+}
+
+/** 全局累计账本（持久化 usage_state.json，跨进程累积） */
+export interface UsageLedgerResponse {
+  version: number
+  updated_at: string | null
+  per_model: UsageModelRow[]
+  categories: Record<string, { in: number; out: number }>
+  category_models: Record<string, string[]>
+  chapters_done: number
+  retries: number
+  failed_tokens: number
+  elapsed_seconds: number
+  total_usd: number | null
+  unpriced: string[]
+  catalog_version: string
+}
+
 export interface SessionTokenStatsResponse {
   analysis: TokenStatsResponse
   summary: {
@@ -423,6 +447,8 @@ export const api = {
   analysisStatus: () => request<AnalysisStatus>('/api/analysis/status'),
   getTokenStats: () => request<TokenStatsResponse>('/api/analysis/token_stats'),
   getSessionTokenStats: () => request<SessionTokenStatsResponse>('/api/analysis/token_stats/session'),
+  getUsage: () => request<UsageLedgerResponse>('/api/analysis/usage'),
+  clearUsage: () => request<{ success: boolean }>('/api/analysis/usage/clear', { method: 'POST' }),
   getBookTokenStats: (book_id: string) => request<{ book_id: string; analysis?: Record<string, unknown>; summary?: Record<string, unknown> }>(`/api/books/${seg(book_id)}/token_stats`),
 
   // 队列

@@ -356,6 +356,12 @@ class LLMResult:
     #: 与 ``tokens`` 分开：``tokens`` 只表达"最终这次尝试的用量"，拿不到就是 None。
     #: 把它填进 ``tokens`` 会让"本次未知"冒充"本次已知"，费用统计随之失真。
     prior_known_tokens: Optional[Tuple[int, int]] = None
+    #: 本次调用命中的服务端 prompt cache tokens（usage 直读；0 = 未命中或未上报）。
+    #: 不放进 tokens 二元组：费用统计需要它区分 cache_read 价与 input 价，
+    #: 且 OpenAI 协议 prompt_tokens 已包含命中部分，混进去会重复计费。
+    #: 置于字段表末尾——历史调用点以位置参数构造（第 5 位是 usage_status），
+    #: 中间插字段会把枚举错位成 cached_tokens。
+    cached_tokens: int = 0
 
     def __post_init__(self) -> None:
         """一致性校验：tokens 为 None 时 usage_status 必须是 UNKNOWN

@@ -6,6 +6,8 @@ config.json
 workspace/
 /data/
 queue_state.json
+usage_state.json
+usage_state*.json
 *.log
 *.log.*
 *.bak

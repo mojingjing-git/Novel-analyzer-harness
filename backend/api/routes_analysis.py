@@ -351,6 +351,49 @@ async def get_style_result(book_id: str) -> dict:
 
 # ==================== 日志下载 ====================
 
+@router.get("/analysis/usage")
+async def analysis_usage() -> dict:
+    """持久用量账本（跨进程累计）+ 按 models.dev 挂牌价的逐模型费用。
+
+    费用只在 per_model 维度计算（R-3：跨书换模型时 categories 单行乘当前
+    牌价会串价）；未定价模型 usd=null 并列入 unpriced（沿用 session cost 语义）。
+    """
+    from backend.core.model_catalog import calc_model_cost
+    from backend.services.usage_ledger import get_usage_ledger
+
+    state = get_usage_ledger().snapshot()
+    per_model = []
+    unpriced = []
+    total_usd = 0.0
+    for model, t in (state.get("per_model") or {}).items():
+        result = calc_model_cost(model, t.get("in", 0), t.get("out", 0), t.get("cached", 0))
+        if result is None:
+            unpriced.append(model)
+            per_model.append({"model": model, **t, "usd": None})
+        else:
+            total_usd += result["usd"]
+            per_model.append({"model": model, **t, "usd": round(result["usd"], 4)})
+    priced = [row for row in per_model if row["usd"] is not None]
+    total_tokens = sum(row["in"] + row["out"] for row in per_model)
+    from backend.core.model_catalog import get_catalog_version
+    return {
+        **state,
+        "per_model": per_model,
+        "total_usd": (round(total_usd, 4) if priced else (None if total_tokens > 0 else 0.0)),
+        "unpriced": sorted(unpriced),
+        "catalog_version": get_catalog_version(),
+    }
+
+
+@router.post("/analysis/usage/clear", dependencies=[Depends(require_session_token)])
+async def analysis_usage_clear() -> dict:
+    """清零持久账本（破坏性操作，需会话鉴权；旧文件备份 .bak）。"""
+    from backend.services.usage_ledger import get_usage_ledger
+
+    get_usage_ledger().clear()
+    return {"success": True}
+
+
 @router.get("/analysis/logs", dependencies=[Depends(require_session_token)])
 async def download_logs():
     """下载 analyzer.log 日志文件（需 session token 鉴权）"""

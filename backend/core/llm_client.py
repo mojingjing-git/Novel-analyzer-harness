@@ -676,6 +676,7 @@ class LLMClient:
                           if getattr(response, "usage", None) is not None else None)
                 return LLMResult(
                     success=True, content=content, error="", tokens=tokens,
+                    cached_tokens=cached_tokens if tokens is not None else 0,
                     usage_status=(UsageStatus.KNOWN if tokens is not None
                                   else UsageStatus.UNKNOWN),
                 )
@@ -730,6 +731,7 @@ class LLMClient:
                       if response.usage is not None else None)
             return LLMResult(
                 success=True, content=content, error="", tokens=tokens,
+                cached_tokens=cached_tokens if tokens is not None else 0,
                 usage_status=(UsageStatus.KNOWN if tokens is not None
                               else UsageStatus.UNKNOWN),
             )
@@ -856,7 +858,7 @@ class LLMClient:
                     ra = resp.headers.get('retry-after')
                     if ra:
                         error_msg += f" [Retry-After:{str(ra).strip()}]"
-                logger.warning(f"触发速率限制(429)，尊重 Retry-After 长退避重试")
+                logger.warning("触发速率限制(429)，尊重 Retry-After 长退避重试")
             logger.error(error_msg)
             _get_failure_logger().record_failure(
                 attempt_num=0,
@@ -1350,7 +1352,7 @@ class LLMClient:
                     f"temperature_max_retries={self.config.temperature_max_retries}, "
                     f"backoff_max_retries={self.config.backoff_max_retries}")
         if validate_response:
-            logger.info(f"启用响应验证回调")
+            logger.info("启用响应验证回调")
         logger.info("=" * 60)
 
         def _build_stream_result(success, content, error, prompt_tok, comp_tok,
@@ -1597,6 +1599,7 @@ class LLMClient:
                 content=result.content,
                 error=result.error,
                 tokens=tokens,
+                cached_tokens=(result.cached_tokens or 0) if tokens is not None else 0,
                 usage_status=(UsageStatus.KNOWN if tokens is not None
                               else UsageStatus.UNKNOWN),
                 call_stats=result.call_stats,
@@ -1644,6 +1647,7 @@ class LLMClient:
         failed_tokens: int,
         verdict: Optional["ErrorVerdict | ClassVerdict"] = None,
         prior_tokens: Optional[Tuple[int, int]] = None,
+        cached_tokens: int = 0,
     ) -> LLMResult:
         """构造非流式调用结果对象。
 
@@ -1659,6 +1663,7 @@ class LLMClient:
             content=content,
             error=error,
             tokens=tokens,
+            cached_tokens=cached_tokens if tokens is not None else 0,
             usage_status=(UsageStatus.KNOWN if tokens is not None
                           else UsageStatus.UNKNOWN),
             call_stats={"attempts": total_attempts, "failed_tokens": failed_tokens},
@@ -1704,7 +1709,7 @@ class LLMClient:
                    f"temperature_max_retries={self.config.temperature_max_retries}, "
                    f"backoff_max_retries={self.config.backoff_max_retries}")
         if validate_response:
-            logger.info(f"启用响应验证回调")
+            logger.info("启用响应验证回调")
         logger.info("=" * 60)
 
         async def try_once(temp, attempt, total_attempts, phase, wait_time=None):
@@ -1768,6 +1773,7 @@ class LLMClient:
                     True, content, "", tokens,
                     total_attempts=total_attempts, failed_tokens=call_failed_tokens,
                     prior_tokens=prior_known_tokens,
+                    cached_tokens=getattr(result, "cached_tokens", 0) or 0,
                 ))
 
             error = result.error
@@ -1819,7 +1825,7 @@ class LLMClient:
                         f"指数退避{self.config.backoff_max_retries}次 = 共{total_attempts}次）。" \
                         f"最后错误: {last_error}"
             logger.error("\n" + "=" * 60)
-            logger.error(f"⛔ API调用最终失败")
+            logger.error("⛔ API调用最终失败")
             logger.error(f"总尝试次数: {total_attempts}")
             logger.error(f"最后错误: {last_error}")
 

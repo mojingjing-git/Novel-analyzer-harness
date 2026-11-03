@@ -13,6 +13,10 @@ from ..ws_events import (
     PipelineStatus,
     block_done_event, block_start_event, discovery_event,
 )
+from .usage_ledger import get_usage_ledger
+
+# 持久账本（进程级单例；在工厂函数内延迟取，避免 import 期副作用）
+ledger = get_usage_ledger()
 
 # 发现流提取
 # 停用词表：过滤"众人/他们/旁白"等指代词，避免"新人物"列表噪音
@@ -151,6 +155,9 @@ def make_pipeline_callbacks(hub, item, stats, seen_characters):
             ))
             # 记录每章统计（失败块同样计入：重试成本不可因失败而归零）
             stats.record_chapter(payload)
+            # 持久账本（跨会话累计，与 AnalysisStats 的会话生命周期解耦）
+            ledger.add_chapter(payload)
+            ledger.schedule_save()
 
             # discovery 提取（仅成功块，result 是 AnalysisResult dataclass dict）
             if status == "done":
@@ -162,6 +169,9 @@ def make_pipeline_callbacks(hub, item, stats, seen_characters):
     async def on_token_stats(payload: dict) -> None:
         # 累积分类 token 统计（实现在 analysis_stats.AnalysisStats）
         stats.accumulate_token_stats(payload)
+        # 持久账本（跨会话累计）
+        ledger.add_token(payload)
+        ledger.schedule_save()
         await hub.publish({"type": "token_stats", "payload": payload})
 
     return on_progress, on_token_stats

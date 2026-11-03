@@ -55,12 +55,16 @@ class AnalysisStats:
 
     def accumulate_token_stats(self, payload: dict) -> None:
         """按分类累加 token。直接使用 input_tokens/output_tokens（不用 or 回退
-        current_tokens：input_tokens=0 是合法值，or 会错误回退到 input+output 之和）"""
+        current_tokens：input_tokens=0 是合法值，or 会错误回退到 input+output 之和）。
+        model 随事件透传（last-write）：落盘 token_stats.json 的费用牌价键。"""
         cat = payload.get("category", "unknown")
         if cat not in self.token_stats:
             self.token_stats[cat] = {"input_tokens": 0, "output_tokens": 0}
         self.token_stats[cat]["input_tokens"] += payload.get("input_tokens", 0) or 0
         self.token_stats[cat]["output_tokens"] += payload.get("output_tokens", 0) or 0
+        model = (payload.get("model") or "").strip()
+        if model:
+            self.token_stats[cat]["model"] = model
 
     def baseline(self) -> Dict[str, Any]:
         """本书开始前的累计快照（token 落盘基线），
@@ -102,10 +106,14 @@ class AnalysisStats:
         categories = {}
         for cat, v in self.token_stats.items():
             before = baseline["categories"].get(cat, {"input_tokens": 0, "output_tokens": 0})
-            categories[cat] = {
+            entry = {
                 "input_tokens": v["input_tokens"] - before["input_tokens"],
                 "output_tokens": v["output_tokens"] - before["output_tokens"],
             }
+            # 模型名直通（落盘侧费用牌价键；基线快照 dict(v) 已包含，无需参与差值）
+            if v.get("model"):
+                entry["model"] = v["model"]
+            categories[cat] = entry
         return {
             "type": "analysis",
             "book_id": item.name,

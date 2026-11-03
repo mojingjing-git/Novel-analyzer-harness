@@ -200,6 +200,8 @@ class NovelAnalyzer:
             # 拿到 usage → "KNOWN"；没拿到 → "UNKNOWN"，此时下面的 (0, 0) 只是记账哨兵，
             # pipeline 会在对外载荷里带上本字段，不让下游把"未知"读成"零消耗"。
             retry_info["usage_status"] = _usage_status_str(llm_result.usage_status)
+            # 缓存命中 delta 直读透传（usage 直读，非差值——并发下差值有竞态）
+            retry_info["cached_tokens"] = int(getattr(llm_result, "cached_tokens", 0) or 0)
 
             if not llm_result.success:
                 logger.error(f"第{chapter_number}章分析失败: {llm_result.error}")

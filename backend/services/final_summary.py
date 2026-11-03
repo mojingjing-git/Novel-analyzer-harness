@@ -664,6 +664,9 @@ class FinalSummaryRunner:
             thinking_mode=self.config.api.summary_thinking_mode or self.config.api.thinking_mode,
         )
         self._llm = LLMClient(_api_cfg)
+        # 账本/费用侧的模型名捕获：summary 阶段实际用的模型（summary_model or model）
+        self._summary_model_name = _api_cfg.model
+        # recheck 通道模型在 recheck_client 构造处捕获（_record_tokens 用）
 
         self.ledger_path = ledger_path or (self.output_dir / "foreshadow_ledger.json")
         self.ledger = ForeshadowLedger.load(self.ledger_path)
@@ -856,22 +859,34 @@ class FinalSummaryRunner:
                     "category": category,
                     "input_tokens": in_tok,
                     "output_tokens": out_tok,
+                    # 持久账本的费用牌价键：recheck 走复检通道模型，其余走总结模型
+                    "model": (getattr(self, "_recheck_model_name", "") if category == "recheck"
+                              else getattr(self, "_summary_model_name", "")),
                 })
             except Exception as e:
                 logger.error(f"token_stats 回调异常: {e}")
 
     def get_token_stats(self) -> Dict[str, Dict[str, int]]:
-        """分类 token 统计快照"""
-        return {
-            category: {"input_tokens": pair[0], "output_tokens": pair[1]}
-            for category, pair in [
-                ("summary", self._tokens_summary),
-                ("final", self._tokens_final),
-                ("reconciliation", self._tokens_reconciliation),
-                ("recheck", self._tokens_recheck),
-                ("style", self._tokens_style),
-            ]
-        }
+        """分类 token 统计快照（model 是费用牌价键，随落盘 JSON 直通）
+
+        model 为空（拿不到模型名）时**不写这个键**：条目形状保持稳定，
+        落盘侧据此决定"有价可算"还是"无模型名不算费"。
+        """
+        stats: Dict[str, Dict[str, int]] = {}
+        for category, pair in [
+            ("summary", self._tokens_summary),
+            ("final", self._tokens_final),
+            ("reconciliation", self._tokens_reconciliation),
+            ("recheck", self._tokens_recheck),
+            ("style", self._tokens_style),
+        ]:
+            entry: Dict[str, int] = {"input_tokens": pair[0], "output_tokens": pair[1]}
+            model = (getattr(self, "_recheck_model_name", "") if category == "recheck"
+                     else getattr(self, "_summary_model_name", ""))
+            if model:
+                entry["model"] = model
+            stats[category] = entry
+        return stats
 
     # type→category 归一化映射文件路径（per-book 持久化）
     def _foreshadow_type_map_path(self) -> Path:
@@ -1636,10 +1651,18 @@ class FinalSummaryRunner:
             logger.info(
                 "复检使用独立通道：%s @ %s（思考档位 %s，超时 %s）",
                 overrides.get("model", f"(跟随主模型 {effective_model})"),
-                overrides.get("base_url", f"(跟随主通道)"),
+                overrides.get("base_url", "(跟随主通道)"),
                 overrides.get("reasoning_effort", "(跟随配置)"),
                 overrides.get("timeout", "(跟随配置)"),
             )
+        # 复检通道实际用的模型（账本/费用侧的牌价键）：覆盖优先，其次主客户端。
+        # getattr 兜底：测试替身（_FakeLLM）没有 config
+        self._recheck_model_name = (
+            getattr(getattr(recheck_client, "config", None), "model", "")
+            or (overrides or {}).get("model", "")
+            or getattr(getattr(self._llm, "config", None), "model", "")
+            or ""
+        )
         async def _call_model(prompt: str) -> str:
             res = await recheck_client.chat_auto(
                 messages=[{"role": "user", "content": prompt}], max_tokens=max_tokens

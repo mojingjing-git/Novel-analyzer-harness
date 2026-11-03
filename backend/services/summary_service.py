@@ -118,6 +118,11 @@ class SummaryService:
             }))
 
         def on_token_stats(payload: dict) -> None:
+            # 持久账本（跨会话累计；模型名来自 FinalSummaryRunner 的 payload）
+            from .usage_ledger import get_usage_ledger
+            _ledger = get_usage_ledger()
+            _ledger.add_token(payload)
+            _ledger.schedule_save()
             asyncio.create_task(hub.publish({
                 "type": WSType.TOKEN_STATS,
                 "payload": {**payload, "source": "summary"},

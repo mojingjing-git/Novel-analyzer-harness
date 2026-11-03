@@ -892,10 +892,13 @@ class AnalysisPipeline:
             # UNKNOWN = 没拿到 usage，上面的 0 只是哨兵，
             # 不得被读成"本次确实消耗 0 token"
             "usage_status": usage_status,
+            # 持久账本需要：模型名（费用牌价键）+ 本章缓存命中 delta（cache_read 价计费）
+            "model": self.config.api.model,
+            "cached_tokens": (retry_info or {}).get("cached_tokens", 0),
         })
         return success, completed_count
 
-    async def _emit_rolling_tokens(self, tokens):
+    async def _emit_rolling_tokens(self, tokens, model: str = "", cached_tokens: int = 0):
         """rolling 调用 token 统计（asyncio 内直接 emit，无需线程缓冲）"""
         if not tokens or not isinstance(tokens, tuple) or len(tokens) < 2:
             return
@@ -903,6 +906,8 @@ class AnalysisPipeline:
             "category": "rolling",
             "input_tokens": int(tokens[0] or 0),
             "output_tokens": int(tokens[1] or 0),
+            "model": model,
+            "cached_tokens": cached_tokens,
         })
 
     async def _update_rolling_summary(self, rolling_client: LLMClient,
@@ -985,7 +990,11 @@ class AnalysisPipeline:
                 temperature=ROLLING_SUMMARY_TEMPERATURE,
                 max_tokens=ROLLING_SUMMARY_MAX_TOKENS
             )
-            await self._emit_rolling_tokens(llm_result.tokens)
+            await self._emit_rolling_tokens(
+                llm_result.tokens,
+                model=self.config.api.model,
+                cached_tokens=getattr(llm_result, "cached_tokens", 0) or 0,
+            )
             if llm_result.success and llm_result.content and llm_result.content.strip():
                 raw = extract_json_from_text(llm_result.content)
                 if raw:

@@ -189,7 +189,11 @@ async def get_foreshadow_ranking(book_id: str) -> dict:
 
 @router.get("/{book_id}/token_stats")
 async def get_book_token_stats(book_id: str) -> dict:
-    """读取该书落盘的 token 统计（分析 token_stats.json + 总结 summary_token_stats.json）"""
+    """读取该书落盘的 token 统计（分析 token_stats.json + 总结 summary_token_stats.json）。
+
+    categories 里带 model 的新数据会附带逐类费用（models.dev 挂牌价；
+    无 model 的老数据不算费——历史 JSON 无模型名，按现牌价推定会失真）。
+    """
     output_dir = book_service.get_output_dir(book_id)
     if output_dir is None:
         raise HTTPException(status_code=404, detail=f"书目不存在: {book_id}")
@@ -198,10 +202,34 @@ async def get_book_token_stats(book_id: str) -> dict:
         path = output_dir / name
         if path.exists():
             try:
-                result[key] = json.loads(path.read_text(encoding="utf-8"))
+                data = json.loads(path.read_text(encoding="utf-8"))
+                _attach_category_fees(data)
+                result[key] = data
             except Exception as e:
                 logger.warning(f"读取 {name} 失败: {e}")
     return result
+
+
+def _attach_category_fees(data: dict) -> None:
+    """就地给 categories 里有 model 的条目附费用；返回是否全部有价。"""
+    from backend.core.model_catalog import calc_model_cost
+
+    total = 0.0
+    priced_any = False
+    for entry in (data.get("categories") or {}).values():
+        model = entry.get("model") if isinstance(entry, dict) else None
+        if not model:
+            entry["usd"] = None if isinstance(entry, dict) else entry
+            continue
+        fee = calc_model_cost(model, entry.get("input_tokens", 0),
+                              entry.get("output_tokens", 0),
+                              entry.get("cached_tokens", 0))
+        entry["usd"] = round(fee["usd"], 4) if fee else None
+        if fee:
+            total += fee["usd"]
+            priced_any = True
+    data["total_usd"] = (round(total, 4) if priced_any
+                         else (None if (data.get("categories") or {}) else 0.0))
 
 
 @router.get("/{book_id}/characters")

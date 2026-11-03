@@ -70,7 +70,8 @@ class PipelineStatus(StrEnum):
 # DiscoveryPayload:      {events: int, foreshadows: list[str], characters: list[str],
 #                         unresolved: list[str]}
 # TokenStatsPayload:     {category: str, input_tokens: int, output_tokens: int,
-#                         current_tokens?: int, source?: "summary"}
+#                         current_tokens?: int, source?: "summary",
+#                         model?: str, cached_tokens?: int, usage_status?: str}
 # TokenDeltaPayload:     {context: str, session_id: str, unit_idx: int,
 #                         delta: {...}, timestamp: float}
 # StateChangePayload:    {state: WSState, detail: str}

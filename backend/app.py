@@ -190,6 +190,13 @@ def create_app() -> FastAPI:
             logger.warning(f"依赖健康检查失败（不影响启动）: {e}")
         yield
 
+        # 退出时同步刷盘持久账本（运行期走节流异步写；这里兜底批末数据）
+        try:
+            from backend.services.usage_ledger import get_usage_ledger
+            get_usage_ledger().save_sync()
+        except Exception as e:
+            logger.warning(f"用量账本退出刷盘失败: {e}")
+
     app = FastAPI(title="Novel Analyzer Web", version="0.1.0", lifespan=lifespan)
 
     # 开发期前端跑在 vite dev server（不同端口），需要 CORS
