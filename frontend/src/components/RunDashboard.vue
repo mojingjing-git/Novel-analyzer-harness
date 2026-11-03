@@ -232,6 +232,10 @@ const sparklinePoints = computed(() => {
   align-items: baseline;
   margin-bottom: 4px;
 }
+/* 数值起点钉在卡片宽 75% 处（不再贴最右），与下方曲线的重心位置呼应 */
+.rd-sparkline-head .rd-label {
+  flex: 0 0 75%;
+}
 .rd-rate-value {
   font-size: 13px;
   font-weight: 600;
