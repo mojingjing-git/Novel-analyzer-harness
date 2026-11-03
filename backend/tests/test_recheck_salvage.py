@@ -248,13 +248,112 @@ async def test_layer_b_missing_branch_hits_goes_to_human(tmp_path):
 
 
 def test_closing_satisfied_rules():
-    or_reg = {"type": "OR", "closable": ["c1", "c2"]}
-    and_reg = {"type": "AND", "branches": [{"branch_id": "c1"}, {"branch_id": "c2"}]}
-    assert closing_satisfied(or_reg, [{"branch_id": "c2"}]) is True
-    assert closing_satisfied(or_reg, [{"branch_id": "c3"}]) is False
-    assert closing_satisfied(and_reg, [{"branch_id": "c1"}, {"branch_id": "c2"}]) is True
-    assert closing_satisfied(and_reg, [{"branch_id": "c1"}]) is False
-    assert closing_satisfied({"type": "UNCERTAIN"}, []) is None  # 转人工
+    or_reg = {"branches": [{"branch_id": "c1"}, {"branch_id": "c2"}],
+              "closing": {"type": "OR", "closable": ["c1", "c2"]}}
+    and_reg = {"branches": [{"branch_id": "c1"}, {"branch_id": "c2"}],
+               "closing": {"type": "AND"}}
+    assert closing_satisfied(or_reg["closing"], [{"branch_id": "c2"}], or_reg) is True
+    assert closing_satisfied(or_reg["closing"], [{"branch_id": "c3"}], or_reg) is False
+    # AND 的 branch 全集来自 reg["branches"]（PREREG 的 closing 里没有 branches）
+    assert closing_satisfied(and_reg["closing"],
+                             [{"branch_id": "c1"}, {"branch_id": "c2"}], and_reg) is True
+    assert closing_satisfied(and_reg["closing"], [{"branch_id": "c1"}], and_reg) is False
+    assert closing_satisfied({"type": "UNCERTAIN"}, [], {"branches": [], "closing": {}}) is None
+
+
+@pytest.mark.asyncio
+async def test_layer_b_and_closing_satisfied_when_all_branches_hit(tmp_path):
+    """AND 型两个分支都命中 → verified（v2 的 AND 恒假修复的回归）。"""
+    _write_block(tmp_path, 1, RESOLUTION_TEXT + " 糖块本身来自上界祭品。")
+    item = _item("fs_001")
+    cand = _candidate()
+    prereg = {"fs_001": _prereg("AND")}
+
+    async def call_model(prompt):
+        ev_id = prompt.split("evidence_id=")[1].split("（")[0].strip()
+        return json.dumps({
+            "candidate_id": "fs_001", "verdict": "VERIFIED", "reason_code": "supported",
+            "answer": "两个分支均被回答",
+            "supporting_quote": "两界众生皆是同一真实存在的两重投影",
+            "evidence_id": ev_id,
+            "counter_search": {"performed": True, "checked_evidence_ids": [ev_id], "counter_quotes": []},
+            "branch_hits": [{"branch_id": "c1", "evidence_id": ev_id},
+                            {"branch_id": "c2", "evidence_id": ev_id}],
+        })
+
+    results, stats = await layer_b_verify(call_model, [cand], prereg,
+                                          {"fs_001": item}, tmp_path / "blocks", concurrency=1)
+    assert stats["verified"] == 1
+    assert results[0]["outcome"] == "verified"
+
+
+@pytest.mark.asyncio
+async def test_layer_b_branch_hits_missing_is_format_reject(tmp_path):
+    """B7：VERIFIED 但 branch_hits 整个缺失 = schema 违规 → format_reject（不是 closing_unmet）。"""
+    _write_block(tmp_path, 1, RESOLUTION_TEXT)
+    item = _item("fs_001")
+    prereg = {"fs_001": _prereg("OR")}
+
+    async def call_model(prompt):
+        ev_id = prompt.split("evidence_id=")[1].split("（")[0].strip()
+        return json.dumps({
+            "candidate_id": "fs_001", "verdict": "VERIFIED", "reason_code": "supported",
+            "answer": "没写 branch_hits",
+            "supporting_quote": "两界众生皆是同一真实存在的两重投影",
+            "evidence_id": ev_id,
+            "counter_search": {"performed": True, "checked_evidence_ids": [ev_id], "counter_quotes": []},
+        })
+
+    results, stats = await layer_b_verify(call_model, [_candidate()], prereg,
+                                          {"fs_001": item}, tmp_path / "blocks", concurrency=1)
+    assert stats["format_rejects"] == 1
+    assert results[0]["outcome"] == "format_reject"
+
+
+@pytest.mark.asyncio
+async def test_resolved_chapter_comes_from_quote_segment(tmp_path):
+    """P1-3 回归：引文落在指针窗段时 resolved_chapter 取该段章号，不是来源块首章。"""
+    _write_block(tmp_path, 1, "第1章 李火旺捡到糖块。")
+    _write_block(tmp_path, 3, RESOLUTION_TEXT)  # 引文在 ch3（来源块 range 1-4 的第二段）
+    item = _item("fs_001")
+    prereg = {"fs_001": _prereg("OR")}
+
+    async def call_model(prompt):
+        seg_map = {}
+        for part in prompt.split("--- evidence_id=")[1:]:
+            ev = part.split("（")[0].strip()
+            seg_map[ev] = part
+        target = next(ev for ev, s in seg_map.items() if "三身论被正面道出" in s)
+        return json.dumps({
+            "candidate_id": "fs_001", "verdict": "VERIFIED", "reason_code": "supported",
+            "answer": "三身论解释",
+            "supporting_quote": "两界众生皆是同一真实存在的两重投影",
+            "evidence_id": target,
+            "counter_search": {"performed": True, "checked_evidence_ids": [target], "counter_quotes": []},
+            "branch_hits": [{"branch_id": "c1", "evidence_id": target}],
+        })
+
+    results, _ = await layer_b_verify(call_model, [_candidate()], prereg,
+                                      {"fs_001": item}, tmp_path / "blocks", concurrency=1)
+    assert results[0]["outcome"] == "verified"
+    shadow = ForeshadowLedger()
+    shadow.items = [item]
+    apply_to_shadow(shadow, results, {"fs_001": item})
+    assert item.resolved_chapter == 3  # 不是 1（来源块首章）
+
+
+def test_da_protection_records_but_never_flips():
+    """C6：DIFFERENT_ANSWER 条目 EVEN VERIFIED 也只加 note，不改 status。"""
+    item = _item("fs_001")
+    shadow = ForeshadowLedger()
+    shadow.items = [item]
+    results = [{"fs_id": "fs_001", "outcome": "verified",
+                "record": type("R", (), {"reason": "supported", "answer": "x"})(),
+                "chapter": 1007}]
+    actions = apply_to_shadow(shadow, results, {"fs_001": item}, da_ids={"fs_001"})
+    assert actions["applied"] == 0 and actions["da_protected"] == 1
+    assert item.status == "active" and item.needs_review is True
+    assert any("DIFFERENT_ANSWER" in n for n in item.notes)
 
 
 # ---------------------------------------------------------------- 落账规则

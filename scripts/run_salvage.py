@@ -109,12 +109,22 @@ def make_call_model(cfg, args):
     max_tokens = int(cfg.analysis.recheck_max_tokens)
 
     async def call_model(prompt: str) -> str:
-        res = await llm.chat_auto(messages=[{"role": "user", "content": prompt}],
-                                  max_tokens=max_tokens)
-        # chat_auto 对 400/401 返回 success=False 不抛——必须 raise，否则整轮静默 0 判定
-        if not getattr(res, "success", True):
-            raise RuntimeError(f"打捞调用失败：{getattr(res, 'error', '') or '未知错误'}")
-        return getattr(res, "content", "") or ""
+        # 外层重试（预检 P2-3）：chat_auto 内部重试管 API 层；这里管网络/瞬时异常，
+        # 38 条小样本每废 1 条候选都伤统计
+        last: Exception | None = None
+        for attempt in range(3):
+            try:
+                res = await llm.chat_auto(messages=[{"role": "user", "content": prompt}],
+                                          max_tokens=max_tokens)
+                # chat_auto 对 400/401 返回 success=False 不抛——必须 raise，否则整轮静默 0 判定
+                if not getattr(res, "success", True):
+                    raise RuntimeError(f"打捞调用失败：{getattr(res, 'error', '') or '未知错误'}")
+                return getattr(res, "content", "") or ""
+            except Exception as e:  # noqa: BLE001
+                last = e
+                if attempt < 2:
+                    await asyncio.sleep(2 ** attempt * 2)
+        raise last  # type: ignore[misc]
 
     return call_model
 
@@ -199,12 +209,16 @@ async def preregister_criteria(call_model, items: list[dict]) -> dict[str, dict]
     return reg
 
 
-def closing_satisfied(closing: dict, branch_hits: list[dict]) -> bool | None:
-    """关闭条件是否满足。None = 无法判定（branch_hits 缺失按 None → format_reject）。"""
+def closing_satisfied(closing: dict, branch_hits: list[dict], reg: dict) -> bool | None:
+    """关闭条件是否满足。None = 无法判定（UNCERTAIN → 转人工）。
+
+    AND 的 branch 全集取预登记的 reg["branches"]（PREREG 输出的 closing 里没有
+    branches 字段——v2 曾因此恒 False，所有 AND 型 VERIFIED 全部 closing_unmet）。
+    """
     ctype = closing.get("type")
     hit_ids = {b.get("branch_id") for b in branch_hits if isinstance(b, dict)}
     if ctype == "AND":
-        need = {b.get("branch_id") for b in closing.get("branches", []) if isinstance(b, dict)}
+        need = {b.get("branch_id") for b in (reg.get("branches") or []) if isinstance(b, dict)}
         return bool(need) and need <= hit_ids
     if ctype == "OR":
         closable = set(closing.get("closable") or [])
@@ -236,7 +250,8 @@ LAYER_A_PROMPT = """你是伏笔线索匹配员。任务：在一段小说分析
 """
 
 
-async def layer_a_match(call_model, questions: list[dict], stream: list[dict]) -> tuple[list[dict], dict]:
+async def layer_a_match(call_model, questions: list[dict], stream: list[dict],
+                  *, max_chapter: int = 1046) -> tuple[list[dict], dict]:
     """返回 (候选列表, 统计)。chunk 切分按字符预算；问题清单每轮原样重复（稳定前缀）。"""
     q_text = "\n".join(f"- {q['fs_id']} | {q['question']} | 标准: {q['criteria']} | 背景: {q['description']}"
                        for q in questions)
@@ -265,7 +280,7 @@ async def layer_a_match(call_model, questions: list[dict], stream: list[dict]) -
                                        block_ids=json.dumps(block_ids), stream=stream_text)
         rows = extract_json_array(await call_model(prompt))
         stats["passes"] += 1
-        kept = 0
+        kept: list[dict] = []
         for row in rows:
             if not isinstance(row, dict):
                 continue
@@ -285,14 +300,28 @@ async def layer_a_match(call_model, questions: list[dict], stream: list[dict]) -
                 continue
             refs = row.get("refs") if isinstance(row.get("refs"), list) else []
             refs = [r for r in refs if isinstance(r, dict)
-                    and isinstance(r.get("chapter"), int) and r.get("role") in ("setup", "resolution", "context")]
+                    and isinstance(r.get("chapter"), int) and 1 <= r["chapter"] <= max_chapter
+                    and r.get("role") in ("setup", "resolution", "context")]
             row["refs"] = refs
             rng = next((c["chapter_range"] for c in chunk if c["block_id"] == sb), (sb, sb))
             row["source_chapter_range"] = list(rng)
+            kept.append(row)
+        # 每段候选上限（防模型一次回几百条全进 Layer B）+ 去重
+        rank = {"high": 0, "medium": 1, "low": 2}
+        kept.sort(key=lambda r: rank.get(r.get("confidence"), 3))
+        dedup = 0
+        for row in kept[:MAX_CANDIDATES_PER_PASS]:
+            key = (row["fs_id"], row["source_block_id"])
+            if key in {(c["fs_id"], c["source_block_id"]) for c in candidates}:
+                dedup += 1
+                continue
             candidates.append(row)
-            kept += 1
-        log(f"  Layer A {ci + 1}/{len(chunks)} 段：候选 {kept}（原始 {len(rows)}，"
-            f"拒：bad_id {stats['rejected_bad_id']} / quote {stats['rejected_quote']} / block {stats['rejected_block']}）")
+        stats["dedup"] = stats.get("dedup", 0) + dedup
+        if len(kept) > MAX_CANDIDATES_PER_PASS:
+            stats["capped"] = stats.get("capped", 0) + len(kept) - MAX_CANDIDATES_PER_PASS
+        log(f"  Layer A {ci + 1}/{len(chunks)} 段：候选 {min(len(kept), MAX_CANDIDATES_PER_PASS)}（原始 {len(rows)}，"
+            f"拒：bad_id {stats['rejected_bad_id']} / quote {stats['rejected_quote']} / block {stats['rejected_block']}；"
+            f"去重 {dedup}，截断 {max(0, len(kept) - MAX_CANDIDATES_PER_PASS)}）")
     return candidates, stats
 
 
@@ -324,6 +353,12 @@ def stratified_sample(items: list, sample_n: int, seed: int) -> list[str]:
 
 # ---------------------------------------------------------------- Stage 4：Layer B 验证
 
+#: 每个蒸馏流分段的候选上限（防模型一次回几百条全进 Layer B）
+MAX_CANDIDATES_PER_PASS = 40
+#: 指针窗半径（原文章符）——重定位命中时围绕短语截取
+POINTER_BEFORE = 1500
+POINTER_AFTER = 2500
+
 SALVAGE_PROMPT = """你是伏笔回收的复核员。账本中下面这条伏笔处于"待确认"（此前复检判证据不足）。
 现有一条打捞候选主张：**该伏笔的问题已被一段原文回收**。请对照给出的原文判断这个主张是否成立。
 
@@ -349,7 +384,7 @@ SALVAGE_PROMPT = """你是伏笔回收的复核员。账本中下面这条伏笔
 分支预登记（branch_id 由这里来，branch_hits 必须引用它们）：
 {prereg}
 
-以下 {segment_count} 段原文各自有 evidence_id（第 1 段是候选来源块原文，其余为 resolution
+以下 {segment_count} 段原文各自有 evidence_id（第 1 组是候选来源块原文，其余为 resolution
 指针章的窗口）。supporting_quote / counter_quotes 必须逐字取自其中一段，evidence_id 原样回填：
 
 {segments}
@@ -369,7 +404,11 @@ SALVAGE_PROMPT = """你是伏笔回收的复核员。账本中下面这条伏笔
 
 
 def build_evidence(candidate: dict, blocks_dir: Path) -> list[dict]:
-    """证据段列表：来源块原文（按章拆段）+ resolution 指针窗。返回 [{chapter, text}]。"""
+    """证据段列表：来源块原文（按章拆段）+ resolution 指针窗。返回 [{chapter, text}]。
+
+    指针重定位（预检 P1-4）：蒸馏句是 LLM 转述，回原文常非逐字——先用 digest_quote
+    找重定位锚点，命中则围绕短语截窗；未命中退全章（单章 ≈3000 字，整章兜底不贵）。
+    """
     segs: list[dict] = []
     seen: set[int] = set()
     start, end = candidate.get("source_chapter_range") or (candidate["source_block_id"],) * 2
@@ -379,6 +418,7 @@ def build_evidence(candidate: dict, blocks_dir: Path) -> list[dict]:
             text = p.read_text(encoding="utf-8")
             segs.append({"chapter": ch, "text": text})
             seen.add(ch)
+    relocate_phrase = (candidate.get("digest_quote") or "").strip()[:24]
     for ref in candidate.get("refs") or []:
         if ref.get("role") != "resolution":
             continue
@@ -389,13 +429,13 @@ def build_evidence(candidate: dict, blocks_dir: Path) -> list[dict]:
         if not base.exists():
             continue
         text = base.read_text(encoding="utf-8")
-        phrase = (ref.get("phrase") or "")
+        phrase = (ref.get("phrase") or "").strip() or relocate_phrase
         pos = text.find(phrase) if phrase else -1
         if pos >= 0:
-            lo, hi = max(0, pos - 1500), min(len(text), pos + 2500)
+            lo, hi = max(0, pos - POINTER_BEFORE), min(len(text), pos + POINTER_AFTER)
             seg_text = ("…" if lo > 0 else "") + text[lo:hi] + ("…" if hi < len(text) else "")
         else:
-            seg_text = text[:4000]
+            seg_text = text  # 全章兜底
         segs.append({"chapter": p_ch, "text": seg_text})
         seen.add(p_ch)
     return segs
@@ -470,14 +510,23 @@ async def layer_b_verify(call_model, candidates: list[dict], prereg: dict,
                                           allowed_evidence_ids=allowed_ids, locate=locate)
             if record.verdict == "VERIFIED":
                 hits = payload.get("branch_hits") if isinstance(payload.get("branch_hits"), list) else []
-                sat = closing_satisfied(reg.get("closing") or {}, hits)
-                if sat is None or sat is False:
-                    # 引文真但关闭条件未满足/缺失 → 不落 resolved，转人工（C4/前沿 P1-3）
+                if not hits:
+                    # B7：VERIFIED 无 branch_hits = schema 违规 → format_reject
+                    results.append({"fs_id": fid, "outcome": "format_reject",
+                                    "reason": "branch_hits_missing", "record": record})
+                    stats["format_rejects"] += 1
+                    return
+                sat = closing_satisfied(reg.get("closing") or {}, hits, reg)
+                if sat is not True:
+                    # 引文真但关闭条件未满足/UNCERTAIN → 不落 resolved，转人工（C4/前沿 P1-3）
                     results.append({"fs_id": fid, "outcome": "closing_unmet",
                                     "record": record, "branch_hits": hits, "closing": reg.get("closing")})
                     return
+                # resolved_chapter 取引文所在段的章号（预检 P1-3：不是恒取首段）
+                seg_ch = {s["evidence_id"]: s["chapter"] for s in segments}
+                chapter = seg_ch.get(record.evidence_id, segments[0]["chapter"])
                 results.append({"fs_id": fid, "outcome": "verified", "record": record,
-                                "branch_hits": hits, "chapter": segments[0]["chapter"]})
+                                "branch_hits": hits, "chapter": chapter})
                 stats["verified"] += 1
             else:
                 results.append({"fs_id": fid, "outcome": "questioned", "record": record})
@@ -513,9 +562,11 @@ def extract_json_object(text: str) -> dict | None:
 # ---------------------------------------------------------------- 落账（影子）
 
 
-def apply_to_shadow(shadow: ForeshadowLedger, results: list[dict], items_by_id: dict) -> dict:
+def apply_to_shadow(shadow: ForeshadowLedger, results: list[dict], items_by_id: dict,
+                    da_ids: set[str] | None = None) -> dict:
     """显式落账适配器（audit → ledger）。返回动作计数。"""
-    applied = closing_unmet = questioned = skipped = 0
+    da_ids = da_ids or set()
+    applied = closing_unmet = questioned = skipped = da_protected = 0
     by_id = {i.id: i for i in shadow.items}
     for r in results:
         fid = r["fs_id"]
@@ -527,6 +578,11 @@ def apply_to_shadow(shadow: ForeshadowLedger, results: list[dict], items_by_id: 
         if outcome == "verified":
             if item.status != "active" or item.resolution_quality:
                 skipped += 1
+                continue
+            if fid in da_ids:
+                # DA 防线（C6）：DIFFERENT_ANSWER 条目只记不改，翻案必须显式人工
+                _note(item, "打捞：候选成立，但该条此前判 DIFFERENT_ANSWER，按防线只记不改，待人工仲裁")
+                da_protected += 1
                 continue
             record = r["record"]
             item.status = "resolved"
@@ -546,7 +602,7 @@ def apply_to_shadow(shadow: ForeshadowLedger, results: list[dict], items_by_id: 
             _note(item, f"打捞：候选未获原文支持（{record.reason}）")
             questioned += 1
         # call_failed / format_reject：不动账本
-    return {"applied": applied, "closing_unmet": closing_unmet,
+    return {"applied": applied, "closing_unmet": closing_unmet, "da_protected": da_protected,
             "questioned": questioned, "skipped": skipped}
 
 
@@ -575,8 +631,10 @@ async def main() -> int:
     ap.add_argument("--recheck-model", default="")
     ap.add_argument("--reasoning-effort", default="low")
     ap.add_argument("--concurrency", type=int, default=4)
-    ap.add_argument("--apply", action="store_true", help="写正账（默认影子；切正账需人工确认后显式传）")
+    ap.add_argument("--max-layer-b-calls", type=int, default=300,
+                    help="Layer B 调用硬顶（full 模式防候选爆炸白花钱）")
     args = ap.parse_args()
+    # 切正账是人工流程（§2.4：diff 报告 → 人工确认 → 备份 → 原子替换），不提供命令行直写
 
     cfg = ConfigManager(ROOT / "config.json").load()
     ledger_path = Path(args.ledger)
@@ -592,10 +650,25 @@ async def main() -> int:
     # 资格集（C5）：active ∧ needs_review，三处口径唯一
     eligible = [i for i in ledger.items
                 if i.status == "active" and i.needs_review and (i.question or "").strip()]
+    if len(eligible) != 503 and (ledger_path.parent / "recheck_verdicts.json").exists():
+        log(f"⚠️ 资格集 {len(eligible)} 条 ≠ 预期 503（可能与预期账本不同或口径漂移），继续但请留意分母")
     log(f"账本 {len(ledger.items)} 条；资格集 {len(eligible)} 条（active ∧ needs_review）")
     if not eligible:
         log("资格集为空，结束")
         return 0
+
+    # DA 防线（C6）：从历史判定明细提取 DIFFERENT_ANSWER 集合
+    da_ids: set[str] = set()
+    verdicts_path = ledger_path.parent / "recheck_verdicts.json"
+    if verdicts_path.exists():
+        try:
+            vd = json.loads(verdicts_path.read_text(encoding="utf-8"))
+            rows = vd if isinstance(vd, list) else (vd.get("verdicts") or [])
+            da_ids = {v["candidate_id"] for v in rows
+                      if isinstance(v, dict) and v.get("verdict") == "DIFFERENT_ANSWER"}
+            log(f"DA 防线：{len(da_ids)} 条 DIFFERENT_ANSWER 只记不改")
+        except Exception as e:
+            log(f"⚠️ 判定明细读取失败，DA 防线不可用：{e}")
 
     call_model = make_call_model(cfg, args)
 
@@ -612,9 +685,11 @@ async def main() -> int:
     t0 = time.time()
     log("== Stage 2：Layer A 蒸馏层匹配 ==")
     stream = load_distilled_stream(output_dir)
+    max_chapter = max((int(p.stem.split("_")[1]) for p in output_dir.glob("chapter_*_result.json")),
+                      default=1046)
     log(f"蒸馏块 {len(stream)} 个，匹配面 {sum(len(c['text']) for c in stream):,} 字")
     a_questions = [q for q in questions if (prereg.get(q["fs_id"]) or {}).get("closing", {}).get("type") != "UNCERTAIN"]
-    candidates, a_stats = await layer_a_match(call_model, a_questions, stream)
+    candidates, a_stats = await layer_a_match(call_model, a_questions, stream, max_chapter=max_chapter)
     log(f"Layer A 完成（{time.time() - t0:.0f}s）：候选 {len(candidates)}")
 
     # Stage 3：范围选择
@@ -626,7 +701,9 @@ async def main() -> int:
         scope.extend(smoke)
         log(f"pilot 抽样 {len(picked)} 条，其中 {len(scope) - len(smoke)} 条有候选；冒烟 {len(smoke)} 条")
     else:
-        scope = candidates
+        scope = candidates[:args.max_layer_b_calls]
+        if len(candidates) > len(scope):
+            log(f"⚠️ 候选 {len(candidates)} 超过硬顶 {args.max_layer_b_calls}，截断（优先级=Layer A 顺序）")
     log(f"== Stage 3：Layer B 验证 {len(scope)} 条候选 ==")
     t0 = time.time()
     results, b_stats = await layer_b_verify(call_model, scope, prereg, items_by_id, blocks_dir,
@@ -636,7 +713,7 @@ async def main() -> int:
     # Stage 4：落账（影子）+ 明细 + 报告
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     shadow = ForeshadowLedger.load(ledger_path)  # 独立实例 = 影子
-    actions = apply_to_shadow(shadow, results, items_by_id)
+    actions = apply_to_shadow(shadow, results, items_by_id, da_ids=da_ids)
     shadow_path = ledger_path.parent / f"salvage_ledger_{ts}.json"
     shadow.save(shadow_path)
 
@@ -657,8 +734,10 @@ async def main() -> int:
 
     from backend.utils.foreshadow_ledger import ForeshadowLedger as FL
     bars = FL.load(shadow_path).lifecycle_bars()
+    # 七栏守恒断言（C7）：加总必须等于条目数，否则账本损坏立即失败
+    assert sum(bars.values()) == len(shadow.items), f"七栏守恒失败：{bars} vs {len(shadow.items)}"
     log(f"动作：{json.dumps(actions, ensure_ascii=False)}")
-    log(f"影子账本七栏：{json.dumps(bars, ensure_ascii=False)}")
+    log(f"影子账本七栏：{json.dumps(bars, ensure_ascii=False)}（守恒 ✓）")
     log(f"明细：{detail_path}")
     log(f"影子账本：{shadow_path}（生产账本未动；切正账见 §2.4 流程）")
     if b_stats["calls"] > 0 and b_stats["verified"] + b_stats["questioned"] == 0:
