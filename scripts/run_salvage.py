@@ -185,10 +185,12 @@ PREREG_PROMPT = """你是判定标准分析员。下面每条伏笔有一条 ans
    "丹阳子" / "瓶女之爹" / "对事件的发现与追查" 三个分支，只命中人物就会误关闭；
    正确做法是登记为**一个**分支"丹阳子或瓶女之爹对瓶碎事件的发现与追查"（或两个都带完整
    谓词的分支"丹阳子对瓶碎事件的发现与追查"/"瓶女之爹对瓶碎事件的发现与追查"）。
-3. criteria 顶层含"或"且**各分支各自构成完整关闭条件** → closing =
+3. criteria 顶层含**明确的择一替代词"或"**且**各分支各自构成完整关闭条件** → closing =
    {{"type": "OR", "closable": [可独立关闭的 branch_id...]}}；
 4. 多个"？"的多联问且无"或" → closing = {{"type": "AND"}}（全部分支满足才算回收）；
-5. 引号内的"或"不算分隔符；"还是/以及/、"按语义判断；
+5. **"以及/和/与/加上"是并列合取，不是择一替代**——用它们连接的多个要求必须合在一个
+   分支里（或拆成 AND），**禁止**拆成 OR 分支。实测反例：criteria"眼睛的归属、来历，
+   以及计划目的"被拆成 OR 后只回答"目的"就误关闭了。引号内的"或"不算分隔符。
 6. 分数/并列关系/条件从句等嵌套逻辑无法用扁平分支表达 → closing = {{"type": "UNCERTAIN"}}
    （该条转人工，不参与自动打捞）。**宁可 UNCERTAIN，也不要拆出会被误关闭的碎分支。**
 
@@ -450,13 +452,22 @@ SALVAGE_PROMPT = """你是伏笔回收的复核员。账本中下面这条伏笔
 判定基准（必须遵守）：
 1. 主张成立 = 该段原文**正面回答**了 question，且满足 answer_criteria 预登记的关闭条件。
    回答必须是解释/揭示/兑现悬念本身——"又提了一次""继续推进"不算。
-2. 只依据给出的原文；不足以判断时判 QUESTIONED(no_evidence)，不要用常理推测。
-3. 必须做**反证检索**：在原文里找"该问题并未被回答"的迹象。`counter_search.performed` 标 true，
+2. **复述已知信息不算回答**：description、"登记时已知"内容、anchor_quote 里已有的信息，
+   原文只是重复它们 → 无信息增量，判 QUESTIONED(off_topic)。必须给出**超出登记时已知**的
+   新解释、新事实或新结果。
+3. **排他性问题不因确认其一而关闭**：question 问"是谁/哪些/是否只有 X"时，原文确认 X 是
+   主使/来源之一**不等于**排除了其他可能——除非原文明确排除（"不是…而是…""没有其他"），
+   否则判 QUESTIONED(no_evidence)。
+4. **时间与事件必须匹配**：引文所述事件必须就是 question 指向的那次事件/那个时段。
+   用"第一次发作"解释"治疗后的再次依赖"、把 A 事件的解释挪给 B 事件，判
+   QUESTIONED(off_topic)。同章后段的新答案可以成立，但事件必须对得上。
+5. 只依据给出的原文；不足以判断时判 QUESTIONED(no_evidence)，不要用常理推测。
+6. 必须做**反证检索**：在原文里找"该问题并未被回答"的迹象。`counter_search.performed` 标 true，
    `checked_evidence_ids` 必须是 JSON 数组；`counter_quotes` 没有就写 []；
    找到"问题并未被回答"的直接原句就写进 counter_quotes 并判 QUESTIONED(contradicted)。
-4. 判 VERIFIED 时 `supporting_quote` 必须从原文**逐字照抄**不少于 6 个字，
+7. 判 VERIFIED 时 `supporting_quote` 必须从原文**逐字照抄**不少于 6 个字，
    `evidence_id` 原样回填该段证据的值；找不到支持性原句 → 只能 QUESTIONED(no_evidence)。
-5. `branch_hits` 必须按"分支预登记"逐个标注：{{"branch_id": "c1", "evidence_id": "..."}}；
+8. `branch_hits` 必须按"分支预登记"逐个标注：{{"branch_id": "c1", "evidence_id": "..."}}；
    预登记 closing 为 AND 时全部 branches 都要有命中记录，OR 时至少覆盖一个 closable 分支。
 
 判定枚举（只能用这两个词之一）：
