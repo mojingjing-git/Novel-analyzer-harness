@@ -459,6 +459,139 @@ def test_multiple_verified_candidates_apply_once():
     assert item.resolved_chapter == 5  # 第一条通过的为准
 
 
+# ---------------------------------------------------------------- round2：合取截断 / recon
+
+
+def test_prereg_rejects_conjunction_prefix_cut_real_cases():
+    """round2 P1：fs_205（并…）与 fs_935（及其…）的真实旧错误分支必须被拒绝。
+
+    criteria 与分支均取自生产账本/冻结 prereg 的真实值。
+    """
+    # fs_205：criteria 顶层含或，旧 prereg 把"再次出场"单独列为可关闭分支
+    c205 = "后文袄景教再次出场并暴露其真实算计或对李火旺的后续行动即为回答"
+    bad205 = {"branches": [{"branch_id": "c1", "text": "后文袄景教再次出场"},
+                           {"branch_id": "c2", "text": "后文袄景教暴露其真实算计"},
+                           {"branch_id": "c3", "text": "后文袄景教对李火旺的后续行动即为回答"}],
+              "closing": {"type": "OR", "closable": ["c1", "c2", "c3"]}}
+    ok, why = validate_prereg_row(bad205, c205)
+    assert not ok and why.startswith("prefix_cut_conjunction")
+    # fs_935：真实 criteria + 真实旧 c1（"及其"开头余量）
+    c935 = "后文正面描写泰山石其人及其在大梁传教、被制服或逃遁的结果"
+    bad935 = {"branches": [{"branch_id": "c1", "text": "后文正面描写泰山石其人"},
+                           {"branch_id": "c2", "text": "后文正面描写泰山石在大梁传教的结果"},
+                           {"branch_id": "c3", "text": "后文正面描写泰山石被制服或逃遁的结果"}],
+              "closing": {"type": "OR", "closable": ["c1", "c2", "c3"]}}
+    ok2, why2 = validate_prereg_row(bad935, c935)
+    assert not ok2 and why2.startswith("prefix_cut_conjunction")
+    # 完整谓词分支不被误伤（整句 criteria 作为唯一分支）
+    good935 = {"branches": [{"branch_id": "c1", "text": c935}],
+               "closing": {"type": "OR", "closable": ["c1"]}}
+    ok3, why3 = validate_prereg_row(good935, c935)
+    assert ok3, why3
+
+
+def test_recon_loader_filters_and_dedup(tmp_path):
+    """recon 装载：资格过滤/已判排除/DA 排除/同章去重（59→58 型）。"""
+    from scripts.run_salvage import load_recon_candidates
+    d = tmp_path / "final_summary_checkpoint"
+    d.mkdir()
+    (d / "recon_1.json").write_text(json.dumps({"reconciliation": [
+        {"foreshadow_id": "fs_001", "is_resolved_in_this_batch": True,
+         "resolved_chapter": 485, "resolution_summary": "主张A", "confidence": "高"},
+        {"foreshadow_id": "fs_707", "is_resolved_in_this_batch": True,
+         "resolved_chapter": 485, "resolution_summary": "主张一", "confidence": "高"},
+        {"foreshadow_id": "fs_707", "is_resolved_in_this_batch": True,
+         "resolved_chapter": 485, "resolution_summary": "主张二", "confidence": "高"},
+        {"foreshadow_id": "fs_707", "is_resolved_in_this_batch": True,
+         "resolved_chapter": 900, "resolution_summary": "主张三", "confidence": "高"},
+        {"foreshadow_id": "fs_100", "is_resolved_in_this_batch": True, "resolved_chapter": 10,
+         "resolution_summary": "已判过", "confidence": "高"},
+        {"foreshadow_id": "fs_200", "is_resolved_in_this_batch": True, "resolved_chapter": 10,
+         "resolution_summary": "DA", "confidence": "高"},
+        {"foreshadow_id": "fs_300", "is_resolved_in_this_batch": True,
+         "resolved_chapter": "9999", "resolution_summary": "坏章号", "confidence": "高"},
+        {"foreshadow_id": "fs_400", "is_resolved_in_this_batch": False, "resolved_chapter": 10,
+         "resolution_summary": "未回收", "confidence": "高"},
+    ]}, ensure_ascii=False), encoding="utf-8")
+    eligible = {"fs_001", "fs_707", "fs_100", "fs_200", "fs_300", "fs_400"}
+    cands, stats = load_recon_candidates(d, eligible, excluded_fs={"fs_100"}, da_ids={"fs_200"})
+    assert stats["recon_duplicates"] == 1  # fs_707@485 第二条
+    keys = [(c["fs_id"], c["source_block_id"]) for c in cands]
+    assert ("fs_707", 485) in keys and ("fs_707", 900) in keys
+    assert all(c["fs_id"] != "fs_100" and c["fs_id"] != "fs_200" for c in cands)
+    assert all(c["origin"] == "recon" and isinstance(c["source_block_id"], int) for c in cands)
+    # schema 契约：source_block_id 是整数，range 是列表
+    c0 = next(c for c in cands if c["fs_id"] == "fs_001")
+    assert c0["source_block_id"] == 485 and c0["source_chapter_range"] == [485, 485]
+
+
+@pytest.mark.asyncio
+async def test_recon_neighbor_evidence_rescue(tmp_path):
+    """recon 指针偏 2 章、答案只在邻章：证据集含邻章原文且可 VERIFIED + 扩窗补救计数。"""
+    _write_block(tmp_path, 10, "第10章没有任何相关内容，只有风景描写。")
+    _write_block(tmp_path, 12, "第12章给出正面解释：" + RESOLUTION_TEXT)
+    item = _item("fs_001")
+    prereg = {"fs_001": _prereg("OR")}
+    cand = {"fs_id": "fs_001", "source_block_id": 10, "source_chapter_range": [10, 10],
+            "refs": [{"chapter": 10, "role": "resolution"}],
+            "digest_quote": "自述主张文本", "claim_text": "自述主张文本", "origin": "recon"}
+
+    async def call_model(prompt):
+        assert "第12章给出正面解释" in prompt       # 邻章原文进了证据集
+        assert "待核验主张" in prompt and "自述主张文本" in prompt  # claim 独立段
+        assert "登记时已知信息" in prompt            # known_block 段
+        seg_map = {}
+        for part in prompt.split("--- evidence_id=")[1:]:
+            ev = part.split("（")[0].strip()
+            seg_map[ev] = part
+        target = next(ev for ev, s in seg_map.items() if "三身论被正面道出" in s)
+        return json.dumps({
+            "candidate_id": "fs_001", "verdict": "VERIFIED", "reason_code": "supported",
+            "answer": "邻章正面解释",
+            "supporting_quote": "两界众生皆是同一真实存在的两重投影",
+            "evidence_id": target,
+            "counter_search": {"performed": True, "checked_evidence_ids": [target], "counter_quotes": []},
+            "branch_hits": [{"branch_id": "c1", "evidence_id": target}],
+        })
+
+    results, stats = await layer_b_verify(call_model, [cand], prereg,
+                                          {"fs_001": item}, tmp_path / "blocks", concurrency=1)
+    assert stats["verified"] == 1
+    r = results[0]
+    assert r["expansion_rescue"] is True            # 引文落在邻章（12），不在指针章（10）
+    assert r["chapter"] == 12
+    assert stats.get("expansion_rescues") == 1
+
+
+@pytest.mark.asyncio
+async def test_prompt_contains_anchor_known_and_claim(tmp_path):
+    """round2 P1-3 验收：渲染 prompt 含锚点原文、登记已知信息段、待核验主张段三块。"""
+    _write_block(tmp_path, 1, RESOLUTION_TEXT)
+    item = _item("fs_001")
+    item.anchor_quote = "这是之前那个幻境中的死去的傻子师姐给自己的糖块！"
+    item.anchor_chapter = 2
+    prereg = {"fs_001": _prereg("OR")}
+    cand = dict(_candidate(), origin="recon", claim_text="候选自述：糖块来自幻境")
+    captured = {}
+
+    async def call_model(prompt):
+        captured["p"] = prompt
+        ev_id = prompt.split("evidence_id=")[1].split("（")[0].strip()
+        return json.dumps({
+            "candidate_id": "fs_001", "verdict": "VERIFIED", "reason_code": "supported",
+            "answer": "x", "supporting_quote": "两界众生皆是同一真实存在的两重投影",
+            "evidence_id": ev_id,
+            "counter_search": {"performed": True, "checked_evidence_ids": [ev_id], "counter_quotes": []},
+            "branch_hits": [{"branch_id": "c1", "evidence_id": ev_id}],
+        })
+
+    await layer_b_verify(call_model, [cand], prereg, {"fs_001": item},
+                         tmp_path / "blocks", concurrency=1)
+    p = captured["p"]
+    assert "登记时已知信息" in p and item.anchor_quote[:16] in p
+    assert "待核验主张" in p and "候选自述：糖块来自幻境" in p
+
+
 # ---------------------------------------------------------------- 落账规则
 
 

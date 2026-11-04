@@ -92,6 +92,70 @@ def load_questions(items: list, skip_ids: set[str]) -> list[dict]:
             for it in items if it.id not in skip_ids]
 
 
+def load_recon_candidates(checkpoint_dir: Path, eligible_ids: set[str], excluded_fs: set[str],
+                          da_ids: set[str]) -> tuple[list[dict], dict]:
+    """从 1.0 管线 recon_*.json 提取回收自述候选（recon 注入专用）。
+
+    候选 schema 与蒸馏层对齐（source_block_id 为整数），额外带 origin="recon" 与
+    claim_text——Layer B 据此启用 ±2 邻章证据与"待核验主张"段。过滤链：
+    资格集 → 已判排除 → DA 排除 → (fs_id, resolved_chapter) 去重。
+    """
+    files = sorted(checkpoint_dir.glob("recon_*.json"),
+                   key=lambda p: int(p.stem.split("_")[1])
+                   if p.stem.split("_")[1].isdigit() else 0)
+    stats = {"files": len(files), "raw_verdicts": 0, "resolved_claims": 0,
+             "excluded_judged": 0, "excluded_da": 0, "excluded_bad_chapter": 0,
+             "recon_duplicates": 0}
+    candidates: list[dict] = []
+    seen_keys: set[tuple[str, int]] = set()
+    for p in files:
+        try:
+            d = json.loads(p.read_text(encoding="utf-8"))
+        except Exception as e:
+            log(f"⚠️ recon 文件解析失败 {p.name}: {e}")
+            continue
+        rows = d.get("reconciliation") if isinstance(d, dict) else d
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            stats["raw_verdicts"] += 1
+            if row.get("is_resolved_in_this_batch") is not True:
+                continue
+            stats["resolved_claims"] += 1
+            fid = row.get("foreshadow_id")
+            if fid not in eligible_ids:
+                continue
+            if fid in excluded_fs:
+                stats["excluded_judged"] += 1
+                continue
+            if fid in da_ids:
+                stats["excluded_da"] += 1
+                continue
+            ch = row.get("resolved_chapter")
+            if not isinstance(ch, int) or not (1 <= ch <= 1046):
+                stats["excluded_bad_chapter"] += 1
+                continue
+            key = (fid, ch)
+            if key in seen_keys:
+                stats["recon_duplicates"] += 1
+                continue
+            seen_keys.add(key)
+            claim = (row.get("resolution_summary") or "").strip()
+            candidates.append({
+                "fs_id": fid,
+                "source_block_id": ch,
+                "source_chapter_range": [ch, ch],
+                "refs": [{"chapter": ch, "role": "resolution"}],
+                "digest_quote": claim,
+                "claim_text": claim,
+                "origin": "recon",
+                "confidence": str(row.get("confidence") or ""),
+            })
+    return candidates, stats
+
+
 # ---------------------------------------------------------------- LLM
 
 
@@ -217,13 +281,21 @@ def _is_subsequence(needle: str, haystack: str) -> bool:
     return all(ch in it for ch in needle)
 
 
+#: 合取截断检测：OR 可关闭分支若是 criteria 真前缀、余量以这些连词开头 → 拒绝。
+#: 注意"及其"必须在"及"之前（否则 "及其…" 会被 "及" 提前匹配）。
+CONJ_PREFIX_RE = re.compile(r"^(及其|以及|并|且|和|加上|及)")
+
+
 def validate_prereg_row(row: dict, criteria: str) -> tuple[bool, str]:
     """预登记后验校验（fail-closed）：任一不满足即判 UNCERTAIN。
 
     - 分支非空，branch_id 唯一，text ≥ MIN_BRANCH_CHARS（防"丹阳子"式碎分支）；
     - 每个 branch text 的字符必须按序出现在 criteria 中（归一化子序列）——
       既拦编造内容，也允许"A/B 各自补全谓词"的合法展开；
-    - closing：AND 需 ≥1 分支；OR 需 closable 非空且 ⊆ 已登记 branch_id；UNCERTAIN 直接放行。
+    - closing：AND 需 ≥1 分支；OR 需 closable 非空且 ⊆ 已登记 branch_id，且
+      closable 分支不得是 criteria 的"合取截断"（真前缀 + 余量以连词开头，
+      fs_205 型"并…"、fs_935 型"及其…"）——只拦已知截断形式，不承担完整
+      合取语义校验；UNCERTAIN 直接放行。
     """
     branches = [b for b in (row.get("branches") or []) if isinstance(b, dict)]
     closing = row.get("closing") if isinstance(row.get("closing"), dict) else {}
@@ -249,6 +321,13 @@ def validate_prereg_row(row: dict, criteria: str) -> tuple[bool, str]:
         closable = closing.get("closable") or []
         if not closable or any(c not in ids for c in closable):
             return False, "or_bad_closable"
+        by_id = {b.get("branch_id"): _norm_text(b.get("text") or "") for b in branches}
+        for c in closable:
+            norm_b = by_id.get(c, "")
+            if norm_b and norm_b != norm_criteria and norm_criteria.startswith(norm_b):
+                rest = norm_criteria[len(norm_b):]
+                if CONJ_PREFIX_RE.match(rest):
+                    return False, f"prefix_cut_conjunction:{norm_b[:12]}"
         return True, "or"
     return False, f"bad_closing_type:{ctype}"
 
@@ -452,9 +531,10 @@ SALVAGE_PROMPT = """你是伏笔回收的复核员。账本中下面这条伏笔
 判定基准（必须遵守）：
 1. 主张成立 = 该段原文**正面回答**了 question，且满足 answer_criteria 预登记的关闭条件。
    回答必须是解释/揭示/兑现悬念本身——"又提了一次""继续推进"不算。
-2. **复述已知信息不算回答**：description、"登记时已知"内容、anchor_quote 里已有的信息，
+2. **复述已知信息不算回答**：下方"登记时已知信息"（description 与锚点原文）里已有的内容，
    原文只是重复它们 → 无信息增量，判 QUESTIONED(off_topic)。必须给出**超出登记时已知**的
-   新解释、新事实或新结果。
+   新解释、新事实或新结果。"待核验主张"是候选的自述，不是事实依据——其中与登记已知重复
+   的部分同样不算增量。
 3. **排他性问题不因确认其一而关闭**：question 问"是谁/哪些/是否只有 X"时，原文确认 X 是
    主使/来源之一**不等于**排除了其他可能——除非原文明确排除（"不是…而是…""没有其他"），
    否则判 QUESTIONED(no_evidence)。
@@ -476,6 +556,12 @@ SALVAGE_PROMPT = """你是伏笔回收的复核员。账本中下面这条伏笔
 
 该伏笔：
 {item_text}
+
+登记时已知信息（复述这些不算回答）：
+{known_block}
+
+待核验主张（候选自述，不作为事实依据）：
+{claim_block}
 
 分支预登记（branch_id 由这里来，branch_hits 必须引用它们）：
 {prereg}
@@ -508,6 +594,11 @@ def build_evidence(candidate: dict, blocks_dir: Path) -> list[dict]:
     segs: list[dict] = []
     seen: set[int] = set()
     start, end = candidate.get("source_chapter_range") or (candidate["source_block_id"],) * 2
+    if candidate.get("origin") == "recon":
+        # recon 指针漂移兜底（P2-1）：来源章 ±2 邻章全章直接进证据集；
+        # 生成期不做短语重定位（全章已覆盖，定位由 Layer B 逐字引文门禁完成）
+        start = max(1, int(start) - 2)
+        end = int(end) + 2
     for ch in range(int(start), int(end) + 1):
         p = blocks_dir / f"{ch:04d}.txt"
         if p.exists():
@@ -578,11 +669,18 @@ async def layer_b_verify(call_model, candidates: list[dict], prereg: dict,
             seg_text = "\n\n".join(
                 f"--- evidence_id={s['evidence_id']}（第{s['chapter']}章）---\n{s['text']}"
                 for s in segments)
+            anchor_quote = (getattr(item, "anchor_quote", "") or "").strip()
+            anchor_ch = getattr(item, "anchor_chapter", 0) or 0
             item_text = (f"fs_id={fid}\nquestion：{item.question}\n"
                          f"answer_criteria：{item.answer_criteria}\n"
                          f"description：{item.description}\n首次出现：第{item.first_seen_chapter}章")
+            known_block = (f"description：{item.description}\n"
+                           f"锚点原文（第{anchor_ch}章）：{anchor_quote or '（无）'}")
+            claim_text = (cand.get("claim_text") or "").strip()
+            claim_block = claim_text if claim_text else "（无——该候选来自蒸馏层匹配，主张即下方问题已被回收）"
             prereg_text = json.dumps(reg, ensure_ascii=False, indent=1)
-            prompt = SALVAGE_PROMPT.format(item_text=item_text, prereg=prereg_text,
+            prompt = SALVAGE_PROMPT.format(item_text=item_text, known_block=known_block,
+                                           claim_block=claim_block, prereg=prereg_text,
                                            segment_count=len(segments), segments=seg_text,
                                            candidate_id=fid)
             allowed_ids = {s["evidence_id"] for s in segments}
@@ -627,9 +725,14 @@ async def layer_b_verify(call_model, candidates: list[dict], prereg: dict,
                     return
                 # resolved_chapter 取引文所在段的章号（预检 P1-3：不是恒取首段）
                 chapter = seg_ch.get(record.evidence_id, segments[0]["chapter"])
+                pointer_ch = int(cand["source_block_id"])
+                rescue = chapter != pointer_ch
+                if rescue:
+                    stats["expansion_rescues"] = stats.get("expansion_rescues", 0) + 1
                 results.append({"fs_id": fid, "outcome": "verified", "record": record,
                                 "branch_hits": hits, "chapter": chapter,
-                                "source_block_id": cand["source_block_id"]})
+                                "source_block_id": cand["source_block_id"],
+                                "pointer_chapter": pointer_ch, "expansion_rescue": rescue})
                 stats["verified"] += 1
             else:
                 # 反证必须逐条定位（contradicted 才成立）；未定位则降级为 no_evidence。
@@ -760,6 +863,10 @@ async def main() -> int:
     ap.add_argument("--output-dir", required=True, help="块分析结果所在目录（蒸馏层来源）")
     ap.add_argument("--blocks", required=True)
     ap.add_argument("--mode", choices=["pilot", "full"], default="pilot")
+    ap.add_argument("--source", choices=["distilled", "recon"], default="distilled",
+                    help="recon：跳过蒸馏层匹配，注入 1.0 管线 recon 自述候选并重新预登记")
+    ap.add_argument("--exclude-judged", default="",
+                    help="逗号分隔的历史明细 json（其 results 中出现过的 fs 全部排除）")
     ap.add_argument("--sample", type=int, default=38)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--base-url", default="")
@@ -828,6 +935,41 @@ async def main() -> int:
         if not scope:
             log("无可重试候选，结束")
             return 0
+    elif args.source == "recon":
+        # recon 注入（PLAN round2）：装载 1.0 自述候选 → 重新预登记（修正后规则）→ Layer B
+        excluded_fs: set[str] = set()
+        for f in (args.exclude_judged or "").split(","):
+            f = f.strip()
+            if not f:
+                continue
+            p = Path(f) if Path(f).is_absolute() else output_dir / f
+            try:
+                dd = json.loads(p.read_text(encoding="utf-8"))
+                excluded_fs |= {r["fs_id"] for r in dd.get("results") or []
+                                if isinstance(r, dict) and r.get("fs_id")}
+            except Exception as e:
+                log(f"⚠️ 已判明细读取失败 {f}: {e}")
+        log(f"已判排除集：{len(excluded_fs)} 条 fs")
+        recon_dir = output_dir / "final_summary_checkpoint"
+        candidates, a_stats = load_recon_candidates(recon_dir, {i.id for i in eligible},
+                                                    excluded_fs, da_ids)
+        recon_fs = {c["fs_id"] for c in candidates}
+        log(f"recon 装载：候选 {len(candidates)} 条 / 唯一 fs {len(recon_fs)}"
+            f"（{json.dumps(a_stats, ensure_ascii=False)}）")
+        if not candidates:
+            log("recon 候选为空，结束")
+            return 0
+        t0 = time.time()
+        log("== Stage R：recon 候选重新预登记（修正后规则）==")
+        questions_r = [q for q in load_questions(eligible, skip_ids=set())
+                       if q["fs_id"] in recon_fs]
+        prereg = await preregister_criteria(call_model, questions_r)
+        uncertain = [k for k, v in prereg.items()
+                     if (v.get("closing") or {}).get("type") == "UNCERTAIN"]
+        valid_fs = recon_fs - set(uncertain)
+        scope = [c for c in candidates if c["fs_id"] in valid_fs]
+        log(f"预登记完成（{time.time() - t0:.0f}s）：UNCERTAIN 转人工 {len(uncertain)}；"
+            f"进 Layer B {len(scope)} 条候选 / {len({c['fs_id'] for c in scope})} 条唯一 fs")
     else:
         # Stage 1：criteria 预登记
         t0 = time.time()
@@ -889,7 +1031,8 @@ async def main() -> int:
         "verified_unique_ratio": round(verified_unique / max(len(eligible), 1), 4),
     }
     detail = {
-        "pipeline": "salvage", "run_id": ts, "mode": args.mode,
+        "pipeline": "salvage-recon" if args.source == "recon" else "salvage",
+        "source": args.source, "run_id": ts, "mode": args.mode,
         "eligible_total": len(eligible), "uncertain_to_human": len(uncertain),
         "candidates_total": cand_records, "summary": summary,
         "layer_a_stats": a_stats,
