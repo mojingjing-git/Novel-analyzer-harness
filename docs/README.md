@@ -14,6 +14,7 @@
 | [troubleshooting.md](./troubleshooting.md) | 日志位置、常见故障的排查路径与调优建议 |
 | [build.md](./build.md) | PyInstaller 打包流程、产物布局与打包期问题 |
 | [data-contract-vnext.md](./data-contract-vnext.md) | vnext 数据空间的语义契约（格式、指纹、裁决、账本） |
+| [自动验收器.md](./自动验收器.md) | 打捞结果的二次预筛：机械增量检测 + NLI 回答回路 + 评测口径 |
 | [data-contract-2.0.md](./data-contract-2.0.md) | 2.0 管线（1.x 作业层 + vnext 数据层合并）的形态与缺口清单 |
 | [issues.md](./issues.md) | 已知缺陷与未做的取舍 |
 | [baseline-data.md](./baseline-data.md) | 质量与性能基线数据（来自 `data/` 下的测量结果） |
