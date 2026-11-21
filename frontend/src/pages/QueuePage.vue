@@ -296,10 +296,16 @@ function onSelectLaneBlock(blockId: number) {
 // 分栏高度动态自适应与手动拉伸手柄
 const splitGridRef = ref<HTMLElement | null>(null)
 const customSplitHeight = ref<number | null>((() => {
-  const saved = localStorage.getItem('novel_analyzer_queue_split_height')
-  if (saved) {
-    const val = Number(saved)
-    if (!isNaN(val) && val >= 520) return val
+  try {
+    if (typeof localStorage !== 'undefined' && typeof localStorage.getItem === 'function') {
+      const saved = localStorage.getItem('novel_analyzer_queue_split_height')
+      if (saved) {
+        const val = Number(saved)
+        if (!isNaN(val) && val >= 520) return val
+      }
+    }
+  } catch {
+    // 忽略受限环境下的存储读取异常
   }
   return null
 })())

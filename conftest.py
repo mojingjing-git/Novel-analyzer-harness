@@ -33,17 +33,6 @@ pytest_ssl_cache.install_ssl_cache()
 
 import pytest  # noqa: E402  (隔离安装后再 import，保持文件意图清晰)
 
-# 5 档测试分级（--tier 0-4）。规则与清单在 pytest_tiers.py，hook 委托给它。
-import pytest_tiers  # noqa: E402
-
-
-def pytest_addoption(parser):
-    pytest_tiers.pytest_addoption(parser)
-
-
-def pytest_collection_modifyitems(config, items):
-    pytest_tiers.pytest_collection_modifyitems(config, items)
-
 
 @pytest.fixture(autouse=True)
 def _reset_runtime_singletons():
