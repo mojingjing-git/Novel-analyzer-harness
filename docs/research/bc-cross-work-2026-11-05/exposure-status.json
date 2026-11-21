@@ -1,0 +1,78 @@
+[
+  {
+    "work_id": "industrial_validation",
+    "title": "大国重工",
+    "original_split": "validation",
+    "exports": [
+      "validation",
+      "development"
+    ],
+    "unopened": false
+  },
+  {
+    "work_id": "industrial_holdout",
+    "title": "超级能源强国",
+    "original_split": "holdout",
+    "exports": [
+      "final_evaluation"
+    ],
+    "unopened": false
+  },
+  {
+    "work_id": "gaming_validation",
+    "title": "全职高手",
+    "original_split": "validation",
+    "exports": [
+      "validation",
+      "development"
+    ],
+    "unopened": false
+  },
+  {
+    "work_id": "gaming_holdout",
+    "title": "王者时刻",
+    "original_split": "holdout",
+    "exports": [
+      "final_evaluation"
+    ],
+    "unopened": false
+  },
+  {
+    "work_id": "daily_life_validation",
+    "title": "回到过去变成猫",
+    "original_split": "validation",
+    "exports": [
+      "validation",
+      "development"
+    ],
+    "unopened": false
+  },
+  {
+    "work_id": "daily_life_holdout",
+    "title": "我家老婆来自一千年前",
+    "original_split": "holdout",
+    "exports": [
+      "final_evaluation"
+    ],
+    "unopened": false
+  },
+  {
+    "work_id": "history_validation",
+    "title": "唐砖",
+    "original_split": "validation",
+    "exports": [
+      "validation",
+      "development"
+    ],
+    "unopened": false
+  },
+  {
+    "work_id": "history_holdout",
+    "title": "绍宋",
+    "original_split": "holdout",
+    "exports": [
+      "final_evaluation"
+    ],
+    "unopened": false
+  }
+]

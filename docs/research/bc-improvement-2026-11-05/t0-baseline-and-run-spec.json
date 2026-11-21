@@ -1,0 +1,132 @@
+{
+  "schema": "bc_baseline_and_run_spec_v1",
+  "run_id": "bc-improvement-20261105-v1",
+  "frozen_at": "2026-11-05T14:30:30+08:00",
+  "git_head": "68e1292900bca3250e26c213cdac5cf26aad4b19",
+  "manifest_id": "54e4061f92b95dce68d02dd570df26767949c0feb658ac4907f1a57263118592",
+  "model": "zcode/GLM-5.3-Flash + minimax-cn/MiniMax-M3.1-Flash",
+  "prompt_sha256": "9ea347987201b4832d7b68904adbcfa362e8396154b55bf4dda86e11084e4377",
+  "max_calls": 300,
+  "max_output_tokens": 32768,
+  "reference_policy": "source_first_blind_luna_proposals_with_independent_main_agent_review_frozen_before_test_evaluation",
+  "runtime_models": {
+    "chapter_acquisition": {
+      "model": "zcode/GLM-5.3-Flash",
+      "base_url": "http://127.0.0.1:3425/v1",
+      "temperature": 0.1,
+      "max_tokens": 65536,
+      "thinking_mode": {
+        "reasoning_effort": "low"
+      },
+      "block_size": 4
+    },
+    "recheck_and_acceptance": {
+      "model": "minimax-cn/MiniMax-M3.1-Flash",
+      "base_url": "http://127.0.0.1:3425/v1",
+      "reasoning_effort": "low",
+      "max_tokens": 32768,
+      "recheck_v2_batch_size": 8
+    }
+  },
+  "call_budget": {
+    "logical_calls_cap": 300,
+    "attempt_requests_cap": 400,
+    "max_concurrency": 2,
+    "stage_allocation": {
+      "M0_T0_freeze": {
+        "logical_calls": 0,
+        "notes": "纯本地盘点、哈希与语料冻结，0 外部 API 调用"
+      },
+      "M1_T1_trace_and_T2_dev_reference": {
+        "logical_calls": 48,
+        "notes": "存量回放 0 调用；4 部开发集抽样窗口基线采集与复检预留 <=48 次逻辑调用"
+      },
+      "M2_T3_b_fix_dev_comparison": {
+        "logical_calls": 64,
+        "notes": "4 部开发集修复后同窗口配对重跑与回归对比预留 <=64 次逻辑调用"
+      },
+      "M3_T4_c_on_demand_dev_eval": {
+        "logical_calls": 96,
+        "notes": ">=80 条真实候选上 current / full claims_v2 / on-demand claims_v2 对比预留 <=96 次逻辑调用"
+      },
+      "M4_holdout_final_check": {
+        "logical_calls": 80,
+        "notes": "4 部留出集一次性终验（基线 vs 修复后）预留 <=80 次逻辑调用；剩余 12 次作为安全缓冲"
+      }
+    }
+  },
+  "locked_acceptance_targets": {
+    "B1_omission_trace_coverage_min": 0.90,
+    "B1_trace_zero_business_diff_when_off": true,
+    "B2_holdout_min_works": 4,
+    "B2_holdout_min_topic_groups": 4,
+    "B2_holdout_min_reference_observations": 80,
+    "B2_holdout_min_per_work_observations": 10,
+    "B3_recall_gain_requires_non_increasing_unsupported_accepts": true,
+    "B3_min_work_win_ratio": 0.75,
+    "B3_max_single_work_recall_drop": 0.05,
+    "B4_max_call_increase_ratio": 0.25,
+    "B4_max_wall_clock_increase_ratio": 0.30,
+    "B4_max_retryable_format_failure_rate": 0.05,
+    "C1_min_real_candidates": 80,
+    "C1_max_false_accept_rate_delta_vs_full_v2": 0.03,
+    "C1_min_v2_call_reduction_ratio": 0.40
+  },
+  "baseline_file_hashes": {
+    "backend/core/analyzer.py": "c4dbdb10f8da0c001344ec7868647c82931fb1acc333644b5cd26f3160244f3d",
+    "backend/core/pipeline.py": "17489ce1806b3792cf80f76a7bc5d27c4c4e1ee8e512c077f2b133db5efa1b35",
+    "backend/core/prompt_builder.py": "ca52c82207d9464bbc7e169152b87089e80264b72f470da880a39c3e254fbc63",
+    "backend/core/knowledge_base.py": "cabd44580037afd01ba5be9efe3d8a3de5aaa4d25a2f02a03f845c65ed1d4197",
+    "backend/core/memory_state.py": "de60d727c62b2a31a154172e1009a79dbdc1d2c84346a6bde9e14347d35ead83",
+    "backend/core/evidence.py": "d47ffdaee1516e0fd09d1f0ef2c48face71bbaa37951d55364f69a9b2c0f3fa0",
+    "backend/core/anchor.py": "a60194ce1c9103bf450820ecd408f2d5ff69b8dbb94f20027e4dbef71c9cc6cb",
+    "backend/core/text_units.py": "62c45ee05ef439eb5ad52e4a4c6930c576c2f3fd5c6da69e57c38b6b5bdb6ff9",
+    "backend/services/final_summary.py": "293624a4a7388a4fe3a02b87ef47f45ccd30f93bb81437dfbede0959ac79a7f7",
+    "backend/services/recheck_v2.py": "6e77fdd6645bbe1f09c6ff36230f6572a37b4825503ea4f03f2a209229875fe5",
+    "backend/utils/foreshadow_ledger.py": "990ace948b5974aa14958ada22ba484ade285500b8fd667c1c48296d5a155966",
+    "backend/utils/text_utils.py": "9a959de96b9063a3d1c4c832850125be4f5fc8b0c42f6729ea30e7d2d39d3520",
+    "backend/vnext/resolution.py": "01b065a6983c97a06d75542def0d75dedc0ae3cb5d83f74b37feda7496fc9aa7",
+    "backend/common/claim_evidence_v2.py": "77e7c2884a53f2358a8f91773ec4c8b40a32adf5890f1d99078bb0c436eee7d5",
+    "backend/common/closure.py": "7ca568bae800be3d1ebe19c3728086ad2eaf76cd34e0fe1acfbc11274281dadd",
+    "backend/common/evaluation_corpus.py": "48658837e509a7e7ef13be73eccfe68f82d8b34b5257d5e430782b36b358aa8c",
+    "scripts/acceptance_gate.py": "8912dbbd57c6798132de9a9fac5fb243cc4329855a4d40ae19367d53f5126b79",
+    "scripts/bc_compare_claims.py": "15d106ff5c5eef70d5535b2f53d8bc0385e2f02087991d563af19a5e4d089ebf",
+    "scripts/bc_corpus.py": "7573bcb6c8ed4324793fd5462ca51cdfb7998b9674c42e18ec5c0238ae3f730e",
+    "docs/BC改进任务书.md": "abdce0a4d2623dc1daa6c8d4f4ac86add024b060ed851c4c1d7e821be5a71b70",
+    "docs/跨作品BC评测.md": "4098dd42188e7e38f2d0f103e12f058c04e99191564b3782775ded40158d3372"
+  },
+  "prompt_hashes": {
+    "recheck_v2_prompt_template": "9ea347987201b4832d7b68904adbcfa362e8396154b55bf4dda86e11084e4377",
+    "recheck_v2_item_template": "81371c37ba9e1b440792585ad1d70cfa438807e1cd090b7ac3752edecc6bc206",
+    "recheck_v2_audit_prompt_template": "c99ef3d34e99b890ed85f74fdc5a785cfc2cef953396b3de2ce8e55cc04b030f",
+    "recheck_v2_audit_item_template": "5f8c407843d67f948b75e8e525a0d2b48b72510366c2e8e427a8c3a967c1e110",
+    "claim_evidence_v2_module": "77e7c2884a53f2358a8f91773ec4c8b40a32adf5890f1d99078bb0c436eee7d5"
+  },
+  "frozen_artifact_snapshots": {
+    "daogui_ledger": {
+      "path": "workspace/《道诡异仙》/output/foreshadow_ledger.json",
+      "sha256": "1369365a2bb8f4f48fe83cad4006ac5eb211fb77999e49298888ab3e7dae5363",
+      "bytes": 892361
+    },
+    "daogui_verdicts": {
+      "path": "workspace/《道诡异仙》/output/recheck_verdicts.json",
+      "sha256": "08ad391bee7423280d3b41301bf0ff9ddf1df7894b4b9ea000bd011d6a9a931a",
+      "bytes": 446790
+    },
+    "daogui_kb": {
+      "path": "workspace/《道诡异仙》/knowledge.json",
+      "sha256": "239472596e6facc93b98ffeeac535cbd69e4b83b4dcb7f5ca2ab8a8f33b0e883",
+      "bytes": 340319
+    },
+    "dafeng_ledger": {
+      "path": "workspace/分析结果/《大奉打更人》-20261103-0744/output/foreshadow_ledger.json",
+      "sha256": "078a3a15ad476e45e79f1a9c7abf075eeeb0da481ff36b7d771d3c9ca81efc02",
+      "bytes": 924810
+    },
+    "dafeng_kb": {
+      "path": "workspace/分析结果/《大奉打更人》-20261103-0744/knowledge.json",
+      "sha256": "ddf34b5d0fe710ceef7d800ffe96a79a15fa858834c11165264a0d01728d645e",
+      "bytes": 712158
+    }
+  }
+}

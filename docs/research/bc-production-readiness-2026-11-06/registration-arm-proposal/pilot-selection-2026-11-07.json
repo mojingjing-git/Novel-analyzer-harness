@@ -1,0 +1,172 @@
+{
+  "version": "registration_pilot_selection_2026_11_07_v1",
+  "status": "proposed_not_execution_ready",
+  "selection_rule": "first 1, 2, 3 original physical units; same rule for both works; no selection by answer position",
+  "works": [
+    {
+      "work_id": "t4_hist_holdout",
+      "exposure": "development_already_exposed",
+      "source_directory": "F:\\AI\\01_项目\\小说分析器\\workspace\\bc-evaluation\\t4-trial-20261106\\runs\\t4_hist_holdout\\candidate\\blocks",
+      "prefixes": [
+        {
+          "prefix_id": "p1",
+          "checkpoint": 1,
+          "units": [
+            {
+              "unit_id": 1,
+              "chars": 4431,
+              "sha256": "2c09ece7d73a285d8116d2852a716789c401e473841943008810b2095f2d7c20"
+            }
+          ],
+          "estimated_B_input_tokens": 2989,
+          "input_token_count_verified": false
+        },
+        {
+          "prefix_id": "p2",
+          "checkpoint": 2,
+          "units": [
+            {
+              "unit_id": 1,
+              "chars": 4431,
+              "sha256": "2c09ece7d73a285d8116d2852a716789c401e473841943008810b2095f2d7c20"
+            },
+            {
+              "unit_id": 2,
+              "chars": 3808,
+              "sha256": "6a7c5c99d55a0ccde8d52c10f7500ea4f099f61c41ed6989f6fc74fa6d60d45f"
+            }
+          ],
+          "estimated_B_input_tokens": 5029,
+          "input_token_count_verified": false
+        },
+        {
+          "prefix_id": "p3",
+          "checkpoint": 3,
+          "units": [
+            {
+              "unit_id": 1,
+              "chars": 4431,
+              "sha256": "2c09ece7d73a285d8116d2852a716789c401e473841943008810b2095f2d7c20"
+            },
+            {
+              "unit_id": 2,
+              "chars": 3808,
+              "sha256": "6a7c5c99d55a0ccde8d52c10f7500ea4f099f61c41ed6989f6fc74fa6d60d45f"
+            },
+            {
+              "unit_id": 3,
+              "chars": 2483,
+              "sha256": "788c4cd2bb7776a4c77f0fffa20f8d2e4a7facb627d90c7cf8b14f05683f19ac"
+            }
+          ],
+          "estimated_B_input_tokens": 6352,
+          "input_token_count_verified": false
+        }
+      ]
+    },
+    {
+      "work_id": "t4_game_holdout",
+      "exposure": "development_already_exposed",
+      "source_directory": "F:\\AI\\01_项目\\小说分析器\\workspace\\bc-evaluation\\t4-trial-20261106\\runs\\t4_game_holdout\\candidate\\blocks",
+      "prefixes": [
+        {
+          "prefix_id": "p1",
+          "checkpoint": 1,
+          "units": [
+            {
+              "unit_id": 1,
+              "chars": 3534,
+              "sha256": "252b1e35ee8dc477ddbd2b3574386a0329a10aeb024ed97a3d60d38e1a7182ad"
+            }
+          ],
+          "estimated_B_input_tokens": 2603,
+          "input_token_count_verified": false
+        },
+        {
+          "prefix_id": "p2",
+          "checkpoint": 2,
+          "units": [
+            {
+              "unit_id": 1,
+              "chars": 3534,
+              "sha256": "252b1e35ee8dc477ddbd2b3574386a0329a10aeb024ed97a3d60d38e1a7182ad"
+            },
+            {
+              "unit_id": 2,
+              "chars": 3456,
+              "sha256": "5e3d2bac9748e3c251c9595086de59ff10fa44496ab9a0c415245d5aec1f6ad6"
+            }
+          ],
+          "estimated_B_input_tokens": 4553,
+          "input_token_count_verified": false
+        },
+        {
+          "prefix_id": "p3",
+          "checkpoint": 3,
+          "units": [
+            {
+              "unit_id": 1,
+              "chars": 3534,
+              "sha256": "252b1e35ee8dc477ddbd2b3574386a0329a10aeb024ed97a3d60d38e1a7182ad"
+            },
+            {
+              "unit_id": 2,
+              "chars": 3456,
+              "sha256": "5e3d2bac9748e3c251c9595086de59ff10fa44496ab9a0c415245d5aec1f6ad6"
+            },
+            {
+              "unit_id": 3,
+              "chars": 3143,
+              "sha256": "979e1b3de5e5e4c3057708ab5e734a4d566dd4db6b19fc5359c4333c9dbfc111"
+            }
+          ],
+          "estimated_B_input_tokens": 6333,
+          "input_token_count_verified": false
+        }
+      ]
+    }
+  ],
+  "generator_both_arms": {
+    "model": "cn:deepseek-v4.1-flash",
+    "reasoning_effort": "",
+    "temperature": 0.1,
+    "basis": "unified across all 6 prefixes for both Arm A and Arm B; no mixing across arms or prefixes"
+  },
+  "reference_annotators": [
+    {
+      "id": "ref_1",
+      "model_history": {
+        "t4_hist_holdout__p1_to_p3": "codex/gpt-6-luna",
+        "t4_game_holdout__p1": "codex/gpt-6-luna",
+        "t4_game_holdout__p2_to_p3": "cn:deepseek-v4.1-flash (switched due to upstream luna 429 quota)"
+      },
+      "session": "isolated_1"
+    },
+    {
+      "id": "ref_2",
+      "model_history": {
+        "t4_hist_holdout__p1_to_p3": "codex/gpt-6-luna",
+        "t4_game_holdout__p1": "codex/gpt-6-luna",
+        "t4_game_holdout__p2_to_p3": "cn:deepseek-v4.1-flash (switched due to upstream luna 429 quota)"
+      },
+      "session": "isolated_2"
+    }
+  ],
+  "reference_independence": "separate sessions, model history documented per prefix; manual review before reference eligibility",
+  "blind_review_model": "cn:deepseek-v4.1-flash",
+  "human_review": "resolve reference qualification, criteria disagreements and possible duplicates before eligible reference set freeze",
+  "budget": {
+    "max_attempts": 42,
+    "max_input_tokens": 336000,
+    "max_output_tokens": 84000,
+    "per_request_input_tokens": 20000,
+    "per_request_output_tokens": 2000,
+    "concurrency": 2
+  },
+  "blocking_checks": [
+    "reference eligibility must exclude unresolved/disputed/single annotations until independently adjudicated",
+    "missing or conflicting per-arm matches must stay unresolved, never become missed by default",
+    "validate final full requests including blind-review materials against model-specific token limit; current char heuristic is not a verified upper bound"
+  ],
+  "model_calls_this_turn": 0
+}

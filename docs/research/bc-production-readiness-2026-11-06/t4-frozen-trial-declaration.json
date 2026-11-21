@@ -1,0 +1,477 @@
+{
+  "schema": "t4_frozen_trial_declaration_v1",
+  "frozen_at_utc": "2026-11-06T06:20:00+08:00",
+  "purpose": "首次在从未参与调试的作品上验证 B（伏笔登记/回收）与 C（按需复审）的端到端效果与成本",
+  "candidate_version": {
+    "gate_code_snapshot_id": "b7fdbe914620470d",
+    "provenance_schema_version": "provenance_cache_v1",
+    "scorer_version": "bc_scorer_t2_v1",
+    "claim_contract": "claims_v2",
+    "shared_gate_module": "backend/common/c_claim_audit_gate.py",
+    "scorer_module": "backend/common/bc_scorer_and_labels.py",
+    "provenance_module": "backend/common/provenance_cache.py"
+  },
+  "baseline_arm": {
+    "name": "baseline",
+    "description": "生产现状：四个开关全关。复检初次 SUPPORTED 直接落账，不触发 C 类升级复审；B 证据增强与目录保留均未启用",
+    "switches": {
+      "enable_c_on_demand_audit": false,
+      "fix_b2_evidence_and_recheck": false,
+      "fix_b4_flow_and_storage": false,
+      "enable_b_trace": false
+    }
+  },
+  "b_fixed_arm": {
+    "name": "b_fixed",
+    "description": "中间臂：只开 B 修复（证据增强与目录保留），C 按需复审仍关。用于隔离 C 开关的净效应",
+    "switches": {
+      "enable_c_on_demand_audit": false,
+      "fix_b2_evidence_and_recheck": true,
+      "fix_b4_flow_and_storage": true,
+      "enable_b_trace": true
+    }
+  },
+  "candidate_arm": {
+    "name": "candidate",
+    "description": "拟默认开启组合：复检初次 SUPPORTED 为暂定，必须经按需 claims_v2 复审才可落账",
+    "switches": {
+      "enable_c_on_demand_audit": true,
+      "fix_b2_evidence_and_recheck": true,
+      "fix_b4_flow_and_storage": true,
+      "enable_b_trace": true
+    }
+  },
+  "arm_comparison_plan": {
+    "B_improvement": "baseline → b_fixed（只变 B 开关），逐作品给登记与回答两个分母",
+    "C_isolated_effect": "b_fixed → candidate（只变 C 开关）",
+    "resource_and_adoption": "baseline → candidate（拟默认开启组合的真实增量）"
+  },
+  "frozen_scope": {
+    "chapter_range": "第1-12章（连续章节试产）",
+    "chapters_per_work": 12,
+    "retrieval_range": "同作品全书文本（允许检索范围内），目录容量受生产默认 max_foreshadow_catalog_high/mid 限制",
+    "prior_state_disclosure": "本批作品以“第1章起、无前情账本”为起点试产；不含任何既往分析结果。因此结论仅限该 12 章区间内的伏笔登记与回收，不代表全书收益。",
+    "same_layer_comparison": "两臂均通过真实生产链路（章节分析→调和→目录→复检→落账→保存恢复），在同一产物层比较"
+  },
+  "model_binding": {
+    "main_channel_model": "codex/gpt-6-luna",
+    "recheck_channel_model": "codex/gpt-6-luna",
+    "recheck_channel_base_url": "http://127.0.0.1:3425/v1",
+    "reasoning_effort": "low",
+    "temperature": 0.1,
+    "json_mode": "default",
+    "streaming_enabled": true,
+    "note": "两臂共用同一模型与同一参数。选型原因：网关侧 zcode/GLM-5.3-Flash 与 wb2api/cn:hy3 在试产前探测均返回 502 exceed quota limit / 405 拦截，codex/gpt-6-luna 实测可用且与复检通道同源（recheck_conflict_reason 为空）。模型在试产开始前冻结，试产期间不再更换。"
+  },
+  "budget": {
+    "logical_call_limit": 300,
+    "request_attempt_limit": 400,
+    "max_concurrency": 2,
+    "includes": "模型辅助标注、审核、重试与测试调用",
+    "context_limit_per_call": "章节分析 ≤ 32k tokens 输入；复检批次 ≤ 24k tokens 输入；claims_v2 复审 ≤ 24k tokens 输入",
+    "output_limit_per_call": "章节分析 ≤ 4096 tokens；复检/复审 ≤ 4096 tokens",
+    "realised_scope": "4 部作品 × 12 章 = 48 章；三臂（baseline/b_fixed/candidate）；两臂两两对比定位 B 与 C 各自的净效应"
+  },
+  "acceptance_thresholds": {
+    "B_improvement": "预先选定指标相对遗漏数减少 ≥20%；≥3/4 作品不退化，≥2 部改善",
+    "C_false_accept": "同一配对集上误接受不增加；同时列出误接受数量与负例分母",
+    "correct_answer_retention": "相对基线下降 ≤2 个百分点；存疑不计保留",
+    "decision_coverage": "同时报告接受/拒绝/存疑/格式失败/未触发误接受",
+    "resource": "同范围总 token 增幅 ≤15%；端到端 P95 耗时增幅 ≤20%",
+    "engineering": "关键反例、生产入口集成、保存恢复与全量后端/前端测试通过"
+  },
+  "works": [
+    {
+      "work_id": "t4_ind_holdout",
+      "topic_group": "ind",
+      "topic_label": "工业/科幻",
+      "title": "从红月开始",
+      "filename": "《从红月开始》（精校版全本）.txt",
+      "source": {
+        "filename": "《从红月开始》（精校版全本）.txt",
+        "bytes": 6676715,
+        "encoding": "gb18030",
+        "source_sha256": "fa3b4bd10b8dc26afd714aac45bc6347b586ab06db5eb4ae5cc55be547feb60a",
+        "decoded_chars": 3449740
+      },
+      "frozen_blocks": [
+        {
+          "chapter": 1,
+          "file": "t4_ind_holdout/blocks/0001.txt",
+          "sha256": "b977bb05dec3de2b0cc3ef65b5d9846f917f3e4372bc0c86933c54ad7bc5d97e",
+          "chars": 3300
+        },
+        {
+          "chapter": 2,
+          "file": "t4_ind_holdout/blocks/0002.txt",
+          "sha256": "810198322d35d5025de590afecf45d1f6797133235e7d5d200c813a03cdaa1c9",
+          "chars": 3464
+        },
+        {
+          "chapter": 3,
+          "file": "t4_ind_holdout/blocks/0003.txt",
+          "sha256": "cc4e2d1d9ecd1cab8be7e9efd117e418497fe76484cf7e3a397f9d848a0081d9",
+          "chars": 4154
+        },
+        {
+          "chapter": 4,
+          "file": "t4_ind_holdout/blocks/0004.txt",
+          "sha256": "b7e1b219127c2eb4972721f02b51e2745dde12289037ffb6a50a6798b5c12d28",
+          "chars": 3865
+        },
+        {
+          "chapter": 5,
+          "file": "t4_ind_holdout/blocks/0005.txt",
+          "sha256": "cc237c317c5b857d207371d8a31069389e3ce55f7d53b76caacdb8e9e0b889b6",
+          "chars": 3824
+        },
+        {
+          "chapter": 6,
+          "file": "t4_ind_holdout/blocks/0006.txt",
+          "sha256": "13e1ec04a1ff383d9c2326e3ff8da0042c7b1e31f8b76cb5fb0ece86848d6f38",
+          "chars": 2382
+        },
+        {
+          "chapter": 7,
+          "file": "t4_ind_holdout/blocks/0007.txt",
+          "sha256": "edc96c2911e5076dcd52055413a2e78fd31db44c18e1c38c01c6066c021ba91d",
+          "chars": 3056
+        },
+        {
+          "chapter": 8,
+          "file": "t4_ind_holdout/blocks/0008.txt",
+          "sha256": "1a16dd039f72ef7b74e4b909d3bb7b45705b9393c182149dcbe5dcf363067fb5",
+          "chars": 3574
+        },
+        {
+          "chapter": 9,
+          "file": "t4_ind_holdout/blocks/0009.txt",
+          "sha256": "d9a1c10aa560f595929edd376143c224c3c17060afa0f1824eb5074735d84a7f",
+          "chars": 3356
+        },
+        {
+          "chapter": 10,
+          "file": "t4_ind_holdout/blocks/0010.txt",
+          "sha256": "23be3e2f23d9e9db3afdbd4ef28c79027b03ba6da5e39b843f0e7337e068152f",
+          "chars": 3322
+        },
+        {
+          "chapter": 11,
+          "file": "t4_ind_holdout/blocks/0011.txt",
+          "sha256": "5fed9c00fb69ae116a7a586508d2d70bb536d98fb90bde3090e7a88ccaf3cc33",
+          "chars": 2324
+        },
+        {
+          "chapter": 12,
+          "file": "t4_ind_holdout/blocks/0012.txt",
+          "sha256": "f14e685b0347c163e60a3cc8acf50364e84efe0d9d701d182e3c0dae40946b0e",
+          "chars": 2321
+        }
+      ],
+      "exact_title_match": [],
+      "near_duplicate_title_match": [],
+      "unexposed": true
+    },
+    {
+      "work_id": "t4_game_holdout",
+      "topic_group": "game",
+      "topic_label": "游戏/电竞",
+      "title": "世界树的游戏",
+      "filename": "《世界树的游戏》（校对版全本）.txt",
+      "source": {
+        "filename": "《世界树的游戏》（校对版全本）.txt",
+        "bytes": 7398612,
+        "encoding": "gb18030",
+        "source_sha256": "d0cc97f18a88a6c194fb8fa23a8e1f2d86524e72c7be5fad5412c35ded1dc093",
+        "decoded_chars": 3835571
+      },
+      "frozen_blocks": [
+        {
+          "chapter": 1,
+          "file": "t4_game_holdout/blocks/0001.txt",
+          "sha256": "252b1e35ee8dc477ddbd2b3574386a0329a10aeb024ed97a3d60d38e1a7182ad",
+          "chars": 3534
+        },
+        {
+          "chapter": 2,
+          "file": "t4_game_holdout/blocks/0002.txt",
+          "sha256": "5e3d2bac9748e3c251c9595086de59ff10fa44496ab9a0c415245d5aec1f6ad6",
+          "chars": 3456
+        },
+        {
+          "chapter": 3,
+          "file": "t4_game_holdout/blocks/0003.txt",
+          "sha256": "979e1b3de5e5e4c3057708ab5e734a4d566dd4db6b19fc5359c4333c9dbfc111",
+          "chars": 3143
+        },
+        {
+          "chapter": 4,
+          "file": "t4_game_holdout/blocks/0004.txt",
+          "sha256": "f932b735e0ebc2a5080c05d9aa8bfc1fd682307cd984e8c018c7ac6bc64c3cc3",
+          "chars": 4084
+        },
+        {
+          "chapter": 5,
+          "file": "t4_game_holdout/blocks/0005.txt",
+          "sha256": "7738e72c095f446fe1145574fa036f3d22dae3ea71c76c69520dad26e1f79e15",
+          "chars": 2933
+        },
+        {
+          "chapter": 6,
+          "file": "t4_game_holdout/blocks/0006.txt",
+          "sha256": "ee33cad7c964c51f88979f66968b93ee5d5b982d7d3476a7d5ce11a4353d59c3",
+          "chars": 3538
+        },
+        {
+          "chapter": 7,
+          "file": "t4_game_holdout/blocks/0007.txt",
+          "sha256": "0bd0e383fa53ea849c39ce9b805f535ac1c82a4554e6696c34bc3e9f148186e2",
+          "chars": 2740
+        },
+        {
+          "chapter": 8,
+          "file": "t4_game_holdout/blocks/0008.txt",
+          "sha256": "18feac929542006c9635d7372351102cb78a41cb15eb33f5ad4d0e50af3effb2",
+          "chars": 3125
+        },
+        {
+          "chapter": 9,
+          "file": "t4_game_holdout/blocks/0009.txt",
+          "sha256": "a8a115be7b17207e424e4c297646e4f7a55f6ce12219275c71ae1c8058c032ff",
+          "chars": 3464
+        },
+        {
+          "chapter": 10,
+          "file": "t4_game_holdout/blocks/0010.txt",
+          "sha256": "aa73dd95cfd82f8e7fd791960a194133412af599033a70b0b03a92aed4b122c1",
+          "chars": 2855
+        },
+        {
+          "chapter": 11,
+          "file": "t4_game_holdout/blocks/0011.txt",
+          "sha256": "bd4af65980eff71fcf8fb5cfab4d57c12daec5d2feb4bcbc12bc004697bf59b6",
+          "chars": 2823
+        },
+        {
+          "chapter": 12,
+          "file": "t4_game_holdout/blocks/0012.txt",
+          "sha256": "23ccf58b3ec21db8a61b6ac22ae38657b50f1d50aed32049ea9d8ae2476b70c1",
+          "chars": 2923
+        }
+      ],
+      "exact_title_match": [],
+      "near_duplicate_title_match": [],
+      "unexposed": true
+    },
+    {
+      "work_id": "t4_urban_holdout",
+      "topic_group": "urban",
+      "topic_label": "都市日常",
+      "title": "俗人回档",
+      "filename": "《俗人回档》（校对版全本）.txt",
+      "source": {
+        "filename": "《俗人回档》（校对版全本）.txt",
+        "bytes": 9178439,
+        "encoding": "gb18030",
+        "source_sha256": "b6e9f55cf369d7f433fdeab89ef287bd271012fa4bf412a836b1c741b29f2d48",
+        "decoded_chars": 4748436
+      },
+      "frozen_blocks": [
+        {
+          "chapter": 1,
+          "file": "t4_urban_holdout/blocks/0001.txt",
+          "sha256": "8e6fdf52b69f874ac3419e46ce260a0a91b595b892c6c1fdc87377009183c83d",
+          "chars": 3686
+        },
+        {
+          "chapter": 2,
+          "file": "t4_urban_holdout/blocks/0002.txt",
+          "sha256": "4c8d846d9f5efc3da5a51f9a4810434df879fadba736b062c2dd93afeaf8680f",
+          "chars": 3701
+        },
+        {
+          "chapter": 3,
+          "file": "t4_urban_holdout/blocks/0003.txt",
+          "sha256": "48417c7ea1879b19ee8a1ab648ac4ad3629beb30d870a2f0a5a729d5f8c46516",
+          "chars": 3559
+        },
+        {
+          "chapter": 4,
+          "file": "t4_urban_holdout/blocks/0004.txt",
+          "sha256": "8742e7983f3c8e2780f571512d09ddf633ba29646a97442809a30d784b3a84d8",
+          "chars": 2684
+        },
+        {
+          "chapter": 5,
+          "file": "t4_urban_holdout/blocks/0005.txt",
+          "sha256": "8da20a0b3cbc8d654cfc49f8870373ea8a12ccc99fceadf4def7f53d39c5e782",
+          "chars": 2869
+        },
+        {
+          "chapter": 6,
+          "file": "t4_urban_holdout/blocks/0006.txt",
+          "sha256": "a26e3ab44d3ca4a57c320a2e69d79b3ec2176140a50c527f0c4d2d1b0af0c201",
+          "chars": 2630
+        },
+        {
+          "chapter": 7,
+          "file": "t4_urban_holdout/blocks/0007.txt",
+          "sha256": "c3c0c263251bf3fb86fbd5c99ad23386a51783536a15a4a0cdcec1551ed84c27",
+          "chars": 2597
+        },
+        {
+          "chapter": 8,
+          "file": "t4_urban_holdout/blocks/0008.txt",
+          "sha256": "0a747beb8bc1def3584b756061de257c5d167520a36850cc1124e08195020516",
+          "chars": 2835
+        },
+        {
+          "chapter": 9,
+          "file": "t4_urban_holdout/blocks/0009.txt",
+          "sha256": "63dc9978a6a3fe2ceaa5531e55a6b396ce520ec75eef9552c136a7c2594c11f4",
+          "chars": 3080
+        },
+        {
+          "chapter": 10,
+          "file": "t4_urban_holdout/blocks/0010.txt",
+          "sha256": "1aea63e8ae551280ae1a3471ec85820b4c1c7ec1feffdc6d722067b7e561b0ee",
+          "chars": 3989
+        },
+        {
+          "chapter": 11,
+          "file": "t4_urban_holdout/blocks/0011.txt",
+          "sha256": "13d9e3a8873bf129a5a072062ea048b6dcaef034de72a780a0ab5ec34f4ca6e9",
+          "chars": 2636
+        },
+        {
+          "chapter": 12,
+          "file": "t4_urban_holdout/blocks/0012.txt",
+          "sha256": "f11c7ca4167ca9016422911853293ac4f7af0d094cc759828b7e50c22bdd1bc1",
+          "chars": 2760
+        }
+      ],
+      "exact_title_match": [],
+      "near_duplicate_title_match": [],
+      "unexposed": true
+    },
+    {
+      "work_id": "t4_hist_holdout",
+      "topic_group": "hist",
+      "topic_label": "历史/朝堂",
+      "title": "临安不夜侯",
+      "filename": "《临安不夜侯》（校对版）.txt",
+      "source": {
+        "filename": "《临安不夜侯》（校对版）.txt",
+        "bytes": 11814200,
+        "encoding": "utf-8",
+        "source_sha256": "a7aaa68fdf27613b0c66e8b3ccf848e1cf3875a1bdf478edc4344a8a7543616b",
+        "decoded_chars": 4606750
+      },
+      "frozen_blocks": [
+        {
+          "chapter": 1,
+          "file": "t4_hist_holdout/blocks/0001.txt",
+          "sha256": "2c09ece7d73a285d8116d2852a716789c401e473841943008810b2095f2d7c20",
+          "chars": 4431
+        },
+        {
+          "chapter": 2,
+          "file": "t4_hist_holdout/blocks/0002.txt",
+          "sha256": "6a7c5c99d55a0ccde8d52c10f7500ea4f099f61c41ed6989f6fc74fa6d60d45f",
+          "chars": 3808
+        },
+        {
+          "chapter": 3,
+          "file": "t4_hist_holdout/blocks/0003.txt",
+          "sha256": "788c4cd2bb7776a4c77f0fffa20f8d2e4a7facb627d90c7cf8b14f05683f19ac",
+          "chars": 2483
+        },
+        {
+          "chapter": 4,
+          "file": "t4_hist_holdout/blocks/0004.txt",
+          "sha256": "10c04f408818e4d47b6f64125ac1e23fd04fd1d7fb4d6c06a21c3f0282fc5f4e",
+          "chars": 2448
+        },
+        {
+          "chapter": 5,
+          "file": "t4_hist_holdout/blocks/0005.txt",
+          "sha256": "db42f59a021a4add32db72ca0778ae8441838cdff2afb18465c54d984d7e0af1",
+          "chars": 2585
+        },
+        {
+          "chapter": 6,
+          "file": "t4_hist_holdout/blocks/0006.txt",
+          "sha256": "b159bad1161c856926b1ecd41b4019b301cd158347fc32dac3a7704ab9a6e102",
+          "chars": 2686
+        },
+        {
+          "chapter": 7,
+          "file": "t4_hist_holdout/blocks/0007.txt",
+          "sha256": "824318a4fe5ef78effd278d2bde207d24b8e4a08fe86f196bc5de2ba5bbb2425",
+          "chars": 2601
+        },
+        {
+          "chapter": 8,
+          "file": "t4_hist_holdout/blocks/0008.txt",
+          "sha256": "2f12a4730ca13dad153ec55371591597a5f1f6f1660ea15a83f1beb6aaa3b09a",
+          "chars": 2745
+        },
+        {
+          "chapter": 9,
+          "file": "t4_hist_holdout/blocks/0009.txt",
+          "sha256": "02a97cbea1f0ab20517bec9e53a49649e69c25145407ed74e999219aee1bb309",
+          "chars": 2960
+        },
+        {
+          "chapter": 10,
+          "file": "t4_hist_holdout/blocks/0010.txt",
+          "sha256": "b94bd035fe5fe955f57b1b3d35a9b54e396bfb4079bedad41518490a06d7c6b5",
+          "chars": 2582
+        },
+        {
+          "chapter": 11,
+          "file": "t4_hist_holdout/blocks/0011.txt",
+          "sha256": "8b2f5479e419de352f47d67bf6fc98ae71564458d322722f07f1c7565378ef36",
+          "chars": 2683
+        },
+        {
+          "chapter": 12,
+          "file": "t4_hist_holdout/blocks/0012.txt",
+          "sha256": "5292e0590d461a8e41a9f791f83b1313a84822b1b960d6c3bc7c245c6a59f9a9",
+          "chars": 2702
+        }
+      ],
+      "exact_title_match": [],
+      "near_duplicate_title_match": [],
+      "unexposed": true
+    }
+  ],
+  "topic_groups": [
+    "game",
+    "hist",
+    "ind",
+    "urban"
+  ],
+  "all_candidates_unexposed": true,
+  "historical_exposure_universe_size": 27,
+  "exposure_event": {
+    "event": "t4_trial_corpus_first_read",
+    "recorded_at": "2026-11-06T06:05:00+08:00",
+    "note": "本批 4 部作品正文已被试产准备脚本读取（切分并落盘为 blocks/），故自本记录起按“已曝光但从未参与调试/调参”状态管理：可用于最终保留验收，但若用于调参则立即失去保留集身份。"
+  },
+  "exposure_disclosure": {
+    "primary_trial_scope": {
+      "chapters": "第1-12章",
+      "exposure_state": "已曝光（切分与独立参考观察标注阶段读取过正文）",
+      "used_for": "12 章主试产的三臂对比与独立验收",
+      "independence_caveat": "参考观察由独立标注代理在仅见原文的条件下产出，全程未读取任何管线产物；但作品正文已被标注者读取，因此该批数据不能声称“从未被人读过”，只能声称“从未参与调试/调参”。"
+    },
+    "extended_scope": {
+      "chapters": "第1-24章",
+      "exposure_state": "已曝光（同一批作品延长章节范围）",
+      "used_for": "扩充 C 类真实管线候选数量",
+      "independence_caveat": "扩展范围与主试产同批作品，**不可**用于独立泛化证明；其结果只作开发证据与候选池扩充，不进入独立验收结论。"
+    },
+    "p95_sampling_note": "每臂样本量仅 3-4 次完整运行，P95 估计不稳定，按任务书要求标为证据不足，不用单次请求 P95 顶替。"
+  }
+}

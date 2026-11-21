@@ -71,8 +71,6 @@ cd frontend && npm run dev                                 # 前端 http://local
 4. 可视化页：时间线、关系图、地图、角色卡
 5. 统计面板：token 消耗、缓存命中率、重试成本
 
-另有"新版空间"页管理 vnext 数据空间的项目与队列。
-
 ### 关键产物
 
 每本书一个目录 `workspace/《书名》/`：
@@ -119,7 +117,7 @@ cd frontend && npm run dev                                 # 前端 http://local
 | [docs/architecture.md](./docs/architecture.md) | 系统结构与数据流 |
 | [docs/api.md](./docs/api.md) | 全部 HTTP 端点与 WebSocket 协议 |
 | [docs/configuration.md](./docs/configuration.md) | 配置项默认值与语义 |
-| [docs/testing.md](./docs/testing.md) | 测试 5 档分级与统一入口 |
+| [docs/testing.md](./docs/testing.md) | 轻量测试体系与统一运行入口 |
 | [docs/troubleshooting.md](./docs/troubleshooting.md) | 排障路径 |
 | [docs/build.md](./docs/build.md) | 打包发布 |
 | [docs/data-contract-vnext.md](./docs/data-contract-vnext.md) | vnext 数据契约 |
@@ -177,20 +175,18 @@ cd frontend && npm run dev                                 # 前端 http://local
 ## 开发
 
 ```bash
-# 全仓验证（pytest 全量 + 前端 vitest，约 2 分钟）
+# 全仓验证（后端 pytest + 前端 vitest，数秒内完成）
 python scripts/run_tests.py
 
-# 按档位跑：T0 冒烟(~12s) / T1 快速单测(~25s) / T2 标准门禁(~30s) / T3 pytest 全量(~90s)
-python scripts/run_tests.py --tier 1
+# 仅运行后端测试
+python scripts/run_tests.py --no-frontend
 
-# 只跑与本次改动相关的用例（秒级）
-python scripts/run_tests.py --related
+# 运行指定测试文件或按关键字过滤
+python scripts/run_tests.py backend/tests/test_llm_client.py --no-frontend
+python scripts/run_tests.py --no-frontend -- -k recheck
 ```
 
-测试分 5 档（T0 冒烟 → T4 全仓），规则与清单见 [docs/testing.md](./docs/testing.md)。
-测试覆盖：模块导入冒烟、LLM 重试链、JSON 容错、模型序列化、队列状态机、总结 checkpoint
-断点续跑、知识库快照隔离、伏笔去重、vnext 数据契约与复检裁决等；前端 33 个 Vitest
-测试文件覆盖 API 客户端、页面与工具模块。
+测试说明见 [docs/testing.md](./docs/testing.md)。后端 19 个领域测试文件覆盖模块导入冒烟、架构边界、LLM 重试链、JSON 容错、模型序列化、队列状态机、总结断点续跑、知识库快照隔离、伏笔账本、B/C 追踪与审核契约、vnext 数据契约与复检裁决；前端 4 个聚合 Vitest 测试文件覆盖 API 客户端、工具函数、核心组件与页面状态机。
 
 修改后端后重启进程生效；修改前端后跑 `npm run build` 重新生成 `frontend/dist/`。新加
 `APIConfig` / `AnalysisConfig` dataclass 字段后，前端 `AppConfigDto` 必须同步补类型。

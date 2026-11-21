@@ -1,0 +1,91 @@
+{
+  "schema": "bc_corpus_v1",
+  "seed": "bc-cross-work-20261105-v1",
+  "windows_per_work": 3,
+  "window_chars": 4000,
+  "previously_exposed_titles": [
+    "道诡异仙",
+    "大奉打更人",
+    "三侠五义"
+  ],
+  "selection_note": "按题材预设选择书名；正文抽样不看结果；用户提供未调试目录；不声明未知预训练数据",
+  "protocol_files": [
+    "backend/common/evaluation_corpus.py",
+    "scripts/bc_corpus.py",
+    "docs/跨作品BC评测.md"
+  ],
+  "works": [
+    {
+      "work_id": "industrial_validation",
+      "title": "大国重工",
+      "path": "F:\\AI\\04_小说与写作\\修复后txt文件\\《大国重工》（校对版全本）.txt",
+      "split": "validation",
+      "group_id": "大国重工",
+      "topic_hint": "industrial",
+      "prior_exposure": "none_declared"
+    },
+    {
+      "work_id": "industrial_holdout",
+      "title": "超级能源强国",
+      "path": "F:\\AI\\04_小说与写作\\修复后txt文件\\《超级能源强国》（精校版）.txt",
+      "split": "holdout",
+      "group_id": "超级能源强国",
+      "topic_hint": "industrial",
+      "prior_exposure": "none_declared"
+    },
+    {
+      "work_id": "gaming_validation",
+      "title": "全职高手",
+      "path": "F:\\AI\\04_小说与写作\\修复后txt文件\\《全职高手》（精校版全本）.txt",
+      "split": "validation",
+      "group_id": "全职高手",
+      "topic_hint": "gaming",
+      "prior_exposure": "none_declared"
+    },
+    {
+      "work_id": "gaming_holdout",
+      "title": "王者时刻",
+      "path": "F:\\AI\\04_小说与写作\\修复后txt文件\\《王者时刻》（校对版全本）.txt",
+      "split": "holdout",
+      "group_id": "王者时刻",
+      "topic_hint": "gaming",
+      "prior_exposure": "none_declared"
+    },
+    {
+      "work_id": "daily_life_validation",
+      "title": "回到过去变成猫",
+      "path": "F:\\AI\\04_小说与写作\\修复后txt文件\\《回到过去变成猫》（精校版）.txt",
+      "split": "validation",
+      "group_id": "回到过去变成猫",
+      "topic_hint": "daily_life",
+      "prior_exposure": "none_declared"
+    },
+    {
+      "work_id": "daily_life_holdout",
+      "title": "我家老婆来自一千年前",
+      "path": "F:\\AI\\04_小说与写作\\修复后txt文件\\《我家老婆来自一千年前》（校对版全本）.txt",
+      "split": "holdout",
+      "group_id": "我家老婆来自一千年前",
+      "topic_hint": "daily_life",
+      "prior_exposure": "none_declared"
+    },
+    {
+      "work_id": "history_validation",
+      "title": "唐砖",
+      "path": "F:\\AI\\04_小说与写作\\修复后txt文件\\《唐砖》（精校版全本）.txt",
+      "split": "validation",
+      "group_id": "唐砖",
+      "topic_hint": "history",
+      "prior_exposure": "none_declared"
+    },
+    {
+      "work_id": "history_holdout",
+      "title": "绍宋",
+      "path": "F:\\AI\\04_小说与写作\\修复后txt文件\\《绍宋》（校对版全本）.txt",
+      "split": "holdout",
+      "group_id": "绍宋",
+      "topic_hint": "history",
+      "prior_exposure": "none_declared"
+    }
+  ]
+}

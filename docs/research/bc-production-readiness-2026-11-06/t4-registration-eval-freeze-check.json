@@ -1,0 +1,85 @@
+{
+  "work_id": "t4_game_holdout",
+  "prefix_units": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8
+  ],
+  "later_units": [
+    9,
+    10,
+    11,
+    12
+  ],
+  "freeze": {
+    "path": "docs\\research\\bc-production-readiness-2026-11-06\\t4-registration-eval-freeze.json",
+    "created_this_run": true,
+    "items_frozen": 7,
+    "material_kinds": [
+      "body_prefix",
+      "knowledge",
+      "retrieval",
+      "summary"
+    ],
+    "material_kinds_complete": true,
+    "materials_all_hashed": true,
+    "declared_unused_kinds": []
+  },
+  "isolation_check": {
+    "ok": true,
+    "problems": [],
+    "checked_materials": 4,
+    "material_kinds": [
+      "body_prefix",
+      "knowledge",
+      "retrieval",
+      "summary"
+    ],
+    "declared_unused_kinds": [],
+    "auxiliary_grounding": {
+      "checked": 3,
+      "note": "辅助材料每个连续片段都必须能在前缀里找到；改写后文同样会被挡住"
+    },
+    "literal_probe": {
+      "note": "只作补充检查：阴性只表示未发现所抽查的逐字片段，不能证明没有语义泄露",
+      "leaked": []
+    }
+  },
+  "isolation_negative_case": {
+    "ok": false,
+    "problems": [
+      "material_differs_from_frozen:summary",
+      "auxiliary_not_grounded_in_prefix:summary:5"
+    ],
+    "note": "辅助材料混进后文内容必须被挡住"
+  },
+  "metrics_denominator_demo": {
+    "no_ground_rate": {
+      "count": 1,
+      "denominator": 1,
+      "rate": 1.0,
+      "status": "可计算"
+    },
+    "denominators": {
+      "system_total": 2,
+      "settled_adjudications": 1,
+      "disputed": 1,
+      "undecided": 0,
+      "unadjudicated": 0,
+      "unknown_label": 0,
+      "duplicate_ids": 0,
+      "independent_qualified_total": 0,
+      "independent_qualified_valid": 0
+    },
+    "disputed": [
+      "b"
+    ],
+    "note": "1 条无依据 + 1 条争议 → 1/1，争议单列"
+  },
+  "note": "这一步只验证机制：冻结可落盘且拒绝原位覆盖、隔离检查能挡住类别缺失/哈希乱填/辅助材料混入后文、指标分母按有效裁决分离。不产生质量结论。"
+}

@@ -1,0 +1,4127 @@
+{
+  "schema": "registration_pilot_metrics_summary_v1",
+  "overall_metrics_by_arm": {
+    "A": {
+      "denominators": {
+        "system_total": 51,
+        "settled_adjudications": 50,
+        "disputed": 0,
+        "undecided": 1,
+        "unadjudicated": 0,
+        "unknown_label": 0,
+        "duplicate_ids": 0,
+        "independent_qualified_total": 28,
+        "independent_qualified_valid": 28
+      },
+      "coverage": {
+        "adjudication_coverage": 0.980392,
+        "adjudication_coverage_status": "可计算",
+        "note": "比率的分母是有效裁决数；覆盖率单独报告，避免不确定项增多显得指标改善"
+      },
+      "metrics": {
+        "no_ground_rate": {
+          "count": 2,
+          "denominator": 50,
+          "rate": 0.04,
+          "status": "可计算"
+        },
+        "already_answered_rate": {
+          "count": 2,
+          "denominator": 50,
+          "rate": 0.04,
+          "status": "可计算"
+        },
+        "span_localization_rate": {
+          "count": 50,
+          "denominator": 50,
+          "rate": 1.0,
+          "status": "可计算"
+        },
+        "missed_registration_rate": {
+          "count": 13,
+          "denominator": 28,
+          "rate": 0.464286,
+          "status": "可计算"
+        },
+        "registration_delay": {
+          "unit": "见每条记录的 basis",
+          "baseline": "首次观察到合格的位置",
+          "measured": 0,
+          "positive_delay_count": 0,
+          "rate": null,
+          "status": "N/A：无可比样本",
+          "records": [],
+          "rejected": [],
+          "caveat": "只有在若干前缀位置做过检查时，基准是“首次观察到合格的位置”，不能表述为“全文最早位置”。延迟只按检查点差或同一固定坐标里的字符距离计算。"
+        }
+      },
+      "excluded": {
+        "disputed_ids": [],
+        "undecided_ids": [
+          "t4_hist_holdout__p1__A__i6"
+        ],
+        "unknown_label_ids": [],
+        "unadjudicated_ids": [],
+        "orphan_adjudication_ids": [],
+        "duplicate_system_ids": [],
+        "duplicate_adjudication_ids": [],
+        "reference_missing_registered": [],
+        "reference_unresolved_pairing": [],
+        "note": "以上各项都不进任何指标的分子或分母"
+      },
+      "label_distribution": {
+        "有依据": 46,
+        "无依据": 2,
+        "已经回答": 2
+      }
+    },
+    "B": {
+      "denominators": {
+        "system_total": 53,
+        "settled_adjudications": 53,
+        "disputed": 0,
+        "undecided": 0,
+        "unadjudicated": 0,
+        "unknown_label": 0,
+        "duplicate_ids": 0,
+        "independent_qualified_total": 28,
+        "independent_qualified_valid": 28
+      },
+      "coverage": {
+        "adjudication_coverage": 1.0,
+        "adjudication_coverage_status": "可计算",
+        "note": "比率的分母是有效裁决数；覆盖率单独报告，避免不确定项增多显得指标改善"
+      },
+      "metrics": {
+        "no_ground_rate": {
+          "count": 0,
+          "denominator": 53,
+          "rate": 0.0,
+          "status": "可计算"
+        },
+        "already_answered_rate": {
+          "count": 6,
+          "denominator": 53,
+          "rate": 0.113208,
+          "status": "可计算"
+        },
+        "span_localization_rate": {
+          "count": 52,
+          "denominator": 53,
+          "rate": 0.981132,
+          "status": "可计算"
+        },
+        "missed_registration_rate": {
+          "count": 13,
+          "denominator": 28,
+          "rate": 0.464286,
+          "status": "可计算"
+        },
+        "registration_delay": {
+          "unit": "见每条记录的 basis",
+          "baseline": "首次观察到合格的位置",
+          "measured": 0,
+          "positive_delay_count": 0,
+          "rate": null,
+          "status": "N/A：无可比样本",
+          "records": [],
+          "rejected": [],
+          "caveat": "只有在若干前缀位置做过检查时，基准是“首次观察到合格的位置”，不能表述为“全文最早位置”。延迟只按检查点差或同一固定坐标里的字符距离计算。"
+        }
+      },
+      "excluded": {
+        "disputed_ids": [],
+        "undecided_ids": [],
+        "unknown_label_ids": [],
+        "unadjudicated_ids": [],
+        "orphan_adjudication_ids": [],
+        "duplicate_system_ids": [],
+        "duplicate_adjudication_ids": [],
+        "reference_missing_registered": [],
+        "reference_unresolved_pairing": [],
+        "note": "以上各项都不进任何指标的分子或分母"
+      },
+      "label_distribution": {
+        "有依据": 47,
+        "无依据": 0,
+        "已经回答": 6
+      }
+    }
+  },
+  "overall_metrics_strict_1to1_by_arm": {
+    "A": {
+      "denominators": {
+        "system_total": 51,
+        "settled_adjudications": 50,
+        "disputed": 0,
+        "undecided": 1,
+        "unadjudicated": 0,
+        "unknown_label": 0,
+        "duplicate_ids": 0,
+        "independent_qualified_total": 28,
+        "independent_qualified_valid": 26
+      },
+      "coverage": {
+        "adjudication_coverage": 0.980392,
+        "adjudication_coverage_status": "可计算",
+        "note": "比率的分母是有效裁决数；覆盖率单独报告，避免不确定项增多显得指标改善"
+      },
+      "metrics": {
+        "no_ground_rate": {
+          "count": 2,
+          "denominator": 50,
+          "rate": 0.04,
+          "status": "可计算"
+        },
+        "already_answered_rate": {
+          "count": 2,
+          "denominator": 50,
+          "rate": 0.04,
+          "status": "可计算"
+        },
+        "span_localization_rate": {
+          "count": 50,
+          "denominator": 50,
+          "rate": 1.0,
+          "status": "可计算"
+        },
+        "missed_registration_rate": {
+          "count": 13,
+          "denominator": 26,
+          "rate": 0.5,
+          "status": "可计算"
+        },
+        "registration_delay": {
+          "unit": "见每条记录的 basis",
+          "baseline": "首次观察到合格的位置",
+          "measured": 0,
+          "positive_delay_count": 0,
+          "rate": null,
+          "status": "N/A：无可比样本",
+          "records": [],
+          "rejected": [],
+          "caveat": "只有在若干前缀位置做过检查时，基准是“首次观察到合格的位置”，不能表述为“全文最早位置”。延迟只按检查点差或同一固定坐标里的字符距离计算。"
+        }
+      },
+      "excluded": {
+        "disputed_ids": [],
+        "undecided_ids": [
+          "t4_hist_holdout__p1__A__i6"
+        ],
+        "unknown_label_ids": [],
+        "unadjudicated_ids": [],
+        "orphan_adjudication_ids": [],
+        "duplicate_system_ids": [],
+        "duplicate_adjudication_ids": [],
+        "reference_missing_registered": [],
+        "reference_unresolved_pairing": [
+          "t4_hist_holdout__p2__r4",
+          "t4_hist_holdout__p3__r2"
+        ],
+        "note": "以上各项都不进任何指标的分子或分母"
+      },
+      "label_distribution": {
+        "有依据": 46,
+        "无依据": 2,
+        "已经回答": 2
+      }
+    },
+    "B": {
+      "denominators": {
+        "system_total": 53,
+        "settled_adjudications": 53,
+        "disputed": 0,
+        "undecided": 0,
+        "unadjudicated": 0,
+        "unknown_label": 0,
+        "duplicate_ids": 0,
+        "independent_qualified_total": 28,
+        "independent_qualified_valid": 27
+      },
+      "coverage": {
+        "adjudication_coverage": 1.0,
+        "adjudication_coverage_status": "可计算",
+        "note": "比率的分母是有效裁决数；覆盖率单独报告，避免不确定项增多显得指标改善"
+      },
+      "metrics": {
+        "no_ground_rate": {
+          "count": 0,
+          "denominator": 53,
+          "rate": 0.0,
+          "status": "可计算"
+        },
+        "already_answered_rate": {
+          "count": 6,
+          "denominator": 53,
+          "rate": 0.113208,
+          "status": "可计算"
+        },
+        "span_localization_rate": {
+          "count": 52,
+          "denominator": 53,
+          "rate": 0.981132,
+          "status": "可计算"
+        },
+        "missed_registration_rate": {
+          "count": 13,
+          "denominator": 27,
+          "rate": 0.481481,
+          "status": "可计算"
+        },
+        "registration_delay": {
+          "unit": "见每条记录的 basis",
+          "baseline": "首次观察到合格的位置",
+          "measured": 0,
+          "positive_delay_count": 0,
+          "rate": null,
+          "status": "N/A：无可比样本",
+          "records": [],
+          "rejected": [],
+          "caveat": "只有在若干前缀位置做过检查时，基准是“首次观察到合格的位置”，不能表述为“全文最早位置”。延迟只按检查点差或同一固定坐标里的字符距离计算。"
+        }
+      },
+      "excluded": {
+        "disputed_ids": [],
+        "undecided_ids": [],
+        "unknown_label_ids": [],
+        "unadjudicated_ids": [],
+        "orphan_adjudication_ids": [],
+        "duplicate_system_ids": [],
+        "duplicate_adjudication_ids": [],
+        "reference_missing_registered": [],
+        "reference_unresolved_pairing": [
+          "t4_hist_holdout__p2__r4"
+        ],
+        "note": "以上各项都不进任何指标的分子或分母"
+      },
+      "label_distribution": {
+        "有依据": 47,
+        "无依据": 0,
+        "已经回答": 6
+      }
+    }
+  },
+  "anchor_sufficiency_all_located_by_arm": {
+    "A": {
+      "total_located": 51,
+      "sufficient": 47,
+      "insufficient": 4
+    },
+    "B": {
+      "total_located": 52,
+      "sufficient": 50,
+      "insufficient": 2
+    }
+  },
+  "paired_same_question_comparison": {
+    "paired_count": 28,
+    "arm_a_anchor_sufficient_count": 27,
+    "arm_b_anchor_sufficient_count": 27,
+    "same_unit_pair_count": 23,
+    "same_unit_b_earlier_count": 7,
+    "same_unit_same_pos_count": 10,
+    "same_unit_b_later_count": 6,
+    "cross_or_same_unit_b_earlier_unit_count": 3,
+    "cross_or_same_unit_same_unit_count": 23,
+    "cross_or_same_unit_b_later_unit_count": 2,
+    "pairs": [
+      {
+        "work_id": "t4_hist_holdout",
+        "prefix_id": "p1",
+        "cluster_key": "cluster:q_02",
+        "matched_ref_ids": [],
+        "registration_checkpoint": 1,
+        "arm_a": {
+          "item_id": "i3",
+          "question": "阿蛮为何能带一个送“索唤”的闲汉进入班荆馆内院，守门士卒为何不敢阻拦？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 1,
+          "citation_start": 1972,
+          "citation_end": 2007,
+          "anchor_quote": "谁料有一个小丫鬟阿蛮引着，守门的宋国士卒不敢阻拦，他竟登堂入室到了这里"
+        },
+        "arm_b": {
+          "item_id": "i1",
+          "question": "小丫鬟阿蛮为何能把杨沅一路引进班荆馆内院，守门宋国士卒又为何不敢阻拦？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 1,
+          "citation_start": 1972,
+          "citation_end": 2007,
+          "anchor_quote": "谁料有一个小丫鬟阿蛮引着，守门的宋国士卒不敢阻拦，他竟登堂入室到了这里"
+        },
+        "unit_diff_b_minus_a": 0,
+        "same_unit_char_diff_b_minus_a": 0
+      },
+      {
+        "work_id": "t4_hist_holdout",
+        "prefix_id": "p1",
+        "cluster_key": "cluster:q_03",
+        "matched_ref_ids": [],
+        "registration_checkpoint": 1,
+        "arm_a": {
+          "item_id": "i2",
+          "question": "乌古论盈歌与完颜家小王子的婚约具体是什么情况，她为何非要自污以求解除？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 1,
+          "citation_start": 3530,
+          "citation_end": 3562,
+          "anchor_quote": "但是……不下猛药，她根本没有和完颜家解除婚约的希望，她能怎么办？"
+        },
+        "arm_b": {
+          "item_id": "i3",
+          "question": "乌古论盈歌与完颜家的婚约具体是怎样订下的，她为何必须自污才可能解除？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 1,
+          "citation_start": 3539,
+          "citation_end": 3555,
+          "anchor_quote": "她根本没有和完颜家解除婚约的希望"
+        },
+        "unit_diff_b_minus_a": 0,
+        "same_unit_char_diff_b_minus_a": 9
+      },
+      {
+        "work_id": "t4_hist_holdout",
+        "prefix_id": "p1",
+        "cluster_key": "cluster:q_07",
+        "matched_ref_ids": [],
+        "registration_checkpoint": 1,
+        "arm_a": {
+          "item_id": "i0",
+          "question": "乌古论盈歌原本打算借“小王子”到来制造什么场面，后来为何改为不亲手杀杨沅？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 1,
+          "citation_start": 2785,
+          "citation_end": 2822,
+          "anchor_quote": "我不会亲手杀你。要杀你的人马上就到，你最好乖乖的，不然我也不介意亲自动手。"
+        },
+        "arm_b": {
+          "item_id": "i0",
+          "question": "乌古论盈歌为何认定杨沅马上就要死，并以此说服自己开口引诱？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 1,
+          "citation_start": 1401,
+          "citation_end": 1425,
+          "anchor_quote": "要不是杨沅很快就将成为一个死人，她还真开不了口。"
+        },
+        "unit_diff_b_minus_a": 0,
+        "same_unit_char_diff_b_minus_a": -1384
+      },
+      {
+        "work_id": "t4_hist_holdout",
+        "prefix_id": "p1",
+        "cluster_key": "ref:r0",
+        "matched_ref_ids": [
+          "r0"
+        ],
+        "registration_checkpoint": 1,
+        "arm_a": {
+          "item_id": "i5",
+          "question": "杨沅用染血绣帕打算如何帮盈歌达成解除婚约的目的？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 1,
+          "citation_start": 4376,
+          "citation_end": 4417,
+          "anchor_quote": "随后，杨沅就转过身，对着盈歌扬了扬手中那方染血的绣帕，眼睛弯出了两道好看的弧度……"
+        },
+        "arm_b": {
+          "item_id": "i5",
+          "question": "杨沅把指血涂在雪青色兰花双面绣帕上，是想借此造成什么局面来应对即将到来的小王爷？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 1,
+          "citation_start": 4339,
+          "citation_end": 4368,
+          "anchor_quote": "然后，就把指肚上的血，在那雪青色的手帕上迅速地涂抹了几下。"
+        },
+        "unit_diff_b_minus_a": 0,
+        "same_unit_char_diff_b_minus_a": -37
+      },
+      {
+        "work_id": "t4_hist_holdout",
+        "prefix_id": "p2",
+        "cluster_key": "cluster:q_02",
+        "matched_ref_ids": [],
+        "registration_checkpoint": 2,
+        "arm_a": {
+          "item_id": "i7",
+          "question": "韩振宇作为完颜亮的人，与完颜征之间有何矛盾？他若发现密晤会怎样？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 2,
+          "citation_start": 3372,
+          "citation_end": 3394,
+          "anchor_quote": "使团副使韩振宇是完颜亮的人，他也要谨慎提防着"
+        },
+        "arm_b": {
+          "item_id": "i7",
+          "question": "完颜征为何要隐瞒随使团来宋，他又为何如此提防副使韩振宇？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 2,
+          "citation_start": 3372,
+          "citation_end": 3394,
+          "anchor_quote": "使团副使韩振宇是完颜亮的人，他也要谨慎提防着"
+        },
+        "unit_diff_b_minus_a": 0,
+        "same_unit_char_diff_b_minus_a": 0
+      },
+      {
+        "work_id": "t4_hist_holdout",
+        "prefix_id": "p2",
+        "cluster_key": "cluster:q_13",
+        "matched_ref_ids": [],
+        "registration_checkpoint": 2,
+        "arm_a": {
+          "item_id": "i5",
+          "question": "盈歌对阿蛮所说的“计”具体包括哪些步骤？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 1,
+          "citation_start": 4030,
+          "citation_end": 4038,
+          "anchor_quote": "阿蛮，依计行事！"
+        },
+        "arm_b": {
+          "item_id": "i9",
+          "question": "小丫鬟阿蛮在盈歌与杨沅这桩局中究竟知道并执行了多少安排？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 1,
+          "citation_start": 4030,
+          "citation_end": 4038,
+          "anchor_quote": "阿蛮，依计行事！"
+        },
+        "unit_diff_b_minus_a": 0,
+        "same_unit_char_diff_b_minus_a": 0
+      },
+      {
+        "work_id": "t4_hist_holdout",
+        "prefix_id": "p2",
+        "cluster_key": "ref:r2",
+        "matched_ref_ids": [
+          "r2"
+        ],
+        "registration_checkpoint": 2,
+        "arm_a": {
+          "item_id": "i11",
+          "question": "这个扇秦相耳光的人是谁，为何袭击当朝宰相？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 2,
+          "citation_start": 3677,
+          "citation_end": 3691,
+          "anchor_quote": "一个巴掌就烀在了秦相的脸上。"
+        },
+        "arm_b": {
+          "item_id": "i5",
+          "question": "杨沅为何要在班荆馆侧道伏击秦相，他此前是否已知秦相会从此处经过？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 2,
+          "citation_start": 3677,
+          "citation_end": 3691,
+          "anchor_quote": "一个巴掌就烀在了秦相的脸上。"
+        },
+        "unit_diff_b_minus_a": 0,
+        "same_unit_char_diff_b_minus_a": 0
+      },
+      {
+        "work_id": "t4_hist_holdout",
+        "prefix_id": "p2",
+        "cluster_key": "ref:r3+r4",
+        "matched_ref_ids": [
+          "r3",
+          "r4"
+        ],
+        "registration_checkpoint": 2,
+        "arm_a": {
+          "item_id": "i8",
+          "question": "秦相与完颜征互相托付的“这件事”具体指什么？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 2,
+          "citation_start": 2645,
+          "citation_end": 2657,
+          "anchor_quote": "信王爷，这件事就拜托了。"
+        },
+        "arm_b": {
+          "item_id": "i6",
+          "question": "秦相与完颜征此次秘密会晤各要对方办的是什么事？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 2,
+          "citation_start": 2917,
+          "citation_end": 2947,
+          "anchor_quote": "秦相尽管放心好了，此举不仅关乎你们秦家，也关系到我金国利益。"
+        },
+        "unit_diff_b_minus_a": 0,
+        "same_unit_char_diff_b_minus_a": 272
+      },
+      {
+        "work_id": "t4_hist_holdout",
+        "prefix_id": "p2",
+        "cluster_key": "ref:r7",
+        "matched_ref_ids": [
+          "r7"
+        ],
+        "registration_checkpoint": 2,
+        "arm_a": {
+          "item_id": "i3",
+          "question": "杨沅承诺帮盈歌退婚的具体办法是什么？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 1,
+          "citation_start": 3922,
+          "citation_end": 3939,
+          "anchor_quote": "我有办法让你不必自污就能达到目的。"
+        },
+        "arm_b": {
+          "item_id": "i2",
+          "question": "乌古论盈歌答应杨沅的具体条件是什么，她为何认为杨沅先保住性命才谈得上履行？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 2,
+          "citation_start": 1946,
+          "citation_end": 1956,
+          "anchor_quote": "好，我……答应你了！"
+        },
+        "unit_diff_b_minus_a": 1,
+        "same_unit_char_diff_b_minus_a": null
+      },
+      {
+        "work_id": "t4_hist_holdout",
+        "prefix_id": "p3",
+        "cluster_key": "cluster:q_05",
+        "matched_ref_ids": [],
+        "registration_checkpoint": 3,
+        "arm_a": {
+          "item_id": "i2",
+          "question": "杨沅答应盈歌的具体办法是什么？双方约定如何帮她解除婚约？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 2,
+          "citation_start": 1945,
+          "citation_end": 1957,
+          "anchor_quote": "“好，我……答应你了！”"
+        },
+        "arm_b": {
+          "item_id": "i4",
+          "question": "杨沅承诺帮乌古论盈歌达到目的，他究竟打算如何帮她处理与完颜屈行的婚约？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 1,
+          "citation_start": 3499,
+          "citation_end": 3569,
+          "anchor_quote": "乌古论盈歌被他说的蹙起了秀气的眉，她何尝不明白杨沅所说的道理，但是……不下猛药，她根本没有和完颜家解除婚约的希望，她能怎么办？她也很绝望啊！"
+        },
+        "unit_diff_b_minus_a": -1,
+        "same_unit_char_diff_b_minus_a": null
+      },
+      {
+        "work_id": "t4_hist_holdout",
+        "prefix_id": "p3",
+        "cluster_key": "cluster:q_06",
+        "matched_ref_ids": [],
+        "registration_checkpoint": 3,
+        "arm_a": {
+          "item_id": "i5",
+          "question": "杨沅在大宋认的“哥”是谁？有何身份和能力能捞他？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 3,
+          "citation_start": 271,
+          "citation_end": 284,
+          "anchor_quote": "只要不死，他哥就能捞他出来"
+        },
+        "arm_b": {
+          "item_id": "i9",
+          "question": "杨沅所说能“捞他出来”的“哥”是谁？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 3,
+          "citation_start": 245,
+          "citation_end": 285,
+          "anchor_quote": "再说了，打了国信所小吏一巴掌，怎也不至于是杀头之罪，只要不死，他哥就能捞他出来。"
+        },
+        "unit_diff_b_minus_a": 0,
+        "same_unit_char_diff_b_minus_a": -26
+      },
+      {
+        "work_id": "t4_hist_holdout",
+        "prefix_id": "p3",
+        "cluster_key": "cluster:q_07",
+        "matched_ref_ids": [],
+        "registration_checkpoint": 3,
+        "arm_a": {
+          "item_id": "i1",
+          "question": "盈歌吩咐阿蛮执行的“计”具体是什么？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 1,
+          "citation_start": 4029,
+          "citation_end": 4039,
+          "anchor_quote": "“阿蛮，依计行事！”"
+        },
+        "arm_b": {
+          "item_id": "i5",
+          "question": "乌古论盈歌对小丫鬟阿蛮所说的“计”具体是什么？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 1,
+          "citation_start": 4029,
+          "citation_end": 4039,
+          "anchor_quote": "“阿蛮，依计行事！”"
+        },
+        "unit_diff_b_minus_a": 0,
+        "same_unit_char_diff_b_minus_a": 0
+      },
+      {
+        "work_id": "t4_hist_holdout",
+        "prefix_id": "p3",
+        "cluster_key": "cluster:q_11",
+        "matched_ref_ids": [],
+        "registration_checkpoint": 3,
+        "arm_a": {
+          "item_id": "i6",
+          "question": "杨沅掌掴秦桧究竟是偶然闹事，还是有人安排？秦桧会如何判断和处置？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 3,
+          "citation_start": 1126,
+          "citation_end": 1140,
+          "anchor_quote": "此人的出现，只是一个意外么？"
+        },
+        "arm_b": {
+          "item_id": "i10",
+          "question": "秦桧怀疑杨沅的出现并非意外，那么杨沅闹事是否真有人背后指使或安排？",
+          "label": "已经回答",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 3,
+          "citation_start": 1105,
+          "citation_end": 1140,
+          "anchor_quote": "秦桧听了杨沅这番言语，锁紧的眉头微微一展，此人的出现，只是一个意外么？"
+        },
+        "unit_diff_b_minus_a": 0,
+        "same_unit_char_diff_b_minus_a": -21
+      },
+      {
+        "work_id": "t4_hist_holdout",
+        "prefix_id": "p3",
+        "cluster_key": "cluster:q_12",
+        "matched_ref_ids": [],
+        "registration_checkpoint": 3,
+        "arm_a": {
+          "item_id": "i4",
+          "question": "完颜征为何要提防副使韩振宇？韩振宇在使团中会有什么举动？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 2,
+          "citation_start": 3372,
+          "citation_end": 3394,
+          "anchor_quote": "使团副使韩振宇是完颜亮的人，他也要谨慎提防着"
+        },
+        "arm_b": {
+          "item_id": "i8",
+          "question": "使团副使韩振宇是完颜亮的人，完颜征为何要提防他？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 2,
+          "citation_start": 3359,
+          "citation_end": 3424,
+          "anchor_quote": "他此来又何尝不是一个秘密，使团副使韩振宇是完颜亮的人，他也要谨慎提防着，所以只能藏在盈歌所居的院落，只有这儿，那韩副使不方便过来。"
+        },
+        "unit_diff_b_minus_a": 0,
+        "same_unit_char_diff_b_minus_a": -13
+      },
+      {
+        "work_id": "t4_hist_holdout",
+        "prefix_id": "p3",
+        "cluster_key": "ref:r1+r2",
+        "matched_ref_ids": [
+          "r1",
+          "r2"
+        ],
+        "registration_checkpoint": 3,
+        "arm_a": {
+          "item_id": "i3",
+          "question": "秦桧与完颜征互相托付、答应玉成的“这件事”具体指什么？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 2,
+          "citation_start": 2917,
+          "citation_end": 2947,
+          "anchor_quote": "秦相尽管放心好了，此举不仅关乎你们秦家，也关系到我金国利益。"
+        },
+        "arm_b": {
+          "item_id": "i6",
+          "question": "秦桧与完颜征秘密会晤中托付对方的事是什么？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 2,
+          "citation_start": 2916,
+          "citation_end": 2963,
+          "anchor_quote": "“秦相尽管放心好了，此举不仅关乎你们秦家，也关系到我金国利益。完颜征必会鼎力相助，玉成其美！”"
+        },
+        "unit_diff_b_minus_a": 0,
+        "same_unit_char_diff_b_minus_a": -1
+      },
+      {
+        "work_id": "t4_game_holdout",
+        "prefix_id": "p1",
+        "cluster_key": "cluster:q_01",
+        "matched_ref_ids": [],
+        "registration_checkpoint": 1,
+        "arm_a": {
+          "item_id": "i1",
+          "question": "绿色光团中传来、伊芙听不懂却感到感伤和绝望的祷告声出自谁或什么存在？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 1,
+          "citation_start": 543,
+          "citation_end": 579,
+          "anchor_quote": "那声音空灵，柔和，神圣，似乎具备一种奇妙的力量，让人不由自主地沉静下来。"
+        },
+        "arm_b": {
+          "item_id": "i1",
+          "question": "从绿色光团传来的祷告声由谁发出，祷告的具体内容是什么，又为何充满感伤和绝望？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 1,
+          "citation_start": 663,
+          "citation_end": 695,
+          "anchor_quote": "伊莩听不懂内容，却似乎能够感知到这声音中蕴含着的无数感伤和绝望。"
+        },
+        "unit_diff_b_minus_a": 0,
+        "same_unit_char_diff_b_minus_a": 120
+      },
+      {
+        "work_id": "t4_game_holdout",
+        "prefix_id": "p1",
+        "cluster_key": "cluster:q_02",
+        "matched_ref_ids": [],
+        "registration_checkpoint": 1,
+        "arm_a": {
+          "item_id": "i3",
+          "question": "前代世界树为何陷入濒死状态，又为何需要一个外来灵魂来继承？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": false,
+          "source_unit_id": 1,
+          "citation_start": 1923,
+          "citation_end": 1961,
+          "anchor_quote": "祂是赛格斯位面堪比巨龙历史般古老的神秘存在，是真正的神话生物，力量比肩神灵。"
+        },
+        "arm_b": {
+          "item_id": "i3",
+          "question": "原世界树为何濒死，其残存记忆和传承中关于衰败原因的内容是什么？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 1,
+          "citation_start": 2151,
+          "citation_end": 2159,
+          "anchor_quote": "半死不活的那种。"
+        },
+        "unit_diff_b_minus_a": 0,
+        "same_unit_char_diff_b_minus_a": 228
+      },
+      {
+        "work_id": "t4_game_holdout",
+        "prefix_id": "p1",
+        "cluster_key": "cluster:q_03",
+        "matched_ref_ids": [],
+        "registration_checkpoint": 1,
+        "arm_a": {
+          "item_id": "i2",
+          "question": "那个在空间中说话、执行世界树苏醒与融合仪式的陌生声音来自什么存在或机制？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 1,
+          "citation_start": 998,
+          "citation_end": 1008,
+          "anchor_quote": "“捕捉到合适灵魂。”"
+        },
+        "arm_b": {
+          "item_id": "i2",
+          "question": "执行灵魂捕捉和世界树苏醒仪式的陌生声音来自谁或什么机制？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 1,
+          "citation_start": 999,
+          "citation_end": 1007,
+          "anchor_quote": "捕捉到合适灵魂。"
+        },
+        "unit_diff_b_minus_a": 0,
+        "same_unit_char_diff_b_minus_a": 1
+      },
+      {
+        "work_id": "t4_game_holdout",
+        "prefix_id": "p1",
+        "cluster_key": "cluster:q_05",
+        "matched_ref_ids": [],
+        "registration_checkpoint": 1,
+        "arm_a": {
+          "item_id": "i5",
+          "question": "被伊芙命名为巴萨卡的橡树守卫与伊芙之间形成的是什么联系，命名本身会带来什么影响？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 1,
+          "citation_start": 3508,
+          "citation_end": 3534,
+          "anchor_quote": "“既如此，你就叫做巴萨卡（Berserker）吧！”"
+        },
+        "arm_b": {
+          "item_id": "i5",
+          "question": "被世界树点化的树木为何会自行变成树人并认世界树为母神，赐名对它们意味着什么？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 1,
+          "citation_start": 3349,
+          "citation_end": 3368,
+          "anchor_quote": "橡树守卫感谢您的眷顾，请母神大人赐名！"
+        },
+        "unit_diff_b_minus_a": 0,
+        "same_unit_char_diff_b_minus_a": -159
+      },
+      {
+        "work_id": "t4_game_holdout",
+        "prefix_id": "p1",
+        "cluster_key": "cluster:q_06",
+        "matched_ref_ids": [],
+        "registration_checkpoint": 1,
+        "arm_a": {
+          "item_id": "i0",
+          "question": "那两团一蓝一绿的光团分别是什么，为什么伊芙对蓝色光团有亲近感却最终触碰了绿色光团？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 1,
+          "citation_start": 277,
+          "citation_end": 302,
+          "anchor_quote": "唯一能看到的，只有两团氤氲闪烁着的光团，一蓝一绿。"
+        },
+        "arm_b": {
+          "item_id": "i0",
+          "question": "那颗较小的蓝色光团是什么，伊莩原本选择触碰它却未能接触，它后来有何作用？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 1,
+          "citation_start": 277,
+          "citation_end": 302,
+          "anchor_quote": "唯一能看到的，只有两团氤氲闪烁着的光团，一蓝一绿。"
+        },
+        "unit_diff_b_minus_a": 0,
+        "same_unit_char_diff_b_minus_a": 0
+      },
+      {
+        "work_id": "t4_game_holdout",
+        "prefix_id": "p1",
+        "cluster_key": "ref:r0",
+        "matched_ref_ids": [
+          "r0"
+        ],
+        "registration_checkpoint": 1,
+        "arm_a": {
+          "item_id": "i4",
+          "question": "伊芙仅剩三分之二的自然资源神力，耗尽后会彻底沉睡死亡，这一限制是否有恢复或补充的途径？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 1,
+          "citation_start": 2895,
+          "citation_end": 2911,
+          "anchor_quote": "一旦用光，世界树将彻底陷入沉睡。"
+        },
+        "arm_b": {
+          "item_id": "i4",
+          "question": "自然神力如何恢复，伊芙要怎样避免神力耗尽而陷入沉睡或死亡？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 1,
+          "citation_start": 2895,
+          "citation_end": 2911,
+          "anchor_quote": "一旦用光，世界树将彻底陷入沉睡。"
+        },
+        "unit_diff_b_minus_a": 0,
+        "same_unit_char_diff_b_minus_a": 0
+      },
+      {
+        "work_id": "t4_game_holdout",
+        "prefix_id": "p2",
+        "cluster_key": "cluster:q_03",
+        "matched_ref_ids": [],
+        "registration_checkpoint": 2,
+        "arm_a": {
+          "item_id": "i6",
+          "question": "自然神力耗尽后世界树彻底沉睡与伊芙死亡之间的关系，是否存在补救或避免方式？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 1,
+          "citation_start": 2895,
+          "citation_end": 2911,
+          "anchor_quote": "一旦用光，世界树将彻底陷入沉睡。"
+        },
+        "arm_b": {
+          "item_id": "i1",
+          "question": "伊芙的自然神力耗尽后，是否还有避免彻底沉睡或死亡的办法？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 1,
+          "citation_start": 2895,
+          "citation_end": 2911,
+          "anchor_quote": "一旦用光，世界树将彻底陷入沉睡。"
+        },
+        "unit_diff_b_minus_a": 0,
+        "same_unit_char_diff_b_minus_a": 0
+      },
+      {
+        "work_id": "t4_game_holdout",
+        "prefix_id": "p2",
+        "cluster_key": "ref:r1",
+        "matched_ref_ids": [
+          "r1"
+        ],
+        "registration_checkpoint": 2,
+        "arm_a": {
+          "item_id": "i4",
+          "question": "上一任世界树为何会陷入濒死，其陨落的具体原因是什么？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 1,
+          "citation_start": 1980,
+          "citation_end": 2010,
+          "anchor_quote": "看着倒影中那枯萎凋零的叶片，伊芙的心中不知道是感慨还是唏嘘。"
+        },
+        "arm_b": {
+          "item_id": "i3",
+          "question": "上一任世界树陨落与信仰神灵争夺信徒之间具体有何关联？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 2,
+          "citation_start": 992,
+          "citation_end": 1009,
+          "anchor_quote": "上一任世界树的陨落似乎就与此有关。"
+        },
+        "unit_diff_b_minus_a": 1,
+        "same_unit_char_diff_b_minus_a": null
+      },
+      {
+        "work_id": "t4_game_holdout",
+        "prefix_id": "p2",
+        "cluster_key": "ref:r4",
+        "matched_ref_ids": [
+          "r4"
+        ],
+        "registration_checkpoint": 2,
+        "arm_a": {
+          "item_id": "i10",
+          "question": "伊芙听到的祷告声是否确实来自其另外几名信徒，他们祈祷的感伤与绝望源于何事？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 2,
+          "citation_start": 2231,
+          "citation_end": 2259,
+          "anchor_quote": "如果祂猜测不错，恐怕那些声音就来源于祂的另外几名信徒了。"
+        },
+        "arm_b": {
+          "item_id": "i0",
+          "question": "伊莩在黑暗空间中听到的祷告声来自何处、由谁发出？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": false,
+          "source_unit_id": 1,
+          "citation_start": 419,
+          "citation_end": 445,
+          "anchor_quote": "绿色的那颗很大，它光芒闪烁，给伊莩一种奇妙地神秘感。"
+        },
+        "unit_diff_b_minus_a": -1,
+        "same_unit_char_diff_b_minus_a": null
+      },
+      {
+        "work_id": "t4_game_holdout",
+        "prefix_id": "p2",
+        "cluster_key": "ref:r5",
+        "matched_ref_ids": [
+          "r5"
+        ],
+        "registration_checkpoint": 2,
+        "arm_a": {
+          "item_id": "i9",
+          "question": "除巴萨卡之外，伊芙另外两名信徒（一名虔诚信徒、一名浅信徒）是谁、身在何处？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 2,
+          "citation_start": 2011,
+          "citation_end": 2040,
+          "anchor_quote": "【信徒数量：3（圣徒0、狂信徒1、虔诚信徒1、浅信徒1）】"
+        },
+        "arm_b": {
+          "item_id": "i4",
+          "question": "除巴萨卡外，伊芙已有的另外几名信徒分别是谁、身在何处？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 2,
+          "citation_start": 2231,
+          "citation_end": 2259,
+          "anchor_quote": "如果祂猜测不错，恐怕那些声音就来源于祂的另外几名信徒了。"
+        },
+        "unit_diff_b_minus_a": 0,
+        "same_unit_char_diff_b_minus_a": 220
+      },
+      {
+        "work_id": "t4_game_holdout",
+        "prefix_id": "p3",
+        "cluster_key": "cluster:q_06",
+        "matched_ref_ids": [],
+        "registration_checkpoint": 3,
+        "arm_a": {
+          "item_id": "i1",
+          "question": "伊芙的死亡与虚拟现实游戏舱、网络世界连接之间究竟存在何种关联？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 3,
+          "citation_start": 94,
+          "citation_end": 111,
+          "anchor_quote": "而死因貌似是因为数天的不眠不休……"
+        },
+        "arm_b": {
+          "item_id": "i5",
+          "question": "伊芙为何能与前世蓝星的网络世界建立连接？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 2,
+          "citation_start": 3433,
+          "citation_end": 3456,
+          "anchor_quote": "这个蓝色光团，连接的竟然是前世蓝星的网络世界！"
+        },
+        "unit_diff_b_minus_a": -1,
+        "same_unit_char_diff_b_minus_a": null
+      },
+      {
+        "work_id": "t4_game_holdout",
+        "prefix_id": "p3",
+        "cluster_key": "ref:r0",
+        "matched_ref_ids": [
+          "r0"
+        ],
+        "registration_checkpoint": 3,
+        "arm_a": {
+          "item_id": "i2",
+          "question": "上一任世界树是因何、被谁导致陨落的？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 2,
+          "citation_start": 992,
+          "citation_end": 1009,
+          "anchor_quote": "上一任世界树的陨落似乎就与此有关。"
+        },
+        "arm_b": {
+          "item_id": "i3",
+          "question": "上一任世界树的陨落与信仰神灵争夺信徒之间究竟有什么关联？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 2,
+          "citation_start": 992,
+          "citation_end": 1009,
+          "anchor_quote": "上一任世界树的陨落似乎就与此有关。"
+        },
+        "unit_diff_b_minus_a": 0,
+        "same_unit_char_diff_b_minus_a": 0
+      },
+      {
+        "work_id": "t4_game_holdout",
+        "prefix_id": "p3",
+        "cluster_key": "ref:r15",
+        "matched_ref_ids": [
+          "r15"
+        ],
+        "registration_checkpoint": 3,
+        "arm_a": {
+          "item_id": "i3",
+          "question": "世界树上的神殿与精灵神像为何残破，神像缺失的头颅去了哪里？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 3,
+          "citation_start": 1408,
+          "citation_end": 1431,
+          "anchor_quote": "祭坛上方则摆放着一座缺失了头颅的残破精灵神像。"
+        },
+        "arm_b": {
+          "item_id": "i9",
+          "question": "祭坛上那座缺失头颅的精灵神像原本是什么样子，头颅为何缺失？",
+          "label": "有依据",
+          "anchor_sufficient_at_quote": true,
+          "source_unit_id": 3,
+          "citation_start": 1408,
+          "citation_end": 1431,
+          "anchor_quote": "祭坛上方则摆放着一座缺失了头颅的残破精灵神像。"
+        },
+        "unit_diff_b_minus_a": 0,
+        "same_unit_char_diff_b_minus_a": 0
+      }
+    ]
+  },
+  "arm_only_questions_summary": {
+    "A": {
+      "total": 20,
+      "有依据": 15,
+      "无依据": 2,
+      "已经回答": 2,
+      "无法确定": 1
+    },
+    "B": {
+      "total": 21,
+      "有依据": 16,
+      "无依据": 0,
+      "已经回答": 5,
+      "无法确定": 0
+    }
+  },
+  "per_prefix": {
+    "t4_hist_holdout/p1": {
+      "per_arm_matching": {
+        "A": {
+          "reference_total": 2,
+          "judged_total": 2,
+          "registered": 1,
+          "missed": 1,
+          "missed_ref_ids": [
+            "r2"
+          ],
+          "unresolved_total": 0,
+          "unresolved_ref_ids": [],
+          "registered_ref_ids": [
+            "r0"
+          ],
+          "per_ref": [
+            {
+              "ref_id": "r0",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r2",
+              "verdict": "missed",
+              "reason": ""
+            }
+          ]
+        },
+        "B": {
+          "reference_total": 2,
+          "judged_total": 2,
+          "registered": 1,
+          "missed": 1,
+          "missed_ref_ids": [
+            "r2"
+          ],
+          "unresolved_total": 0,
+          "unresolved_ref_ids": [],
+          "registered_ref_ids": [
+            "r0"
+          ],
+          "per_ref": [
+            {
+              "ref_id": "r0",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r2",
+              "verdict": "missed",
+              "reason": ""
+            }
+          ]
+        }
+      },
+      "per_arm_matching_strict_1to1": {
+        "A": {
+          "reference_total": 2,
+          "judged_total": 2,
+          "registered": 1,
+          "missed": 1,
+          "missed_ref_ids": [
+            "r2"
+          ],
+          "unresolved_total": 0,
+          "unresolved_ref_ids": [],
+          "registered_ref_ids": [
+            "r0"
+          ],
+          "per_ref": [
+            {
+              "ref_id": "r0",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r2",
+              "verdict": "missed",
+              "reason": ""
+            }
+          ]
+        },
+        "B": {
+          "reference_total": 2,
+          "judged_total": 2,
+          "registered": 1,
+          "missed": 1,
+          "missed_ref_ids": [
+            "r2"
+          ],
+          "unresolved_total": 0,
+          "unresolved_ref_ids": [],
+          "registered_ref_ids": [
+            "r0"
+          ],
+          "per_ref": [
+            {
+              "ref_id": "r0",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r2",
+              "verdict": "missed",
+              "reason": ""
+            }
+          ]
+        }
+      },
+      "per_arm_metrics": {
+        "A": {
+          "denominators": {
+            "system_total": 7,
+            "settled_adjudications": 6,
+            "disputed": 0,
+            "undecided": 1,
+            "unadjudicated": 0,
+            "unknown_label": 0,
+            "duplicate_ids": 0,
+            "independent_qualified_total": 2,
+            "independent_qualified_valid": 2
+          },
+          "coverage": {
+            "adjudication_coverage": 0.857143,
+            "adjudication_coverage_status": "可计算",
+            "note": "比率的分母是有效裁决数；覆盖率单独报告，避免不确定项增多显得指标改善"
+          },
+          "metrics": {
+            "no_ground_rate": {
+              "count": 0,
+              "denominator": 6,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "already_answered_rate": {
+              "count": 0,
+              "denominator": 6,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "span_localization_rate": {
+              "count": 6,
+              "denominator": 6,
+              "rate": 1.0,
+              "status": "可计算"
+            },
+            "missed_registration_rate": {
+              "count": 1,
+              "denominator": 2,
+              "rate": 0.5,
+              "status": "可计算"
+            },
+            "registration_delay": {
+              "unit": "见每条记录的 basis",
+              "baseline": "首次观察到合格的位置",
+              "measured": 0,
+              "positive_delay_count": 0,
+              "rate": null,
+              "status": "N/A：无可比样本",
+              "records": [],
+              "rejected": [],
+              "caveat": "只有在若干前缀位置做过检查时，基准是“首次观察到合格的位置”，不能表述为“全文最早位置”。延迟只按检查点差或同一固定坐标里的字符距离计算。"
+            }
+          },
+          "excluded": {
+            "disputed_ids": [],
+            "undecided_ids": [
+              "i6"
+            ],
+            "unknown_label_ids": [],
+            "unadjudicated_ids": [],
+            "orphan_adjudication_ids": [],
+            "duplicate_system_ids": [],
+            "duplicate_adjudication_ids": [],
+            "reference_missing_registered": [],
+            "reference_unresolved_pairing": [],
+            "note": "以上各项都不进任何指标的分子或分母"
+          },
+          "label_distribution": {
+            "有依据": 6,
+            "无依据": 0,
+            "已经回答": 0
+          }
+        },
+        "B": {
+          "denominators": {
+            "system_total": 6,
+            "settled_adjudications": 6,
+            "disputed": 0,
+            "undecided": 0,
+            "unadjudicated": 0,
+            "unknown_label": 0,
+            "duplicate_ids": 0,
+            "independent_qualified_total": 2,
+            "independent_qualified_valid": 2
+          },
+          "coverage": {
+            "adjudication_coverage": 1.0,
+            "adjudication_coverage_status": "可计算",
+            "note": "比率的分母是有效裁决数；覆盖率单独报告，避免不确定项增多显得指标改善"
+          },
+          "metrics": {
+            "no_ground_rate": {
+              "count": 0,
+              "denominator": 6,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "already_answered_rate": {
+              "count": 0,
+              "denominator": 6,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "span_localization_rate": {
+              "count": 6,
+              "denominator": 6,
+              "rate": 1.0,
+              "status": "可计算"
+            },
+            "missed_registration_rate": {
+              "count": 1,
+              "denominator": 2,
+              "rate": 0.5,
+              "status": "可计算"
+            },
+            "registration_delay": {
+              "unit": "见每条记录的 basis",
+              "baseline": "首次观察到合格的位置",
+              "measured": 0,
+              "positive_delay_count": 0,
+              "rate": null,
+              "status": "N/A：无可比样本",
+              "records": [],
+              "rejected": [],
+              "caveat": "只有在若干前缀位置做过检查时，基准是“首次观察到合格的位置”，不能表述为“全文最早位置”。延迟只按检查点差或同一固定坐标里的字符距离计算。"
+            }
+          },
+          "excluded": {
+            "disputed_ids": [],
+            "undecided_ids": [],
+            "unknown_label_ids": [],
+            "unadjudicated_ids": [],
+            "orphan_adjudication_ids": [],
+            "duplicate_system_ids": [],
+            "duplicate_adjudication_ids": [],
+            "reference_missing_registered": [],
+            "reference_unresolved_pairing": [],
+            "note": "以上各项都不进任何指标的分子或分母"
+          },
+          "label_distribution": {
+            "有依据": 6,
+            "无依据": 0,
+            "已经回答": 0
+          }
+        }
+      },
+      "per_arm_metrics_strict_1to1": {
+        "A": {
+          "denominators": {
+            "system_total": 7,
+            "settled_adjudications": 6,
+            "disputed": 0,
+            "undecided": 1,
+            "unadjudicated": 0,
+            "unknown_label": 0,
+            "duplicate_ids": 0,
+            "independent_qualified_total": 2,
+            "independent_qualified_valid": 2
+          },
+          "coverage": {
+            "adjudication_coverage": 0.857143,
+            "adjudication_coverage_status": "可计算",
+            "note": "比率的分母是有效裁决数；覆盖率单独报告，避免不确定项增多显得指标改善"
+          },
+          "metrics": {
+            "no_ground_rate": {
+              "count": 0,
+              "denominator": 6,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "already_answered_rate": {
+              "count": 0,
+              "denominator": 6,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "span_localization_rate": {
+              "count": 6,
+              "denominator": 6,
+              "rate": 1.0,
+              "status": "可计算"
+            },
+            "missed_registration_rate": {
+              "count": 1,
+              "denominator": 2,
+              "rate": 0.5,
+              "status": "可计算"
+            },
+            "registration_delay": {
+              "unit": "见每条记录的 basis",
+              "baseline": "首次观察到合格的位置",
+              "measured": 0,
+              "positive_delay_count": 0,
+              "rate": null,
+              "status": "N/A：无可比样本",
+              "records": [],
+              "rejected": [],
+              "caveat": "只有在若干前缀位置做过检查时，基准是“首次观察到合格的位置”，不能表述为“全文最早位置”。延迟只按检查点差或同一固定坐标里的字符距离计算。"
+            }
+          },
+          "excluded": {
+            "disputed_ids": [],
+            "undecided_ids": [
+              "i6"
+            ],
+            "unknown_label_ids": [],
+            "unadjudicated_ids": [],
+            "orphan_adjudication_ids": [],
+            "duplicate_system_ids": [],
+            "duplicate_adjudication_ids": [],
+            "reference_missing_registered": [],
+            "reference_unresolved_pairing": [],
+            "note": "以上各项都不进任何指标的分子或分母"
+          },
+          "label_distribution": {
+            "有依据": 6,
+            "无依据": 0,
+            "已经回答": 0
+          }
+        },
+        "B": {
+          "denominators": {
+            "system_total": 6,
+            "settled_adjudications": 6,
+            "disputed": 0,
+            "undecided": 0,
+            "unadjudicated": 0,
+            "unknown_label": 0,
+            "duplicate_ids": 0,
+            "independent_qualified_total": 2,
+            "independent_qualified_valid": 2
+          },
+          "coverage": {
+            "adjudication_coverage": 1.0,
+            "adjudication_coverage_status": "可计算",
+            "note": "比率的分母是有效裁决数；覆盖率单独报告，避免不确定项增多显得指标改善"
+          },
+          "metrics": {
+            "no_ground_rate": {
+              "count": 0,
+              "denominator": 6,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "already_answered_rate": {
+              "count": 0,
+              "denominator": 6,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "span_localization_rate": {
+              "count": 6,
+              "denominator": 6,
+              "rate": 1.0,
+              "status": "可计算"
+            },
+            "missed_registration_rate": {
+              "count": 1,
+              "denominator": 2,
+              "rate": 0.5,
+              "status": "可计算"
+            },
+            "registration_delay": {
+              "unit": "见每条记录的 basis",
+              "baseline": "首次观察到合格的位置",
+              "measured": 0,
+              "positive_delay_count": 0,
+              "rate": null,
+              "status": "N/A：无可比样本",
+              "records": [],
+              "rejected": [],
+              "caveat": "只有在若干前缀位置做过检查时，基准是“首次观察到合格的位置”，不能表述为“全文最早位置”。延迟只按检查点差或同一固定坐标里的字符距离计算。"
+            }
+          },
+          "excluded": {
+            "disputed_ids": [],
+            "undecided_ids": [],
+            "unknown_label_ids": [],
+            "unadjudicated_ids": [],
+            "orphan_adjudication_ids": [],
+            "duplicate_system_ids": [],
+            "duplicate_adjudication_ids": [],
+            "reference_missing_registered": [],
+            "reference_unresolved_pairing": [],
+            "note": "以上各项都不进任何指标的分子或分母"
+          },
+          "label_distribution": {
+            "有依据": 6,
+            "无依据": 0,
+            "已经回答": 0
+          }
+        }
+      },
+      "paired_question_count": 4,
+      "arm_only_counts": {
+        "A": 3,
+        "B": 0
+      },
+      "multi_ref_bindings": {
+        "A": [],
+        "B": []
+      },
+      "bidirectional_notes": []
+    },
+    "t4_hist_holdout/p2": {
+      "per_arm_matching": {
+        "A": {
+          "reference_total": 6,
+          "judged_total": 6,
+          "registered": 4,
+          "missed": 2,
+          "missed_ref_ids": [
+            "r0",
+            "r1"
+          ],
+          "unresolved_total": 0,
+          "unresolved_ref_ids": [],
+          "registered_ref_ids": [
+            "r2",
+            "r3",
+            "r4",
+            "r7"
+          ],
+          "per_ref": [
+            {
+              "ref_id": "r0",
+              "verdict": "missed",
+              "reason": ""
+            },
+            {
+              "ref_id": "r1",
+              "verdict": "missed",
+              "reason": ""
+            },
+            {
+              "ref_id": "r2",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r3",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r4",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r7",
+              "verdict": "registered",
+              "reason": ""
+            }
+          ]
+        },
+        "B": {
+          "reference_total": 6,
+          "judged_total": 6,
+          "registered": 4,
+          "missed": 2,
+          "missed_ref_ids": [
+            "r0",
+            "r1"
+          ],
+          "unresolved_total": 0,
+          "unresolved_ref_ids": [],
+          "registered_ref_ids": [
+            "r2",
+            "r3",
+            "r4",
+            "r7"
+          ],
+          "per_ref": [
+            {
+              "ref_id": "r0",
+              "verdict": "missed",
+              "reason": ""
+            },
+            {
+              "ref_id": "r1",
+              "verdict": "missed",
+              "reason": ""
+            },
+            {
+              "ref_id": "r2",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r3",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r4",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r7",
+              "verdict": "registered",
+              "reason": ""
+            }
+          ]
+        }
+      },
+      "per_arm_matching_strict_1to1": {
+        "A": {
+          "reference_total": 6,
+          "judged_total": 5,
+          "registered": 3,
+          "missed": 2,
+          "missed_ref_ids": [
+            "r0",
+            "r1"
+          ],
+          "unresolved_total": 1,
+          "unresolved_ref_ids": [
+            "r4"
+          ],
+          "registered_ref_ids": [
+            "r2",
+            "r3",
+            "r7"
+          ],
+          "per_ref": [
+            {
+              "ref_id": "r0",
+              "verdict": "missed",
+              "reason": ""
+            },
+            {
+              "ref_id": "r1",
+              "verdict": "missed",
+              "reason": ""
+            },
+            {
+              "ref_id": "r2",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r3",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r4",
+              "verdict": "unresolved",
+              "reason": "语义配对未解决"
+            },
+            {
+              "ref_id": "r7",
+              "verdict": "registered",
+              "reason": ""
+            }
+          ]
+        },
+        "B": {
+          "reference_total": 6,
+          "judged_total": 5,
+          "registered": 3,
+          "missed": 2,
+          "missed_ref_ids": [
+            "r0",
+            "r1"
+          ],
+          "unresolved_total": 1,
+          "unresolved_ref_ids": [
+            "r4"
+          ],
+          "registered_ref_ids": [
+            "r2",
+            "r3",
+            "r7"
+          ],
+          "per_ref": [
+            {
+              "ref_id": "r0",
+              "verdict": "missed",
+              "reason": ""
+            },
+            {
+              "ref_id": "r1",
+              "verdict": "missed",
+              "reason": ""
+            },
+            {
+              "ref_id": "r2",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r3",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r4",
+              "verdict": "unresolved",
+              "reason": "语义配对未解决"
+            },
+            {
+              "ref_id": "r7",
+              "verdict": "registered",
+              "reason": ""
+            }
+          ]
+        }
+      },
+      "per_arm_metrics": {
+        "A": {
+          "denominators": {
+            "system_total": 12,
+            "settled_adjudications": 12,
+            "disputed": 0,
+            "undecided": 0,
+            "unadjudicated": 0,
+            "unknown_label": 0,
+            "duplicate_ids": 0,
+            "independent_qualified_total": 6,
+            "independent_qualified_valid": 6
+          },
+          "coverage": {
+            "adjudication_coverage": 1.0,
+            "adjudication_coverage_status": "可计算",
+            "note": "比率的分母是有效裁决数；覆盖率单独报告，避免不确定项增多显得指标改善"
+          },
+          "metrics": {
+            "no_ground_rate": {
+              "count": 0,
+              "denominator": 12,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "already_answered_rate": {
+              "count": 0,
+              "denominator": 12,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "span_localization_rate": {
+              "count": 12,
+              "denominator": 12,
+              "rate": 1.0,
+              "status": "可计算"
+            },
+            "missed_registration_rate": {
+              "count": 2,
+              "denominator": 6,
+              "rate": 0.333333,
+              "status": "可计算"
+            },
+            "registration_delay": {
+              "unit": "见每条记录的 basis",
+              "baseline": "首次观察到合格的位置",
+              "measured": 0,
+              "positive_delay_count": 0,
+              "rate": null,
+              "status": "N/A：无可比样本",
+              "records": [],
+              "rejected": [],
+              "caveat": "只有在若干前缀位置做过检查时，基准是“首次观察到合格的位置”，不能表述为“全文最早位置”。延迟只按检查点差或同一固定坐标里的字符距离计算。"
+            }
+          },
+          "excluded": {
+            "disputed_ids": [],
+            "undecided_ids": [],
+            "unknown_label_ids": [],
+            "unadjudicated_ids": [],
+            "orphan_adjudication_ids": [],
+            "duplicate_system_ids": [],
+            "duplicate_adjudication_ids": [],
+            "reference_missing_registered": [],
+            "reference_unresolved_pairing": [],
+            "note": "以上各项都不进任何指标的分子或分母"
+          },
+          "label_distribution": {
+            "有依据": 12,
+            "无依据": 0,
+            "已经回答": 0
+          }
+        },
+        "B": {
+          "denominators": {
+            "system_total": 10,
+            "settled_adjudications": 10,
+            "disputed": 0,
+            "undecided": 0,
+            "unadjudicated": 0,
+            "unknown_label": 0,
+            "duplicate_ids": 0,
+            "independent_qualified_total": 6,
+            "independent_qualified_valid": 6
+          },
+          "coverage": {
+            "adjudication_coverage": 1.0,
+            "adjudication_coverage_status": "可计算",
+            "note": "比率的分母是有效裁决数；覆盖率单独报告，避免不确定项增多显得指标改善"
+          },
+          "metrics": {
+            "no_ground_rate": {
+              "count": 0,
+              "denominator": 10,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "already_answered_rate": {
+              "count": 0,
+              "denominator": 10,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "span_localization_rate": {
+              "count": 10,
+              "denominator": 10,
+              "rate": 1.0,
+              "status": "可计算"
+            },
+            "missed_registration_rate": {
+              "count": 2,
+              "denominator": 6,
+              "rate": 0.333333,
+              "status": "可计算"
+            },
+            "registration_delay": {
+              "unit": "见每条记录的 basis",
+              "baseline": "首次观察到合格的位置",
+              "measured": 0,
+              "positive_delay_count": 0,
+              "rate": null,
+              "status": "N/A：无可比样本",
+              "records": [],
+              "rejected": [],
+              "caveat": "只有在若干前缀位置做过检查时，基准是“首次观察到合格的位置”，不能表述为“全文最早位置”。延迟只按检查点差或同一固定坐标里的字符距离计算。"
+            }
+          },
+          "excluded": {
+            "disputed_ids": [],
+            "undecided_ids": [],
+            "unknown_label_ids": [],
+            "unadjudicated_ids": [],
+            "orphan_adjudication_ids": [],
+            "duplicate_system_ids": [],
+            "duplicate_adjudication_ids": [],
+            "reference_missing_registered": [],
+            "reference_unresolved_pairing": [],
+            "note": "以上各项都不进任何指标的分子或分母"
+          },
+          "label_distribution": {
+            "有依据": 10,
+            "无依据": 0,
+            "已经回答": 0
+          }
+        }
+      },
+      "per_arm_metrics_strict_1to1": {
+        "A": {
+          "denominators": {
+            "system_total": 12,
+            "settled_adjudications": 12,
+            "disputed": 0,
+            "undecided": 0,
+            "unadjudicated": 0,
+            "unknown_label": 0,
+            "duplicate_ids": 0,
+            "independent_qualified_total": 6,
+            "independent_qualified_valid": 5
+          },
+          "coverage": {
+            "adjudication_coverage": 1.0,
+            "adjudication_coverage_status": "可计算",
+            "note": "比率的分母是有效裁决数；覆盖率单独报告，避免不确定项增多显得指标改善"
+          },
+          "metrics": {
+            "no_ground_rate": {
+              "count": 0,
+              "denominator": 12,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "already_answered_rate": {
+              "count": 0,
+              "denominator": 12,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "span_localization_rate": {
+              "count": 12,
+              "denominator": 12,
+              "rate": 1.0,
+              "status": "可计算"
+            },
+            "missed_registration_rate": {
+              "count": 2,
+              "denominator": 5,
+              "rate": 0.4,
+              "status": "可计算"
+            },
+            "registration_delay": {
+              "unit": "见每条记录的 basis",
+              "baseline": "首次观察到合格的位置",
+              "measured": 0,
+              "positive_delay_count": 0,
+              "rate": null,
+              "status": "N/A：无可比样本",
+              "records": [],
+              "rejected": [],
+              "caveat": "只有在若干前缀位置做过检查时，基准是“首次观察到合格的位置”，不能表述为“全文最早位置”。延迟只按检查点差或同一固定坐标里的字符距离计算。"
+            }
+          },
+          "excluded": {
+            "disputed_ids": [],
+            "undecided_ids": [],
+            "unknown_label_ids": [],
+            "unadjudicated_ids": [],
+            "orphan_adjudication_ids": [],
+            "duplicate_system_ids": [],
+            "duplicate_adjudication_ids": [],
+            "reference_missing_registered": [],
+            "reference_unresolved_pairing": [
+              "r4"
+            ],
+            "note": "以上各项都不进任何指标的分子或分母"
+          },
+          "label_distribution": {
+            "有依据": 12,
+            "无依据": 0,
+            "已经回答": 0
+          }
+        },
+        "B": {
+          "denominators": {
+            "system_total": 10,
+            "settled_adjudications": 10,
+            "disputed": 0,
+            "undecided": 0,
+            "unadjudicated": 0,
+            "unknown_label": 0,
+            "duplicate_ids": 0,
+            "independent_qualified_total": 6,
+            "independent_qualified_valid": 5
+          },
+          "coverage": {
+            "adjudication_coverage": 1.0,
+            "adjudication_coverage_status": "可计算",
+            "note": "比率的分母是有效裁决数；覆盖率单独报告，避免不确定项增多显得指标改善"
+          },
+          "metrics": {
+            "no_ground_rate": {
+              "count": 0,
+              "denominator": 10,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "already_answered_rate": {
+              "count": 0,
+              "denominator": 10,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "span_localization_rate": {
+              "count": 10,
+              "denominator": 10,
+              "rate": 1.0,
+              "status": "可计算"
+            },
+            "missed_registration_rate": {
+              "count": 2,
+              "denominator": 5,
+              "rate": 0.4,
+              "status": "可计算"
+            },
+            "registration_delay": {
+              "unit": "见每条记录的 basis",
+              "baseline": "首次观察到合格的位置",
+              "measured": 0,
+              "positive_delay_count": 0,
+              "rate": null,
+              "status": "N/A：无可比样本",
+              "records": [],
+              "rejected": [],
+              "caveat": "只有在若干前缀位置做过检查时，基准是“首次观察到合格的位置”，不能表述为“全文最早位置”。延迟只按检查点差或同一固定坐标里的字符距离计算。"
+            }
+          },
+          "excluded": {
+            "disputed_ids": [],
+            "undecided_ids": [],
+            "unknown_label_ids": [],
+            "unadjudicated_ids": [],
+            "orphan_adjudication_ids": [],
+            "duplicate_system_ids": [],
+            "duplicate_adjudication_ids": [],
+            "reference_missing_registered": [],
+            "reference_unresolved_pairing": [
+              "r4"
+            ],
+            "note": "以上各项都不进任何指标的分子或分母"
+          },
+          "label_distribution": {
+            "有依据": 10,
+            "无依据": 0,
+            "已经回答": 0
+          }
+        }
+      },
+      "paired_question_count": 5,
+      "arm_only_counts": {
+        "A": 6,
+        "B": 5
+      },
+      "multi_ref_bindings": {
+        "A": [
+          {
+            "ref_id": "r4",
+            "shared_system_item_id": "i8",
+            "already_bound_to_ref_id": "r3"
+          }
+        ],
+        "B": [
+          {
+            "ref_id": "r4",
+            "shared_system_item_id": "i6",
+            "already_bound_to_ref_id": "r3"
+          }
+        ]
+      },
+      "bidirectional_notes": []
+    },
+    "t4_hist_holdout/p3": {
+      "per_arm_matching": {
+        "A": {
+          "reference_total": 2,
+          "judged_total": 2,
+          "registered": 2,
+          "missed": 0,
+          "missed_ref_ids": [],
+          "unresolved_total": 0,
+          "unresolved_ref_ids": [],
+          "registered_ref_ids": [
+            "r1",
+            "r2"
+          ],
+          "per_ref": [
+            {
+              "ref_id": "r1",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r2",
+              "verdict": "registered",
+              "reason": ""
+            }
+          ]
+        },
+        "B": {
+          "reference_total": 2,
+          "judged_total": 2,
+          "registered": 2,
+          "missed": 0,
+          "missed_ref_ids": [],
+          "unresolved_total": 0,
+          "unresolved_ref_ids": [],
+          "registered_ref_ids": [
+            "r1",
+            "r2"
+          ],
+          "per_ref": [
+            {
+              "ref_id": "r1",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r2",
+              "verdict": "registered",
+              "reason": ""
+            }
+          ]
+        }
+      },
+      "per_arm_matching_strict_1to1": {
+        "A": {
+          "reference_total": 2,
+          "judged_total": 1,
+          "registered": 1,
+          "missed": 0,
+          "missed_ref_ids": [],
+          "unresolved_total": 1,
+          "unresolved_ref_ids": [
+            "r2"
+          ],
+          "registered_ref_ids": [
+            "r1"
+          ],
+          "per_ref": [
+            {
+              "ref_id": "r1",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r2",
+              "verdict": "unresolved",
+              "reason": "语义配对未解决"
+            }
+          ]
+        },
+        "B": {
+          "reference_total": 2,
+          "judged_total": 2,
+          "registered": 2,
+          "missed": 0,
+          "missed_ref_ids": [],
+          "unresolved_total": 0,
+          "unresolved_ref_ids": [],
+          "registered_ref_ids": [
+            "r1",
+            "r2"
+          ],
+          "per_ref": [
+            {
+              "ref_id": "r1",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r2",
+              "verdict": "registered",
+              "reason": ""
+            }
+          ]
+        }
+      },
+      "per_arm_metrics": {
+        "A": {
+          "denominators": {
+            "system_total": 8,
+            "settled_adjudications": 8,
+            "disputed": 0,
+            "undecided": 0,
+            "unadjudicated": 0,
+            "unknown_label": 0,
+            "duplicate_ids": 0,
+            "independent_qualified_total": 2,
+            "independent_qualified_valid": 2
+          },
+          "coverage": {
+            "adjudication_coverage": 1.0,
+            "adjudication_coverage_status": "可计算",
+            "note": "比率的分母是有效裁决数；覆盖率单独报告，避免不确定项增多显得指标改善"
+          },
+          "metrics": {
+            "no_ground_rate": {
+              "count": 0,
+              "denominator": 8,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "already_answered_rate": {
+              "count": 1,
+              "denominator": 8,
+              "rate": 0.125,
+              "status": "可计算"
+            },
+            "span_localization_rate": {
+              "count": 8,
+              "denominator": 8,
+              "rate": 1.0,
+              "status": "可计算"
+            },
+            "missed_registration_rate": {
+              "count": 0,
+              "denominator": 2,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "registration_delay": {
+              "unit": "见每条记录的 basis",
+              "baseline": "首次观察到合格的位置",
+              "measured": 0,
+              "positive_delay_count": 0,
+              "rate": null,
+              "status": "N/A：无可比样本",
+              "records": [],
+              "rejected": [],
+              "caveat": "只有在若干前缀位置做过检查时，基准是“首次观察到合格的位置”，不能表述为“全文最早位置”。延迟只按检查点差或同一固定坐标里的字符距离计算。"
+            }
+          },
+          "excluded": {
+            "disputed_ids": [],
+            "undecided_ids": [],
+            "unknown_label_ids": [],
+            "unadjudicated_ids": [],
+            "orphan_adjudication_ids": [],
+            "duplicate_system_ids": [],
+            "duplicate_adjudication_ids": [],
+            "reference_missing_registered": [],
+            "reference_unresolved_pairing": [],
+            "note": "以上各项都不进任何指标的分子或分母"
+          },
+          "label_distribution": {
+            "有依据": 7,
+            "无依据": 0,
+            "已经回答": 1
+          }
+        },
+        "B": {
+          "denominators": {
+            "system_total": 12,
+            "settled_adjudications": 12,
+            "disputed": 0,
+            "undecided": 0,
+            "unadjudicated": 0,
+            "unknown_label": 0,
+            "duplicate_ids": 0,
+            "independent_qualified_total": 2,
+            "independent_qualified_valid": 2
+          },
+          "coverage": {
+            "adjudication_coverage": 1.0,
+            "adjudication_coverage_status": "可计算",
+            "note": "比率的分母是有效裁决数；覆盖率单独报告，避免不确定项增多显得指标改善"
+          },
+          "metrics": {
+            "no_ground_rate": {
+              "count": 0,
+              "denominator": 12,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "already_answered_rate": {
+              "count": 4,
+              "denominator": 12,
+              "rate": 0.333333,
+              "status": "可计算"
+            },
+            "span_localization_rate": {
+              "count": 12,
+              "denominator": 12,
+              "rate": 1.0,
+              "status": "可计算"
+            },
+            "missed_registration_rate": {
+              "count": 0,
+              "denominator": 2,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "registration_delay": {
+              "unit": "见每条记录的 basis",
+              "baseline": "首次观察到合格的位置",
+              "measured": 0,
+              "positive_delay_count": 0,
+              "rate": null,
+              "status": "N/A：无可比样本",
+              "records": [],
+              "rejected": [],
+              "caveat": "只有在若干前缀位置做过检查时，基准是“首次观察到合格的位置”，不能表述为“全文最早位置”。延迟只按检查点差或同一固定坐标里的字符距离计算。"
+            }
+          },
+          "excluded": {
+            "disputed_ids": [],
+            "undecided_ids": [],
+            "unknown_label_ids": [],
+            "unadjudicated_ids": [],
+            "orphan_adjudication_ids": [],
+            "duplicate_system_ids": [],
+            "duplicate_adjudication_ids": [],
+            "reference_missing_registered": [],
+            "reference_unresolved_pairing": [],
+            "note": "以上各项都不进任何指标的分子或分母"
+          },
+          "label_distribution": {
+            "有依据": 8,
+            "无依据": 0,
+            "已经回答": 4
+          }
+        }
+      },
+      "per_arm_metrics_strict_1to1": {
+        "A": {
+          "denominators": {
+            "system_total": 8,
+            "settled_adjudications": 8,
+            "disputed": 0,
+            "undecided": 0,
+            "unadjudicated": 0,
+            "unknown_label": 0,
+            "duplicate_ids": 0,
+            "independent_qualified_total": 2,
+            "independent_qualified_valid": 1
+          },
+          "coverage": {
+            "adjudication_coverage": 1.0,
+            "adjudication_coverage_status": "可计算",
+            "note": "比率的分母是有效裁决数；覆盖率单独报告，避免不确定项增多显得指标改善"
+          },
+          "metrics": {
+            "no_ground_rate": {
+              "count": 0,
+              "denominator": 8,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "already_answered_rate": {
+              "count": 1,
+              "denominator": 8,
+              "rate": 0.125,
+              "status": "可计算"
+            },
+            "span_localization_rate": {
+              "count": 8,
+              "denominator": 8,
+              "rate": 1.0,
+              "status": "可计算"
+            },
+            "missed_registration_rate": {
+              "count": 0,
+              "denominator": 1,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "registration_delay": {
+              "unit": "见每条记录的 basis",
+              "baseline": "首次观察到合格的位置",
+              "measured": 0,
+              "positive_delay_count": 0,
+              "rate": null,
+              "status": "N/A：无可比样本",
+              "records": [],
+              "rejected": [],
+              "caveat": "只有在若干前缀位置做过检查时，基准是“首次观察到合格的位置”，不能表述为“全文最早位置”。延迟只按检查点差或同一固定坐标里的字符距离计算。"
+            }
+          },
+          "excluded": {
+            "disputed_ids": [],
+            "undecided_ids": [],
+            "unknown_label_ids": [],
+            "unadjudicated_ids": [],
+            "orphan_adjudication_ids": [],
+            "duplicate_system_ids": [],
+            "duplicate_adjudication_ids": [],
+            "reference_missing_registered": [],
+            "reference_unresolved_pairing": [
+              "r2"
+            ],
+            "note": "以上各项都不进任何指标的分子或分母"
+          },
+          "label_distribution": {
+            "有依据": 7,
+            "无依据": 0,
+            "已经回答": 1
+          }
+        },
+        "B": {
+          "denominators": {
+            "system_total": 12,
+            "settled_adjudications": 12,
+            "disputed": 0,
+            "undecided": 0,
+            "unadjudicated": 0,
+            "unknown_label": 0,
+            "duplicate_ids": 0,
+            "independent_qualified_total": 2,
+            "independent_qualified_valid": 2
+          },
+          "coverage": {
+            "adjudication_coverage": 1.0,
+            "adjudication_coverage_status": "可计算",
+            "note": "比率的分母是有效裁决数；覆盖率单独报告，避免不确定项增多显得指标改善"
+          },
+          "metrics": {
+            "no_ground_rate": {
+              "count": 0,
+              "denominator": 12,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "already_answered_rate": {
+              "count": 4,
+              "denominator": 12,
+              "rate": 0.333333,
+              "status": "可计算"
+            },
+            "span_localization_rate": {
+              "count": 12,
+              "denominator": 12,
+              "rate": 1.0,
+              "status": "可计算"
+            },
+            "missed_registration_rate": {
+              "count": 0,
+              "denominator": 2,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "registration_delay": {
+              "unit": "见每条记录的 basis",
+              "baseline": "首次观察到合格的位置",
+              "measured": 0,
+              "positive_delay_count": 0,
+              "rate": null,
+              "status": "N/A：无可比样本",
+              "records": [],
+              "rejected": [],
+              "caveat": "只有在若干前缀位置做过检查时，基准是“首次观察到合格的位置”，不能表述为“全文最早位置”。延迟只按检查点差或同一固定坐标里的字符距离计算。"
+            }
+          },
+          "excluded": {
+            "disputed_ids": [],
+            "undecided_ids": [],
+            "unknown_label_ids": [],
+            "unadjudicated_ids": [],
+            "orphan_adjudication_ids": [],
+            "duplicate_system_ids": [],
+            "duplicate_adjudication_ids": [],
+            "reference_missing_registered": [],
+            "reference_unresolved_pairing": [],
+            "note": "以上各项都不进任何指标的分子或分母"
+          },
+          "label_distribution": {
+            "有依据": 8,
+            "无依据": 0,
+            "已经回答": 4
+          }
+        }
+      },
+      "paired_question_count": 6,
+      "arm_only_counts": {
+        "A": 2,
+        "B": 5
+      },
+      "multi_ref_bindings": {
+        "A": [
+          {
+            "ref_id": "r2",
+            "shared_system_item_id": "i3",
+            "already_bound_to_ref_id": "r1"
+          }
+        ],
+        "B": []
+      },
+      "bidirectional_notes": []
+    },
+    "t4_game_holdout/p1": {
+      "per_arm_matching": {
+        "A": {
+          "reference_total": 3,
+          "judged_total": 3,
+          "registered": 1,
+          "missed": 2,
+          "missed_ref_ids": [
+            "r1",
+            "r2"
+          ],
+          "unresolved_total": 0,
+          "unresolved_ref_ids": [],
+          "registered_ref_ids": [
+            "r0"
+          ],
+          "per_ref": [
+            {
+              "ref_id": "r0",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r1",
+              "verdict": "missed",
+              "reason": ""
+            },
+            {
+              "ref_id": "r2",
+              "verdict": "missed",
+              "reason": ""
+            }
+          ]
+        },
+        "B": {
+          "reference_total": 3,
+          "judged_total": 3,
+          "registered": 1,
+          "missed": 2,
+          "missed_ref_ids": [
+            "r1",
+            "r2"
+          ],
+          "unresolved_total": 0,
+          "unresolved_ref_ids": [],
+          "registered_ref_ids": [
+            "r0"
+          ],
+          "per_ref": [
+            {
+              "ref_id": "r0",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r1",
+              "verdict": "missed",
+              "reason": ""
+            },
+            {
+              "ref_id": "r2",
+              "verdict": "missed",
+              "reason": ""
+            }
+          ]
+        }
+      },
+      "per_arm_matching_strict_1to1": {
+        "A": {
+          "reference_total": 3,
+          "judged_total": 3,
+          "registered": 1,
+          "missed": 2,
+          "missed_ref_ids": [
+            "r1",
+            "r2"
+          ],
+          "unresolved_total": 0,
+          "unresolved_ref_ids": [],
+          "registered_ref_ids": [
+            "r0"
+          ],
+          "per_ref": [
+            {
+              "ref_id": "r0",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r1",
+              "verdict": "missed",
+              "reason": ""
+            },
+            {
+              "ref_id": "r2",
+              "verdict": "missed",
+              "reason": ""
+            }
+          ]
+        },
+        "B": {
+          "reference_total": 3,
+          "judged_total": 3,
+          "registered": 1,
+          "missed": 2,
+          "missed_ref_ids": [
+            "r1",
+            "r2"
+          ],
+          "unresolved_total": 0,
+          "unresolved_ref_ids": [],
+          "registered_ref_ids": [
+            "r0"
+          ],
+          "per_ref": [
+            {
+              "ref_id": "r0",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r1",
+              "verdict": "missed",
+              "reason": ""
+            },
+            {
+              "ref_id": "r2",
+              "verdict": "missed",
+              "reason": ""
+            }
+          ]
+        }
+      },
+      "per_arm_metrics": {
+        "A": {
+          "denominators": {
+            "system_total": 6,
+            "settled_adjudications": 6,
+            "disputed": 0,
+            "undecided": 0,
+            "unadjudicated": 0,
+            "unknown_label": 0,
+            "duplicate_ids": 0,
+            "independent_qualified_total": 3,
+            "independent_qualified_valid": 3
+          },
+          "coverage": {
+            "adjudication_coverage": 1.0,
+            "adjudication_coverage_status": "可计算",
+            "note": "比率的分母是有效裁决数；覆盖率单独报告，避免不确定项增多显得指标改善"
+          },
+          "metrics": {
+            "no_ground_rate": {
+              "count": 0,
+              "denominator": 6,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "already_answered_rate": {
+              "count": 0,
+              "denominator": 6,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "span_localization_rate": {
+              "count": 6,
+              "denominator": 6,
+              "rate": 1.0,
+              "status": "可计算"
+            },
+            "missed_registration_rate": {
+              "count": 2,
+              "denominator": 3,
+              "rate": 0.666667,
+              "status": "可计算"
+            },
+            "registration_delay": {
+              "unit": "见每条记录的 basis",
+              "baseline": "首次观察到合格的位置",
+              "measured": 0,
+              "positive_delay_count": 0,
+              "rate": null,
+              "status": "N/A：无可比样本",
+              "records": [],
+              "rejected": [],
+              "caveat": "只有在若干前缀位置做过检查时，基准是“首次观察到合格的位置”，不能表述为“全文最早位置”。延迟只按检查点差或同一固定坐标里的字符距离计算。"
+            }
+          },
+          "excluded": {
+            "disputed_ids": [],
+            "undecided_ids": [],
+            "unknown_label_ids": [],
+            "unadjudicated_ids": [],
+            "orphan_adjudication_ids": [],
+            "duplicate_system_ids": [],
+            "duplicate_adjudication_ids": [],
+            "reference_missing_registered": [],
+            "reference_unresolved_pairing": [],
+            "note": "以上各项都不进任何指标的分子或分母"
+          },
+          "label_distribution": {
+            "有依据": 6,
+            "无依据": 0,
+            "已经回答": 0
+          }
+        },
+        "B": {
+          "denominators": {
+            "system_total": 6,
+            "settled_adjudications": 6,
+            "disputed": 0,
+            "undecided": 0,
+            "unadjudicated": 0,
+            "unknown_label": 0,
+            "duplicate_ids": 0,
+            "independent_qualified_total": 3,
+            "independent_qualified_valid": 3
+          },
+          "coverage": {
+            "adjudication_coverage": 1.0,
+            "adjudication_coverage_status": "可计算",
+            "note": "比率的分母是有效裁决数；覆盖率单独报告，避免不确定项增多显得指标改善"
+          },
+          "metrics": {
+            "no_ground_rate": {
+              "count": 0,
+              "denominator": 6,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "already_answered_rate": {
+              "count": 0,
+              "denominator": 6,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "span_localization_rate": {
+              "count": 6,
+              "denominator": 6,
+              "rate": 1.0,
+              "status": "可计算"
+            },
+            "missed_registration_rate": {
+              "count": 2,
+              "denominator": 3,
+              "rate": 0.666667,
+              "status": "可计算"
+            },
+            "registration_delay": {
+              "unit": "见每条记录的 basis",
+              "baseline": "首次观察到合格的位置",
+              "measured": 0,
+              "positive_delay_count": 0,
+              "rate": null,
+              "status": "N/A：无可比样本",
+              "records": [],
+              "rejected": [],
+              "caveat": "只有在若干前缀位置做过检查时，基准是“首次观察到合格的位置”，不能表述为“全文最早位置”。延迟只按检查点差或同一固定坐标里的字符距离计算。"
+            }
+          },
+          "excluded": {
+            "disputed_ids": [],
+            "undecided_ids": [],
+            "unknown_label_ids": [],
+            "unadjudicated_ids": [],
+            "orphan_adjudication_ids": [],
+            "duplicate_system_ids": [],
+            "duplicate_adjudication_ids": [],
+            "reference_missing_registered": [],
+            "reference_unresolved_pairing": [],
+            "note": "以上各项都不进任何指标的分子或分母"
+          },
+          "label_distribution": {
+            "有依据": 6,
+            "无依据": 0,
+            "已经回答": 0
+          }
+        }
+      },
+      "per_arm_metrics_strict_1to1": {
+        "A": {
+          "denominators": {
+            "system_total": 6,
+            "settled_adjudications": 6,
+            "disputed": 0,
+            "undecided": 0,
+            "unadjudicated": 0,
+            "unknown_label": 0,
+            "duplicate_ids": 0,
+            "independent_qualified_total": 3,
+            "independent_qualified_valid": 3
+          },
+          "coverage": {
+            "adjudication_coverage": 1.0,
+            "adjudication_coverage_status": "可计算",
+            "note": "比率的分母是有效裁决数；覆盖率单独报告，避免不确定项增多显得指标改善"
+          },
+          "metrics": {
+            "no_ground_rate": {
+              "count": 0,
+              "denominator": 6,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "already_answered_rate": {
+              "count": 0,
+              "denominator": 6,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "span_localization_rate": {
+              "count": 6,
+              "denominator": 6,
+              "rate": 1.0,
+              "status": "可计算"
+            },
+            "missed_registration_rate": {
+              "count": 2,
+              "denominator": 3,
+              "rate": 0.666667,
+              "status": "可计算"
+            },
+            "registration_delay": {
+              "unit": "见每条记录的 basis",
+              "baseline": "首次观察到合格的位置",
+              "measured": 0,
+              "positive_delay_count": 0,
+              "rate": null,
+              "status": "N/A：无可比样本",
+              "records": [],
+              "rejected": [],
+              "caveat": "只有在若干前缀位置做过检查时，基准是“首次观察到合格的位置”，不能表述为“全文最早位置”。延迟只按检查点差或同一固定坐标里的字符距离计算。"
+            }
+          },
+          "excluded": {
+            "disputed_ids": [],
+            "undecided_ids": [],
+            "unknown_label_ids": [],
+            "unadjudicated_ids": [],
+            "orphan_adjudication_ids": [],
+            "duplicate_system_ids": [],
+            "duplicate_adjudication_ids": [],
+            "reference_missing_registered": [],
+            "reference_unresolved_pairing": [],
+            "note": "以上各项都不进任何指标的分子或分母"
+          },
+          "label_distribution": {
+            "有依据": 6,
+            "无依据": 0,
+            "已经回答": 0
+          }
+        },
+        "B": {
+          "denominators": {
+            "system_total": 6,
+            "settled_adjudications": 6,
+            "disputed": 0,
+            "undecided": 0,
+            "unadjudicated": 0,
+            "unknown_label": 0,
+            "duplicate_ids": 0,
+            "independent_qualified_total": 3,
+            "independent_qualified_valid": 3
+          },
+          "coverage": {
+            "adjudication_coverage": 1.0,
+            "adjudication_coverage_status": "可计算",
+            "note": "比率的分母是有效裁决数；覆盖率单独报告，避免不确定项增多显得指标改善"
+          },
+          "metrics": {
+            "no_ground_rate": {
+              "count": 0,
+              "denominator": 6,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "already_answered_rate": {
+              "count": 0,
+              "denominator": 6,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "span_localization_rate": {
+              "count": 6,
+              "denominator": 6,
+              "rate": 1.0,
+              "status": "可计算"
+            },
+            "missed_registration_rate": {
+              "count": 2,
+              "denominator": 3,
+              "rate": 0.666667,
+              "status": "可计算"
+            },
+            "registration_delay": {
+              "unit": "见每条记录的 basis",
+              "baseline": "首次观察到合格的位置",
+              "measured": 0,
+              "positive_delay_count": 0,
+              "rate": null,
+              "status": "N/A：无可比样本",
+              "records": [],
+              "rejected": [],
+              "caveat": "只有在若干前缀位置做过检查时，基准是“首次观察到合格的位置”，不能表述为“全文最早位置”。延迟只按检查点差或同一固定坐标里的字符距离计算。"
+            }
+          },
+          "excluded": {
+            "disputed_ids": [],
+            "undecided_ids": [],
+            "unknown_label_ids": [],
+            "unadjudicated_ids": [],
+            "orphan_adjudication_ids": [],
+            "duplicate_system_ids": [],
+            "duplicate_adjudication_ids": [],
+            "reference_missing_registered": [],
+            "reference_unresolved_pairing": [],
+            "note": "以上各项都不进任何指标的分子或分母"
+          },
+          "label_distribution": {
+            "有依据": 6,
+            "无依据": 0,
+            "已经回答": 0
+          }
+        }
+      },
+      "paired_question_count": 6,
+      "arm_only_counts": {
+        "A": 0,
+        "B": 0
+      },
+      "multi_ref_bindings": {
+        "A": [],
+        "B": []
+      },
+      "bidirectional_notes": []
+    },
+    "t4_game_holdout/p2": {
+      "per_arm_matching": {
+        "A": {
+          "reference_total": 7,
+          "judged_total": 7,
+          "registered": 4,
+          "missed": 3,
+          "missed_ref_ids": [
+            "r3",
+            "r8",
+            "r9"
+          ],
+          "unresolved_total": 0,
+          "unresolved_ref_ids": [],
+          "registered_ref_ids": [
+            "r1",
+            "r2",
+            "r4",
+            "r5"
+          ],
+          "per_ref": [
+            {
+              "ref_id": "r1",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r2",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r3",
+              "verdict": "missed",
+              "reason": ""
+            },
+            {
+              "ref_id": "r4",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r5",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r8",
+              "verdict": "missed",
+              "reason": ""
+            },
+            {
+              "ref_id": "r9",
+              "verdict": "missed",
+              "reason": ""
+            }
+          ]
+        },
+        "B": {
+          "reference_total": 7,
+          "judged_total": 7,
+          "registered": 3,
+          "missed": 4,
+          "missed_ref_ids": [
+            "r2",
+            "r3",
+            "r8",
+            "r9"
+          ],
+          "unresolved_total": 0,
+          "unresolved_ref_ids": [],
+          "registered_ref_ids": [
+            "r1",
+            "r4",
+            "r5"
+          ],
+          "per_ref": [
+            {
+              "ref_id": "r1",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r2",
+              "verdict": "missed",
+              "reason": ""
+            },
+            {
+              "ref_id": "r3",
+              "verdict": "missed",
+              "reason": ""
+            },
+            {
+              "ref_id": "r4",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r5",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r8",
+              "verdict": "missed",
+              "reason": ""
+            },
+            {
+              "ref_id": "r9",
+              "verdict": "missed",
+              "reason": ""
+            }
+          ]
+        }
+      },
+      "per_arm_matching_strict_1to1": {
+        "A": {
+          "reference_total": 7,
+          "judged_total": 7,
+          "registered": 4,
+          "missed": 3,
+          "missed_ref_ids": [
+            "r3",
+            "r8",
+            "r9"
+          ],
+          "unresolved_total": 0,
+          "unresolved_ref_ids": [],
+          "registered_ref_ids": [
+            "r1",
+            "r2",
+            "r4",
+            "r5"
+          ],
+          "per_ref": [
+            {
+              "ref_id": "r1",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r2",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r3",
+              "verdict": "missed",
+              "reason": ""
+            },
+            {
+              "ref_id": "r4",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r5",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r8",
+              "verdict": "missed",
+              "reason": ""
+            },
+            {
+              "ref_id": "r9",
+              "verdict": "missed",
+              "reason": ""
+            }
+          ]
+        },
+        "B": {
+          "reference_total": 7,
+          "judged_total": 7,
+          "registered": 3,
+          "missed": 4,
+          "missed_ref_ids": [
+            "r2",
+            "r3",
+            "r8",
+            "r9"
+          ],
+          "unresolved_total": 0,
+          "unresolved_ref_ids": [],
+          "registered_ref_ids": [
+            "r1",
+            "r4",
+            "r5"
+          ],
+          "per_ref": [
+            {
+              "ref_id": "r1",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r2",
+              "verdict": "missed",
+              "reason": ""
+            },
+            {
+              "ref_id": "r3",
+              "verdict": "missed",
+              "reason": ""
+            },
+            {
+              "ref_id": "r4",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r5",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r8",
+              "verdict": "missed",
+              "reason": ""
+            },
+            {
+              "ref_id": "r9",
+              "verdict": "missed",
+              "reason": ""
+            }
+          ]
+        }
+      },
+      "per_arm_metrics": {
+        "A": {
+          "denominators": {
+            "system_total": 13,
+            "settled_adjudications": 13,
+            "disputed": 0,
+            "undecided": 0,
+            "unadjudicated": 0,
+            "unknown_label": 0,
+            "duplicate_ids": 0,
+            "independent_qualified_total": 7,
+            "independent_qualified_valid": 7
+          },
+          "coverage": {
+            "adjudication_coverage": 1.0,
+            "adjudication_coverage_status": "可计算",
+            "note": "比率的分母是有效裁决数；覆盖率单独报告，避免不确定项增多显得指标改善"
+          },
+          "metrics": {
+            "no_ground_rate": {
+              "count": 2,
+              "denominator": 13,
+              "rate": 0.153846,
+              "status": "可计算"
+            },
+            "already_answered_rate": {
+              "count": 0,
+              "denominator": 13,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "span_localization_rate": {
+              "count": 13,
+              "denominator": 13,
+              "rate": 1.0,
+              "status": "可计算"
+            },
+            "missed_registration_rate": {
+              "count": 3,
+              "denominator": 7,
+              "rate": 0.428571,
+              "status": "可计算"
+            },
+            "registration_delay": {
+              "unit": "见每条记录的 basis",
+              "baseline": "首次观察到合格的位置",
+              "measured": 0,
+              "positive_delay_count": 0,
+              "rate": null,
+              "status": "N/A：无可比样本",
+              "records": [],
+              "rejected": [],
+              "caveat": "只有在若干前缀位置做过检查时，基准是“首次观察到合格的位置”，不能表述为“全文最早位置”。延迟只按检查点差或同一固定坐标里的字符距离计算。"
+            }
+          },
+          "excluded": {
+            "disputed_ids": [],
+            "undecided_ids": [],
+            "unknown_label_ids": [],
+            "unadjudicated_ids": [],
+            "orphan_adjudication_ids": [],
+            "duplicate_system_ids": [],
+            "duplicate_adjudication_ids": [],
+            "reference_missing_registered": [],
+            "reference_unresolved_pairing": [],
+            "note": "以上各项都不进任何指标的分子或分母"
+          },
+          "label_distribution": {
+            "有依据": 11,
+            "无依据": 2,
+            "已经回答": 0
+          }
+        },
+        "B": {
+          "denominators": {
+            "system_total": 6,
+            "settled_adjudications": 6,
+            "disputed": 0,
+            "undecided": 0,
+            "unadjudicated": 0,
+            "unknown_label": 0,
+            "duplicate_ids": 0,
+            "independent_qualified_total": 7,
+            "independent_qualified_valid": 7
+          },
+          "coverage": {
+            "adjudication_coverage": 1.0,
+            "adjudication_coverage_status": "可计算",
+            "note": "比率的分母是有效裁决数；覆盖率单独报告，避免不确定项增多显得指标改善"
+          },
+          "metrics": {
+            "no_ground_rate": {
+              "count": 0,
+              "denominator": 6,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "already_answered_rate": {
+              "count": 0,
+              "denominator": 6,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "span_localization_rate": {
+              "count": 6,
+              "denominator": 6,
+              "rate": 1.0,
+              "status": "可计算"
+            },
+            "missed_registration_rate": {
+              "count": 4,
+              "denominator": 7,
+              "rate": 0.571429,
+              "status": "可计算"
+            },
+            "registration_delay": {
+              "unit": "见每条记录的 basis",
+              "baseline": "首次观察到合格的位置",
+              "measured": 0,
+              "positive_delay_count": 0,
+              "rate": null,
+              "status": "N/A：无可比样本",
+              "records": [],
+              "rejected": [],
+              "caveat": "只有在若干前缀位置做过检查时，基准是“首次观察到合格的位置”，不能表述为“全文最早位置”。延迟只按检查点差或同一固定坐标里的字符距离计算。"
+            }
+          },
+          "excluded": {
+            "disputed_ids": [],
+            "undecided_ids": [],
+            "unknown_label_ids": [],
+            "unadjudicated_ids": [],
+            "orphan_adjudication_ids": [],
+            "duplicate_system_ids": [],
+            "duplicate_adjudication_ids": [],
+            "reference_missing_registered": [],
+            "reference_unresolved_pairing": [],
+            "note": "以上各项都不进任何指标的分子或分母"
+          },
+          "label_distribution": {
+            "有依据": 6,
+            "无依据": 0,
+            "已经回答": 0
+          }
+        }
+      },
+      "per_arm_metrics_strict_1to1": {
+        "A": {
+          "denominators": {
+            "system_total": 13,
+            "settled_adjudications": 13,
+            "disputed": 0,
+            "undecided": 0,
+            "unadjudicated": 0,
+            "unknown_label": 0,
+            "duplicate_ids": 0,
+            "independent_qualified_total": 7,
+            "independent_qualified_valid": 7
+          },
+          "coverage": {
+            "adjudication_coverage": 1.0,
+            "adjudication_coverage_status": "可计算",
+            "note": "比率的分母是有效裁决数；覆盖率单独报告，避免不确定项增多显得指标改善"
+          },
+          "metrics": {
+            "no_ground_rate": {
+              "count": 2,
+              "denominator": 13,
+              "rate": 0.153846,
+              "status": "可计算"
+            },
+            "already_answered_rate": {
+              "count": 0,
+              "denominator": 13,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "span_localization_rate": {
+              "count": 13,
+              "denominator": 13,
+              "rate": 1.0,
+              "status": "可计算"
+            },
+            "missed_registration_rate": {
+              "count": 3,
+              "denominator": 7,
+              "rate": 0.428571,
+              "status": "可计算"
+            },
+            "registration_delay": {
+              "unit": "见每条记录的 basis",
+              "baseline": "首次观察到合格的位置",
+              "measured": 0,
+              "positive_delay_count": 0,
+              "rate": null,
+              "status": "N/A：无可比样本",
+              "records": [],
+              "rejected": [],
+              "caveat": "只有在若干前缀位置做过检查时，基准是“首次观察到合格的位置”，不能表述为“全文最早位置”。延迟只按检查点差或同一固定坐标里的字符距离计算。"
+            }
+          },
+          "excluded": {
+            "disputed_ids": [],
+            "undecided_ids": [],
+            "unknown_label_ids": [],
+            "unadjudicated_ids": [],
+            "orphan_adjudication_ids": [],
+            "duplicate_system_ids": [],
+            "duplicate_adjudication_ids": [],
+            "reference_missing_registered": [],
+            "reference_unresolved_pairing": [],
+            "note": "以上各项都不进任何指标的分子或分母"
+          },
+          "label_distribution": {
+            "有依据": 11,
+            "无依据": 2,
+            "已经回答": 0
+          }
+        },
+        "B": {
+          "denominators": {
+            "system_total": 6,
+            "settled_adjudications": 6,
+            "disputed": 0,
+            "undecided": 0,
+            "unadjudicated": 0,
+            "unknown_label": 0,
+            "duplicate_ids": 0,
+            "independent_qualified_total": 7,
+            "independent_qualified_valid": 7
+          },
+          "coverage": {
+            "adjudication_coverage": 1.0,
+            "adjudication_coverage_status": "可计算",
+            "note": "比率的分母是有效裁决数；覆盖率单独报告，避免不确定项增多显得指标改善"
+          },
+          "metrics": {
+            "no_ground_rate": {
+              "count": 0,
+              "denominator": 6,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "already_answered_rate": {
+              "count": 0,
+              "denominator": 6,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "span_localization_rate": {
+              "count": 6,
+              "denominator": 6,
+              "rate": 1.0,
+              "status": "可计算"
+            },
+            "missed_registration_rate": {
+              "count": 4,
+              "denominator": 7,
+              "rate": 0.571429,
+              "status": "可计算"
+            },
+            "registration_delay": {
+              "unit": "见每条记录的 basis",
+              "baseline": "首次观察到合格的位置",
+              "measured": 0,
+              "positive_delay_count": 0,
+              "rate": null,
+              "status": "N/A：无可比样本",
+              "records": [],
+              "rejected": [],
+              "caveat": "只有在若干前缀位置做过检查时，基准是“首次观察到合格的位置”，不能表述为“全文最早位置”。延迟只按检查点差或同一固定坐标里的字符距离计算。"
+            }
+          },
+          "excluded": {
+            "disputed_ids": [],
+            "undecided_ids": [],
+            "unknown_label_ids": [],
+            "unadjudicated_ids": [],
+            "orphan_adjudication_ids": [],
+            "duplicate_system_ids": [],
+            "duplicate_adjudication_ids": [],
+            "reference_missing_registered": [],
+            "reference_unresolved_pairing": [],
+            "note": "以上各项都不进任何指标的分子或分母"
+          },
+          "label_distribution": {
+            "有依据": 6,
+            "无依据": 0,
+            "已经回答": 0
+          }
+        }
+      },
+      "paired_question_count": 4,
+      "arm_only_counts": {
+        "A": 7,
+        "B": 2
+      },
+      "multi_ref_bindings": {
+        "A": [],
+        "B": []
+      },
+      "bidirectional_notes": []
+    },
+    "t4_game_holdout/p3": {
+      "per_arm_matching": {
+        "A": {
+          "reference_total": 8,
+          "judged_total": 8,
+          "registered": 3,
+          "missed": 5,
+          "missed_ref_ids": [
+            "r1",
+            "r16",
+            "r3",
+            "r4",
+            "r9"
+          ],
+          "unresolved_total": 0,
+          "unresolved_ref_ids": [],
+          "registered_ref_ids": [
+            "r0",
+            "r12",
+            "r15"
+          ],
+          "per_ref": [
+            {
+              "ref_id": "r0",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r1",
+              "verdict": "missed",
+              "reason": ""
+            },
+            {
+              "ref_id": "r12",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r15",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r16",
+              "verdict": "missed",
+              "reason": ""
+            },
+            {
+              "ref_id": "r3",
+              "verdict": "missed",
+              "reason": ""
+            },
+            {
+              "ref_id": "r4",
+              "verdict": "missed",
+              "reason": ""
+            },
+            {
+              "ref_id": "r9",
+              "verdict": "missed",
+              "reason": ""
+            }
+          ]
+        },
+        "B": {
+          "reference_total": 8,
+          "judged_total": 8,
+          "registered": 4,
+          "missed": 4,
+          "missed_ref_ids": [
+            "r12",
+            "r16",
+            "r3",
+            "r9"
+          ],
+          "unresolved_total": 0,
+          "unresolved_ref_ids": [],
+          "registered_ref_ids": [
+            "r0",
+            "r1",
+            "r15",
+            "r4"
+          ],
+          "per_ref": [
+            {
+              "ref_id": "r0",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r1",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r12",
+              "verdict": "missed",
+              "reason": ""
+            },
+            {
+              "ref_id": "r15",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r16",
+              "verdict": "missed",
+              "reason": ""
+            },
+            {
+              "ref_id": "r3",
+              "verdict": "missed",
+              "reason": ""
+            },
+            {
+              "ref_id": "r4",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r9",
+              "verdict": "missed",
+              "reason": ""
+            }
+          ]
+        }
+      },
+      "per_arm_matching_strict_1to1": {
+        "A": {
+          "reference_total": 8,
+          "judged_total": 8,
+          "registered": 3,
+          "missed": 5,
+          "missed_ref_ids": [
+            "r1",
+            "r16",
+            "r3",
+            "r4",
+            "r9"
+          ],
+          "unresolved_total": 0,
+          "unresolved_ref_ids": [],
+          "registered_ref_ids": [
+            "r0",
+            "r12",
+            "r15"
+          ],
+          "per_ref": [
+            {
+              "ref_id": "r0",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r1",
+              "verdict": "missed",
+              "reason": ""
+            },
+            {
+              "ref_id": "r12",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r15",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r16",
+              "verdict": "missed",
+              "reason": ""
+            },
+            {
+              "ref_id": "r3",
+              "verdict": "missed",
+              "reason": ""
+            },
+            {
+              "ref_id": "r4",
+              "verdict": "missed",
+              "reason": ""
+            },
+            {
+              "ref_id": "r9",
+              "verdict": "missed",
+              "reason": ""
+            }
+          ]
+        },
+        "B": {
+          "reference_total": 8,
+          "judged_total": 8,
+          "registered": 4,
+          "missed": 4,
+          "missed_ref_ids": [
+            "r12",
+            "r16",
+            "r3",
+            "r9"
+          ],
+          "unresolved_total": 0,
+          "unresolved_ref_ids": [],
+          "registered_ref_ids": [
+            "r0",
+            "r1",
+            "r15",
+            "r4"
+          ],
+          "per_ref": [
+            {
+              "ref_id": "r0",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r1",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r12",
+              "verdict": "missed",
+              "reason": ""
+            },
+            {
+              "ref_id": "r15",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r16",
+              "verdict": "missed",
+              "reason": ""
+            },
+            {
+              "ref_id": "r3",
+              "verdict": "missed",
+              "reason": ""
+            },
+            {
+              "ref_id": "r4",
+              "verdict": "registered",
+              "reason": ""
+            },
+            {
+              "ref_id": "r9",
+              "verdict": "missed",
+              "reason": ""
+            }
+          ]
+        }
+      },
+      "per_arm_metrics": {
+        "A": {
+          "denominators": {
+            "system_total": 5,
+            "settled_adjudications": 5,
+            "disputed": 0,
+            "undecided": 0,
+            "unadjudicated": 0,
+            "unknown_label": 0,
+            "duplicate_ids": 0,
+            "independent_qualified_total": 8,
+            "independent_qualified_valid": 8
+          },
+          "coverage": {
+            "adjudication_coverage": 1.0,
+            "adjudication_coverage_status": "可计算",
+            "note": "比率的分母是有效裁决数；覆盖率单独报告，避免不确定项增多显得指标改善"
+          },
+          "metrics": {
+            "no_ground_rate": {
+              "count": 0,
+              "denominator": 5,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "already_answered_rate": {
+              "count": 1,
+              "denominator": 5,
+              "rate": 0.2,
+              "status": "可计算"
+            },
+            "span_localization_rate": {
+              "count": 5,
+              "denominator": 5,
+              "rate": 1.0,
+              "status": "可计算"
+            },
+            "missed_registration_rate": {
+              "count": 5,
+              "denominator": 8,
+              "rate": 0.625,
+              "status": "可计算"
+            },
+            "registration_delay": {
+              "unit": "见每条记录的 basis",
+              "baseline": "首次观察到合格的位置",
+              "measured": 0,
+              "positive_delay_count": 0,
+              "rate": null,
+              "status": "N/A：无可比样本",
+              "records": [],
+              "rejected": [],
+              "caveat": "只有在若干前缀位置做过检查时，基准是“首次观察到合格的位置”，不能表述为“全文最早位置”。延迟只按检查点差或同一固定坐标里的字符距离计算。"
+            }
+          },
+          "excluded": {
+            "disputed_ids": [],
+            "undecided_ids": [],
+            "unknown_label_ids": [],
+            "unadjudicated_ids": [],
+            "orphan_adjudication_ids": [],
+            "duplicate_system_ids": [],
+            "duplicate_adjudication_ids": [],
+            "reference_missing_registered": [],
+            "reference_unresolved_pairing": [],
+            "note": "以上各项都不进任何指标的分子或分母"
+          },
+          "label_distribution": {
+            "有依据": 4,
+            "无依据": 0,
+            "已经回答": 1
+          }
+        },
+        "B": {
+          "denominators": {
+            "system_total": 13,
+            "settled_adjudications": 13,
+            "disputed": 0,
+            "undecided": 0,
+            "unadjudicated": 0,
+            "unknown_label": 0,
+            "duplicate_ids": 0,
+            "independent_qualified_total": 8,
+            "independent_qualified_valid": 8
+          },
+          "coverage": {
+            "adjudication_coverage": 1.0,
+            "adjudication_coverage_status": "可计算",
+            "note": "比率的分母是有效裁决数；覆盖率单独报告，避免不确定项增多显得指标改善"
+          },
+          "metrics": {
+            "no_ground_rate": {
+              "count": 0,
+              "denominator": 13,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "already_answered_rate": {
+              "count": 2,
+              "denominator": 13,
+              "rate": 0.153846,
+              "status": "可计算"
+            },
+            "span_localization_rate": {
+              "count": 12,
+              "denominator": 13,
+              "rate": 0.923077,
+              "status": "可计算"
+            },
+            "missed_registration_rate": {
+              "count": 4,
+              "denominator": 8,
+              "rate": 0.5,
+              "status": "可计算"
+            },
+            "registration_delay": {
+              "unit": "见每条记录的 basis",
+              "baseline": "首次观察到合格的位置",
+              "measured": 0,
+              "positive_delay_count": 0,
+              "rate": null,
+              "status": "N/A：无可比样本",
+              "records": [],
+              "rejected": [],
+              "caveat": "只有在若干前缀位置做过检查时，基准是“首次观察到合格的位置”，不能表述为“全文最早位置”。延迟只按检查点差或同一固定坐标里的字符距离计算。"
+            }
+          },
+          "excluded": {
+            "disputed_ids": [],
+            "undecided_ids": [],
+            "unknown_label_ids": [],
+            "unadjudicated_ids": [],
+            "orphan_adjudication_ids": [],
+            "duplicate_system_ids": [],
+            "duplicate_adjudication_ids": [],
+            "reference_missing_registered": [],
+            "reference_unresolved_pairing": [],
+            "note": "以上各项都不进任何指标的分子或分母"
+          },
+          "label_distribution": {
+            "有依据": 11,
+            "无依据": 0,
+            "已经回答": 2
+          }
+        }
+      },
+      "per_arm_metrics_strict_1to1": {
+        "A": {
+          "denominators": {
+            "system_total": 5,
+            "settled_adjudications": 5,
+            "disputed": 0,
+            "undecided": 0,
+            "unadjudicated": 0,
+            "unknown_label": 0,
+            "duplicate_ids": 0,
+            "independent_qualified_total": 8,
+            "independent_qualified_valid": 8
+          },
+          "coverage": {
+            "adjudication_coverage": 1.0,
+            "adjudication_coverage_status": "可计算",
+            "note": "比率的分母是有效裁决数；覆盖率单独报告，避免不确定项增多显得指标改善"
+          },
+          "metrics": {
+            "no_ground_rate": {
+              "count": 0,
+              "denominator": 5,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "already_answered_rate": {
+              "count": 1,
+              "denominator": 5,
+              "rate": 0.2,
+              "status": "可计算"
+            },
+            "span_localization_rate": {
+              "count": 5,
+              "denominator": 5,
+              "rate": 1.0,
+              "status": "可计算"
+            },
+            "missed_registration_rate": {
+              "count": 5,
+              "denominator": 8,
+              "rate": 0.625,
+              "status": "可计算"
+            },
+            "registration_delay": {
+              "unit": "见每条记录的 basis",
+              "baseline": "首次观察到合格的位置",
+              "measured": 0,
+              "positive_delay_count": 0,
+              "rate": null,
+              "status": "N/A：无可比样本",
+              "records": [],
+              "rejected": [],
+              "caveat": "只有在若干前缀位置做过检查时，基准是“首次观察到合格的位置”，不能表述为“全文最早位置”。延迟只按检查点差或同一固定坐标里的字符距离计算。"
+            }
+          },
+          "excluded": {
+            "disputed_ids": [],
+            "undecided_ids": [],
+            "unknown_label_ids": [],
+            "unadjudicated_ids": [],
+            "orphan_adjudication_ids": [],
+            "duplicate_system_ids": [],
+            "duplicate_adjudication_ids": [],
+            "reference_missing_registered": [],
+            "reference_unresolved_pairing": [],
+            "note": "以上各项都不进任何指标的分子或分母"
+          },
+          "label_distribution": {
+            "有依据": 4,
+            "无依据": 0,
+            "已经回答": 1
+          }
+        },
+        "B": {
+          "denominators": {
+            "system_total": 13,
+            "settled_adjudications": 13,
+            "disputed": 0,
+            "undecided": 0,
+            "unadjudicated": 0,
+            "unknown_label": 0,
+            "duplicate_ids": 0,
+            "independent_qualified_total": 8,
+            "independent_qualified_valid": 8
+          },
+          "coverage": {
+            "adjudication_coverage": 1.0,
+            "adjudication_coverage_status": "可计算",
+            "note": "比率的分母是有效裁决数；覆盖率单独报告，避免不确定项增多显得指标改善"
+          },
+          "metrics": {
+            "no_ground_rate": {
+              "count": 0,
+              "denominator": 13,
+              "rate": 0.0,
+              "status": "可计算"
+            },
+            "already_answered_rate": {
+              "count": 2,
+              "denominator": 13,
+              "rate": 0.153846,
+              "status": "可计算"
+            },
+            "span_localization_rate": {
+              "count": 12,
+              "denominator": 13,
+              "rate": 0.923077,
+              "status": "可计算"
+            },
+            "missed_registration_rate": {
+              "count": 4,
+              "denominator": 8,
+              "rate": 0.5,
+              "status": "可计算"
+            },
+            "registration_delay": {
+              "unit": "见每条记录的 basis",
+              "baseline": "首次观察到合格的位置",
+              "measured": 0,
+              "positive_delay_count": 0,
+              "rate": null,
+              "status": "N/A：无可比样本",
+              "records": [],
+              "rejected": [],
+              "caveat": "只有在若干前缀位置做过检查时，基准是“首次观察到合格的位置”，不能表述为“全文最早位置”。延迟只按检查点差或同一固定坐标里的字符距离计算。"
+            }
+          },
+          "excluded": {
+            "disputed_ids": [],
+            "undecided_ids": [],
+            "unknown_label_ids": [],
+            "unadjudicated_ids": [],
+            "orphan_adjudication_ids": [],
+            "duplicate_system_ids": [],
+            "duplicate_adjudication_ids": [],
+            "reference_missing_registered": [],
+            "reference_unresolved_pairing": [],
+            "note": "以上各项都不进任何指标的分子或分母"
+          },
+          "label_distribution": {
+            "有依据": 11,
+            "无依据": 0,
+            "已经回答": 2
+          }
+        }
+      },
+      "paired_question_count": 3,
+      "arm_only_counts": {
+        "A": 2,
+        "B": 9
+      },
+      "multi_ref_bindings": {
+        "A": [],
+        "B": []
+      },
+      "bidirectional_notes": []
+    }
+  },
+  "usage_summary": {
+    "attempts": 34,
+    "reservations_in_flight": 0,
+    "unknown_usage_count": 1,
+    "failures": 2,
+    "input_tokens": 232787,
+    "output_tokens": 33724,
+    "input_tokens_measured": 223903,
+    "output_tokens_measured": 31724,
+    "input_tokens_occupied_total": 232787,
+    "output_tokens_occupied_total": 33724,
+    "by_stage": {
+      "reference_discovery": {
+        "attempts": 13,
+        "failures": 1,
+        "input_tokens": 98878,
+        "output_tokens": 6374
+      },
+      "generation": {
+        "attempts": 15,
+        "failures": 1,
+        "input_tokens": 79334,
+        "output_tokens": 18305
+      },
+      "blind_review": {
+        "attempts": 6,
+        "failures": 0,
+        "input_tokens": 54575,
+        "output_tokens": 9045
+      }
+    },
+    "by_arm": {
+      "-": {
+        "attempts": 19,
+        "failures": 1,
+        "input_tokens": 153453,
+        "output_tokens": 15419
+      },
+      "A": {
+        "attempts": 8,
+        "failures": 1,
+        "input_tokens": 41717,
+        "output_tokens": 9424
+      },
+      "B": {
+        "attempts": 7,
+        "failures": 0,
+        "input_tokens": 37617,
+        "output_tokens": 8881
+      }
+    },
+    "cost": {
+      "status": "无价格表，未核算",
+      "amount": null,
+      "currency": "CNY",
+      "costed_attempts": 0
+    },
+    "note": "失败尝试与重试同样计入 attempts 与 token 用量；用量未知项按占用值计入预算"
+  },
+  "generated_at": "2026-11-08T19:49:39.300502"
+}

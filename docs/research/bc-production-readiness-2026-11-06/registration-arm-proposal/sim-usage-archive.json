@@ -1,0 +1,184 @@
+{
+  "schema": "registration_usage_archive_v1",
+  "records": [
+    {
+      "schema": "registration_usage_archive_v1",
+      "work_id": "w_sim",
+      "prefix_id": "p_sim",
+      "arm": "-",
+      "stage": "reference_discovery",
+      "request_sha256": "req_ref_1",
+      "model": "sim-model",
+      "sampling": {},
+      "input_tokens": 1200,
+      "output_tokens": 300,
+      "success": true,
+      "error": null,
+      "attempt": 1,
+      "cost": {
+        "status": "已核算",
+        "amount": 0.018,
+        "currency": "CNY",
+        "price_source": "price_table"
+      }
+    },
+    {
+      "schema": "registration_usage_archive_v1",
+      "work_id": "w_sim",
+      "prefix_id": "p_sim",
+      "arm": "-",
+      "stage": "reference_discovery",
+      "request_sha256": "req_ref_2",
+      "model": "sim-model",
+      "sampling": {},
+      "input_tokens": 1200,
+      "output_tokens": 300,
+      "success": true,
+      "error": null,
+      "attempt": 1,
+      "cost": {
+        "status": "已核算",
+        "amount": 0.018,
+        "currency": "CNY",
+        "price_source": "price_table"
+      }
+    },
+    {
+      "schema": "registration_usage_archive_v1",
+      "work_id": "w_sim",
+      "prefix_id": "p_sim",
+      "arm": "A",
+      "stage": "generation",
+      "request_sha256": "req_gen_A",
+      "model": "sim-model",
+      "sampling": {},
+      "input_tokens": 2000,
+      "output_tokens": 400,
+      "success": true,
+      "error": null,
+      "attempt": 1,
+      "cost": {
+        "status": "已核算",
+        "amount": 0.028,
+        "currency": "CNY",
+        "price_source": "price_table"
+      }
+    },
+    {
+      "schema": "registration_usage_archive_v1",
+      "work_id": "w_sim",
+      "prefix_id": "p_sim",
+      "arm": "B",
+      "stage": "generation",
+      "request_sha256": "req_gen_B",
+      "model": "sim-model",
+      "sampling": {},
+      "input_tokens": 2000,
+      "output_tokens": 400,
+      "success": true,
+      "error": null,
+      "attempt": 1,
+      "cost": {
+        "status": "已核算",
+        "amount": 0.028,
+        "currency": "CNY",
+        "price_source": "price_table"
+      }
+    },
+    {
+      "schema": "registration_usage_archive_v1",
+      "work_id": "w_sim",
+      "prefix_id": "p_sim",
+      "arm": "B",
+      "stage": "generation",
+      "request_sha256": "req_gen_B",
+      "model": "sim-model",
+      "sampling": {},
+      "input_tokens": 2000,
+      "output_tokens": 0,
+      "success": false,
+      "error": "timeout",
+      "attempt": 2,
+      "cost": {
+        "status": "已核算",
+        "amount": 0.02,
+        "currency": "CNY",
+        "price_source": "price_table"
+      }
+    },
+    {
+      "schema": "registration_usage_archive_v1",
+      "work_id": "w_sim",
+      "prefix_id": "p_sim",
+      "arm": "-",
+      "stage": "blind_review",
+      "request_sha256": "req_blind",
+      "model": "sim-model",
+      "sampling": {},
+      "input_tokens": 900,
+      "output_tokens": 200,
+      "success": true,
+      "error": null,
+      "attempt": 1,
+      "cost": {
+        "status": "已核算",
+        "amount": 0.013,
+        "currency": "CNY",
+        "price_source": "price_table"
+      }
+    }
+  ],
+  "summary": {
+    "attempts": 6,
+    "failures": 1,
+    "input_tokens": 9300,
+    "output_tokens": 1600,
+    "by_stage": {
+      "reference_discovery": {
+        "attempts": 2,
+        "failures": 0,
+        "input_tokens": 2400,
+        "output_tokens": 600
+      },
+      "generation": {
+        "attempts": 3,
+        "failures": 1,
+        "input_tokens": 6000,
+        "output_tokens": 800
+      },
+      "blind_review": {
+        "attempts": 1,
+        "failures": 0,
+        "input_tokens": 900,
+        "output_tokens": 200
+      }
+    },
+    "by_arm": {
+      "-": {
+        "attempts": 3,
+        "failures": 0,
+        "input_tokens": 3300,
+        "output_tokens": 800
+      },
+      "A": {
+        "attempts": 1,
+        "failures": 0,
+        "input_tokens": 2000,
+        "output_tokens": 400
+      },
+      "B": {
+        "attempts": 2,
+        "failures": 1,
+        "input_tokens": 4000,
+        "output_tokens": 400
+      }
+    },
+    "cost": {
+      "status": "已核算",
+      "amount": 0.125,
+      "currency": "CNY",
+      "costed_attempts": 6
+    },
+    "note": "失败尝试与重试同样计入 attempts 与 token 用量"
+  }
+}

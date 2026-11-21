@@ -13,28 +13,28 @@
 │   ├── main.py                   # 后端启动器
 │   ├── ws_events.py              # WebSocket 消息协议的唯一权威定义
 │   ├── progress_hub.py           # WebSocket 广播中枢（节流 + 慢消费者驱逐）
-│   ├── api/                      # 12 个路由模块 + auth.py + ws.py（只做 HTTP 形态转换，
-│   │                             #   业务编排在 services；规则由 test_architecture.py 守护）
+│   ├── api/                      # 12 个路由模块 + auth.py + ws.py（默认挂载 11 组；
+│   │                             #   routes_vnext 默认冻结；业务编排在 services，规则由 test_smoke.py 守护）
 │   ├── common/                   # 两层引擎共用的纯逻辑语义层：错误分类（error_types /
 │   │                             #   error_taxonomy）、审核标记（moderation）、LLM 错误信号
-│   │                             #   （llm_signals）——只依赖标准库，禁止引用 core/services/vnext
-│   ├── core/                     # 1.x 引擎：分析流水线、LLM 客户端、知识库等
+│   │                             #   （llm_signals）及 B/C 追踪/审核/溯源等（19 个模块，只依赖标准库，禁止引用 core/services/vnext）
+│   ├── core/                     # 1.x 引擎（23 个模块）：分析流水线、LLM 客户端、知识库等
 │   │                             #   （error_types / error_taxonomy / moderation 是 common 的兼容转发层）
-│   ├── services/                 # 15 个模块：编排层（队列、总结、风格、切分、可视化…）
-│   ├── vnext/                    # 25 个模块：vnext 数据空间（独立于 1.x 数据层）
+│   ├── services/                 # 19 个模块：编排层（队列、总结、风格、切分、可视化、用量账本…）
+│   ├── vnext/                    # 24 个模块：vnext 数据空间（当前冻结，仅 resolution.py 供 recheck_v2 复用）
 │   ├── config/                   # constants.py（默认值与常量）/ settings.py（dataclass）/ presets.py
 │   ├── models/                   # AnalysisResult / KnowledgeBase
 │   ├── utils/                    # JSON 解析、聚合、Excel、角色卡、账本、文本工具
-│   └── tests/                    # 146 个测试文件
+│   └── tests/                    # 19 个领域测试文件 + fixtures 语料
 ├── frontend/
 │   └── src/
 │       ├── pages/                # 12 个页面
 │       ├── components/           # 13 个组件
 │       ├── composables/          # 4 个组合式函数
-│       ├── api/                  # client.ts（58 个方法）/ sessionToken.ts / useProgressSocket.ts
+│       ├── api/                  # client.ts（60 个方法）/ sessionToken.ts / useProgressSocket.ts
 │       ├── utils/                # 9 个工具模块
 │       └── router.ts
-├── scripts/                      # 测试与测量脚本
+├── scripts/                      # 测试、打捞验收、基线测量脚本（B/C 实验脚本收纳在 experiments/bc/）
 ├── config.json                   # 运行配置（密钥不入库）
 ├── queue_state.json              # 队列状态持久化
 └── desktop.spec / build_exe.bat  # PyInstaller 打包
@@ -47,8 +47,10 @@
 - **1.x 数据层**：`workspace/{书名}/` 下的 `blocks/` + `output/`，由 `backend/core` 与
   `backend/services` 读写。分析流水线、最终总结、风格分析、可视化都跑在这套上。
 - **vnext 数据空间**：`workspace_vnext/{book_id}/` 下的 `source/`、`blocks/`、
-  `results/`、`ledger/`、`derived/`、`cache/`，由 `backend/vnext` 读写。
-  分层规则（由 `backend/tests/test_architecture.py` 守护）：
+  `results/`、`ledger/`、`derived/`、`cache/`，由 `backend/vnext` 读写。当前处于冻结状态：
+  `/api/vnext/*` HTTP 路由默认不挂载（需设置环境变量 `NOVEL_ENABLE_VNEXT_ROUTES=1` 启用），
+  生产链路仅复用 `backend/vnext/resolution.py` 的复检裁决核。
+  分层规则（由 `backend/tests/test_smoke.py` 守护）：
   - vnext 禁止反向 import `backend.core` / `backend.services`；共享语义放
     `backend/common`（只依赖标准库），vnext 与 core 都从它取用。
   - 两类已声明的转发垫片豁免：`vnext/citations.py`（转发 core.citations）、

@@ -1,0 +1,83 @@
+{
+  "prefix_manifest": {
+    "unit_count": 4,
+    "visible_unit_count": 2,
+    "visible_range_end": 2,
+    "units_have_sha256": true,
+    "units_sha256_present": true
+  },
+  "render": {
+    "contains_only_visible_units": true,
+    "has_stable_ids": true,
+    "labels_not_in_unit_text": true
+  },
+  "locating": {
+    "unique_hit": {
+      "ok": true,
+      "unit_id": 2,
+      "start": 4,
+      "end": 20,
+      "chars": 16,
+      "quote_sha256": "b946ec554cfadab3219b7bf0fc9d6fec8ede2a7a158b8d3273d7d41fae62bfd4"
+    },
+    "ambiguous": {
+      "ok": false,
+      "reason": "quote_not_unique:2"
+    },
+    "out_of_visible_range": {
+      "ok": false,
+      "reason": "unit_out_of_visible_range"
+    },
+    "not_found": {
+      "ok": false,
+      "reason": "quote_not_found"
+    }
+  },
+  "parsing": {
+    "good_parse_ok": true,
+    "host_rows": [
+      {
+        "item_id": "i0",
+        "question": "匾额四方位分别指什么？",
+        "answer_criteria": "交代四个方位的含义",
+        "implication": "尚待交代之事",
+        "motif_key": "方位",
+        "source_unit_id": 1,
+        "anchor_quote": "他把令牌藏进石匣，匾额上写着甲乙丙丁。",
+        "visible_prefix_id": "p1",
+        "registration_checkpoint": 2,
+        "visible_range_end": 2,
+        "ok": true,
+        "citation_start": 4,
+        "citation_end": 23,
+        "citation_chars": 19,
+        "quote_sha256": "3d683b8345c0bee0206ddd80ebd7fcd3f9d878efd851d8415d68f04764f4f32c"
+      }
+    ],
+    "host_row_has_span": true,
+    "truncated_complete_flag": false,
+    "truncated_task_marked_incomplete": true,
+    "broken_json": {
+      "parse_ok": false,
+      "reason": "invalid_json:Expecting property name enclosed in double quotes"
+    }
+  },
+  "budget": {
+    "small_request_ok": true,
+    "oversize_input_blocked": true,
+    "oversize_reason": "per_request_input_limit_exceeded",
+    "attempts_counted_after_one_call": 1,
+    "attempts_remaining": 41,
+    "max_attempts_enforced": true,
+    "max_attempts_reason": "max_attempts_reached",
+    "summary": {
+      "attempts": 1,
+      "max_attempts": 42,
+      "input_tokens": 73,
+      "max_input_tokens": 336000,
+      "output_tokens": 2000,
+      "max_output_tokens": 84000,
+      "attempts_remaining": 41
+    }
+  }
+}

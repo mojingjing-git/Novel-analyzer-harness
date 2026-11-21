@@ -24,6 +24,7 @@
 | `MINIMAX_API_KEY` | 覆盖 `api.api_key`（MiniMax 专用） |
 | `NOVEL_ROOT` | 覆盖默认工作区根目录，桌面端网络盘场景必须用 |
 | `NOVEL_ANALYZER_SESSION_TOKEN` | 桌面端日志下载端点的鉴权 token |
+| `NOVEL_ENABLE_VNEXT_ROUTES` | 设为 `1` 时挂载默认冻结的 `/api/vnext/*` 调试路由 |
 
 密钥来自环境变量时，保存配置会把 `api_key` 置空后落盘——磁盘上不留环境变量里的密钥。
 
@@ -43,8 +44,10 @@
 | `temperature_max_retries` | int | `3` | 温度退火阶段的最大轮数 |
 | `backoff_max_retries` | int | `1` | 指数退避轮数；遇到 429 时至少退避 3 轮并尊重 `Retry-After` |
 | `max_retries` | int | `5` | **只用于失败日志里标注"第 n/m 次尝试"，不控制任何重试**。真正的重试由上面两个重试项决定 |
+| `sdk_max_retries` | int | `0` | 传给 OpenAI / Anthropic 底层 SDK 的重试次数（项目本身已有两级重试链，默认 0 关闭） |
 | `json_mode` | str | `default` | JSON 输出协议。只有 `default` 与非 `default` 有区别：非 `default` 且非 Anthropic 协议、非 localhost 时，额外加 `response_format={"type":"json_object"}` |
 | `thinking_mode` | dict | `{}` | 思考链控制。空 dict 表示不注入任何参数、跟随端点默认。不同厂商认的键不同（`{"thinking":{"type":"disabled"}}` 或 `{"enable_thinking":false}`），Anthropic 协议只放行 `thinking` 键 |
+| `reasoning_effort` | str | `""` | 推理深度档位（`low` / `medium` / `high` / `xhigh` / `max`）；空 = 不传，由服务端决定 |
 | `summary_model` | str | `""` | 总结专用模型，空值跟随 `model` |
 | `summary_thinking_mode` | dict | `{}` | 总结专用思考控制，空值跟随 `thinking_mode` |
 | `streaming_enabled` | bool | `true` | 是否走流式调用；关掉则回退非流式。**设置页没有这一项**，只能手改配置文件 |
@@ -155,6 +158,18 @@
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
 | `skip_moderation_blocked` | bool | `true` | 判定为审核拦截的章节，重试一次后跳过并标记 |
+
+### B/C 实验开关（默认全关闭）
+
+以下 5 个开关对应伏笔登记/回收（B）与按需复审（C）的独立增强特性，默认全部为 `false`，保证基线零行为变化；评估结论与试产建议见 [结案总表](./research/bc-production-readiness-2026-11-06/结案总表.md)。
+
+| 字段 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `enable_b_trace` | bool | `false` | 开启 B1–B4 遗漏全链路审计追踪 |
+| `fix_b4_flow_and_storage` | bool | `false` | 开启知识库未裁剪归档与完整伏笔目录/同题无损合并 |
+| `fix_b2_evidence_and_recheck` | bool | `false` | 开启 B2 复检证据召回增强与行车记录仪请求落盘 |
+| `enable_c_on_demand_audit` | bool | `false` | 开启 C 类按需声明级闭环复审（通过后才写 `resolved`） |
+| `enable_anchor_b_plus_rule` | bool | `false` | 开启伏笔登记 Rule B+（章末全局未解守卫与局部自足性解耦） |
 
 ## 顶层字段
 

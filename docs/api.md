@@ -141,9 +141,9 @@
 |---|---|---|
 | `/api/prompt/preview` | POST | 按真实配置拼装某块的 system / user 提示词并返回（`max_chars` 可截断） |
 
-## vnext 数据空间
+## vnext 数据空间（默认冻结）
 
-前缀 `/api/vnext`。这一组是 vnext 项目（块、结果、知识库、队列）的 HTTP 面，
+前缀 `/api/vnext`。**当前处于冻结状态**：默认不挂载到 FastAPI 应用（访问返回 404），仅当设置环境变量 `NOVEL_ENABLE_VNEXT_ROUTES=1` 时启用。这一组是 vnext 项目（块、结果、知识库、队列）的 HTTP 面，
 错误体统一为 `{"detail": {"code", "message", "path"}}`。
 
 | 端点 | 方法 | 说明 |

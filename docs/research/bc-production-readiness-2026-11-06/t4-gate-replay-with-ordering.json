@@ -1,0 +1,40 @@
+[
+  {
+    "work_id": "t4_game_holdout",
+    "candidate_id": "fs_003",
+    "arm": "candidate",
+    "nli_verdict": "answer_ok",
+    "parse_repair": {
+      "applied": true,
+      "kind": "replace_illegal_paren_with_expected_closer",
+      "offset": 2460,
+      "replacement": "]",
+      "original_length": 2463,
+      "repaired_length": 2463
+    },
+    "ordering_verdict": "all_after",
+    "ordering_summary": {
+      "total": 6,
+      "after": 6,
+      "before": 0,
+      "overlap": 0,
+      "indeterminate": 0,
+      "anchor_own": 0
+    },
+    "gate_without_ordering": {
+      "decision": "存疑",
+      "assessment_status": "unconfirmed",
+      "reasons": [
+        "待复核：evidence_not_after_anchor"
+      ]
+    },
+    "gate_with_ordering": {
+      "decision": "接受",
+      "assessment_status": "accepted",
+      "reasons": [
+        "NLI=answer_ok：原文新增说明了额外力量的来源与转化过程：伊芙推测，半兽人捕猎者身上积压的精灵怨气，在她履行精灵主神职责、满足亡魂愿望后化为感激与信仰之力，并跨越虚空以神力值反哺；两位祭司提供的信仰中也有精灵怨气的影子。已知信息只包括力量相似及伊芙对怨气升华"
+      ]
+    },
+    "note": "两次回放只差 evidence_ordering 一个字段。时序通过解除的是时间疑点；门禁的其他判定（答案正确性、条件满足、信息增量）不受影响。本案例不设“必须通过”为验收目标。"
+  }
+]

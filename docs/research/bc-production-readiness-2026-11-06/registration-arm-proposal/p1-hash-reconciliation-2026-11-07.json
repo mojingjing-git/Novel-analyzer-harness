@@ -1,0 +1,49 @@
+{
+  "schema": "p1_hash_reconciliation_v1",
+  "date": "2026-11-07",
+  "work_id": "t4_hist_holdout",
+  "prefix_id": "p1",
+  "status": "resolved",
+  "original_review_input": {
+    "hash_kind": "sha256_file_bytes",
+    "sha256": "34907b53087de57a197fbf23d873eb423c40bb35db8487e05a9e86b6acd3c785",
+    "reconstructed_snapshot_path": "F:\\AI\\01_项目\\小说分析器\\docs\\research\\bc-production-readiness-2026-11-06\\registration-arm-proposal\\adjudication-packages\\t4_hist_holdout__p1.review-input.reconstructed.json",
+    "bytes": 23094,
+    "reconstruction": "Remove newly added package_sha256_canonical and package_sha256_note; retain key order; json.dumps(ensure_ascii=False, indent=2); CRLF line endings; no BOM; no trailing newline. Reconstructed bytes match the SHA256 independently recorded during the prior review.",
+    "is_reconstructed_copy": true
+  },
+  "current_package": {
+    "bytes_sha256": "e79f194291186a81e42e52062fbde8ca6e3e04f745fded726120e9539c7c90ff",
+    "canonical_sha256": "5b1da3e376d8ac02a7d86c7b2528b16f9c8a93b70be41135dfb909e81a761549",
+    "canonical_recomputation_matches": true
+  },
+  "cause": "Verifier read_text normalizes CRLF to LF before hashing; the original review used read_bytes. Later-added metadata also changes the file bytes. No private reviewer serialization convention was used.",
+  "eligible_set": {
+    "ref_ids": [
+      "r0",
+      "r2"
+    ],
+    "count": 2,
+    "pending_count": 0,
+    "freeze_sha256": "75eaa17640d1baecf6ff252306bc3f658b2575809aff906d330939f6f574a485",
+    "freeze_hash_recomputed_matches": true,
+    "merge_map": {
+      "r1": "r0"
+    },
+    "decision_bindings": [
+      {
+        "ref_id": "r0",
+        "criteria_match": true,
+        "spans_match": true
+      },
+      {
+        "ref_id": "r2",
+        "criteria_match": true,
+        "spans_match": true
+      }
+    ]
+  },
+  "verification_rule": "Compare file-byte hashes using read_bytes. Compare canonical hashes only after independently recomputing the documented canonical payload; do not merely trust a supplied hash field. Citation-span checks complement, but do not replace, whole-package binding.",
+  "historical_artifacts_modified": false,
+  "project_api_calls_this_turn": 0
+}

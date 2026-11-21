@@ -1,0 +1,16 @@
+{
+  "rule_version": "registration_anchor_ab_v1",
+  "status": "templates_only_not_connected_to_runner",
+  "files_sha256": {
+    "arm-a-rule.txt": "acaeed130a90440551cfa7f9d6daa0c0221cc089658229ddd47ffe9746eb38ef",
+    "arm-b-rule.txt": "be7542464c1c11288da3e79a7c6c9fbf9d368658ceaf2ec5833f98a581db5205",
+    "common-system.txt": "33b3b5f340d81f5ac50db9deb2d2e5938b5ccab4c5a00d1e3cef60e4f6f94ed2",
+    "common-user-template.txt": "ab093117d5dd01b9070da03b86865fc36058ab515c14a8964d4cd0f3fd9a31bf"
+  },
+  "checks": {
+    "candidate_extends_control_rule": true,
+    "same_user_message": true,
+    "inserted_source_not_reformatted": true
+  },
+  "model_calls": 0
+}

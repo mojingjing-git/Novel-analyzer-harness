@@ -53,11 +53,6 @@
 知识库未生成——这是一次失败运行（`docs/data/MEASURE-E2E-2026-10-31.json`）。
 合成语料（22 章）可以跑通，真实长书不行。
 
-### 复检提示词曾经贴着上下文上限
-
-见上一节：根因是测量脚本只传整本正文，不是证据包设计本身。有界取窗上线后，同一批
-数据单候选提示词约 2.8k–4.7k 字，不再有 `CONTEXT_LENGTH` 拒绝。
-
 ### 休眠判定让旧的全书复检永远启动不了
 
 现有账本里 dormant 占多数、active 为 0，而
@@ -177,15 +172,12 @@ vnext 侧对应能力都有（`exclusive_before` 快照、有序归约、`Source
 |---|---|---|
 | 总结 checkpoint 只覆盖阶段 1 | `backend/services/final_summary.py:1117-1233` | 阶段 2/3/4 中断后要整体重跑 |
 | 卷摘要压缩是纯字符截断 | `backend/services/final_summary.py:1105` | 截断会切在半句上，摘要读起来断裂 |
-| 聚合的 10 个子产物不是原子写 | `backend/utils/aggregate_utils.py`（约 10 处 `open(...,'w')+json.dump`） | 主聚合文件已原子化，子产物不是；写到一半中断会留下半个 JSON |
-| 提示词上限有 4 项没接配置 | `backend/core/analyzer.py:73-81` 只传了 7 个上限 | `max_verified_facts` / `max_relationships` / `max_themes` / `max_content_chars` 无法配置 |
 | 上下文裁剪来源有两套 | `backend/core/memory_state.py:414` 读配置 vs `backend/core/knowledge_base.py:309` 硬编码 | 同一条上限在不同路径下生效值不同 |
 
 ## 四、前端
 
 | 问题 | 位置 | 表现 |
 |---|---|---|
-| 自研 Markdown 渲染器 + `v-html` | `frontend/src/pages/SummaryPage.vue:391`、`frontend/src/utils/markdown.ts` | 报告内容里的 HTML 不做转义，报告来自模型输出 |
 | 设置保存是全量覆盖，没有版本号或乐观锁 | `frontend/src/pages/SummaryPage.vue:106-111`、`backend/api/routes_settings.py:104` | 两个窗口同时改配置，后写的整份覆盖前一份（写盘本身已是原子写） |
 
 请求超时已经处理（`frontend/src/api/client.ts` 的 30 秒默认超时 + 重活 120–300 秒），
@@ -212,36 +204,27 @@ vnext 前端页面（导航/路由/页面文件/客户端 API）已下架，引�
 pywebview 调受保护端点会被 403"。这一条**未实机验证**：桌面端是否仍会 403 需要装包
 后确认。
 
-## 五、vnext 未接线
+## 五、vnext 冻结与未接线
 
-vnext 是与 1.x 并存的第二套数据层，**尚未替换生产路径**，前端入口已下架
-（导航/路由/页面文件/客户端 API 已删；`backend/vnext/` 引擎、39 个测试文件与
-`/api/vnext/*` 路由原样保留，作为 2.0 合并的地基）：
+vnext 是与 1.x 并存的第二套数据层，**尚未替换生产路径**，目前已进入冻结状态：
+前端入口已下架，`/api/vnext/*` HTTP 路由默认不挂载（设置 `NOVEL_ENABLE_VNEXT_ROUTES=1` 才启用），
+`backend/vnext/` 引擎与聚合后的 `test_vnext_core.py` / `test_vnext_workflow.py` 保留作为 2.0 合并地基，生产唯一活跃复用点为 `backend/vnext/resolution.py`（供 `recheck_v2` 调用）：
 
-- `backend/api/routes_vnext.py:196` 明确写着"本版没有分析流水线"；
-- `run_analysis` 目前只被测试调用（`backend/tests/test_vnext_runner_analysis.py:19`）；
-- `backend/vnext/breaker.py` 没有任何调用方。
+- `backend/api/routes_vnext.py` 明确写着"本版没有分析流水线"；
+- `run_analysis` 目前只被测试调用（`backend/tests/test_vnext_workflow.py`）；
+- `backend/vnext/breaker.py` 已收敛到 `backend/core/breaker.py`。
 
 因此 vnext 里那些"已经实现"的机制（排他快照、有序归约、`SourceRef` 溯源、
 `PromptLimits`、原子写、`cutoff_view`）**不能**算作 1.x 缺陷已修——两条管线现在是并存的。
 
-## 六、打包与工程卫生
-
-| 问题 | 位置 | 表现 |
-|---|---|---|
-| onefile 下配置路径指向解包目录 | `desktop.py` 里 `cfg_path = Path(__file__).resolve().parent / "config.json"` | 打包后 `__file__` 在 `_MEIPASS` 里，配置读写位置不对 |
-| spec 里 pytest_asyncio 既收又排 | `desktop.spec:60` 的 hiddenimports 含 `pytest_asyncio`，`:78` 的 excludes 也含它 | 自相矛盾，以 excludes 为准时隐藏导入白写 |
-| `.gitignore` 里的裸 `v` | `.gitignore:53` | 任何名为 `v` 的路径都会被忽略（`git check-ignore backend/v` 命中）；新建这类目录会静默不入库 |
-| `.gitignore` 里的裸 `1/` | `.gitignore:25` | 同类风险 |
-
-## 七、覆盖范围
+## 六、覆盖范围
 
 - 充分验证过的只有中文长篇。英文与多语言混合文本只做过切分可靠性验证，没有端到端实测。
 - 桌面端只在 Windows 上验证，macOS / Linux 未做桌面端打包。
 - 前端测试覆盖组件与逻辑，端到端（真实后端联调）没有覆盖。
 - 输出 JSON 的 schema 仍在演化，跨版本升级后依赖旧字段的脚本需要适配。
 
-## 八、已知取舍
+## 七、已知取舍
 
 **密钥脱敏是 fail-open 的。** 可能含 key 的错误日志走 `llm_failure_logger.redact()`，
 `app.py` 的 `_SensitiveFieldsFilter` 对落盘 `analyzer.log` 的记录做二次过滤；但 redact
@@ -254,11 +237,7 @@ vnext 是与 1.x 并存的第二套数据层，**尚未替换生产路径**，�
 
 **`gui.language` 目前没有消费点。** 后端只是把它存进 `config.json`，不影响任何行为。
 
-**`config.example.json` 已落后于代码默认值。** 它缺 `streaming_enabled`、`anchor_*`、
-`recheck_*` 等字段，且 `temperature`、`auto_archive`、`summary_batch_size` 等值与代码
-默认值不一致。以 [configuration.md](./configuration.md) 为准。
-
-## 九、待复核项
+## 八、待复核项
 
 以下是怀疑存在、但尚未在当前代码上复现确认的问题。复现后应移入上面的正式条目
 或直接删除。

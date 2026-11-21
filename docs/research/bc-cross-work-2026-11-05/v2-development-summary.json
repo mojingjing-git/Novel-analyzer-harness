@@ -1,0 +1,81 @@
+{
+  "dataset_role": "exposed_development",
+  "reference_source": "Luna source-first proposals independently checked against the four provided windows by the main agent; not human gold",
+  "logical_calls": 16,
+  "all_success": true,
+  "arms": {
+    "current": {
+      "metrics": {
+        "total": 8,
+        "labelled": 8,
+        "support_total": 4,
+        "negative_total": 4,
+        "uncertain_total": 0,
+        "block_rate": 0.75,
+        "prevent_accept_rate": 0.75,
+        "keep_rate": 0.75,
+        "agreement": 0.75,
+        "uncertain_rate": null,
+        "dangerous": 1,
+        "decisions": {
+          "接受": 4,
+          "拒绝": 4,
+          "存疑": 0
+        },
+        "assessments": {
+          "accepted": 4,
+          "partial_answer": 1,
+          "answer_overstated": 0,
+          "unconfirmed": 3
+        },
+        "label_status": {
+          "bound": 8,
+          "unbound": 0,
+          "stale": 0,
+          "unlabelled": 0
+        }
+      },
+      "input_tokens": 29160,
+      "output_tokens": 2882,
+      "mean_request_seconds": 5.339,
+      "protocol_invalid": 0
+    },
+    "claims_v2": {
+      "metrics": {
+        "total": 8,
+        "labelled": 8,
+        "support_total": 4,
+        "negative_total": 4,
+        "uncertain_total": 0,
+        "block_rate": 0.75,
+        "prevent_accept_rate": 1.0,
+        "keep_rate": 1.0,
+        "agreement": 0.875,
+        "uncertain_rate": null,
+        "dangerous": 0,
+        "decisions": {
+          "接受": 4,
+          "拒绝": 3,
+          "存疑": 1
+        },
+        "assessments": {
+          "accepted": 4,
+          "partial_answer": 0,
+          "answer_overstated": 1,
+          "unconfirmed": 3
+        },
+        "label_status": {
+          "bound": 8,
+          "unbound": 0,
+          "stale": 0,
+          "unlabelled": 0
+        }
+      },
+      "input_tokens": 34787,
+      "output_tokens": 9796,
+      "mean_request_seconds": 7.685,
+      "protocol_invalid": 0
+    }
+  },
+  "note": "The post-run diagnostic span fix produces identical complete gate outputs on all16 saved responses. No relabelling or new model calls for this replay."
+}

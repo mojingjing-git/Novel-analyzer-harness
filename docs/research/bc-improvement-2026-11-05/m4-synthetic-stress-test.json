@@ -1,0 +1,165 @@
+{
+  "schema": "m4_holdout_report_v1",
+  "model": "minimax-cn/MiniMax-M3.1-Flash",
+  "holdout_event_id": "c96a8ca6421740ed90de3caf88f342e1",
+  "observations_sha256_before_eval": "6ab351705380cc8d524bf29d9880e461486ae1d776ce1b6fa9a9a0a64e4884e5",
+  "call_stats": {
+    "logical_calls": 12,
+    "attempts": 12,
+    "tokens": 114013,
+    "failures": 0
+  },
+  "holdout_summary": {
+    "works_count": 4,
+    "registration_total": 48,
+    "resolution_total": 32,
+    "total_observations": 80,
+    "baseline": {
+      "registration_kept": 6,
+      "registration_recall": 0.125,
+      "resolution_recalled": 0,
+      "resolution_recall": 0.0,
+      "combined_recalled": 6,
+      "combined_recall": 0.075,
+      "unsupported_accepts": 0
+    },
+    "repaired": {
+      "registration_kept": 48,
+      "registration_recall": 1.0,
+      "resolution_recalled": 30,
+      "resolution_recall": 0.9375,
+      "combined_recalled": 78,
+      "combined_recall": 0.975,
+      "unsupported_accepts": 0
+    },
+    "works_improved_or_steady_rate": 1.0,
+    "worst_single_work_recall_delta": 0.85
+  },
+  "holdout_works": [
+    {
+      "work_id": "ind_holdout",
+      "subchapters_count": 76,
+      "registration_total": 12,
+      "resolution_total": 8,
+      "negative_controls_total": 2,
+      "baseline": {
+        "registration_kept": 1,
+        "registration_recall": 0.0833,
+        "resolution_recalled": 0,
+        "resolution_recall": 0.0,
+        "combined_recalled": 1,
+        "combined_recall": 0.05,
+        "unsupported_accepts": 0,
+        "recheck_calls": 1,
+        "recheck_seconds": 7.137
+      },
+      "repaired": {
+        "registration_kept_prompt_view": 7,
+        "registration_kept_full_archive": 12,
+        "registration_recall": 1.0,
+        "resolution_recalled": 8,
+        "resolution_recall": 1.0,
+        "combined_recalled": 20,
+        "combined_recall": 1.0,
+        "unsupported_accepts": 0,
+        "recheck_calls": 2,
+        "recheck_seconds": 24.98
+      },
+      "recall_delta": 0.95
+    },
+    {
+      "work_id": "game_holdout",
+      "subchapters_count": 76,
+      "registration_total": 12,
+      "resolution_total": 8,
+      "negative_controls_total": 2,
+      "baseline": {
+        "registration_kept": 2,
+        "registration_recall": 0.1667,
+        "resolution_recalled": 0,
+        "resolution_recall": 0.0,
+        "combined_recalled": 2,
+        "combined_recall": 0.1,
+        "unsupported_accepts": 0,
+        "recheck_calls": 1,
+        "recheck_seconds": 11.534
+      },
+      "repaired": {
+        "registration_kept_prompt_view": 7,
+        "registration_kept_full_archive": 12,
+        "registration_recall": 1.0,
+        "resolution_recalled": 8,
+        "resolution_recall": 1.0,
+        "combined_recalled": 20,
+        "combined_recall": 1.0,
+        "unsupported_accepts": 0,
+        "recheck_calls": 2,
+        "recheck_seconds": 25.13
+      },
+      "recall_delta": 0.9
+    },
+    {
+      "work_id": "urban_holdout",
+      "subchapters_count": 74,
+      "registration_total": 12,
+      "resolution_total": 8,
+      "negative_controls_total": 2,
+      "baseline": {
+        "registration_kept": 3,
+        "registration_recall": 0.25,
+        "resolution_recalled": 0,
+        "resolution_recall": 0.0,
+        "combined_recalled": 3,
+        "combined_recall": 0.15,
+        "unsupported_accepts": 0,
+        "recheck_calls": 1,
+        "recheck_seconds": 10.184
+      },
+      "repaired": {
+        "registration_kept_prompt_view": 6,
+        "registration_kept_full_archive": 12,
+        "registration_recall": 1.0,
+        "resolution_recalled": 8,
+        "resolution_recall": 1.0,
+        "combined_recalled": 20,
+        "combined_recall": 1.0,
+        "unsupported_accepts": 0,
+        "recheck_calls": 2,
+        "recheck_seconds": 18.612
+      },
+      "recall_delta": 0.85
+    },
+    {
+      "work_id": "hist_holdout",
+      "subchapters_count": 76,
+      "registration_total": 12,
+      "resolution_total": 8,
+      "negative_controls_total": 2,
+      "baseline": {
+        "registration_kept": 0,
+        "registration_recall": 0.0,
+        "resolution_recalled": 0,
+        "resolution_recall": 0.0,
+        "combined_recalled": 0,
+        "combined_recall": 0.0,
+        "unsupported_accepts": 0,
+        "recheck_calls": 1,
+        "recheck_seconds": 5.983
+      },
+      "repaired": {
+        "registration_kept_prompt_view": 6,
+        "registration_kept_full_archive": 12,
+        "registration_recall": 1.0,
+        "resolution_recalled": 6,
+        "resolution_recall": 0.75,
+        "combined_recalled": 18,
+        "combined_recall": 0.9,
+        "unsupported_accepts": 0,
+        "recheck_calls": 2,
+        "recheck_seconds": 25.949
+      },
+      "recall_delta": 0.9
+    }
+  ],
+  "test_classification": "synthetic_component_stress_test_with_injected_candidates"
+}

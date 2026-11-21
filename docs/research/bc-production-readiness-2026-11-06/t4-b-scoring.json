@@ -1,0 +1,3567 @@
+{
+  "schema": "t4_b_scoring_v2",
+  "denominator_note": "分母固定为独立参考观察数（每部 10 登记 + 10 回答，全局 40+40）。候选池大小不参与召回计算——它是被匹配的对象，不是分母。",
+  "matching_note": "问题等价性由独立评审代理逐对给出结论（t4-review-tasks/*.review.json）；本脚本不自行判定等价，只消费结论并跑结构化裁决。",
+  "works": {
+    "t4_ind_holdout": {
+      "baseline": {
+        "work_id": "t4_ind_holdout",
+        "arm": "baseline",
+        "scorer_version": "bc_scorer_t2_v1",
+        "independent_review_applied": true,
+        "candidates_in_pool": 12,
+        "observations_total": 20,
+        "registration": {
+          "denominator": 10,
+          "strict_hits": 1,
+          "missed": 9,
+          "recall": 0.1
+        },
+        "resolution": {
+          "denominator": 10,
+          "strict_hits": 0,
+          "missed": 10,
+          "recall": 0.0
+        },
+        "per_observation": [
+          {
+            "obs_id": "t4_ind_holdout_setup_01",
+            "obs_type": "registration",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_setup_02",
+            "obs_type": "registration",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_setup_03",
+            "obs_type": "registration",
+            "chapter": 2,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_setup_04",
+            "obs_type": "registration",
+            "chapter": 2,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_setup_05",
+            "obs_type": "registration",
+            "chapter": 3,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_setup_06",
+            "obs_type": "registration",
+            "chapter": 4,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_setup_07",
+            "obs_type": "registration",
+            "chapter": 5,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_setup_08",
+            "obs_type": "registration",
+            "chapter": 8,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_setup_09",
+            "obs_type": "registration",
+            "chapter": 10,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_setup_10",
+            "obs_type": "registration",
+            "chapter": 11,
+            "independent_equivalent_candidate_ids": [
+              "fs_010"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_010",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_ind_holdout_resolution_01",
+            "obs_type": "resolution",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [
+              "fs_001"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_001",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_contradicted",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:CONTRADICTED"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_resolution_02",
+            "obs_type": "resolution",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_resolution_03",
+            "obs_type": "resolution",
+            "chapter": 2,
+            "independent_equivalent_candidate_ids": [
+              "fs_005"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_005",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_resolution_04",
+            "obs_type": "resolution",
+            "chapter": 2,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_resolution_05",
+            "obs_type": "resolution",
+            "chapter": 2,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_resolution_06",
+            "obs_type": "resolution",
+            "chapter": 3,
+            "independent_equivalent_candidate_ids": [
+              "fs_002"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_002",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_resolution_07",
+            "obs_type": "resolution",
+            "chapter": 4,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_resolution_08",
+            "obs_type": "resolution",
+            "chapter": 4,
+            "independent_equivalent_candidate_ids": [
+              "fs_007"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_007",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_resolution_09",
+            "obs_type": "resolution",
+            "chapter": 6,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_resolution_10",
+            "obs_type": "resolution",
+            "chapter": 7,
+            "independent_equivalent_candidate_ids": [
+              "fs_009"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_009",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          }
+        ]
+      },
+      "b_fixed": {
+        "work_id": "t4_ind_holdout",
+        "arm": "b_fixed",
+        "scorer_version": "bc_scorer_t2_v1",
+        "independent_review_applied": true,
+        "candidates_in_pool": 10,
+        "observations_total": 20,
+        "registration": {
+          "denominator": 10,
+          "strict_hits": 1,
+          "missed": 9,
+          "recall": 0.1
+        },
+        "resolution": {
+          "denominator": 10,
+          "strict_hits": 0,
+          "missed": 10,
+          "recall": 0.0
+        },
+        "per_observation": [
+          {
+            "obs_id": "t4_ind_holdout_setup_01",
+            "obs_type": "registration",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_setup_02",
+            "obs_type": "registration",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_setup_03",
+            "obs_type": "registration",
+            "chapter": 2,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_setup_04",
+            "obs_type": "registration",
+            "chapter": 2,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_setup_05",
+            "obs_type": "registration",
+            "chapter": 3,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_setup_06",
+            "obs_type": "registration",
+            "chapter": 4,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_setup_07",
+            "obs_type": "registration",
+            "chapter": 5,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_setup_08",
+            "obs_type": "registration",
+            "chapter": 8,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_setup_09",
+            "obs_type": "registration",
+            "chapter": 10,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_setup_10",
+            "obs_type": "registration",
+            "chapter": 11,
+            "independent_equivalent_candidate_ids": [
+              "fs_010"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_010",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_ind_holdout_resolution_01",
+            "obs_type": "resolution",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [
+              "fs_001"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_001",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_different_answer",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:DIFFERENT_ANSWER"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_resolution_02",
+            "obs_type": "resolution",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_resolution_03",
+            "obs_type": "resolution",
+            "chapter": 2,
+            "independent_equivalent_candidate_ids": [
+              "fs_005"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_005",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_resolution_04",
+            "obs_type": "resolution",
+            "chapter": 2,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_resolution_05",
+            "obs_type": "resolution",
+            "chapter": 2,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_resolution_06",
+            "obs_type": "resolution",
+            "chapter": 3,
+            "independent_equivalent_candidate_ids": [
+              "fs_002"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_002",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_resolution_07",
+            "obs_type": "resolution",
+            "chapter": 4,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_resolution_08",
+            "obs_type": "resolution",
+            "chapter": 4,
+            "independent_equivalent_candidate_ids": [
+              "fs_007"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_007",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_resolution_09",
+            "obs_type": "resolution",
+            "chapter": 6,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_resolution_10",
+            "obs_type": "resolution",
+            "chapter": 7,
+            "independent_equivalent_candidate_ids": [
+              "fs_009"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_009",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          }
+        ]
+      },
+      "candidate": {
+        "work_id": "t4_ind_holdout",
+        "arm": "candidate",
+        "scorer_version": "bc_scorer_t2_v1",
+        "independent_review_applied": true,
+        "candidates_in_pool": 10,
+        "observations_total": 20,
+        "registration": {
+          "denominator": 10,
+          "strict_hits": 1,
+          "missed": 9,
+          "recall": 0.1
+        },
+        "resolution": {
+          "denominator": 10,
+          "strict_hits": 0,
+          "missed": 10,
+          "recall": 0.0
+        },
+        "per_observation": [
+          {
+            "obs_id": "t4_ind_holdout_setup_01",
+            "obs_type": "registration",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_setup_02",
+            "obs_type": "registration",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_setup_03",
+            "obs_type": "registration",
+            "chapter": 2,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_setup_04",
+            "obs_type": "registration",
+            "chapter": 2,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_setup_05",
+            "obs_type": "registration",
+            "chapter": 3,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_setup_06",
+            "obs_type": "registration",
+            "chapter": 4,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_setup_07",
+            "obs_type": "registration",
+            "chapter": 5,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_setup_08",
+            "obs_type": "registration",
+            "chapter": 8,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_setup_09",
+            "obs_type": "registration",
+            "chapter": 10,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_setup_10",
+            "obs_type": "registration",
+            "chapter": 11,
+            "independent_equivalent_candidate_ids": [
+              "fs_010"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_010",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_ind_holdout_resolution_01",
+            "obs_type": "resolution",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [
+              "fs_001"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_001",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_resolution_02",
+            "obs_type": "resolution",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_resolution_03",
+            "obs_type": "resolution",
+            "chapter": 2,
+            "independent_equivalent_candidate_ids": [
+              "fs_005"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_005",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_resolution_04",
+            "obs_type": "resolution",
+            "chapter": 2,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_resolution_05",
+            "obs_type": "resolution",
+            "chapter": 2,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_resolution_06",
+            "obs_type": "resolution",
+            "chapter": 3,
+            "independent_equivalent_candidate_ids": [
+              "fs_002"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_002",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_resolution_07",
+            "obs_type": "resolution",
+            "chapter": 4,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_resolution_08",
+            "obs_type": "resolution",
+            "chapter": 4,
+            "independent_equivalent_candidate_ids": [
+              "fs_007"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_007",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_resolution_09",
+            "obs_type": "resolution",
+            "chapter": 6,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_ind_holdout_resolution_10",
+            "obs_type": "resolution",
+            "chapter": 7,
+            "independent_equivalent_candidate_ids": [
+              "fs_009"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_009",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          }
+        ]
+      }
+    },
+    "t4_game_holdout": {
+      "baseline": {
+        "work_id": "t4_game_holdout",
+        "arm": "baseline",
+        "scorer_version": "bc_scorer_t2_v1",
+        "independent_review_applied": true,
+        "candidates_in_pool": 7,
+        "observations_total": 20,
+        "registration": {
+          "denominator": 10,
+          "strict_hits": 2,
+          "missed": 8,
+          "recall": 0.2
+        },
+        "resolution": {
+          "denominator": 10,
+          "strict_hits": 1,
+          "missed": 9,
+          "recall": 0.1
+        },
+        "per_observation": [
+          {
+            "obs_id": "t4_game_holdout_setup_01",
+            "obs_type": "registration",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_setup_02",
+            "obs_type": "registration",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [
+              "fs_003"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_003",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_game_holdout_setup_03",
+            "obs_type": "registration",
+            "chapter": 2,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_setup_04",
+            "obs_type": "registration",
+            "chapter": 3,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_setup_05",
+            "obs_type": "registration",
+            "chapter": 3,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_setup_06",
+            "obs_type": "registration",
+            "chapter": 5,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_setup_07",
+            "obs_type": "registration",
+            "chapter": 6,
+            "independent_equivalent_candidate_ids": [
+              "fs_004"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_004",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_game_holdout_setup_08",
+            "obs_type": "registration",
+            "chapter": 7,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_setup_09",
+            "obs_type": "registration",
+            "chapter": 8,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_setup_10",
+            "obs_type": "registration",
+            "chapter": 9,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_resolution_01",
+            "obs_type": "resolution",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_resolution_02",
+            "obs_type": "resolution",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [
+              "fs_003"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_003",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_game_holdout_resolution_03",
+            "obs_type": "resolution",
+            "chapter": 2,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_resolution_04",
+            "obs_type": "resolution",
+            "chapter": 3,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_resolution_05",
+            "obs_type": "resolution",
+            "chapter": 3,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_resolution_06",
+            "obs_type": "resolution",
+            "chapter": 5,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_resolution_07",
+            "obs_type": "resolution",
+            "chapter": 6,
+            "independent_equivalent_candidate_ids": [
+              "fs_004"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_004",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_resolution_08",
+            "obs_type": "resolution",
+            "chapter": 7,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_resolution_09",
+            "obs_type": "resolution",
+            "chapter": 8,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_resolution_10",
+            "obs_type": "resolution",
+            "chapter": 9,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          }
+        ]
+      },
+      "b_fixed": {
+        "work_id": "t4_game_holdout",
+        "arm": "b_fixed",
+        "scorer_version": "bc_scorer_t2_v1",
+        "independent_review_applied": true,
+        "candidates_in_pool": 7,
+        "observations_total": 20,
+        "registration": {
+          "denominator": 10,
+          "strict_hits": 2,
+          "missed": 8,
+          "recall": 0.2
+        },
+        "resolution": {
+          "denominator": 10,
+          "strict_hits": 1,
+          "missed": 9,
+          "recall": 0.1
+        },
+        "per_observation": [
+          {
+            "obs_id": "t4_game_holdout_setup_01",
+            "obs_type": "registration",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_setup_02",
+            "obs_type": "registration",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [
+              "fs_003"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_003",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_game_holdout_setup_03",
+            "obs_type": "registration",
+            "chapter": 2,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_setup_04",
+            "obs_type": "registration",
+            "chapter": 3,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_setup_05",
+            "obs_type": "registration",
+            "chapter": 3,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_setup_06",
+            "obs_type": "registration",
+            "chapter": 5,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_setup_07",
+            "obs_type": "registration",
+            "chapter": 6,
+            "independent_equivalent_candidate_ids": [
+              "fs_004"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_004",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_game_holdout_setup_08",
+            "obs_type": "registration",
+            "chapter": 7,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_setup_09",
+            "obs_type": "registration",
+            "chapter": 8,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_setup_10",
+            "obs_type": "registration",
+            "chapter": 9,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_resolution_01",
+            "obs_type": "resolution",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_resolution_02",
+            "obs_type": "resolution",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [
+              "fs_003"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_003",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_game_holdout_resolution_03",
+            "obs_type": "resolution",
+            "chapter": 2,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_resolution_04",
+            "obs_type": "resolution",
+            "chapter": 3,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_resolution_05",
+            "obs_type": "resolution",
+            "chapter": 3,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_resolution_06",
+            "obs_type": "resolution",
+            "chapter": 5,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_resolution_07",
+            "obs_type": "resolution",
+            "chapter": 6,
+            "independent_equivalent_candidate_ids": [
+              "fs_004"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_004",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_resolution_08",
+            "obs_type": "resolution",
+            "chapter": 7,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_resolution_09",
+            "obs_type": "resolution",
+            "chapter": 8,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_resolution_10",
+            "obs_type": "resolution",
+            "chapter": 9,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          }
+        ]
+      },
+      "candidate": {
+        "work_id": "t4_game_holdout",
+        "arm": "candidate",
+        "scorer_version": "bc_scorer_t2_v1",
+        "independent_review_applied": true,
+        "candidates_in_pool": 7,
+        "observations_total": 20,
+        "registration": {
+          "denominator": 10,
+          "strict_hits": 2,
+          "missed": 8,
+          "recall": 0.2
+        },
+        "resolution": {
+          "denominator": 10,
+          "strict_hits": 0,
+          "missed": 10,
+          "recall": 0.0
+        },
+        "per_observation": [
+          {
+            "obs_id": "t4_game_holdout_setup_01",
+            "obs_type": "registration",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_setup_02",
+            "obs_type": "registration",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [
+              "fs_003"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_003",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_game_holdout_setup_03",
+            "obs_type": "registration",
+            "chapter": 2,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_setup_04",
+            "obs_type": "registration",
+            "chapter": 3,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_setup_05",
+            "obs_type": "registration",
+            "chapter": 3,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_setup_06",
+            "obs_type": "registration",
+            "chapter": 5,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_setup_07",
+            "obs_type": "registration",
+            "chapter": 6,
+            "independent_equivalent_candidate_ids": [
+              "fs_004"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_004",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_game_holdout_setup_08",
+            "obs_type": "registration",
+            "chapter": 7,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_setup_09",
+            "obs_type": "registration",
+            "chapter": 8,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_setup_10",
+            "obs_type": "registration",
+            "chapter": 9,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_resolution_01",
+            "obs_type": "resolution",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_resolution_02",
+            "obs_type": "resolution",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [
+              "fs_003"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_003",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_resolution_03",
+            "obs_type": "resolution",
+            "chapter": 2,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_resolution_04",
+            "obs_type": "resolution",
+            "chapter": 3,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_resolution_05",
+            "obs_type": "resolution",
+            "chapter": 3,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_resolution_06",
+            "obs_type": "resolution",
+            "chapter": 5,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_resolution_07",
+            "obs_type": "resolution",
+            "chapter": 6,
+            "independent_equivalent_candidate_ids": [
+              "fs_004"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_004",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_resolution_08",
+            "obs_type": "resolution",
+            "chapter": 7,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_resolution_09",
+            "obs_type": "resolution",
+            "chapter": 8,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_game_holdout_resolution_10",
+            "obs_type": "resolution",
+            "chapter": 9,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          }
+        ]
+      }
+    },
+    "t4_urban_holdout": {
+      "baseline": {
+        "work_id": "t4_urban_holdout",
+        "arm": "baseline",
+        "scorer_version": "bc_scorer_t2_v1",
+        "independent_review_applied": true,
+        "candidates_in_pool": 12,
+        "observations_total": 20,
+        "registration": {
+          "denominator": 10,
+          "strict_hits": 6,
+          "missed": 4,
+          "recall": 0.6
+        },
+        "resolution": {
+          "denominator": 10,
+          "strict_hits": 0,
+          "missed": 10,
+          "recall": 0.0
+        },
+        "per_observation": [
+          {
+            "obs_id": "t4_urban_holdout_setup_01",
+            "obs_type": "registration",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_setup_02",
+            "obs_type": "registration",
+            "chapter": 3,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_setup_03",
+            "obs_type": "registration",
+            "chapter": 4,
+            "independent_equivalent_candidate_ids": [
+              "fs_003"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_003",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_urban_holdout_setup_04",
+            "obs_type": "registration",
+            "chapter": 5,
+            "independent_equivalent_candidate_ids": [
+              "fs_006"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_006",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_urban_holdout_setup_05",
+            "obs_type": "registration",
+            "chapter": 7,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_setup_06",
+            "obs_type": "registration",
+            "chapter": 8,
+            "independent_equivalent_candidate_ids": [
+              "fs_008"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_008",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_urban_holdout_setup_07",
+            "obs_type": "registration",
+            "chapter": 9,
+            "independent_equivalent_candidate_ids": [
+              "fs_011"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_011",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_urban_holdout_setup_08",
+            "obs_type": "registration",
+            "chapter": 12,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_setup_09",
+            "obs_type": "registration",
+            "chapter": 3,
+            "independent_equivalent_candidate_ids": [
+              "fs_004"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_004",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_urban_holdout_setup_10",
+            "obs_type": "registration",
+            "chapter": 10,
+            "independent_equivalent_candidate_ids": [
+              "fs_003"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_003",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_urban_holdout_resolution_01",
+            "obs_type": "resolution",
+            "chapter": 2,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_resolution_02",
+            "obs_type": "resolution",
+            "chapter": 2,
+            "independent_equivalent_candidate_ids": [
+              "fs_011"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_011",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_resolution_03",
+            "obs_type": "resolution",
+            "chapter": 3,
+            "independent_equivalent_candidate_ids": [
+              "fs_004"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_004",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_resolution_04",
+            "obs_type": "resolution",
+            "chapter": 9,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_resolution_05",
+            "obs_type": "resolution",
+            "chapter": 4,
+            "independent_equivalent_candidate_ids": [
+              "fs_003"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_003",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_resolution_06",
+            "obs_type": "resolution",
+            "chapter": 10,
+            "independent_equivalent_candidate_ids": [
+              "fs_003"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_003",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_resolution_07",
+            "obs_type": "resolution",
+            "chapter": 5,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_resolution_08",
+            "obs_type": "resolution",
+            "chapter": 6,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_resolution_09",
+            "obs_type": "resolution",
+            "chapter": 3,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_resolution_10",
+            "obs_type": "resolution",
+            "chapter": 9,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          }
+        ]
+      },
+      "b_fixed": {
+        "work_id": "t4_urban_holdout",
+        "arm": "b_fixed",
+        "scorer_version": "bc_scorer_t2_v1",
+        "independent_review_applied": true,
+        "candidates_in_pool": 12,
+        "observations_total": 20,
+        "registration": {
+          "denominator": 10,
+          "strict_hits": 6,
+          "missed": 4,
+          "recall": 0.6
+        },
+        "resolution": {
+          "denominator": 10,
+          "strict_hits": 0,
+          "missed": 10,
+          "recall": 0.0
+        },
+        "per_observation": [
+          {
+            "obs_id": "t4_urban_holdout_setup_01",
+            "obs_type": "registration",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_setup_02",
+            "obs_type": "registration",
+            "chapter": 3,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_setup_03",
+            "obs_type": "registration",
+            "chapter": 4,
+            "independent_equivalent_candidate_ids": [
+              "fs_003"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_003",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_urban_holdout_setup_04",
+            "obs_type": "registration",
+            "chapter": 5,
+            "independent_equivalent_candidate_ids": [
+              "fs_006"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_006",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_urban_holdout_setup_05",
+            "obs_type": "registration",
+            "chapter": 7,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_setup_06",
+            "obs_type": "registration",
+            "chapter": 8,
+            "independent_equivalent_candidate_ids": [
+              "fs_008"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_008",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_urban_holdout_setup_07",
+            "obs_type": "registration",
+            "chapter": 9,
+            "independent_equivalent_candidate_ids": [
+              "fs_011"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_011",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_urban_holdout_setup_08",
+            "obs_type": "registration",
+            "chapter": 12,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_setup_09",
+            "obs_type": "registration",
+            "chapter": 3,
+            "independent_equivalent_candidate_ids": [
+              "fs_004"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_004",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_urban_holdout_setup_10",
+            "obs_type": "registration",
+            "chapter": 10,
+            "independent_equivalent_candidate_ids": [
+              "fs_003"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_003",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_urban_holdout_resolution_01",
+            "obs_type": "resolution",
+            "chapter": 2,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_resolution_02",
+            "obs_type": "resolution",
+            "chapter": 2,
+            "independent_equivalent_candidate_ids": [
+              "fs_011"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_011",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_resolution_03",
+            "obs_type": "resolution",
+            "chapter": 3,
+            "independent_equivalent_candidate_ids": [
+              "fs_004"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_004",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_resolution_04",
+            "obs_type": "resolution",
+            "chapter": 9,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_resolution_05",
+            "obs_type": "resolution",
+            "chapter": 4,
+            "independent_equivalent_candidate_ids": [
+              "fs_003"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_003",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_resolution_06",
+            "obs_type": "resolution",
+            "chapter": 10,
+            "independent_equivalent_candidate_ids": [
+              "fs_003"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_003",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_resolution_07",
+            "obs_type": "resolution",
+            "chapter": 5,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_resolution_08",
+            "obs_type": "resolution",
+            "chapter": 6,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_resolution_09",
+            "obs_type": "resolution",
+            "chapter": 3,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_resolution_10",
+            "obs_type": "resolution",
+            "chapter": 9,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          }
+        ]
+      },
+      "candidate": {
+        "work_id": "t4_urban_holdout",
+        "arm": "candidate",
+        "scorer_version": "bc_scorer_t2_v1",
+        "independent_review_applied": true,
+        "candidates_in_pool": 12,
+        "observations_total": 20,
+        "registration": {
+          "denominator": 10,
+          "strict_hits": 6,
+          "missed": 4,
+          "recall": 0.6
+        },
+        "resolution": {
+          "denominator": 10,
+          "strict_hits": 0,
+          "missed": 10,
+          "recall": 0.0
+        },
+        "per_observation": [
+          {
+            "obs_id": "t4_urban_holdout_setup_01",
+            "obs_type": "registration",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_setup_02",
+            "obs_type": "registration",
+            "chapter": 3,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_setup_03",
+            "obs_type": "registration",
+            "chapter": 4,
+            "independent_equivalent_candidate_ids": [
+              "fs_003"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_003",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_urban_holdout_setup_04",
+            "obs_type": "registration",
+            "chapter": 5,
+            "independent_equivalent_candidate_ids": [
+              "fs_006"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_006",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_urban_holdout_setup_05",
+            "obs_type": "registration",
+            "chapter": 7,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_setup_06",
+            "obs_type": "registration",
+            "chapter": 8,
+            "independent_equivalent_candidate_ids": [
+              "fs_008"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_008",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_urban_holdout_setup_07",
+            "obs_type": "registration",
+            "chapter": 9,
+            "independent_equivalent_candidate_ids": [
+              "fs_011"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_011",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_urban_holdout_setup_08",
+            "obs_type": "registration",
+            "chapter": 12,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_setup_09",
+            "obs_type": "registration",
+            "chapter": 3,
+            "independent_equivalent_candidate_ids": [
+              "fs_004"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_004",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_urban_holdout_setup_10",
+            "obs_type": "registration",
+            "chapter": 10,
+            "independent_equivalent_candidate_ids": [
+              "fs_003"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_003",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_urban_holdout_resolution_01",
+            "obs_type": "resolution",
+            "chapter": 2,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_resolution_02",
+            "obs_type": "resolution",
+            "chapter": 2,
+            "independent_equivalent_candidate_ids": [
+              "fs_011"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_011",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_resolution_03",
+            "obs_type": "resolution",
+            "chapter": 3,
+            "independent_equivalent_candidate_ids": [
+              "fs_004"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_004",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_resolution_04",
+            "obs_type": "resolution",
+            "chapter": 9,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_resolution_05",
+            "obs_type": "resolution",
+            "chapter": 4,
+            "independent_equivalent_candidate_ids": [
+              "fs_003"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_003",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_resolution_06",
+            "obs_type": "resolution",
+            "chapter": 10,
+            "independent_equivalent_candidate_ids": [
+              "fs_003"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_003",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_resolution_07",
+            "obs_type": "resolution",
+            "chapter": 5,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_resolution_08",
+            "obs_type": "resolution",
+            "chapter": 6,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_resolution_09",
+            "obs_type": "resolution",
+            "chapter": 3,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_urban_holdout_resolution_10",
+            "obs_type": "resolution",
+            "chapter": 9,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          }
+        ]
+      }
+    },
+    "t4_hist_holdout": {
+      "baseline": {
+        "work_id": "t4_hist_holdout",
+        "arm": "baseline",
+        "scorer_version": "bc_scorer_t2_v1",
+        "independent_review_applied": true,
+        "candidates_in_pool": 13,
+        "observations_total": 20,
+        "registration": {
+          "denominator": 10,
+          "strict_hits": 2,
+          "missed": 8,
+          "recall": 0.2
+        },
+        "resolution": {
+          "denominator": 10,
+          "strict_hits": 0,
+          "missed": 10,
+          "recall": 0.0
+        },
+        "per_observation": [
+          {
+            "obs_id": "t4_hist_holdout_setup_01",
+            "obs_type": "registration",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_setup_02",
+            "obs_type": "registration",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_setup_03",
+            "obs_type": "registration",
+            "chapter": 2,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_setup_04",
+            "obs_type": "registration",
+            "chapter": 3,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_setup_05",
+            "obs_type": "registration",
+            "chapter": 4,
+            "independent_equivalent_candidate_ids": [
+              "fs_002",
+              "fs_006",
+              "fs_001"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_002",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_hist_holdout_setup_06",
+            "obs_type": "registration",
+            "chapter": 5,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_setup_07",
+            "obs_type": "registration",
+            "chapter": 8,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_setup_08",
+            "obs_type": "registration",
+            "chapter": 9,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_setup_09",
+            "obs_type": "registration",
+            "chapter": 10,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_setup_10",
+            "obs_type": "registration",
+            "chapter": 11,
+            "independent_equivalent_candidate_ids": [
+              "fs_010"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_010",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_hist_holdout_resolution_01",
+            "obs_type": "resolution",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [
+              "fs_004"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_004",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_resolution_02",
+            "obs_type": "resolution",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_resolution_03",
+            "obs_type": "resolution",
+            "chapter": 2,
+            "independent_equivalent_candidate_ids": [
+              "fs_006",
+              "fs_001"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_006",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_resolution_04",
+            "obs_type": "resolution",
+            "chapter": 4,
+            "independent_equivalent_candidate_ids": [
+              "fs_003"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_003",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_resolution_05",
+            "obs_type": "resolution",
+            "chapter": 2,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_resolution_06",
+            "obs_type": "resolution",
+            "chapter": 4,
+            "independent_equivalent_candidate_ids": [
+              "fs_006",
+              "fs_001"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_006",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_resolution_07",
+            "obs_type": "resolution",
+            "chapter": 6,
+            "independent_equivalent_candidate_ids": [
+              "fs_007"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_007",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_resolution_08",
+            "obs_type": "resolution",
+            "chapter": 7,
+            "independent_equivalent_candidate_ids": [
+              "fs_008"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_008",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_resolution_09",
+            "obs_type": "resolution",
+            "chapter": 9,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_resolution_10",
+            "obs_type": "resolution",
+            "chapter": 10,
+            "independent_equivalent_candidate_ids": [
+              "fs_009",
+              "fs_003"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_009",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          }
+        ]
+      },
+      "b_fixed": {
+        "work_id": "t4_hist_holdout",
+        "arm": "b_fixed",
+        "scorer_version": "bc_scorer_t2_v1",
+        "independent_review_applied": true,
+        "candidates_in_pool": 13,
+        "observations_total": 20,
+        "registration": {
+          "denominator": 10,
+          "strict_hits": 2,
+          "missed": 8,
+          "recall": 0.2
+        },
+        "resolution": {
+          "denominator": 10,
+          "strict_hits": 2,
+          "missed": 8,
+          "recall": 0.2
+        },
+        "per_observation": [
+          {
+            "obs_id": "t4_hist_holdout_setup_01",
+            "obs_type": "registration",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_setup_02",
+            "obs_type": "registration",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_setup_03",
+            "obs_type": "registration",
+            "chapter": 2,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_setup_04",
+            "obs_type": "registration",
+            "chapter": 3,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_setup_05",
+            "obs_type": "registration",
+            "chapter": 4,
+            "independent_equivalent_candidate_ids": [
+              "fs_002",
+              "fs_006",
+              "fs_001"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_002",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_hist_holdout_setup_06",
+            "obs_type": "registration",
+            "chapter": 5,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_setup_07",
+            "obs_type": "registration",
+            "chapter": 8,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_setup_08",
+            "obs_type": "registration",
+            "chapter": 9,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_setup_09",
+            "obs_type": "registration",
+            "chapter": 10,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_setup_10",
+            "obs_type": "registration",
+            "chapter": 11,
+            "independent_equivalent_candidate_ids": [
+              "fs_010"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_010",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_hist_holdout_resolution_01",
+            "obs_type": "resolution",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [
+              "fs_004"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_004",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_resolution_02",
+            "obs_type": "resolution",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_resolution_03",
+            "obs_type": "resolution",
+            "chapter": 2,
+            "independent_equivalent_candidate_ids": [
+              "fs_006",
+              "fs_001"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_006",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_hist_holdout_resolution_04",
+            "obs_type": "resolution",
+            "chapter": 4,
+            "independent_equivalent_candidate_ids": [
+              "fs_003"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_003",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_resolution_05",
+            "obs_type": "resolution",
+            "chapter": 2,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_resolution_06",
+            "obs_type": "resolution",
+            "chapter": 4,
+            "independent_equivalent_candidate_ids": [
+              "fs_006",
+              "fs_001"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_006",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_hist_holdout_resolution_07",
+            "obs_type": "resolution",
+            "chapter": 6,
+            "independent_equivalent_candidate_ids": [
+              "fs_007"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_007",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_resolution_08",
+            "obs_type": "resolution",
+            "chapter": 7,
+            "independent_equivalent_candidate_ids": [
+              "fs_008"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_008",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_resolution_09",
+            "obs_type": "resolution",
+            "chapter": 9,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_resolution_10",
+            "obs_type": "resolution",
+            "chapter": 10,
+            "independent_equivalent_candidate_ids": [
+              "fs_009",
+              "fs_003"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_009",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          }
+        ]
+      },
+      "candidate": {
+        "work_id": "t4_hist_holdout",
+        "arm": "candidate",
+        "scorer_version": "bc_scorer_t2_v1",
+        "independent_review_applied": true,
+        "candidates_in_pool": 13,
+        "observations_total": 20,
+        "registration": {
+          "denominator": 10,
+          "strict_hits": 2,
+          "missed": 8,
+          "recall": 0.2
+        },
+        "resolution": {
+          "denominator": 10,
+          "strict_hits": 2,
+          "missed": 8,
+          "recall": 0.2
+        },
+        "per_observation": [
+          {
+            "obs_id": "t4_hist_holdout_setup_01",
+            "obs_type": "registration",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_setup_02",
+            "obs_type": "registration",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_setup_03",
+            "obs_type": "registration",
+            "chapter": 2,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_setup_04",
+            "obs_type": "registration",
+            "chapter": 3,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_setup_05",
+            "obs_type": "registration",
+            "chapter": 4,
+            "independent_equivalent_candidate_ids": [
+              "fs_002",
+              "fs_006",
+              "fs_001"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_002",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_hist_holdout_setup_06",
+            "obs_type": "registration",
+            "chapter": 5,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_setup_07",
+            "obs_type": "registration",
+            "chapter": 8,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_setup_08",
+            "obs_type": "registration",
+            "chapter": 9,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_setup_09",
+            "obs_type": "registration",
+            "chapter": 10,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_setup_10",
+            "obs_type": "registration",
+            "chapter": 11,
+            "independent_equivalent_candidate_ids": [
+              "fs_010"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_010",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_hist_holdout_resolution_01",
+            "obs_type": "resolution",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [
+              "fs_004"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_004",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_resolution_02",
+            "obs_type": "resolution",
+            "chapter": 1,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_resolution_03",
+            "obs_type": "resolution",
+            "chapter": 2,
+            "independent_equivalent_candidate_ids": [
+              "fs_006",
+              "fs_001"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_006",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_hist_holdout_resolution_04",
+            "obs_type": "resolution",
+            "chapter": 4,
+            "independent_equivalent_candidate_ids": [
+              "fs_003"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_003",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_resolution_05",
+            "obs_type": "resolution",
+            "chapter": 2,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_resolution_06",
+            "obs_type": "resolution",
+            "chapter": 4,
+            "independent_equivalent_candidate_ids": [
+              "fs_006",
+              "fs_001"
+            ],
+            "hit": true,
+            "hit_candidate_id": "fs_006",
+            "diagnostic": null
+          },
+          {
+            "obs_id": "t4_hist_holdout_resolution_07",
+            "obs_type": "resolution",
+            "chapter": 6,
+            "independent_equivalent_candidate_ids": [
+              "fs_007"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_007",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_resolution_08",
+            "obs_type": "resolution",
+            "chapter": 7,
+            "independent_equivalent_candidate_ids": [
+              "fs_008"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_008",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_resolution_09",
+            "obs_type": "resolution",
+            "chapter": 9,
+            "independent_equivalent_candidate_ids": [],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "",
+              "adjudication_reason": "no_equivalent_candidate_in_this_arm"
+            }
+          },
+          {
+            "obs_id": "t4_hist_holdout_resolution_10",
+            "obs_type": "resolution",
+            "chapter": 10,
+            "independent_equivalent_candidate_ids": [
+              "fs_009",
+              "fs_003"
+            ],
+            "hit": false,
+            "hit_candidate_id": null,
+            "diagnostic": {
+              "candidate_id": "fs_009",
+              "question_equivalence": "equivalent",
+              "answer_fact_status": "verdict_insufficient",
+              "evidence_attribution": "missing_or_foreign",
+              "closing_criteria_status": "unmet",
+              "adjudication_reason": "candidate_verdict_not_supported:INSUFFICIENT"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "summary": {
+    "baseline": {
+      "registration": {
+        "denominator": 40,
+        "strict_hits": 11,
+        "missed": 29,
+        "recall": 0.275
+      },
+      "resolution": {
+        "denominator": 40,
+        "strict_hits": 1,
+        "missed": 39,
+        "recall": 0.025
+      }
+    },
+    "b_fixed": {
+      "registration": {
+        "denominator": 40,
+        "strict_hits": 11,
+        "missed": 29,
+        "recall": 0.275
+      },
+      "resolution": {
+        "denominator": 40,
+        "strict_hits": 3,
+        "missed": 37,
+        "recall": 0.075
+      }
+    },
+    "candidate": {
+      "registration": {
+        "denominator": 40,
+        "strict_hits": 11,
+        "missed": 29,
+        "recall": 0.275
+      },
+      "resolution": {
+        "denominator": 40,
+        "strict_hits": 2,
+        "missed": 38,
+        "recall": 0.05
+      }
+    }
+  },
+  "b_improvement": {
+    "aggregate": {
+      "registration": {
+        "baseline_missed": 29,
+        "b_fixed_missed": 29,
+        "miss_reduction_abs": 0,
+        "miss_reduction_rel": 0.0,
+        "meets_20pct": false
+      },
+      "resolution": {
+        "baseline_missed": 39,
+        "b_fixed_missed": 37,
+        "miss_reduction_abs": 2,
+        "miss_reduction_rel": 0.0513,
+        "meets_20pct": false
+      }
+    },
+    "per_work": {
+      "t4_ind_holdout": {
+        "registration": {
+          "baseline": 1,
+          "b_fixed": 1,
+          "denominator": 10,
+          "delta": 0,
+          "degraded": false,
+          "improved": false
+        },
+        "resolution": {
+          "baseline": 0,
+          "b_fixed": 0,
+          "denominator": 10,
+          "delta": 0,
+          "degraded": false,
+          "improved": false
+        }
+      },
+      "t4_game_holdout": {
+        "registration": {
+          "baseline": 2,
+          "b_fixed": 2,
+          "denominator": 10,
+          "delta": 0,
+          "degraded": false,
+          "improved": false
+        },
+        "resolution": {
+          "baseline": 1,
+          "b_fixed": 1,
+          "denominator": 10,
+          "delta": 0,
+          "degraded": false,
+          "improved": false
+        }
+      },
+      "t4_urban_holdout": {
+        "registration": {
+          "baseline": 6,
+          "b_fixed": 6,
+          "denominator": 10,
+          "delta": 0,
+          "degraded": false,
+          "improved": false
+        },
+        "resolution": {
+          "baseline": 0,
+          "b_fixed": 0,
+          "denominator": 10,
+          "delta": 0,
+          "degraded": false,
+          "improved": false
+        }
+      },
+      "t4_hist_holdout": {
+        "registration": {
+          "baseline": 2,
+          "b_fixed": 2,
+          "denominator": 10,
+          "delta": 0,
+          "degraded": false,
+          "improved": false
+        },
+        "resolution": {
+          "baseline": 0,
+          "b_fixed": 2,
+          "denominator": 10,
+          "delta": 2,
+          "degraded": false,
+          "improved": true
+        }
+      }
+    },
+    "works_not_degraded": 4,
+    "works_total": 4,
+    "works_improved": 1,
+    "threshold": {
+      "miss_reduction_rel_min": 0.2,
+      "works_not_degraded_min": "3/4",
+      "works_improved_min": 2
+    }
+  }
+}

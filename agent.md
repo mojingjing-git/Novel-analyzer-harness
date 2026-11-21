@@ -16,9 +16,9 @@
 - **后端**：FastAPI（异步），Python 3.11+
 - **桌面壳**：pywebview + WebView2（Windows）
 - **LLM 兼容**：任何 OpenAI 兼容 API（10 个厂商预设），以及 Anthropic 协议
-- **测试**：后端 1823 个用例 / 146 个测试文件，分 5 档（T0 冒烟 → T4 全仓，见
-  [docs/testing.md](./docs/testing.md)）；前端 33 个测试文件。
-  数量以 `pytest --collect-only -q` 与 `npm run test:coverage` 实时为准
+- **测试**：后端 19 个领域测试文件（`backend/tests/`），前端 4 个聚合测试文件（`frontend/src/__tests__/`），统一由 `python scripts/run_tests.py` 运行（见 [docs/testing.md](./docs/testing.md)）。
+  数量以 `pytest --collect-only -q` 与 `npm run test` 实时为准
+
 
 ---
 
@@ -26,13 +26,13 @@
 
 ```
 .
-├── backend/                      # FastAPI 后端（生产代码 109 个 .py）
+├── backend/                      # FastAPI 后端（生产代码 126 个 .py）
 │   ├── app.py                    # FastAPI 工厂（CORS、静态托管、路由注册、lifespan 工作区扫描）
 │   ├── main.py                   # 后端启动器（127.0.0.1:8000）
 │   ├── ws_events.py              # WS 协议权威定义（WSType 11 种 / WSState 12 种 / PipelineStatus + payload 契约）
 │   ├── progress_hub.py           # 进度广播中枢（分级驱逐慢消费者 + token_delta 150ms 节流 + log 转发）
-│   ├── common/                   # 两层引擎共用纯逻辑层（错误分类 / 审核标记 / LLM 错误信号；只依赖标准库）
-│   ├── core/                     # 1.x 引擎（error_types / error_taxonomy / moderation 为 common 的兼容转发层）
+│   ├── common/                   # 两层引擎共用纯逻辑层（19 个模块：错误分类 / 审核 / 关闭条件 / B 追踪 / C 审计 / 溯源缓存；只依赖标准库）
+│   ├── core/                     # 1.x 引擎（23 个模块；error_types / error_taxonomy / moderation 为 common 的兼容转发层）
 │   │   ├── pipeline.py           # 主分析流水线（预热 / 并发 / checkpoint / 滚动总结 / 失败补跑）
 │   │   ├── analyzer.py           # 单章分析引擎（LLM 调用 + 校验回调 + 知识库更新）
 │   │   ├── llm_client.py         # LLM 客户端（OpenAI/Anthropic 双协议 + 温度退火与指数退避 + 流式/非流式）
@@ -51,13 +51,13 @@
 │   │   ├── evidence.py           # 本地证据取材：把"全书"换成几段原文窗口
 │   │   ├── file_processor.py     # 章节文件扫描与编码读取
 │   │   └── moderation.py         # 内容审核拦截识别
-│   ├── services/                 # 15 个模块
+│   ├── services/                 # 19 个模块
 │   │   ├── queue_service.py      # 分析运行编排（AnalysisService 单例）
 │   │   ├── queue_manager.py      # 队列状态机与持久化
 │   │   ├── analysis_stats.py     # 会话统计累加
 │   │   ├── pipeline_events.py    # WS 事件翻译层
 │   │   ├── final_summary.py      # 最终总结（4 阶段 + 伏笔账本 + 断点续跑）
-│   │   ├── recheck_v2.py         # 带证据的伏笔复检（默认关闭）
+│   │   ├── recheck_v2.py         # 带证据的伏笔复检（默认开启）
 │   │   ├── splitter_service.py   # 切分引擎（18 条章正则 + 5 条卷正则 + 去重/合并/拆分）
 │   │   ├── workspace_service.py  # 工作区与归档管理
 │   │   ├── book_service.py       # 书名 → 目录映射
@@ -65,9 +65,10 @@
 │   │   ├── style_service.py      # 风格分析任务生命周期
 │   │   ├── location_normalization_service.py  # 地点归一化编排
 │   │   ├── location_normalizer.py  # 地点与空间关系归一化
+│   │   ├── usage_ledger.py       # 持久用量账本（usage_state.json）
 │   │   ├── viz_service.py        # 可视化数据聚合
 │   │   └── vnext_service.py      # vnext 服务门面
-│   ├── vnext/                    # 25 个模块：vnext 数据空间（独立数据层，禁止反向 import 1.x）
+│   ├── vnext/                    # 24 个模块：vnext 数据空间（当前冻结，仅 resolution.py 供 recheck_v2 复用）
 │   │   ├── constants.py          # 格式标识 / 版本 / 文件名常量 / 错误码
 │   │   ├── project.py            # 建项目、目录约定、提交清单
 │   │   ├── analyzer.py           # 单块分析
@@ -93,7 +94,7 @@
 │   │   ├── fingerprint.py        # 身份与指纹判据
 │   │   ├── rolling.py            # 有序 rolling 与缺口恢复
 │   │   └── artifacts.py          # 产物读写（格式门禁 + 原子写）
-│   ├── api/                      # 12 个路由模块 + auth + ws（72 个 REST 端点）
+│   ├── api/                      # 12 个路由模块 + auth + ws（默认挂载 11 组 / 67 端点；routes_vnext 默认冻结）
 │   │   ├── routes_analysis.py    # 分析控制、队列、风格、日志
 │   │   ├── routes_books.py       # 书目与结果查询
 │   │   ├── routes_summary.py     # 总结控制
@@ -105,7 +106,7 @@
 │   │   ├── routes_location_normalization.py  # 地点归一化
 │   │   ├── routes_prompt.py      # 提示词预览
 │   │   ├── routes_settings.py    # 配置读写 / 预设 / 模型探测
-│   │   ├── routes_vnext.py       # vnext 数据空间
+│   │   ├── routes_vnext.py       # vnext 数据空间（默认冻结，NOVEL_ENABLE_VNEXT_ROUTES=1 启用）
 │   │   ├── auth.py               # X-Session-Token 鉴权
 │   │   └── ws.py                 # WebSocket /ws/progress（25s 心跳 + Origin 白名单）
 │   ├── config/
@@ -124,8 +125,8 @@
 │   │   ├── export_utils.py       # Markdown 导出
 │   │   ├── text_utils.py         # 编码检测 / 文本工具
 │   │   └── docx_extract.py       # DOCX 正文抽取（纯标准库）
-│   └── tests/                    # 146 个测试文件（pytest 收集 backend/tests + tests）
-├── frontend/src/                 # Vue 3 + TypeScript（80 个文件，含 32 个测试文件）
+│   └── tests/                    # 19 个领域测试文件 + fixtures 语料
+├── frontend/src/                 # Vue 3 + TypeScript（含 __tests__/ 下 4 个聚合测试文件）
 │   ├── pages/                    # 12 个页面（router.ts）
 │   │   ├── QueuePage.vue         # 分析队列
 │   │   ├── SettingsPage.vue      # 设置
@@ -144,15 +145,15 @@
 │   │                             #   Icon / LaneView / LogConsole / ProgressBar / RunDashboard /
 │   │                             #   ToggleSwitch）
 │   ├── composables/              # useLocale / useLogStore / useRipple / vTooltip
-│   ├── api/                      # client.ts（58 个方法）/ sessionToken.ts / useProgressSocket.ts
+│   ├── api/                      # client.ts（60 个方法）/ sessionToken.ts / useProgressSocket.ts
 │   ├── utils/                    # 9 个纯函数模块（laneRegistry / markdown / queueFeed /
 │   │                             #   settingsForm / splitterView / summaryLanes /
 │   │                             #   summaryProgress / theme / workspaceView）
 │   ├── router.ts                 # 1 个根布局 + 12 条子路由
 │   └── main.css                  # Win11 Fluent 设计系统（--win-* 变量）
 ├── desktop.py                    # pywebview 桌面入口（单实例锁 + 窗口控制 + 崩溃诊断）
-├── scripts/                      # 测试与测量脚本（统一入口 run_tests.py，5 档分级）
-├── pytest_tiers.py               # 测试 5 档分级的规则与清单（T0 冒烟 → T4 全仓）
+├── scripts/                      # 测试、打捞验收与测量脚本（B/C 实验脚本收纳在 experiments/bc/）
+├── pytest_ssl_cache.py           # pytest SSL context 缓存插件（加速 httpx 客户端创建）
 ├── pytest_isolation.py           # pytest 会话级隔离原语（cwd/NOVEL_ROOT 双隔离 + 代理净化）
 ├── docs/                         # 文档（见 docs/README.md）
 ├── agent.md                      # 本文件
@@ -174,7 +175,7 @@
 | pywebview | 桌面 WebView2 壳 |
 | openpyxl | Excel 导出（懒加载） |
 | json5 / json_repair | JSON 容错解析 |
-| pytest | 默认收集 `backend/tests/` + 顶层 `tests/`；`--tier 0-4` 按档过滤（pytest_tiers.py）；数量以 `pytest --collect-only -q` 为准 |
+| pytest | 默认收集 `backend/tests/`（19 个领域测试文件）；数量以 `pytest --collect-only -q` 为准 |
 
 ### 前端
 | 组件 | 版本/说明 |
@@ -349,7 +350,7 @@ self._flushed_chapters: Set[int]           # 已落盘的章号集合
 
 ## 5. 后端模块详解
 
-### 5.1 核心层（backend/core/，18 个模块）
+### 5.1 核心层（backend/core/，23 个模块）
 
 | 模块 | 职责 |
 |---|---|
@@ -372,7 +373,7 @@ self._flushed_chapters: Set[int]           # 已落盘的章号集合
 | `file_processor.py` | 章节文件扫描、编码探测与读取 |
 | `moderation.py` | 内容审核拦截识别（provider 无关） |
 
-### 5.2 服务层（backend/services/，15 个模块）
+### 5.2 服务层（backend/services/，19 个模块）
 
 | 模块 | 职责 |
 |---|---|
@@ -407,7 +408,7 @@ self._flushed_chapters: Set[int]           # 已落盘的章号集合
 
 ### 5.4 API 层（backend/api/，12 个路由模块 + auth + ws）
 
-共 72 个 REST 端点，全部挂在 `/api` 前缀下，端点清单见 [docs/api.md](./docs/api.md)。
+共 67 个默认挂载的 REST 端点（全部挂在 `/api` 前缀下，另 `routes_vnext` 9 个端点默认冻结，需 `NOVEL_ENABLE_VNEXT_ROUTES=1` 启用），端点清单见 [docs/api.md](./docs/api.md)。
 
 | 模块 | 职责 |
 |---|---|
@@ -422,18 +423,17 @@ self._flushed_chapters: Set[int]           # 已落盘的章号集合
 | `routes_location_normalization.py` | 地点归一化 |
 | `routes_prompt.py` | 提示词预览 |
 | `routes_settings.py` | 配置读写、预设、模型探测 |
-| `routes_vnext.py` | vnext 数据空间 |
+| `routes_vnext.py` | vnext 数据空间（默认冻结，设 `NOVEL_ENABLE_VNEXT_ROUTES=1` 启用） |
 | `auth.py` | `X-Session-Token` 鉴权依赖 |
 | `ws.py` | `/ws/progress`：Origin 白名单 + 25 秒心跳 |
 
-### 5.5 vnext 数据层（backend/vnext/，25 个模块）
+### 5.5 vnext 数据层（backend/vnext/，24 个模块）
 
 vnext 是与 1.x 并存的第二套数据模型，目录与语义见
 [docs/data-contract-vnext.md](./docs/data-contract-vnext.md)。`backend/vnext/__init__.py`
 禁止反向 import 旧数据层。
 
-当前 `backend/api/routes_vnext.py` 只提供项目与队列管理，**还没有接入生产分析流水线**
-（`run_analysis` 仅被测试调用），因此 vnext 里已实现的机制不能算作 1.x 缺陷已修，
+当前 vnext **处于冻结状态**（`/api/vnext/*` 默认不挂载，仅 `backend/vnext/resolution.py` 供 `recheck_v2` 复用；`run_analysis` 仅被测试调用），因此 vnext 里已实现的机制不能算作 1.x 缺陷已修，
 见 [docs/issues.md](./docs/issues.md)。
 
 ---
@@ -444,7 +444,7 @@ vnext 是与 1.x 并存的第二套数据模型，目录与语义见
 
 | 文件 | 职责 |
 |---|---|
-| `api/client.ts` | REST 客户端，63 个方法 + TypeScript DTO + 统一 `X-Session-Token` 注入 |
+| `api/client.ts` | REST 客户端，60 个方法 + TypeScript DTO + 统一 `X-Session-Token` 注入 |
 | `api/sessionToken.ts` | 会话 token 单例（pywebview js_api 获取） |
 | `api/useProgressSocket.ts` | WebSocket 单例连接 + 协议镜像类型（与 `backend/ws_events.py` 对应） |
 
@@ -459,13 +459,11 @@ vnext 是与 1.x 并存的第二套数据模型，目录与语义见
 Win11 Fluent 风格，颜色 / 圆角 / 阴影 / 间距统一走 `--win-*` 变量，禁用 iOS 硬编码色值
 与 `backdrop-filter`。
 
-### 6.4 页面（14 个）
+### 6.4 页面（12 个）
 
 | 页面 | 职责 |
 |---|---|
 | `QueuePage.vue` | 分析队列：书籍队列、启停分析、进度车道、token 统计、日志下载 |
-| `VnextPage.vue` | vnext 项目列表、创建项目、入队出队 |
-| `VnextDetailPage.vue` | vnext 项目块详情与删除项目 |
 | `SettingsPage.vue` | 设置：API / 分析参数、预设、模型探测、思考参数探测、伏笔保留类别 |
 | `CharacterCardPage.vue` | 角色列表与角色卡详情 |
 | `SummaryPage.vue` | 总结启停、阶段进度、最终报告、聚合文件浏览与 Excel 导出 |
@@ -478,18 +476,17 @@ Win11 Fluent 风格，颜色 / 圆角 / 阴影 / 间距统一走 `--win-*` 变�
 | `GraphPage.vue` | 关系图（章区间、边权、节点数过滤） |
 | `MapPage.vue` | 地点地图与地点归一化启停 |
 
-### 6.5 组件（12 个）
+### 6.5 组件（13 个）
 
 `AppLayout.vue`（根布局）、`BookSelector.vue`、`ChapterDetailPanel.vue`、
 `ChapterValue.vue`、`ConfirmDialog.vue`、`CountUp.vue`、`DiscoveryFeed.vue`、`Icon.vue`、
-`LaneView.vue`、`LogConsole.vue`、`ProgressBar.vue`、`RunDashboard.vue`。
+`LaneView.vue`、`LogConsole.vue`、`ProgressBar.vue`、`RunDashboard.vue`、`ToggleSwitch.vue`。
 
 ### 6.6 前端关键模式
 
-- **纯函数外置**：`utils/` 下 8 个模块承载车道注册表、队列状态机、总结进度、设置表单、
-  切分视图、工作区视图等逻辑，各自带同名测试文件，便于单测。
-- **自研 Markdown 渲染**：`utils/markdown.ts` 零依赖渲染 Markdown → HTML。
-  注意它是 `v-html` 注入路径，安全性见 [docs/issues.md](./docs/issues.md)。
+- **纯函数外置**：`utils/` 下 9 个模块承载车道注册表、自研 Markdown、队列状态机、总结进度、设置表单、
+  切分视图、主题、工作区视图等逻辑，便于单测。
+- **自研 Markdown 渲染**：`utils/markdown.ts` 零依赖渲染 Markdown → HTML（已先做 `escapeHtml()` 转义）。
 - **请求超时**：`client.ts` 默认 30 秒超时，重活请求单独放宽到 120–300 秒。
 
 ---
@@ -527,48 +524,18 @@ pip install -r requirements.txt
 # 启动后端（开发）
 python -m uvicorn backend.app:app --reload --port 8000
 
-# 运行测试（统一入口，5 档分级，规则与清单见 pytest_tiers.py / docs/testing.md）
-python scripts/run_tests.py --tier 0        # 冒烟（~12s）：backend 全模块导入 + 核心纯函数
-python scripts/run_tests.py --tier 1        # 快速单测（~25s）：T0 + 默认档单测
-python scripts/run_tests.py --tier 2        # 标准门禁（~30s 并行）：T1 + 中速文件 + 顶层语料基线
-python scripts/run_tests.py --tier 3        # pytest 全量（~90s 并行）：T2 + 慢速重试链路
-python scripts/run_tests.py                 # 全仓验证（~2min）：T3 + 前端 vitest
-python scripts/run_tests.py --list-tiers    # 查看各档文件/用例分布
+# 运行测试（统一入口，详见 docs/testing.md）
+python scripts/run_tests.py                 # 全仓验证（后端 pytest + 前端 vitest，数秒完成）
+python scripts/run_tests.py --no-frontend   # 仅跑后端测试（约 4~5 秒）
+python scripts/run_tests.py backend/tests/test_smoke.py --no-frontend
+python scripts/run_tests.py --no-frontend -- -k recheck
 # （测试全程运行在 cwd/NOVEL_ROOT 双隔离的会话临时根：根目录 conftest.py + pytest_isolation.py
 #   在任何 backend.* import 前生效，真实 config.json/queue_state.json/日志/workspace 零写入；
-#   守卫见 backend/tests/test_runtime_isolation.py。不要在测试里依赖真实工作区数据。）
+#   守卫见 backend/tests/test_smoke.py。不要在测试里依赖真实工作区数据。）
 
-# 运行指定测试
-python -m pytest backend/tests/test_pipeline_inflight.py -v
-
-# 迭代期：只跑与本次改动相关的测试（秒级），可与档位组合
-python scripts/run_tests.py --related               # 选择 + 执行
-python scripts/run_tests.py --related --tier 2      # 相关集 ∩ 档位
-python scripts/pytest_related.py --run --base HEAD~3  # 独立用法（与某基线比较）
-
-# 备选：切组并行（不依赖 xdist 插件）
-python scripts/pytest_split.py -n 8
-
-# 只有在需要逐条输出时，才用单进程全量
-python -m pytest -o addopts= -q
+# 对齐 CI 的无缓存单进程全量校验
+python -m pytest -p no:cacheprovider -o addopts=""
 ```
-
-> **测试节奏（按档选用）**：
-> 1. **改几行 → T0**（~12s 冒烟）：确认模块能导入、核心纯函数没炸。
-> 2. **改完一个功能点 → T1 或相关集**：`--tier 1`（~25s）或 `--related`（秒级）。
-> 3. **提交前 → T2**（标准门禁）：相关集是"没弄坏自己"，T2 是"没弄坏别人"的最低门槛。
-> 4. **宣布完成 / 推送 → T3 或 T4**：T3 是 pytest 全量，T4 再加前端 vitest（无参数即 T4）。
->    **宣布完成必须有一遍 T3/T4**，并在提交信息或 PR 描述里写明跑的是哪一档。
-> 5. 新测试文件自动落 T1；实测超过 1s 的文件必须移进 pytest_tiers.py 的
->    `MEDIUM_FILES`，否则 T1 会被悄悄拖慢（守护见 test_tier_assignment.py）。
->
-> **为什么绕开 pytest-xdist 的坑**：本仓库的 `pytest_isolation` 在导入期 chdir 到临时目录
-> 并按 testpaths 建占位目录，xdist 每个 worker 都这么干一遍，主进程就看不到用例了
-> （`-n 8` 直接 "no tests ran"）。绕法是**用绝对路径 + 显式 `-c` 指定 ini**
-> （`scripts/run_tests.py` 已封装）；`pytest_split.py` 则改成按文件切组、各起独立进程。
-> **小档默认串行**：xdist worker 各自做隔离 + 全量收集，T0/T1 用例少时并行反而慢。
-> **切组必须核对用例总数**：`run_tests.py` 跑前先数一遍、跑后对账——分组过滤写错时
-> 会漏掉整份测试文件，却仍报"全组通过"。
 
 ### 前端
 
@@ -597,7 +564,7 @@ npm run build
 
 ### 9.1 密钥与数据安全
 - `config.json` 含真实 API Key，**禁止提交、打印、写入日志或纳入任何输出**
-- `config.json`、`queue_state.json`、`workspace/`、`*.log`、`app.lock`、`1/`、`.bak_*` 均已被 `.gitignore` 忽略
+- `config.json`、`queue_state.json`、`usage_state*.json`、`workspace/`、`*.log`、`app.lock`、`.bak_*` 均已被 `.gitignore` 忽略
 - 所有可能含 key 的错误日志**必须过 `redact()`**（`llm_failure_logger.redact`）。两重防御：
   1. `FailureLogger.record_failure` 入口对 `error_message` 自动 redact
   2. `app.py` 的 `_SensitiveFieldsFilter` 对所有落 `analyzer.log` 的 record 二次过滤
@@ -642,14 +609,14 @@ grep -RIn "sweep\|shimmer" frontend/src || true
 
 ### 后端改动
 ```bash
-# 迭代期：改几行跑冒烟，改完功能点跑相关集或 T1
-python scripts/run_tests.py --tier 0
-python scripts/run_tests.py --related
+# 仅跑后端测试（约 4~5 秒）
+python scripts/run_tests.py --no-frontend
+python scripts/run_tests.py backend/tests/test_smoke.py --no-frontend
 
-# 提交前：标准门禁；宣布完成/推送前：pytest 全量或全仓
-python scripts/run_tests.py --tier 2
-python scripts/run_tests.py --tier 3
-python scripts/run_tests.py            # T4 = pytest 全量 + 前端 vitest
+# 全仓验证（后端 pytest + 前端 vitest）
+python scripts/run_tests.py --no-frontend -- -k recheck
+python scripts/run_tests.py
+
 
 # 类型检查（如有 mypy）
 mypy backend/
@@ -711,3 +678,13 @@ splitter 内部有两条平行的书名推断路径：
   （那是被误当成书名的正文句子），fallback 到 `output_dir.parent.name`
 - 不重切已分析的书——重切会清掉 `chapter_N_result.json`
 
+
+## 伏笔打捞与验收契约
+
+- `backend/common/closure.py` 是预登记校验、分支引文核验和关闭条件归约的共享实现；`scripts/run_salvage.py` 保留历史函数导入路径。
+- 打捞为每个通过候选导出 `acceptance_input_<运行戳>.json`，包含相同预登记与原文上下文，交 `scripts/acceptance_gate.py` 预筛。验收不改生产账本。
+- 验收分别判断关闭条件与答案忠实性；历史标签必须绑定当前 sample_id 才进入评测分母。未知/过期标签不自动转换为人工真值。
+- 旧考卷可用验收器 `--prepare-only --blocks <目录>` 离线冻结。具体协议与用法见 `docs/自动验收器.md`。
+- `backend/common/claim_evidence.py` 提供可选的逐断言证据契约（验收器 `--claim-audit`）；只核对声明一致性与定位，不把模型判断当真值。
+- `backend/common/claim_evidence_v2.py` 提供固定答案片段与正交限定维度（`--claim-contract claims_v2`）；与第一版共用引文定位，仍为默认关闭的试验模式。
+- `backend/common/evaluation_corpus.py` / `scripts/experiments/bc/bc_corpus.py` 按整本作品冻结抽样和曝光记录；B原文盲读与C候选审计分开，见 `docs/跨作品BC评测.md`。

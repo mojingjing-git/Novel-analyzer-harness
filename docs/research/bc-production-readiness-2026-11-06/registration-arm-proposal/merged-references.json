@@ -1,0 +1,3663 @@
+{
+  "merged": [
+    {
+      "work_id": "t4_hist_holdout",
+      "prefix_id": "p1",
+      "items": [
+        {
+          "question": "杨沅用染血的绣帕准备怎样帮助乌古论盈歌摆脱与完颜家的婚约？",
+          "answer_criteria": "说明杨沅打算如何利用染血的绣帕，以及这一做法如何帮助盈歌达到摆脱婚约的目的。",
+          "supporting_quote": "随后，杨沅就转过身，对着盈歌扬了扬手中那方染血的绣帕，眼睛弯出了两道好看的弧度……",
+          "acceptable_spans": [
+            {
+              "unit_id": 1,
+              "start": 4376,
+              "end": 4417
+            },
+            {
+              "unit_id": 1,
+              "start": 3904,
+              "end": 3940
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "杨沅声称有办法帮盈歌摆脱困境，并取来染血的绣帕，但可见原文没有揭示他的具体计划。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_1"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_1",
+              "label": "有依据且未解",
+              "reason": "杨沅声称有办法帮盈歌摆脱困境，并取来染血的绣帕，但可见原文没有揭示他的具体计划。",
+              "answer_criteria": "说明杨沅打算如何利用染血的绣帕，以及这一做法如何帮助盈歌达到摆脱婚约的目的。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 1,
+                  "start": 4376,
+                  "end": 4417
+                },
+                {
+                  "unit_id": 1,
+                  "start": 3904,
+                  "end": 3940
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_1",
+              "answer_criteria": "说明杨沅打算如何利用染血的绣帕，以及这一做法如何帮助盈歌达到摆脱婚约的目的。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 1,
+                  "start": 4376,
+                  "end": 4417
+                },
+                {
+                  "unit_id": 1,
+                  "start": 3904,
+                  "end": 3940
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "杨沅声称有办法帮盈歌摆脱困境，并取来染血的绣帕，但可见原文没有揭示他的具体计划。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "possible_duplicate_with": [
+            "杨沅打算用染血的绣帕怎样帮助乌古论盈歌解除与完颜家的婚约？"
+          ],
+          "duplicate_hint": "与上述条目共享同一锚点跨度，可能是同一问题",
+          "ref_id": "r0"
+        },
+        {
+          "question": "杨沅打算用染血的绣帕怎样帮助乌古论盈歌解除与完颜家的婚约？",
+          "answer_criteria": "说明杨沅如何利用染血的绣帕达成盈歌解除婚约的目的。",
+          "supporting_quote": "杨沅不答，他已返身扑向了盈歌姑娘的绣榻，从那半掀的帷幔里，杨沅看到绣枕旁边有一方手帕。",
+          "acceptable_spans": [
+            {
+              "unit_id": 1,
+              "start": 4195,
+              "end": 4238
+            },
+            {
+              "unit_id": 1,
+              "start": 4376,
+              "end": 4417
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "杨沅声称能帮盈歌达到目的，并拿染血的绣帕采取行动，但可见原文尚未说明后续计划及其效果。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_2"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_2",
+              "label": "有依据且未解",
+              "reason": "杨沅声称能帮盈歌达到目的，并拿染血的绣帕采取行动，但可见原文尚未说明后续计划及其效果。",
+              "answer_criteria": "说明杨沅如何利用染血的绣帕达成盈歌解除婚约的目的。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 1,
+                  "start": 4195,
+                  "end": 4238
+                },
+                {
+                  "unit_id": 1,
+                  "start": 4376,
+                  "end": 4417
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_2",
+              "answer_criteria": "说明杨沅如何利用染血的绣帕达成盈歌解除婚约的目的。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 1,
+                  "start": 4195,
+                  "end": 4238
+                },
+                {
+                  "unit_id": 1,
+                  "start": 4376,
+                  "end": 4417
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "杨沅声称能帮盈歌达到目的，并拿染血的绣帕采取行动，但可见原文尚未说明后续计划及其效果。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "possible_duplicate_with": [
+            "杨沅用染血的绣帕准备怎样帮助乌古论盈歌摆脱与完颜家的婚约？"
+          ],
+          "duplicate_hint": "与上述条目共享同一锚点跨度，可能是同一问题",
+          "ref_id": "r1"
+        },
+        {
+          "question": "来院中的小王爷会如何处置杨沅和乌古论盈歌？",
+          "answer_criteria": "说明小王爷到场后对杨沅和盈歌采取了什么行动或作出何种反应。",
+          "supporting_quote": "门外又传来小丫鬟阿蛮急急的声音：“姑娘，我看见小王爷了，他要进咱们院子了。”",
+          "acceptable_spans": [
+            {
+              "unit_id": 1,
+              "start": 3983,
+              "end": 4021
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "原文预告小王爷即将进院且有人要杀杨沅，但截至可见范围终点，小王爷尚未现身，后续处置未知。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_2"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_2",
+              "label": "有依据且未解",
+              "reason": "原文预告小王爷即将进院且有人要杀杨沅，但截至可见范围终点，小王爷尚未现身，后续处置未知。",
+              "answer_criteria": "说明小王爷到场后对杨沅和盈歌采取了什么行动或作出何种反应。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 1,
+                  "start": 3983,
+                  "end": 4021
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_2",
+              "answer_criteria": "说明小王爷到场后对杨沅和盈歌采取了什么行动或作出何种反应。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 1,
+                  "start": 3983,
+                  "end": 4021
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "原文预告小王爷即将进院且有人要杀杨沅，但截至可见范围终点，小王爷尚未现身，后续处置未知。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "ref_id": "r2"
+        }
+      ],
+      "summary": {
+        "total": 3,
+        "agreed": 0,
+        "disputed": 0,
+        "single_annotator": 3,
+        "possible_duplicate_groups": 0
+      },
+      "freeze_sha256": "f2a9a375551f24b93661347f70a369c5ad226427359a1e560f3359eb524cf633"
+    },
+    {
+      "work_id": "t4_hist_holdout",
+      "prefix_id": "p2",
+      "items": [
+        {
+          "question": "杨沅所说的“有求司”接引使身份是否属实？",
+          "answer_criteria": "原文说明杨沅是否确实拥有这一身份，或揭示他为何这样自称。",
+          "supporting_quote": "在下所言，句句属实，我真的能帮你。",
+          "acceptable_spans": [
+            {
+              "unit_id": 1,
+              "start": 3905,
+              "end": 3922
+            },
+            {
+              "unit_id": 1,
+              "start": 3744,
+              "end": 3763
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "杨沅声称自己是接引使，但当前原文没有证实这一身份。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_1"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_1",
+              "label": "有依据且未解",
+              "reason": "杨沅声称自己是接引使，但当前原文没有证实这一身份。",
+              "answer_criteria": "原文说明杨沅是否确实拥有这一身份，或揭示他为何这样自称。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 1,
+                  "start": 3905,
+                  "end": 3922
+                },
+                {
+                  "unit_id": 1,
+                  "start": 3744,
+                  "end": 3763
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_1",
+              "answer_criteria": "原文说明杨沅是否确实拥有这一身份，或揭示他为何这样自称。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 1,
+                  "start": 3905,
+                  "end": 3922
+                },
+                {
+                  "unit_id": 1,
+                  "start": 3744,
+                  "end": 3763
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "杨沅声称自己是接引使，但当前原文没有证实这一身份。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "ref_id": "r0"
+        },
+        {
+          "question": "杨沅能否在完颜屈行赶到后保住性命？",
+          "answer_criteria": "说明完颜屈行到场后杨沅是否逃脱、获救或以其他方式活下来。",
+          "supporting_quote": "你先保得住你的狗头再说！",
+          "acceptable_spans": [
+            {
+              "unit_id": 2,
+              "start": 2015,
+              "end": 2027
+            },
+            {
+              "unit_id": 1,
+              "start": 2793,
+              "end": 2802
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "完颜屈行已经赶到，杨沅的安危仍未交代。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_1"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_1",
+              "label": "有依据且未解",
+              "reason": "完颜屈行已经赶到，杨沅的安危仍未交代。",
+              "answer_criteria": "说明完颜屈行到场后杨沅是否逃脱、获救或以其他方式活下来。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 2015,
+                  "end": 2027
+                },
+                {
+                  "unit_id": 1,
+                  "start": 2793,
+                  "end": 2802
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_1",
+              "answer_criteria": "说明完颜屈行到场后杨沅是否逃脱、获救或以其他方式活下来。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 2015,
+                  "end": 2027
+                },
+                {
+                  "unit_id": 1,
+                  "start": 2793,
+                  "end": 2802
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "完颜屈行已经赶到，杨沅的安危仍未交代。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "possible_duplicate_with": [
+            "乌古论盈歌所说的“要杀你的人”是谁？"
+          ],
+          "duplicate_hint": "与上述条目共享同一锚点跨度，可能是同一问题",
+          "ref_id": "r1"
+        },
+        {
+          "question": "杨沅为何突然打了秦相一记耳光？",
+          "answer_criteria": "交代杨沅打秦相的目的或触发这一举动的缘由。",
+          "supporting_quote": "一个巴掌就烀在了秦相的脸上。",
+          "acceptable_spans": [
+            {
+              "unit_id": 2,
+              "start": 3677,
+              "end": 3691
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "原文写明杨沅出手，却没有说明他这么做的原因。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_1"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_1",
+              "label": "有依据且未解",
+              "reason": "原文写明杨沅出手，却没有说明他这么做的原因。",
+              "answer_criteria": "交代杨沅打秦相的目的或触发这一举动的缘由。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 3677,
+                  "end": 3691
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_1",
+              "answer_criteria": "交代杨沅打秦相的目的或触发这一举动的缘由。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 3677,
+                  "end": 3691
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "原文写明杨沅出手，却没有说明他这么做的原因。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "possible_duplicate_with": [
+            "杨沅为何突然跳出来扇秦相耳光？"
+          ],
+          "duplicate_hint": "与上述条目共享同一锚点跨度，可能是同一问题",
+          "ref_id": "r2"
+        },
+        {
+          "question": "完颜征托付给秦相的事是什么？",
+          "answer_criteria": "说明完颜征拜托秦相安排或促成的具体事情。",
+          "supporting_quote": "“信王爷，这件事就拜托了。”",
+          "acceptable_spans": [
+            {
+              "unit_id": 2,
+              "start": 2644,
+              "end": 2658
+            },
+            {
+              "unit_id": 2,
+              "start": 3129,
+              "end": 3149
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "双方谈及并答应了这件事，但没有揭示其具体内容。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_1"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_1",
+              "label": "有依据且未解",
+              "reason": "双方谈及并答应了这件事，但没有揭示其具体内容。",
+              "answer_criteria": "说明完颜征拜托秦相安排或促成的具体事情。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 2644,
+                  "end": 2658
+                },
+                {
+                  "unit_id": 2,
+                  "start": 3129,
+                  "end": 3149
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_1",
+              "answer_criteria": "说明完颜征拜托秦相安排或促成的具体事情。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 2644,
+                  "end": 2658
+                },
+                {
+                  "unit_id": 2,
+                  "start": 3129,
+                  "end": 3149
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "双方谈及并答应了这件事，但没有揭示其具体内容。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "ref_id": "r3"
+        },
+        {
+          "question": "秦相托付给完颜征的事是什么？",
+          "answer_criteria": "说明秦相请完颜征鼎力相助、玉成的具体事情。",
+          "supporting_quote": "“此举不仅关乎你们秦家，也关系到我金国利益。”",
+          "acceptable_spans": [
+            {
+              "unit_id": 2,
+              "start": 2916,
+              "end": 2963
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "原文点明有一项关系两方利益的安排，却没有交代安排的内容。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_1"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_1",
+              "label": "有依据且未解",
+              "reason": "原文点明有一项关系两方利益的安排，却没有交代安排的内容。",
+              "answer_criteria": "说明秦相请完颜征鼎力相助、玉成的具体事情。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 2916,
+                  "end": 2963
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_1",
+              "answer_criteria": "说明秦相请完颜征鼎力相助、玉成的具体事情。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 2916,
+                  "end": 2963
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "原文点明有一项关系两方利益的安排，却没有交代安排的内容。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "possible_duplicate_with": [
+            "秦相与信王完颜征私下商定的事情是什么？"
+          ],
+          "duplicate_hint": "与上述条目共享同一锚点跨度，可能是同一问题",
+          "ref_id": "r4"
+        },
+        {
+          "question": "大宋宰相秦相的具体身份和姓名是什么？",
+          "answer_criteria": "明确指出这位秦姓宰相的姓名或身份。",
+          "supporting_quote": "一位金国王爷，藏头露尾地躲在赴宋使团中，与身着国信所小吏袍服的大宋宰相私下会唔。",
+          "acceptable_spans": [
+            {
+              "unit_id": 2,
+              "start": 3044,
+              "end": 3084
+            },
+            {
+              "unit_id": 2,
+              "start": 2992,
+              "end": 3011
+            },
+            {
+              "unit_id": 2,
+              "start": 3019,
+              "end": 3036
+            }
+          ],
+          "label": "已经回答",
+          "reason": "原文虽未直呼其名，但已用反问明确指向秦桧。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_1"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_1",
+              "label": "已经回答",
+              "reason": "原文虽未直呼其名，但已用反问明确指向秦桧。",
+              "answer_criteria": "明确指出这位秦姓宰相的姓名或身份。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 3044,
+                  "end": 3084
+                },
+                {
+                  "unit_id": 2,
+                  "start": 2992,
+                  "end": 3011
+                },
+                {
+                  "unit_id": 2,
+                  "start": 3019,
+                  "end": 3036
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_1",
+              "answer_criteria": "明确指出这位秦姓宰相的姓名或身份。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 3044,
+                  "end": 3084
+                },
+                {
+                  "unit_id": 2,
+                  "start": 2992,
+                  "end": 3011
+                },
+                {
+                  "unit_id": 2,
+                  "start": 3019,
+                  "end": 3036
+                }
+              ],
+              "label": "已经回答",
+              "reason": "原文虽未直呼其名，但已用反问明确指向秦桧。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "ref_id": "r5"
+        },
+        {
+          "question": "乌古论盈歌所说的“要杀你的人”是谁？",
+          "answer_criteria": "指出具体人物或身份，并有原文内容将其与即将杀杨沅的人联系起来。",
+          "supporting_quote": "要杀你的人马上就到",
+          "acceptable_spans": [
+            {
+              "unit_id": 1,
+              "start": 2793,
+              "end": 2802
+            },
+            {
+              "unit_id": 1,
+              "start": 2120,
+              "end": 2128
+            },
+            {
+              "unit_id": 2,
+              "start": 1990,
+              "end": 2000
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "盈歌明确说有人将来杀杨沅，但可见原文没有确认此人是谁。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_2"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_2",
+              "label": "有依据且未解",
+              "reason": "盈歌明确说有人将来杀杨沅，但可见原文没有确认此人是谁。",
+              "answer_criteria": "指出具体人物或身份，并有原文内容将其与即将杀杨沅的人联系起来。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 1,
+                  "start": 2793,
+                  "end": 2802
+                },
+                {
+                  "unit_id": 1,
+                  "start": 2120,
+                  "end": 2128
+                },
+                {
+                  "unit_id": 2,
+                  "start": 1990,
+                  "end": 2000
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_2",
+              "answer_criteria": "指出具体人物或身份，并有原文内容将其与即将杀杨沅的人联系起来。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 1,
+                  "start": 2793,
+                  "end": 2802
+                },
+                {
+                  "unit_id": 1,
+                  "start": 2120,
+                  "end": 2128
+                },
+                {
+                  "unit_id": 2,
+                  "start": 1990,
+                  "end": 2000
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "盈歌明确说有人将来杀杨沅，但可见原文没有确认此人是谁。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "possible_duplicate_with": [
+            "杨沅能否在完颜屈行赶到后保住性命？"
+          ],
+          "duplicate_hint": "与上述条目共享同一锚点跨度，可能是同一问题",
+          "ref_id": "r6"
+        },
+        {
+          "question": "乌古论盈歌答应杨沅的是什么？",
+          "answer_criteria": "说明杨沅提出的帮助及盈歌答应接受的具体内容。",
+          "supporting_quote": "好，我……答应你了！",
+          "acceptable_spans": [
+            {
+              "unit_id": 2,
+              "start": 1946,
+              "end": 1956
+            },
+            {
+              "unit_id": 1,
+              "start": 3922,
+              "end": 3939
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "盈歌答应了杨沅，但两人尚未说明具体如何合作或采取什么办法。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_2"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_2",
+              "label": "有依据且未解",
+              "reason": "盈歌答应了杨沅，但两人尚未说明具体如何合作或采取什么办法。",
+              "answer_criteria": "说明杨沅提出的帮助及盈歌答应接受的具体内容。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 1946,
+                  "end": 1956
+                },
+                {
+                  "unit_id": 1,
+                  "start": 3922,
+                  "end": 3939
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_2",
+              "answer_criteria": "说明杨沅提出的帮助及盈歌答应接受的具体内容。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 1946,
+                  "end": 1956
+                },
+                {
+                  "unit_id": 1,
+                  "start": 3922,
+                  "end": 3939
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "盈歌答应了杨沅，但两人尚未说明具体如何合作或采取什么办法。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "ref_id": "r7"
+        },
+        {
+          "question": "秦相与信王完颜征私下商定的事情是什么？",
+          "answer_criteria": "交代两人约定由完颜征相助、秦相安排的具体事项。",
+          "supporting_quote": "秦相听了微微一笑：“投桃该当报李，信王爷托付的事，本相这里也会妥善安排的。”",
+          "acceptable_spans": [
+            {
+              "unit_id": 2,
+              "start": 3112,
+              "end": 3150
+            },
+            {
+              "unit_id": 2,
+              "start": 2644,
+              "end": 2681
+            },
+            {
+              "unit_id": 2,
+              "start": 2916,
+              "end": 2963
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "原文表明双方有互相托付的事项，却没有交代事项的具体内容。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_2"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_2",
+              "label": "有依据且未解",
+              "reason": "原文表明双方有互相托付的事项，却没有交代事项的具体内容。",
+              "answer_criteria": "交代两人约定由完颜征相助、秦相安排的具体事项。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 3112,
+                  "end": 3150
+                },
+                {
+                  "unit_id": 2,
+                  "start": 2644,
+                  "end": 2681
+                },
+                {
+                  "unit_id": 2,
+                  "start": 2916,
+                  "end": 2963
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_2",
+              "answer_criteria": "交代两人约定由完颜征相助、秦相安排的具体事项。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 3112,
+                  "end": 3150
+                },
+                {
+                  "unit_id": 2,
+                  "start": 2644,
+                  "end": 2681
+                },
+                {
+                  "unit_id": 2,
+                  "start": 2916,
+                  "end": 2963
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "原文表明双方有互相托付的事项，却没有交代事项的具体内容。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "possible_duplicate_with": [
+            "秦相托付给完颜征的事是什么？"
+          ],
+          "duplicate_hint": "与上述条目共享同一锚点跨度，可能是同一问题",
+          "ref_id": "r8"
+        },
+        {
+          "question": "杨沅为何突然跳出来扇秦相耳光？",
+          "answer_criteria": "说明杨沅打秦相的动机或他希望借此达成的目的。",
+          "supporting_quote": "一个巴掌就烀在了秦相的脸上。",
+          "acceptable_spans": [
+            {
+              "unit_id": 2,
+              "start": 3677,
+              "end": 3691
+            },
+            {
+              "unit_id": 2,
+              "start": 3665,
+              "end": 3691
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "原文写了杨沅突然袭击秦相，但没有说明他这样做的原因或意图。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_2"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_2",
+              "label": "有依据且未解",
+              "reason": "原文写了杨沅突然袭击秦相，但没有说明他这样做的原因或意图。",
+              "answer_criteria": "说明杨沅打秦相的动机或他希望借此达成的目的。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 3677,
+                  "end": 3691
+                },
+                {
+                  "unit_id": 2,
+                  "start": 3665,
+                  "end": 3691
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_2",
+              "answer_criteria": "说明杨沅打秦相的动机或他希望借此达成的目的。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 3677,
+                  "end": 3691
+                },
+                {
+                  "unit_id": 2,
+                  "start": 3665,
+                  "end": 3691
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "原文写了杨沅突然袭击秦相，但没有说明他这样做的原因或意图。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "possible_duplicate_with": [
+            "杨沅为何突然打了秦相一记耳光？"
+          ],
+          "duplicate_hint": "与上述条目共享同一锚点跨度，可能是同一问题",
+          "ref_id": "r9"
+        }
+      ],
+      "summary": {
+        "total": 10,
+        "agreed": 0,
+        "disputed": 0,
+        "single_annotator": 10,
+        "possible_duplicate_groups": 1
+      },
+      "freeze_sha256": "5badc3aa75627c68b91e74fcbdc131f37a2706fe452b77fc899787d3b7eae2f2"
+    },
+    {
+      "work_id": "t4_hist_holdout",
+      "prefix_id": "p3",
+      "items": [
+        {
+          "question": "杨沅当众打倒秦桧并扬言闹事后，秦桧会如何处置这件事，是否会查明杨沅的身份或追究他？",
+          "answer_criteria": "交代秦桧对杨沅及此事采取的处置，或说明是否调查、追究杨沅。",
+          "supporting_quote": "不过，如果这只是一次意外，是被人坑了的一个闲汉闹事，那就得大事化小了。",
+          "acceptable_spans": [
+            {
+              "unit_id": 3,
+              "start": 1407,
+              "end": 1442
+            },
+            {
+              "unit_id": 3,
+              "start": 1491,
+              "end": 1514
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "秦桧顾忌秘密会晤暴露而倾向息事宁人，但当前原文尚未交代后续如何处置杨沅。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_1"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_1",
+              "label": "有依据且未解",
+              "reason": "秦桧顾忌秘密会晤暴露而倾向息事宁人，但当前原文尚未交代后续如何处置杨沅。",
+              "answer_criteria": "交代秦桧对杨沅及此事采取的处置，或说明是否调查、追究杨沅。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 3,
+                  "start": 1407,
+                  "end": 1442
+                },
+                {
+                  "unit_id": 3,
+                  "start": 1491,
+                  "end": 1514
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_1",
+              "answer_criteria": "交代秦桧对杨沅及此事采取的处置，或说明是否调查、追究杨沅。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 3,
+                  "start": 1407,
+                  "end": 1442
+                },
+                {
+                  "unit_id": 3,
+                  "start": 1491,
+                  "end": 1514
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "秦桧顾忌秘密会晤暴露而倾向息事宁人，但当前原文尚未交代后续如何处置杨沅。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "ref_id": "r0"
+        },
+        {
+          "question": "秦桧与完颜征秘密商定的具体事项是什么？",
+          "answer_criteria": "揭示双方约定要办理或相互协助的具体事项。",
+          "supporting_quote": "“信王爷尽管放心好了，此举不仅关乎你们秦家，也关系到我金国利益。完颜征必会鼎力相助，玉成其美！”",
+          "acceptable_spans": [
+            {
+              "unit_id": 2,
+              "start": 3112,
+              "end": 3150
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "原文说明这件事涉及秦家和金国利益且双方互相托付，但没有说明具体内容。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_1"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_1",
+              "label": "有依据且未解",
+              "reason": "原文说明这件事涉及秦家和金国利益且双方互相托付，但没有说明具体内容。",
+              "answer_criteria": "揭示双方约定要办理或相互协助的具体事项。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 3112,
+                  "end": 3150
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_1",
+              "answer_criteria": "揭示双方约定要办理或相互协助的具体事项。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 3112,
+                  "end": 3150
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "原文说明这件事涉及秦家和金国利益且双方互相托付，但没有说明具体内容。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "possible_duplicate_with": [
+            "秦桧与完颜征所谈事项的安排会如何推进或落实？"
+          ],
+          "duplicate_hint": "与上述条目共享同一锚点跨度，可能是同一问题",
+          "ref_id": "r1"
+        },
+        {
+          "question": "秦桧与完颜征所谈事项的安排会如何推进或落实？",
+          "answer_criteria": "交代双方如何安排并落实这项相互托付的事项。",
+          "supporting_quote": "秦相听了微微一笑：“投桃该当报李，信王爷托付的事，本相这里也会妥善安排的。”",
+          "acceptable_spans": [
+            {
+              "unit_id": 2,
+              "start": 3112,
+              "end": 3150
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "两人表示将互相协助，但可见原文没有交代安排的后续进展或结果。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_1"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_1",
+              "label": "有依据且未解",
+              "reason": "两人表示将互相协助，但可见原文没有交代安排的后续进展或结果。",
+              "answer_criteria": "交代双方如何安排并落实这项相互托付的事项。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 3112,
+                  "end": 3150
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_1",
+              "answer_criteria": "交代双方如何安排并落实这项相互托付的事项。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 3112,
+                  "end": 3150
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "两人表示将互相协助，但可见原文没有交代安排的后续进展或结果。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "possible_duplicate_with": [
+            "秦桧与完颜征秘密商定的具体事项是什么？"
+          ],
+          "duplicate_hint": "与上述条目共享同一锚点跨度，可能是同一问题",
+          "ref_id": "r2"
+        },
+        {
+          "question": "杨沅在班荆馆里打倒的秦桧及其与完颜征秘密会晤一事，接下来会引发什么后果？",
+          "answer_criteria": "交代这次袭击或秘密会晤被揭露后造成的后续影响，或说明相关人物如何处置此事。",
+          "supporting_quote": "一位金国王爷，藏头露尾地躲在赴宋使团中，与身着国信所小吏袍服的大宋宰相私下会唔。这事一旦张扬出去，那可是天崩地裂的大事。",
+          "acceptable_spans": [
+            {
+              "unit_id": 2,
+              "start": 3044,
+              "end": 3104
+            },
+            {
+              "unit_id": 2,
+              "start": 3711,
+              "end": 3752
+            },
+            {
+              "unit_id": 3,
+              "start": 185,
+              "end": 237
+            },
+            {
+              "unit_id": 3,
+              "start": 1105,
+              "end": 1140
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "原文揭示了秘密会晤若泄露将造成重大影响，也写出杨沅打倒秦桧后的反应，但截至片段末尾尚未交代后果。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_2"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_2",
+              "label": "有依据且未解",
+              "reason": "原文揭示了秘密会晤若泄露将造成重大影响，也写出杨沅打倒秦桧后的反应，但截至片段末尾尚未交代后果。",
+              "answer_criteria": "交代这次袭击或秘密会晤被揭露后造成的后续影响，或说明相关人物如何处置此事。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 3044,
+                  "end": 3104
+                },
+                {
+                  "unit_id": 2,
+                  "start": 3711,
+                  "end": 3752
+                },
+                {
+                  "unit_id": 3,
+                  "start": 185,
+                  "end": 237
+                },
+                {
+                  "unit_id": 3,
+                  "start": 1105,
+                  "end": 1140
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_2",
+              "answer_criteria": "交代这次袭击或秘密会晤被揭露后造成的后续影响，或说明相关人物如何处置此事。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 3044,
+                  "end": 3104
+                },
+                {
+                  "unit_id": 2,
+                  "start": 3711,
+                  "end": 3752
+                },
+                {
+                  "unit_id": 3,
+                  "start": 185,
+                  "end": 237
+                },
+                {
+                  "unit_id": 3,
+                  "start": 1105,
+                  "end": 1140
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "原文揭示了秘密会晤若泄露将造成重大影响，也写出杨沅打倒秦桧后的反应，但截至片段末尾尚未交代后果。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "ref_id": "r3"
+        }
+      ],
+      "summary": {
+        "total": 4,
+        "agreed": 0,
+        "disputed": 0,
+        "single_annotator": 4,
+        "possible_duplicate_groups": 0
+      },
+      "freeze_sha256": "57d12087cd8269cbc86f687f6807af172d0936f144ebbf913d0649ba301cd052"
+    },
+    {
+      "work_id": "t4_game_holdout",
+      "prefix_id": "p1",
+      "items": [
+        {
+          "question": "伊芙剩余的自然神力能否恢复；若能，如何恢复？",
+          "answer_criteria": "说明自然神力是否能够恢复，以及恢复所需的条件或方式。",
+          "supporting_quote": "一旦用光，世界树将彻底陷入沉睡。",
+          "acceptable_spans": [
+            {
+              "unit_id": 1,
+              "start": 2895,
+              "end": 2911
+            },
+            {
+              "unit_id": 1,
+              "start": 2930,
+              "end": 2953
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "自然神力消耗会威胁伊芙的存亡，但原文未说明能否或如何补充。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_1"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_1",
+              "label": "有依据且未解",
+              "reason": "自然神力消耗会威胁伊芙的存亡，但原文未说明能否或如何补充。",
+              "answer_criteria": "说明自然神力是否能够恢复，以及恢复所需的条件或方式。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 1,
+                  "start": 2895,
+                  "end": 2911
+                },
+                {
+                  "unit_id": 1,
+                  "start": 2930,
+                  "end": 2953
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_1",
+              "answer_criteria": "说明自然神力是否能够恢复，以及恢复所需的条件或方式。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 1,
+                  "start": 2895,
+                  "end": 2911
+                },
+                {
+                  "unit_id": 1,
+                  "start": 2930,
+                  "end": 2953
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "自然神力消耗会威胁伊芙的存亡，但原文未说明能否或如何补充。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "ref_id": "r0"
+        },
+        {
+          "question": "橡树守卫巴萨卡是否会遵从伊芙的指令？",
+          "answer_criteria": "说明巴萨卡是否服从伊芙，以及原文后续呈现的服从情况。",
+          "supporting_quote": "而与此同时，祂感觉自己好像和对方产生了某种联系，似乎可以直接传达指令。",
+          "acceptable_spans": [
+            {
+              "unit_id": 1,
+              "start": 3418,
+              "end": 3453
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "伊芙感觉能够传达指令，但巴萨卡尚未收到或执行任何指令。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_1"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_1",
+              "label": "有依据且未解",
+              "reason": "伊芙感觉能够传达指令，但巴萨卡尚未收到或执行任何指令。",
+              "answer_criteria": "说明巴萨卡是否服从伊芙，以及原文后续呈现的服从情况。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 1,
+                  "start": 3418,
+                  "end": 3453
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_1",
+              "answer_criteria": "说明巴萨卡是否服从伊芙，以及原文后续呈现的服从情况。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 1,
+                  "start": 3418,
+                  "end": 3453
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "伊芙感觉能够传达指令，但巴萨卡尚未收到或执行任何指令。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "ref_id": "r1"
+        },
+        {
+          "question": "伊芙给橡树守卫起名巴萨卡后，橡树守卫会如何回应或行动？",
+          "answer_criteria": "原文后续交代橡树守卫对这个名字的反应或由此采取的行动，即可回答。",
+          "supporting_quote": "“既如此，你就叫做巴萨卡（Berserker）吧！”",
+          "acceptable_spans": [
+            {
+              "unit_id": 1,
+              "start": 3508,
+              "end": 3534
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "伊芙刚给橡树守卫赐名，当前可见内容尚未写出其反应。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_2"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_2",
+              "label": "有依据且未解",
+              "reason": "伊芙刚给橡树守卫赐名，当前可见内容尚未写出其反应。",
+              "answer_criteria": "原文后续交代橡树守卫对这个名字的反应或由此采取的行动，即可回答。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 1,
+                  "start": 3508,
+                  "end": 3534
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_2",
+              "answer_criteria": "原文后续交代橡树守卫对这个名字的反应或由此采取的行动，即可回答。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 1,
+                  "start": 3508,
+                  "end": 3534
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "伊芙刚给橡树守卫赐名，当前可见内容尚未写出其反应。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "ref_id": "r2"
+        }
+      ],
+      "summary": {
+        "total": 3,
+        "agreed": 0,
+        "disputed": 0,
+        "single_annotator": 3,
+        "possible_duplicate_groups": 0
+      },
+      "freeze_sha256": "493e7b2c1da8c48097a36157472518f090e32cf7646272e75827aa506ca043e4"
+    },
+    {
+      "work_id": "t4_game_holdout",
+      "prefix_id": "p2",
+      "items": [
+        {
+          "question": "伊芙的另外两名信徒是谁、位于何处？",
+          "answer_criteria": "明确交代除巴萨卡之外的其他信徒的身份、位置或与伊芙的联系情况。",
+          "supporting_quote": "3个信徒，其中1个还是刚造出来的，世界上有哪个真神比祂惨？",
+          "acceptable_spans": [
+            {
+              "unit_id": 2,
+              "start": 2717,
+              "end": 2746
+            },
+            {
+              "unit_id": 2,
+              "start": 2176,
+              "end": 2227
+            },
+            {
+              "unit_id": 2,
+              "start": 2880,
+              "end": 2892
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "原文明说共有三名信徒并引出联系其他信徒的意图，但只交代了巴萨卡一名，其余身份未揭晓。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_1"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_1",
+              "label": "有依据且未解",
+              "reason": "原文明说共有三名信徒并引出联系其他信徒的意图，但只交代了巴萨卡一名，其余身份未揭晓。",
+              "answer_criteria": "明确交代除巴萨卡之外的其他信徒的身份、位置或与伊芙的联系情况。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 2717,
+                  "end": 2746
+                },
+                {
+                  "unit_id": 2,
+                  "start": 2176,
+                  "end": 2227
+                },
+                {
+                  "unit_id": 2,
+                  "start": 2880,
+                  "end": 2892
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_1",
+              "answer_criteria": "明确交代除巴萨卡之外的其他信徒的身份、位置或与伊芙的联系情况。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 2717,
+                  "end": 2746
+                },
+                {
+                  "unit_id": 2,
+                  "start": 2176,
+                  "end": 2227
+                },
+                {
+                  "unit_id": 2,
+                  "start": 2880,
+                  "end": 2892
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "原文明说共有三名信徒并引出联系其他信徒的意图，但只交代了巴萨卡一名，其余身份未揭晓。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "possible_duplicate_with": [
+            "伊芙另外两名信徒（狂信徒1、虔诚信徒1、浅信徒1中除巴萨卡外的）是谁、在哪里？"
+          ],
+          "duplicate_hint": "与上述条目共享同一锚点跨度，可能是同一问题",
+          "ref_id": "r0"
+        },
+        {
+          "question": "上一任世界树的陨落与信仰神灵争夺信徒之间具体是什么关系？",
+          "answer_criteria": "说明上一任世界树陨落的原因、经过或与信徒争夺的具体关联。",
+          "supporting_quote": "上一任世界树的陨落似乎就与此有关。",
+          "acceptable_spans": [
+            {
+              "unit_id": 2,
+              "start": 992,
+              "end": 1009
+            },
+            {
+              "unit_id": 2,
+              "start": 965,
+              "end": 991
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "原文只含糊说陨落“似乎”与信徒争夺有关，未给出具体原因。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_1"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_1",
+              "label": "有依据且未解",
+              "reason": "原文只含糊说陨落“似乎”与信徒争夺有关，未给出具体原因。",
+              "answer_criteria": "说明上一任世界树陨落的原因、经过或与信徒争夺的具体关联。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 992,
+                  "end": 1009
+                },
+                {
+                  "unit_id": 2,
+                  "start": 965,
+                  "end": 991
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_1",
+              "answer_criteria": "说明上一任世界树陨落的原因、经过或与信徒争夺的具体关联。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 992,
+                  "end": 1009
+                },
+                {
+                  "unit_id": 2,
+                  "start": 965,
+                  "end": 991
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "原文只含糊说陨落“似乎”与信徒争夺有关，未给出具体原因。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "possible_duplicate_with": [
+            "上一任世界树是因何陨落的，是否与信仰神灵对信徒的争夺有关？"
+          ],
+          "duplicate_hint": "与上述条目共享同一锚点跨度，可能是同一问题",
+          "ref_id": "r1"
+        },
+        {
+          "question": "蓝色光团为何会连接前世的蓝星网络世界？",
+          "answer_criteria": "解释蓝色光团与蓝星网络之间建立连接的原因或机制。",
+          "supporting_quote": "这个蓝色光团，连接的竟然是前世蓝星的网络世界！",
+          "acceptable_spans": [
+            {
+              "unit_id": 2,
+              "start": 3433,
+              "end": 3456
+            },
+            {
+              "unit_id": 2,
+              "start": 3176,
+              "end": 3198
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "原文揭示连接事实并强调亲近感，但未解释其缘由。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_1"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_1",
+              "label": "有依据且未解",
+              "reason": "原文揭示连接事实并强调亲近感，但未解释其缘由。",
+              "answer_criteria": "解释蓝色光团与蓝星网络之间建立连接的原因或机制。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 3433,
+                  "end": 3456
+                },
+                {
+                  "unit_id": 2,
+                  "start": 3176,
+                  "end": 3198
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_1",
+              "answer_criteria": "解释蓝色光团与蓝星网络之间建立连接的原因或机制。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 3433,
+                  "end": 3456
+                },
+                {
+                  "unit_id": 2,
+                  "start": 3176,
+                  "end": 3198
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "原文揭示连接事实并强调亲近感，但未解释其缘由。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "possible_duplicate_with": [
+            "蓝色光团为何会连接前世蓝星的网络世界？"
+          ],
+          "duplicate_hint": "与上述条目共享同一锚点跨度，可能是同一问题",
+          "ref_id": "r2"
+        },
+        {
+          "question": "伊芙需要多少神力值、具备什么条件才能从濒死状态中恢复过来？",
+          "answer_criteria": "给出伊芙脱离濒死状态所需的神力值门槛或具体条件。",
+          "supporting_quote": "必须早点攒够神力值，从濒死状态中恢复过来，同时塑造神降化身！",
+          "acceptable_spans": [
+            {
+              "unit_id": 2,
+              "start": 2518,
+              "end": 2548
+            },
+            {
+              "unit_id": 2,
+              "start": 2583,
+              "end": 2626
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "原文只提神降化身需100点神力值，未交代恢复濒死状态本身的门槛或条件。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_1"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_1",
+              "label": "有依据且未解",
+              "reason": "原文只提神降化身需100点神力值，未交代恢复濒死状态本身的门槛或条件。",
+              "answer_criteria": "给出伊芙脱离濒死状态所需的神力值门槛或具体条件。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 2518,
+                  "end": 2548
+                },
+                {
+                  "unit_id": 2,
+                  "start": 2583,
+                  "end": 2626
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_1",
+              "answer_criteria": "给出伊芙脱离濒死状态所需的神力值门槛或具体条件。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 2518,
+                  "end": 2548
+                },
+                {
+                  "unit_id": 2,
+                  "start": 2583,
+                  "end": 2626
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "原文只提神降化身需100点神力值，未交代恢复濒死状态本身的门槛或条件。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "possible_duplicate_with": [
+            "伊芙要如何攒够100点神力值以塑造神降化身、脱离濒死状态？"
+          ],
+          "duplicate_hint": "与上述条目共享同一锚点跨度，可能是同一问题",
+          "ref_id": "r3"
+        },
+        {
+          "question": "伊芙从绿色光团中听到的感伤绝望的祷告声，具体来自哪些信徒、内容是什么？",
+          "answer_criteria": "交代祷告声的来源身份及所祈祷的内容。",
+          "supporting_quote": "伊莩听不懂内容，却似乎能够感知到这声音中蕴含着的无数感伤和绝望。",
+          "acceptable_spans": [
+            {
+              "unit_id": 1,
+              "start": 663,
+              "end": 695
+            },
+            {
+              "unit_id": 2,
+              "start": 2231,
+              "end": 2259
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "文本提出祷告声来源与内容，但至今只推测是另外几名信徒，未具体交代。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_2"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_2",
+              "label": "有依据且未解",
+              "reason": "文本提出祷告声来源与内容，但至今只推测是另外几名信徒，未具体交代。",
+              "answer_criteria": "交代祷告声的来源身份及所祈祷的内容。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 1,
+                  "start": 663,
+                  "end": 695
+                },
+                {
+                  "unit_id": 2,
+                  "start": 2231,
+                  "end": 2259
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_2",
+              "answer_criteria": "交代祷告声的来源身份及所祈祷的内容。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 1,
+                  "start": 663,
+                  "end": 695
+                },
+                {
+                  "unit_id": 2,
+                  "start": 2231,
+                  "end": 2259
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "文本提出祷告声来源与内容，但至今只推测是另外几名信徒，未具体交代。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "ref_id": "r4"
+        },
+        {
+          "question": "伊芙另外两名信徒（狂信徒1、虔诚信徒1、浅信徒1中除巴萨卡外的）是谁、在哪里？",
+          "answer_criteria": "交代另外几名信徒的身份或所在。",
+          "supporting_quote": "对了，另外几名信徒在哪？",
+          "acceptable_spans": [
+            {
+              "unit_id": 2,
+              "start": 2811,
+              "end": 2823
+            },
+            {
+              "unit_id": 2,
+              "start": 2176,
+              "end": 2191
+            },
+            {
+              "unit_id": 2,
+              "start": 2717,
+              "end": 2746
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "伊芙明确追问其他信徒的位置，原文未给出答案。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_2"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_2",
+              "label": "有依据且未解",
+              "reason": "伊芙明确追问其他信徒的位置，原文未给出答案。",
+              "answer_criteria": "交代另外几名信徒的身份或所在。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 2811,
+                  "end": 2823
+                },
+                {
+                  "unit_id": 2,
+                  "start": 2176,
+                  "end": 2191
+                },
+                {
+                  "unit_id": 2,
+                  "start": 2717,
+                  "end": 2746
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_2",
+              "answer_criteria": "交代另外几名信徒的身份或所在。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 2811,
+                  "end": 2823
+                },
+                {
+                  "unit_id": 2,
+                  "start": 2176,
+                  "end": 2191
+                },
+                {
+                  "unit_id": 2,
+                  "start": 2717,
+                  "end": 2746
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "伊芙明确追问其他信徒的位置，原文未给出答案。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "possible_duplicate_with": [
+            "伊芙的另外两名信徒是谁、位于何处？"
+          ],
+          "duplicate_hint": "与上述条目共享同一锚点跨度，可能是同一问题",
+          "ref_id": "r5"
+        },
+        {
+          "question": "蓝色光团为何会连接前世蓝星的网络世界？",
+          "answer_criteria": "交代蓝色光团与蓝星网络相连的缘由或机制。",
+          "supporting_quote": "这个蓝色光团，连接的竟然是前世蓝星的网络世界！",
+          "acceptable_spans": [
+            {
+              "unit_id": 2,
+              "start": 3433,
+              "end": 3456
+            },
+            {
+              "unit_id": 2,
+              "start": 3171,
+              "end": 3198
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "文本揭示连接蓝星网络这一事实，但未解释其原因，问题成立且悬而未决。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_2"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_2",
+              "label": "有依据且未解",
+              "reason": "文本揭示连接蓝星网络这一事实，但未解释其原因，问题成立且悬而未决。",
+              "answer_criteria": "交代蓝色光团与蓝星网络相连的缘由或机制。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 3433,
+                  "end": 3456
+                },
+                {
+                  "unit_id": 2,
+                  "start": 3171,
+                  "end": 3198
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_2",
+              "answer_criteria": "交代蓝色光团与蓝星网络相连的缘由或机制。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 3433,
+                  "end": 3456
+                },
+                {
+                  "unit_id": 2,
+                  "start": 3171,
+                  "end": 3198
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "文本揭示连接蓝星网络这一事实，但未解释其原因，问题成立且悬而未决。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "possible_duplicate_with": [
+            "蓝色光团为何会连接前世的蓝星网络世界？"
+          ],
+          "duplicate_hint": "与上述条目共享同一锚点跨度，可能是同一问题",
+          "ref_id": "r6"
+        },
+        {
+          "question": "上一任世界树是因何陨落的，是否与信仰神灵对信徒的争夺有关？",
+          "answer_criteria": "交代上一任世界树陨落的原因或过程。",
+          "supporting_quote": "上一任世界树的陨落似乎就与此有关。",
+          "acceptable_spans": [
+            {
+              "unit_id": 2,
+              "start": 992,
+              "end": 1009
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "文本以“似乎”暗示关联，但未说明陨落的具体原因。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_2"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_2",
+              "label": "有依据且未解",
+              "reason": "文本以“似乎”暗示关联，但未说明陨落的具体原因。",
+              "answer_criteria": "交代上一任世界树陨落的原因或过程。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 992,
+                  "end": 1009
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_2",
+              "answer_criteria": "交代上一任世界树陨落的原因或过程。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 992,
+                  "end": 1009
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "文本以“似乎”暗示关联，但未说明陨落的具体原因。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "possible_duplicate_with": [
+            "上一任世界树的陨落与信仰神灵争夺信徒之间具体是什么关系？"
+          ],
+          "duplicate_hint": "与上述条目共享同一锚点跨度，可能是同一问题",
+          "ref_id": "r7"
+        },
+        {
+          "question": "伊芙要如何攒够100点神力值以塑造神降化身、脱离濒死状态？",
+          "answer_criteria": "交代其达成足够神力值并化身/恢复的具体途径或结果。",
+          "supporting_quote": "若是想要使用能力中的神降化身，伊芙查看了一下发现竟然要求达到100点神力值才能够支撑！",
+          "acceptable_spans": [
+            {
+              "unit_id": 2,
+              "start": 2583,
+              "end": 2626
+            },
+            {
+              "unit_id": 2,
+              "start": 2518,
+              "end": 2548
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "文本提出需要神力值才能化身的目标，当前仅有10点，尚未达成也未交代实现途径。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_2"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_2",
+              "label": "有依据且未解",
+              "reason": "文本提出需要神力值才能化身的目标，当前仅有10点，尚未达成也未交代实现途径。",
+              "answer_criteria": "交代其达成足够神力值并化身/恢复的具体途径或结果。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 2583,
+                  "end": 2626
+                },
+                {
+                  "unit_id": 2,
+                  "start": 2518,
+                  "end": 2548
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_2",
+              "answer_criteria": "交代其达成足够神力值并化身/恢复的具体途径或结果。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 2583,
+                  "end": 2626
+                },
+                {
+                  "unit_id": 2,
+                  "start": 2518,
+                  "end": 2548
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "文本提出需要神力值才能化身的目标，当前仅有10点，尚未达成也未交代实现途径。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "possible_duplicate_with": [
+            "伊芙需要多少神力值、具备什么条件才能从濒死状态中恢复过来？"
+          ],
+          "duplicate_hint": "与上述条目共享同一锚点跨度，可能是同一问题",
+          "ref_id": "r8"
+        },
+        {
+          "question": "伊芙能否联系上并操纵其他几名信徒？",
+          "answer_criteria": "交代伊芙联系其他信徒的尝试结果或是否成功。",
+          "supporting_quote": "犹豫了一下，伊芙暂时放弃了直接联系其他几名信徒的想法，而是小心翼翼地将意识探入了那个蓝色光团。",
+          "acceptable_spans": [
+            {
+              "unit_id": 2,
+              "start": 3202,
+              "end": 3249
+            },
+            {
+              "unit_id": 2,
+              "start": 2846,
+              "end": 2876
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "伊芙提出能否联系其他信徒的疑问，但因转向蓝色光团而暂缓，结果未明。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_2"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_2",
+              "label": "有依据且未解",
+              "reason": "伊芙提出能否联系其他信徒的疑问，但因转向蓝色光团而暂缓，结果未明。",
+              "answer_criteria": "交代伊芙联系其他信徒的尝试结果或是否成功。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 3202,
+                  "end": 3249
+                },
+                {
+                  "unit_id": 2,
+                  "start": 2846,
+                  "end": 2876
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_2",
+              "answer_criteria": "交代伊芙联系其他信徒的尝试结果或是否成功。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 3202,
+                  "end": 3249
+                },
+                {
+                  "unit_id": 2,
+                  "start": 2846,
+                  "end": 2876
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "伊芙提出能否联系其他信徒的疑问，但因转向蓝色光团而暂缓，结果未明。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "ref_id": "r9"
+        }
+      ],
+      "summary": {
+        "total": 10,
+        "agreed": 0,
+        "disputed": 0,
+        "single_annotator": 10,
+        "possible_duplicate_groups": 2
+      },
+      "freeze_sha256": "ae8b0c2517d5a641fbe00dadd2f61ce718abe04b5156e952f04fe3c972a4a8fc"
+    },
+    {
+      "work_id": "t4_game_holdout",
+      "prefix_id": "p3",
+      "items": [
+        {
+          "question": "世界树上一任陨落与信徒争夺有关的具体原因是什么？",
+          "answer_criteria": "交代上一任世界树陨落与信仰神灵争夺信徒之间的具体关系或事件经过。",
+          "supporting_quote": "上一任世界树的陨落似乎就与此有关。",
+          "acceptable_spans": [
+            {
+              "unit_id": 2,
+              "start": 992,
+              "end": 1009
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "原文只以“似乎”含糊带过，未说明具体陨落经过。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_1"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_1",
+              "label": "有依据且未解",
+              "reason": "原文只以“似乎”含糊带过，未说明具体陨落经过。",
+              "answer_criteria": "交代上一任世界树陨落与信仰神灵争夺信徒之间的具体关系或事件经过。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 992,
+                  "end": 1009
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_1",
+              "answer_criteria": "交代上一任世界树陨落与信仰神灵争夺信徒之间的具体关系或事件经过。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 992,
+                  "end": 1009
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "原文只以“似乎”含糊带过，未说明具体陨落经过。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "possible_duplicate_with": [
+            "上一任世界树陨落与信仰神灵争夺信徒之间具体是什么关系？"
+          ],
+          "duplicate_hint": "与上述条目共享同一锚点跨度，可能是同一问题",
+          "ref_id": "r0"
+        },
+        {
+          "question": "伊芙在感应远方某个方向后决定采用的“更高效、性价比更高的忽悠办法”具体是什么？",
+          "answer_criteria": "说明伊芙打算用什么具体手段向精灵信徒证明自身存在或挽回信仰。",
+          "supporting_quote": "现在似乎还有更加高效、性价比更高的忽悠办法……",
+          "acceptable_spans": [
+            {
+              "unit_id": 3,
+              "start": 3114,
+              "end": 3137
+            },
+            {
+              "unit_id": 3,
+              "start": 3058,
+              "end": 3082
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "原文在章末设下悬念，未交代该办法的内容。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_1"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_1",
+              "label": "有依据且未解",
+              "reason": "原文在章末设下悬念，未交代该办法的内容。",
+              "answer_criteria": "说明伊芙打算用什么具体手段向精灵信徒证明自身存在或挽回信仰。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 3,
+                  "start": 3114,
+                  "end": 3137
+                },
+                {
+                  "unit_id": 3,
+                  "start": 3058,
+                  "end": 3082
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_1",
+              "answer_criteria": "说明伊芙打算用什么具体手段向精灵信徒证明自身存在或挽回信仰。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 3,
+                  "start": 3114,
+                  "end": 3137
+                },
+                {
+                  "unit_id": 3,
+                  "start": 3058,
+                  "end": 3082
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "原文在章末设下悬念，未交代该办法的内容。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "possible_duplicate_with": [
+            "伊芙从蓝色光团方向感应到的、让她改变主意的远方某个方向是什么或有什么？",
+            "伊芙剩餘的两名信徒（爱丽丝和萨米尔）在准备放弃信仰离开时，伊芙打算用什么“更高效、性价比更高”的办法证明自己的存在并留住他们？",
+            "伊芙感知到的“远方的某个方向”是什么，为何让祂改变主意、认为有更划算的办法？"
+          ],
+          "duplicate_hint": "与上述条目共享同一锚点跨度，可能是同一问题",
+          "ref_id": "r1"
+        },
+        {
+          "question": "伊芙从蓝色光团方向感应到的、让她改变主意的远方某个方向是什么或有什么？",
+          "answer_criteria": "说明伊芙意识扫向的那个方向存在什么事物或情况，以及为何影响她的决定。",
+          "supporting_quote": "意识扫了一下远方的某个方向，伊芙渐渐冷静了下来。",
+          "acceptable_spans": [
+            {
+              "unit_id": 3,
+              "start": 3058,
+              "end": 3082
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "原文只点出她扫视远方，未交代所见内容。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_1"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_1",
+              "label": "有依据且未解",
+              "reason": "原文只点出她扫视远方，未交代所见内容。",
+              "answer_criteria": "说明伊芙意识扫向的那个方向存在什么事物或情况，以及为何影响她的决定。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 3,
+                  "start": 3058,
+                  "end": 3082
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_1",
+              "answer_criteria": "说明伊芙意识扫向的那个方向存在什么事物或情况，以及为何影响她的决定。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 3,
+                  "start": 3058,
+                  "end": 3082
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "原文只点出她扫视远方，未交代所见内容。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "possible_duplicate_with": [
+            "伊芙剩餘的两名信徒（爱丽丝和萨米尔）在准备放弃信仰离开时，伊芙打算用什么“更高效、性价比更高”的办法证明自己的存在并留住他们？",
+            "伊芙在感应远方某个方向后决定采用的“更高效、性价比更高的忽悠办法”具体是什么？",
+            "伊芙感知到的“远方的某个方向”是什么，为何让祂改变主意、认为有更划算的办法？"
+          ],
+          "duplicate_hint": "与上述条目共享同一锚点跨度，可能是同一问题",
+          "ref_id": "r2"
+        },
+        {
+          "question": "伊芙是否能够成功阻止爱丽丝与萨米尔放弃信仰并离开？",
+          "answer_criteria": "交代两名精灵最终是否留下继续信仰世界树，或她们离开与否的结果。",
+          "supporting_quote": "如果再不出手，恐怕这仅存的两名土著信徒马上就要和祂say古德拜了。",
+          "acceptable_spans": [
+            {
+              "unit_id": 3,
+              "start": 2928,
+              "end": 2961
+            },
+            {
+              "unit_id": 3,
+              "start": 2741,
+              "end": 2764
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "可见范围终点处两名精灵已决定离开，结果尚未交代。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_1"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_1",
+              "label": "有依据且未解",
+              "reason": "可见范围终点处两名精灵已决定离开，结果尚未交代。",
+              "answer_criteria": "交代两名精灵最终是否留下继续信仰世界树，或她们离开与否的结果。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 3,
+                  "start": 2928,
+                  "end": 2961
+                },
+                {
+                  "unit_id": 3,
+                  "start": 2741,
+                  "end": 2764
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_1",
+              "answer_criteria": "交代两名精灵最终是否留下继续信仰世界树，或她们离开与否的结果。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 3,
+                  "start": 2928,
+                  "end": 2961
+                },
+                {
+                  "unit_id": 3,
+                  "start": 2741,
+                  "end": 2764
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "可见范围终点处两名精灵已决定离开，结果尚未交代。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "possible_duplicate_with": [
+            "精灵一族“坚守了千年”所等待或坚守的具体内容是什么？"
+          ],
+          "duplicate_hint": "与上述条目共享同一锚点跨度，可能是同一问题",
+          "ref_id": "r3"
+        },
+        {
+          "question": "爱丽丝手中紧握的叶片状徽章是什么？",
+          "answer_criteria": "说明该徽章的来历、用途或象征意义。",
+          "supporting_quote": "双手攒紧着一枚叶片状的徽章",
+          "acceptable_spans": [
+            {
+              "unit_id": 3,
+              "start": 1734,
+              "end": 1747
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "原文仅描写她握着徽章祈祷，未说明其性质。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_1"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_1",
+              "label": "有依据且未解",
+              "reason": "原文仅描写她握着徽章祈祷，未说明其性质。",
+              "answer_criteria": "说明该徽章的来历、用途或象征意义。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 3,
+                  "start": 1734,
+                  "end": 1747
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_1",
+              "answer_criteria": "说明该徽章的来历、用途或象征意义。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 3,
+                  "start": 1734,
+                  "end": 1747
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "原文仅描写她握着徽章祈祷，未说明其性质。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "possible_duplicate_with": [
+            "爱丽丝手中紧握的叶片状徽章是什么，有何来历或用途？"
+          ],
+          "duplicate_hint": "与上述条目共享同一锚点跨度，可能是同一问题",
+          "ref_id": "r4"
+        },
+        {
+          "question": "祭坛上缺失头颅的残破精灵神像原本供奉的是谁、头颅为何缺失？",
+          "answer_criteria": "说明神像所代表的神灵身份及头颅缺失的原因或经过。",
+          "supporting_quote": "祭坛上方则摆放着一座缺失了头颅的残破精灵神像。",
+          "acceptable_spans": [
+            {
+              "unit_id": 3,
+              "start": 1408,
+              "end": 1431
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "原文只描写神像残破，未解释其身份与损毁缘由。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_1"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_1",
+              "label": "有依据且未解",
+              "reason": "原文只描写神像残破，未解释其身份与损毁缘由。",
+              "answer_criteria": "说明神像所代表的神灵身份及头颅缺失的原因或经过。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 3,
+                  "start": 1408,
+                  "end": 1431
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_1",
+              "answer_criteria": "说明神像所代表的神灵身份及头颅缺失的原因或经过。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 3,
+                  "start": 1408,
+                  "end": 1431
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "原文只描写神像残破，未解释其身份与损毁缘由。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "possible_duplicate_with": [
+            "精灵神殿中残缺的精灵神像为何缺失头颅、祭坛魔法纹路为何被破坏？"
+          ],
+          "duplicate_hint": "与上述条目共享同一锚点跨度，可能是同一问题",
+          "ref_id": "r5"
+        },
+        {
+          "question": "精灵一族“坚守了千年”所等待或坚守的具体内容是什么？",
+          "answer_criteria": "说明精灵信徒千年来坚守在神殿的具体目的或所期盼之事。",
+          "supporting_quote": "坚守了千年，我们已经没有必要再在这里坚持了……",
+          "acceptable_spans": [
+            {
+              "unit_id": 3,
+              "start": 2741,
+              "end": 2764
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "原文提及千年坚守，但未展开其具体内容与缘由。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_1"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_1",
+              "label": "有依据且未解",
+              "reason": "原文提及千年坚守，但未展开其具体内容与缘由。",
+              "answer_criteria": "说明精灵信徒千年来坚守在神殿的具体目的或所期盼之事。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 3,
+                  "start": 2741,
+                  "end": 2764
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_1",
+              "answer_criteria": "说明精灵信徒千年来坚守在神殿的具体目的或所期盼之事。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 3,
+                  "start": 2741,
+                  "end": 2764
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "原文提及千年坚守，但未展开其具体内容与缘由。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "possible_duplicate_with": [
+            "伊芙是否能够成功阻止爱丽丝与萨米尔放弃信仰并离开？"
+          ],
+          "duplicate_hint": "与上述条目共享同一锚点跨度，可能是同一问题",
+          "ref_id": "r6"
+        },
+        {
+          "question": "伊芙前世在游戏舱中猝死后，其意识与蓝星网络建立通道的猜测是否得到验证？",
+          "answer_criteria": "给出能证实或否定该通道成因判断的信息。",
+          "supporting_quote": "伊芙怀疑，正是因为自己是在意识和网络相连的时候死亡，才造成祂和网络世界建立了某种通道。",
+          "acceptable_spans": [
+            {
+              "unit_id": 3,
+              "start": 200,
+              "end": 243
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "原文只写伊芙的怀疑，未证实该成因。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_1"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_1",
+              "label": "有依据且未解",
+              "reason": "原文只写伊芙的怀疑，未证实该成因。",
+              "answer_criteria": "给出能证实或否定该通道成因判断的信息。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 3,
+                  "start": 200,
+                  "end": 243
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_1",
+              "answer_criteria": "给出能证实或否定该通道成因判断的信息。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 3,
+                  "start": 200,
+                  "end": 243
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "原文只写伊芙的怀疑，未证实该成因。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "ref_id": "r7"
+        },
+        {
+          "question": "蓝色光团为何会出现在世界树的神格核心中并与伊芙产生亲近感？",
+          "answer_criteria": "说明蓝色光团进入神格空间的原因及其与伊芙亲近感的来源。",
+          "supporting_quote": "伊芙有些惊讶地发现自己穿越之前见到的那个颇为亲近的蓝色光团也存在这里。",
+          "acceptable_spans": [
+            {
+              "unit_id": 2,
+              "start": 3132,
+              "end": 3167
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "原文只呈现现象，未解释其成因。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_1"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_1",
+              "label": "有依据且未解",
+              "reason": "原文只呈现现象，未解释其成因。",
+              "answer_criteria": "说明蓝色光团进入神格空间的原因及其与伊芙亲近感的来源。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 3132,
+                  "end": 3167
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_1",
+              "answer_criteria": "说明蓝色光团进入神格空间的原因及其与伊芙亲近感的来源。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 3132,
+                  "end": 3167
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "原文只呈现现象，未解释其成因。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "ref_id": "r8"
+        },
+        {
+          "question": "伊芙是否以及何时能攒够神力离开濒死状态、塑造神降化身？",
+          "answer_criteria": "交代伊芙恢复神力、摆脱濒死状态或成功塑造化身的结果。",
+          "supporting_quote": "必须早点攒够神力值，从濒死状态中恢复过来，同时塑造神降化身！",
+          "acceptable_spans": [
+            {
+              "unit_id": 2,
+              "start": 2518,
+              "end": 2548
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "这是伊芙确立的目标，截至可见范围终点尚未实现。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_1"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_1",
+              "label": "有依据且未解",
+              "reason": "这是伊芙确立的目标，截至可见范围终点尚未实现。",
+              "answer_criteria": "交代伊芙恢复神力、摆脱濒死状态或成功塑造化身的结果。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 2518,
+                  "end": 2548
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_1",
+              "answer_criteria": "交代伊芙恢复神力、摆脱濒死状态或成功塑造化身的结果。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 2518,
+                  "end": 2548
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "这是伊芙确立的目标，截至可见范围终点尚未实现。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "possible_duplicate_with": [
+            "伊芙需要攒够神力值从濒死状态恢复并塑造神降化身，祂能否达成以及如何积累神力？"
+          ],
+          "duplicate_hint": "与上述条目共享同一锚点跨度，可能是同一问题",
+          "ref_id": "r9"
+        },
+        {
+          "question": "伊芙最终能否回到前世的蓝星？",
+          "answer_criteria": "交代伊芙是否找到回到蓝星的方法或达成回归的结果。",
+          "supporting_quote": "或许……等自己强大以后，还有机会回到前世的蓝星？",
+          "acceptable_spans": [
+            {
+              "unit_id": 3,
+              "start": 747,
+              "end": 771
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "原文仅提出设想，未给出结果。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_1"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_1",
+              "label": "有依据且未解",
+              "reason": "原文仅提出设想，未给出结果。",
+              "answer_criteria": "交代伊芙是否找到回到蓝星的方法或达成回归的结果。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 3,
+                  "start": 747,
+                  "end": 771
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_1",
+              "answer_criteria": "交代伊芙是否找到回到蓝星的方法或达成回归的结果。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 3,
+                  "start": 747,
+                  "end": 771
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "原文仅提出设想，未给出结果。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "possible_duplicate_with": [
+            "伊芙前世死后尸体被火化，那么与蓝星网络建立的联系是否能让祂以某种方式影响或回到蓝星？"
+          ],
+          "duplicate_hint": "与上述条目共享同一锚点跨度，可能是同一问题",
+          "ref_id": "r10"
+        },
+        {
+          "question": "伊芙剩餘的两名信徒（爱丽丝和萨米尔）在准备放弃信仰离开时，伊芙打算用什么“更高效、性价比更高”的办法证明自己的存在并留住他们？",
+          "answer_criteria": "交代伊芙具体采用的手段或计划（不限于神力显灵），足以让读者知道祂打算如何回应两名精灵信徒的放弃。",
+          "supporting_quote": "现在似乎还有更加高效、性价比更高的忽悠办法……",
+          "acceptable_spans": [
+            {
+              "unit_id": 3,
+              "start": 3114,
+              "end": 3137
+            },
+            {
+              "unit_id": 3,
+              "start": 3058,
+              "end": 3082
+            },
+            {
+              "unit_id": 3,
+              "start": 3086,
+              "end": 3096
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "原文明确抛出伊芙另有打算却未揭示内容，问题在可见范围内悬置。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_2"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_2",
+              "label": "有依据且未解",
+              "reason": "原文明确抛出伊芙另有打算却未揭示内容，问题在可见范围内悬置。",
+              "answer_criteria": "交代伊芙具体采用的手段或计划（不限于神力显灵），足以让读者知道祂打算如何回应两名精灵信徒的放弃。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 3,
+                  "start": 3114,
+                  "end": 3137
+                },
+                {
+                  "unit_id": 3,
+                  "start": 3058,
+                  "end": 3082
+                },
+                {
+                  "unit_id": 3,
+                  "start": 3086,
+                  "end": 3096
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_2",
+              "answer_criteria": "交代伊芙具体采用的手段或计划（不限于神力显灵），足以让读者知道祂打算如何回应两名精灵信徒的放弃。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 3,
+                  "start": 3114,
+                  "end": 3137
+                },
+                {
+                  "unit_id": 3,
+                  "start": 3058,
+                  "end": 3082
+                },
+                {
+                  "unit_id": 3,
+                  "start": 3086,
+                  "end": 3096
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "原文明确抛出伊芙另有打算却未揭示内容，问题在可见范围内悬置。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "possible_duplicate_with": [
+            "伊芙从蓝色光团方向感应到的、让她改变主意的远方某个方向是什么或有什么？",
+            "伊芙在感应远方某个方向后决定采用的“更高效、性价比更高的忽悠办法”具体是什么？",
+            "伊芙感知到的“远方的某个方向”是什么，为何让祂改变主意、认为有更划算的办法？"
+          ],
+          "duplicate_hint": "与上述条目共享同一锚点跨度，可能是同一问题",
+          "ref_id": "r11"
+        },
+        {
+          "question": "伊芙感知到的“远方的某个方向”是什么，为何让祂改变主意、认为有更划算的办法？",
+          "answer_criteria": "说明那个方向存在什么（人物、事物或情势），以及它为何构成替代神力显灵的手段。",
+          "supporting_quote": "意识扫了一下远方的某个方向，伊芙渐渐冷静了下来。",
+          "acceptable_spans": [
+            {
+              "unit_id": 3,
+              "start": 3058,
+              "end": 3082
+            },
+            {
+              "unit_id": 3,
+              "start": 3100,
+              "end": 3113
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "原文仅暗示该方向有可利用之物，未作任何交代。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_2"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_2",
+              "label": "有依据且未解",
+              "reason": "原文仅暗示该方向有可利用之物，未作任何交代。",
+              "answer_criteria": "说明那个方向存在什么（人物、事物或情势），以及它为何构成替代神力显灵的手段。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 3,
+                  "start": 3058,
+                  "end": 3082
+                },
+                {
+                  "unit_id": 3,
+                  "start": 3100,
+                  "end": 3113
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_2",
+              "answer_criteria": "说明那个方向存在什么（人物、事物或情势），以及它为何构成替代神力显灵的手段。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 3,
+                  "start": 3058,
+                  "end": 3082
+                },
+                {
+                  "unit_id": 3,
+                  "start": 3100,
+                  "end": 3113
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "原文仅暗示该方向有可利用之物，未作任何交代。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "possible_duplicate_with": [
+            "伊芙从蓝色光团方向感应到的、让她改变主意的远方某个方向是什么或有什么？",
+            "伊芙剩餘的两名信徒（爱丽丝和萨米尔）在准备放弃信仰离开时，伊芙打算用什么“更高效、性价比更高”的办法证明自己的存在并留住他们？",
+            "伊芙在感应远方某个方向后决定采用的“更高效、性价比更高的忽悠办法”具体是什么？"
+          ],
+          "duplicate_hint": "与上述条目共享同一锚点跨度，可能是同一问题",
+          "ref_id": "r12"
+        },
+        {
+          "question": "上一任世界树陨落与信仰神灵争夺信徒之间具体是什么关系？",
+          "answer_criteria": "交代上一任世界树的死因或与信仰神灵争夺信徒的具体关联。",
+          "supporting_quote": "上一任世界树的陨落似乎就与此有关。",
+          "acceptable_spans": [
+            {
+              "unit_id": 2,
+              "start": 992,
+              "end": 1009
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "原文以“似乎”带过，未给出具体缘由。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_2"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_2",
+              "label": "有依据且未解",
+              "reason": "原文以“似乎”带过，未给出具体缘由。",
+              "answer_criteria": "交代上一任世界树的死因或与信仰神灵争夺信徒的具体关联。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 992,
+                  "end": 1009
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_2",
+              "answer_criteria": "交代上一任世界树的死因或与信仰神灵争夺信徒的具体关联。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 992,
+                  "end": 1009
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "原文以“似乎”带过，未给出具体缘由。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "possible_duplicate_with": [
+            "世界树上一任陨落与信徒争夺有关的具体原因是什么？"
+          ],
+          "duplicate_hint": "与上述条目共享同一锚点跨度，可能是同一问题",
+          "ref_id": "r13"
+        },
+        {
+          "question": "爱丽丝手中紧握的叶片状徽章是什么，有何来历或用途？",
+          "answer_criteria": "说明该徽章的来源、含义或作用。",
+          "supporting_quote": "双手攒紧着一枚叶片状的徽章",
+          "acceptable_spans": [
+            {
+              "unit_id": 3,
+              "start": 1734,
+              "end": 1747
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "徽章被特意描写但未作任何解释。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_2"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_2",
+              "label": "有依据且未解",
+              "reason": "徽章被特意描写但未作任何解释。",
+              "answer_criteria": "说明该徽章的来源、含义或作用。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 3,
+                  "start": 1734,
+                  "end": 1747
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_2",
+              "answer_criteria": "说明该徽章的来源、含义或作用。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 3,
+                  "start": 1734,
+                  "end": 1747
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "徽章被特意描写但未作任何解释。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "possible_duplicate_with": [
+            "爱丽丝手中紧握的叶片状徽章是什么？"
+          ],
+          "duplicate_hint": "与上述条目共享同一锚点跨度，可能是同一问题",
+          "ref_id": "r14"
+        },
+        {
+          "question": "精灵神殿中残缺的精灵神像为何缺失头颅、祭坛魔法纹路为何被破坏？",
+          "answer_criteria": "交代神像与祭坛遭到破坏的原因或经过。",
+          "supporting_quote": "祭坛上方则摆放着一座缺失了头颅的残破精灵神像。",
+          "acceptable_spans": [
+            {
+              "unit_id": 3,
+              "start": 1408,
+              "end": 1431
+            },
+            {
+              "unit_id": 3,
+              "start": 1391,
+              "end": 1407
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "破坏的成因在可见范围内没有说明。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_2"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_2",
+              "label": "有依据且未解",
+              "reason": "破坏的成因在可见范围内没有说明。",
+              "answer_criteria": "交代神像与祭坛遭到破坏的原因或经过。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 3,
+                  "start": 1408,
+                  "end": 1431
+                },
+                {
+                  "unit_id": 3,
+                  "start": 1391,
+                  "end": 1407
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_2",
+              "answer_criteria": "交代神像与祭坛遭到破坏的原因或经过。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 3,
+                  "start": 1408,
+                  "end": 1431
+                },
+                {
+                  "unit_id": 3,
+                  "start": 1391,
+                  "end": 1407
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "破坏的成因在可见范围内没有说明。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "possible_duplicate_with": [
+            "祭坛上缺失头颅的残破精灵神像原本供奉的是谁、头颅为何缺失？"
+          ],
+          "duplicate_hint": "与上述条目共享同一锚点跨度，可能是同一问题",
+          "ref_id": "r15"
+        },
+        {
+          "question": "伊芙前世死后尸体被火化，那么与蓝星网络建立的联系是否能让祂以某种方式影响或回到蓝星？",
+          "answer_criteria": "交代该网络通道对蓝星现实是否可能产生实际影响，或伊芙能否回归。",
+          "supporting_quote": "祂已经尝试过了，祂的神力似乎只能影响到网络世界",
+          "acceptable_spans": [
+            {
+              "unit_id": 3,
+              "start": 507,
+              "end": 530
+            },
+            {
+              "unit_id": 3,
+              "start": 747,
+              "end": 771
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "原文只给出当前受限状态与模糊猜想，能否回归尚未确定。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_2"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_2",
+              "label": "有依据且未解",
+              "reason": "原文只给出当前受限状态与模糊猜想，能否回归尚未确定。",
+              "answer_criteria": "交代该网络通道对蓝星现实是否可能产生实际影响，或伊芙能否回归。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 3,
+                  "start": 507,
+                  "end": 530
+                },
+                {
+                  "unit_id": 3,
+                  "start": 747,
+                  "end": 771
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_2",
+              "answer_criteria": "交代该网络通道对蓝星现实是否可能产生实际影响，或伊芙能否回归。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 3,
+                  "start": 507,
+                  "end": 530
+                },
+                {
+                  "unit_id": 3,
+                  "start": 747,
+                  "end": 771
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "原文只给出当前受限状态与模糊猜想，能否回归尚未确定。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "possible_duplicate_with": [
+            "伊芙最终能否回到前世的蓝星？"
+          ],
+          "duplicate_hint": "与上述条目共享同一锚点跨度，可能是同一问题",
+          "ref_id": "r16"
+        },
+        {
+          "question": "伊芙需要攒够神力值从濒死状态恢复并塑造神降化身，祂能否达成以及如何积累神力？",
+          "answer_criteria": "交代伊芙是否成功恢复、塑造化身，或说明其主要的神力积累途径与进展。",
+          "supporting_quote": "必须早点攒够神力值，从濒死状态中恢复过来，同时塑造神降化身！",
+          "acceptable_spans": [
+            {
+              "unit_id": 2,
+              "start": 2518,
+              "end": 2548
+            }
+          ],
+          "label": "有依据且未解",
+          "reason": "这是原文确立的近期目标，可见范围内尚未实现或交代途径。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_2"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_2",
+              "label": "有依据且未解",
+              "reason": "这是原文确立的近期目标，可见范围内尚未实现或交代途径。",
+              "answer_criteria": "交代伊芙是否成功恢复、塑造化身，或说明其主要的神力积累途径与进展。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 2518,
+                  "end": 2548
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_2",
+              "answer_criteria": "交代伊芙是否成功恢复、塑造化身，或说明其主要的神力积累途径与进展。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 2,
+                  "start": 2518,
+                  "end": 2548
+                }
+              ],
+              "label": "有依据且未解",
+              "reason": "这是原文确立的近期目标，可见范围内尚未实现或交代途径。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "possible_duplicate_with": [
+            "伊芙是否以及何时能攒够神力离开濒死状态、塑造神降化身？"
+          ],
+          "duplicate_hint": "与上述条目共享同一锚点跨度，可能是同一问题",
+          "ref_id": "r17"
+        },
+        {
+          "question": "伊芙点化枯橡树使其变成橡树守卫的具体机制是什么，为何会消耗大量自然神力并产生信仰联系？",
+          "answer_criteria": "说明点化能力的运作原理或规则。",
+          "supporting_quote": "祂没有想到仅仅是尝试了一下“点化”，就产生了如此大的消耗。",
+          "acceptable_spans": [
+            {
+              "unit_id": 1,
+              "start": 2965,
+              "end": 2994
+            }
+          ],
+          "label": "无法确定",
+          "reason": "原文已给出点化效果与消耗事实，是否还需解释机制取决于后文设定，当前难以判定其是否为待解伏笔。",
+          "status": "single_annotator",
+          "annotators": [
+            "ref_2"
+          ],
+          "opinions": [
+            {
+              "annotator_id": "ref_2",
+              "label": "无法确定",
+              "reason": "原文已给出点化效果与消耗事实，是否还需解释机制取决于后文设定，当前难以判定其是否为待解伏笔。",
+              "answer_criteria": "说明点化能力的运作原理或规则。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 1,
+                  "start": 2965,
+                  "end": 2994
+                }
+              ]
+            }
+          ],
+          "unit_id": null,
+          "source_conditions": [
+            {
+              "annotator_id": "ref_2",
+              "answer_criteria": "说明点化能力的运作原理或规则。",
+              "acceptable_spans": [
+                {
+                  "unit_id": 1,
+                  "start": 2965,
+                  "end": 2994
+                }
+              ],
+              "label": "无法确定",
+              "reason": "原文已给出点化效果与消耗事实，是否还需解释机制取决于后文设定，当前难以判定其是否为待解伏笔。"
+            }
+          ],
+          "qualification": {
+            "status": "pending_review",
+            "qualified": false,
+            "qualified_label": null,
+            "accepted_answer_criteria": null,
+            "accepted_spans": null,
+            "reviewer_id": null,
+            "reason": null
+          },
+          "ref_id": "r18"
+        }
+      ],
+      "summary": {
+        "total": 19,
+        "agreed": 0,
+        "disputed": 0,
+        "single_annotator": 19,
+        "possible_duplicate_groups": 6
+      },
+      "freeze_sha256": "ea8ca5d29d8ee51c169191aca89d4033e6bb5d093335141c1ea317f6428fc5ac"
+    }
+  ]
+}

@@ -1,0 +1,199 @@
+{
+  "note": "全流程用模拟响应跑通，验证流程与口径接得通；不产生质量结论",
+  "reference_annotations": {
+    "left_valid": true,
+    "right_valid": true,
+    "merge_summary": {
+      "total": 3,
+      "agreed": 1,
+      "disputed": 0,
+      "single_annotator": 2,
+      "possible_duplicate_groups": 0
+    },
+    "raw_frozen_path": "docs\\research\\bc-production-readiness-2026-11-06\\registration-arm-proposal\\sim-reference-set-raw.json",
+    "raw_frozen_created_this_run": true,
+    "raw_freeze_sha256": "1973ee3d9f90f809b6023c067a4eee19a5a64cd78dec5e2e07a2eb7e7cc314b7",
+    "eligible_path": "docs\\research\\bc-production-readiness-2026-11-06\\registration-arm-proposal\\sim-reference-set-eligible.json",
+    "eligible_created_this_run": true,
+    "eligible_freeze_sha256": "0f8e4f3ed79dc82661a1cc98d8b2705a2af24551072a4d774b5d2e3d54309e34",
+    "eligible_count": 1,
+    "reviewed_count": 3,
+    "pending_count": 0,
+    "excluded": {
+      "disputed": [],
+      "single_annotator": [
+        "r1",
+        "r2"
+      ],
+      "not_qualified": [],
+      "pending_review": []
+    }
+  },
+  "per_arm_matching": {
+    "A": {
+      "reference_total": 1,
+      "judged_total": 1,
+      "registered": 1,
+      "missed": 0,
+      "missed_ref_ids": [],
+      "unresolved_total": 0,
+      "unresolved_ref_ids": [],
+      "registered_ref_ids": [
+        "r0"
+      ],
+      "per_ref": [
+        {
+          "ref_id": "r0",
+          "verdict": "registered",
+          "reason": ""
+        }
+      ]
+    },
+    "B": {
+      "reference_total": 1,
+      "judged_total": 1,
+      "registered": 1,
+      "missed": 0,
+      "missed_ref_ids": [],
+      "unresolved_total": 0,
+      "unresolved_ref_ids": [],
+      "registered_ref_ids": [
+        "r0"
+      ],
+      "per_ref": [
+        {
+          "ref_id": "r0",
+          "verdict": "registered",
+          "reason": ""
+        }
+      ]
+    }
+  },
+  "per_arm_metrics": {
+    "A": {
+      "missed_registration_rate": {
+        "count": 0,
+        "denominator": 1,
+        "rate": 0.0,
+        "status": "可计算"
+      },
+      "denominators": {
+        "system_total": 2,
+        "settled_adjudications": 2,
+        "disputed": 0,
+        "undecided": 0,
+        "unadjudicated": 0,
+        "unknown_label": 0,
+        "duplicate_ids": 0,
+        "independent_qualified_total": 1,
+        "independent_qualified_valid": 1
+      },
+      "coverage": {
+        "adjudication_coverage": 1.0,
+        "adjudication_coverage_status": "可计算",
+        "note": "比率的分母是有效裁决数；覆盖率单独报告，避免不确定项增多显得指标改善"
+      },
+      "excluded": {
+        "disputed_ids": [],
+        "undecided_ids": [],
+        "unknown_label_ids": [],
+        "unadjudicated_ids": [],
+        "orphan_adjudication_ids": [],
+        "duplicate_system_ids": [],
+        "duplicate_adjudication_ids": [],
+        "reference_missing_registered": [],
+        "reference_unresolved_pairing": [],
+        "note": "以上各项都不进任何指标的分子或分母"
+      }
+    },
+    "B": {
+      "missed_registration_rate": {
+        "count": 0,
+        "denominator": 1,
+        "rate": 0.0,
+        "status": "可计算"
+      },
+      "denominators": {
+        "system_total": 1,
+        "settled_adjudications": 1,
+        "disputed": 0,
+        "undecided": 0,
+        "unadjudicated": 0,
+        "unknown_label": 0,
+        "duplicate_ids": 0,
+        "independent_qualified_total": 1,
+        "independent_qualified_valid": 1
+      },
+      "coverage": {
+        "adjudication_coverage": 1.0,
+        "adjudication_coverage_status": "可计算",
+        "note": "比率的分母是有效裁决数；覆盖率单独报告，避免不确定项增多显得指标改善"
+      },
+      "excluded": {
+        "disputed_ids": [],
+        "undecided_ids": [],
+        "unknown_label_ids": [],
+        "unadjudicated_ids": [],
+        "orphan_adjudication_ids": [],
+        "duplicate_system_ids": [],
+        "duplicate_adjudication_ids": [],
+        "reference_missing_registered": [],
+        "reference_unresolved_pairing": [],
+        "note": "以上各项都不进任何指标的分子或分母"
+      }
+    }
+  },
+  "usage_archive": {
+    "attempts": 6,
+    "failures": 1,
+    "input_tokens": 9300,
+    "output_tokens": 1600,
+    "by_stage": {
+      "reference_discovery": {
+        "attempts": 2,
+        "failures": 0,
+        "input_tokens": 2400,
+        "output_tokens": 600
+      },
+      "generation": {
+        "attempts": 3,
+        "failures": 1,
+        "input_tokens": 6000,
+        "output_tokens": 800
+      },
+      "blind_review": {
+        "attempts": 1,
+        "failures": 0,
+        "input_tokens": 900,
+        "output_tokens": 200
+      }
+    },
+    "by_arm": {
+      "-": {
+        "attempts": 3,
+        "failures": 0,
+        "input_tokens": 3300,
+        "output_tokens": 800
+      },
+      "A": {
+        "attempts": 1,
+        "failures": 0,
+        "input_tokens": 2000,
+        "output_tokens": 400
+      },
+      "B": {
+        "attempts": 2,
+        "failures": 1,
+        "input_tokens": 4000,
+        "output_tokens": 400
+      }
+    },
+    "cost": {
+      "status": "已核算",
+      "amount": 0.125,
+      "currency": "CNY",
+      "costed_attempts": 6
+    },
+    "note": "失败尝试与重试同样计入 attempts 与 token 用量"
+  }
+}

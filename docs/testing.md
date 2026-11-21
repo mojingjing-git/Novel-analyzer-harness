@@ -1,72 +1,65 @@
 # 测试体系
 
-本项目测试分 **5 档**（T0–T4，累积式：T0 ⊂ T1 ⊂ T2 ⊂ T3 ⊂ T4），统一由
-`scripts/run_tests.py` 入口按验证强度选用。规则与清单集中在仓库根 `pytest_tiers.py`。
+本项目采用**轻量领域聚合测试体系**，统一由 `scripts/run_tests.py` 编排后端 `pytest` 与前端 `vitest`。所有涉及等待、重试退避的测试均通过 mock 消除真实 `sleep`，全仓测试可在数秒内跑完。
 
-## 档位定义
+## 目录与模块划分
 
-| 档 | 内容 | 用例数 | 耗时（实测） | 典型场景 |
-|---|---|---|---|---|
-| T0 | 冒烟：backend 全模块自动导入（`test_smoke_imports.py`）+ 核心纯函数（JSON 容错、错误分类、伏笔账本、脱敏、编码等 21 个清单文件） | 561 | ~12s | 每改几行代码后的即时自检 |
-| T1 | T0 + 默认档单测（`backend/tests/` 未列名文件，实测均 <1s） | 1698 | ~25s | 改完一个功能点 |
-| T2 | T1 + 中速文件（0.9–2.5s：切分静默失败、隔离自检、生命周期矩阵、mock 流水线批处理）+ 顶层 `tests/`（切分边界 + Gutenberg 语料基线） | 1783 | ~53s 串行 / ~30s 并行 | 日常提交前的门禁 |
-| T3 | T2 + 慢速文件（`test_streaming.py` 53s、`test_llm_mock.py` 21s，真实重试/退避链路）＝ pytest 全量 | 1823 | ~127s 串行 / ~90s 并行 | 宣布完成、提交推送 |
-| T4 | T3 + 前端 vitest（33 个测试文件）＝ 全仓验证 | — | ~2min | 大重构、发布、跨栈改动 |
+### 后端测试（`backend/tests/`，19 个领域测试文件）
 
-用例数以 `python scripts/run_tests.py --list-tiers` 实时为准；耗时随机器浮动。
+| 测试文件 | 覆盖领域 |
+|---|---|
+| `test_smoke.py` | `backend.*` 全模块自动导入、架构分层边界（`vnext` 零反向依赖、`common` 纯标准库、`api` 委托 `services`）、测试隔离自检 |
+| `test_config.py` | `ConfigManager`（UTF-8 BOM、坏配置禁写护栏）、`AppConfig` 转型、Anthropic 空地址守卫、`model_catalog` 费用估算 |
+| `test_models_and_utils.py` | `AnalysisResult`、`parse_json_robust` 容错、并发原子写 `safe_save_json`、`redact` 脱敏、编码检测、`JSONAggregator`、角色卡、Excel 公式注入防护 |
+| `test_error_and_moderation.py` | `error_types`、`error_taxonomy` 错误分类、内容审核拦截与短路、账户级 `Breaker` |
+| `test_llm_client.py` | `LLMClient` 流式/非流式调用、温度退火与指数退避、429 `Retry-After`、取消信号、OpenAI/Anthropic 协议、思考参数探测、流式进度节流 |
+| `test_pipeline_and_kb.py` | `KnowledgeBaseManager` 快照隔离与近邻去重、`MemoryState` 滚动总结、`PromptLimits`、`AnalysisPipeline` 在途块追踪与事件回调 |
+| `test_splitter.py` | `chapter_split`（正文引用防误切、卷切重置、句末标点守卫）、中文经典语料切分、TXT/DOCX 等价性、书名推断防污染 |
+| `test_foreshadow_and_summary.py` | 原文引文锚点定位与核验、`ForeshadowLedger` 休眠与调和、`FinalSummaryRunner` 断点恢复 |
+| `test_recheck.py` | `EvidenceIndex` 有界证据包、`run_recheck_v2` 复检裁决与无锚点跳过 |
+| `test_b_trace.py` | B 类全链路遗漏追踪（B1–B4 事件落盘与默认关闭零干扰） |
+| `test_c_audit_selector.py` | C 类按需复审选择器（机械风险信号与触发条件） |
+| `test_bc_contracts.py` | 打捞/自动验收、逐断言证据契约（`claims_v1`/`claims_v2`）、关闭条件归约与语料抽样隔离 |
+| `test_t3_b_fixes.py` | B2/B4 修复、行车记录仪请求落盘与校准匹配器回归 |
+| `test_bc_production_readiness.py` | B/C 生产收尾契约（闭环按需复审、跨度时序、溯源缓存、登记位置规则两臂预算与冻结校验） |
+| `test_location_and_viz.py` | 地点等价判定与聚合、`LocationNormalizationService` 状态与路由 |
+| `test_queue_and_workspace.py` | `QueueManager` 状态机、ETA 计算、`UsageLedger` 跨进程累计账本与路由 |
+| `test_api_and_ws.py` | `X-Session-Token` 鉴权、`ProgressHub` 广播、`/ws/progress` 心跳与断连 |
+| `test_vnext_core.py` | `vnext` 项目清单、排他上界知识快照、伏笔实体登记与 `cutoff_view` |
+| `test_vnext_workflow.py` | `vnext` 复检证据核验、`runner.run_analysis` 顺序执行与断点续跑、默认路由冻结（404）与 `NOVEL_ENABLE_VNEXT_ROUTES=1` 启用 |
 
-## 命令
+此外保留 `backend/tests/fixtures/`（`classic_corpus.py` 与 `vnext_corpus.py`），供切分测试及 `scripts/measure_c1_pipeline.py`、`scripts/measure_c3_sampling.py` 评测脚本复用。
+
+### 前端测试（`frontend/src/__tests__/`，4 个聚合测试文件）
+
+将同域测试聚合为 4 个文件，大幅降低 Vitest 在每个测试文件上初始化 `jsdom` 环境的开销；并由 `frontend/src/__tests__/setup.ts` 为 Node 26+ 环境补齐内存版 `localStorage` / `sessionStorage` 垫片：
+
+| 测试文件 | 覆盖领域 |
+|---|---|
+| `api.test.ts` | `sessionToken` 单例、`api` HTTP 客户端鉴权与 422 错误展开、`useProgressSocket` 指数退避重连与主动关闭 |
+| `utils.test.ts` | `router`、`markdown`、`splitterView`、`laneRegistry`、`queueFeed`、`settingsForm`、`summaryLanes`、`summaryProgress` |
+| `components.test.ts` | `DiscoveryFeed`、`LaneView`、`RunDashboard`、`BookSelector`、`ChapterDetailPanel`、`useLogStore` |
+| `pages.test.ts` | `QueuePage`、`SettingsPage`、`SplitterPage`、`StylePage`、`SummaryPage`、`TimelinePage`、`WorkspacePage` |
+
+## 常用命令
 
 ```bash
-python scripts/run_tests.py --tier 1        # 按档位跑（累积式，含更低档）
-python scripts/run_tests.py                 # 无参数 = T4 全仓验证
-python scripts/run_tests.py --related       # 只跑与本次 git 改动相关的文件
-python scripts/run_tests.py --related --tier 2
-python scripts/run_tests.py --list-tiers    # 查看各档文件/用例分布
-python scripts/run_tests.py --serial        # 串行（复现并行不稳时用）
-python scripts/run_tests.py -- -k recheck   # 透传 pytest 参数
+# 全仓验证（后端 pytest + 前端 vitest）
+python scripts/run_tests.py
+
+# 只跑后端 pytest（约 4~5 秒）
+python scripts/run_tests.py --no-frontend
+
+# 只跑指定测试文件或透传 pytest 参数
+python scripts/run_tests.py backend/tests/test_llm_client.py --no-frontend
+python scripts/run_tests.py --no-frontend -- -k recheck
+
+# 单独跑前端测试或构建检查
+cd frontend && npm run test
+cd frontend && npm run build
 ```
-
-不带 `--tier` 直接跑 `python -m pytest` 等价于 T3（全量）；`python -m pytest --tier 2`
-可直接按档过滤（选项由根 `conftest.py` 注册）。小档（T0/T1）默认串行——xdist 每个
-worker 都要做一遍隔离安装与全量收集，用例少时并行反而慢（实测 T0 串行 12s vs 并行 42s）。
-
-## 文件 → 档位规则
-
-`pytest_tiers.py` 按 `SLOW_FILES`(T3) → `MEDIUM_FILES`(T2) → 顶层 `tests/`(T2) →
-`SMOKE_FILES`(T0) 的顺序匹配，未命中一律落默认档 T1：
-
-- **慢/中速清单是白名单**：只有实测超过 1s 的文件才进 `MEDIUM_FILES`。
-- **新测试文件自动落 T1**，不需要登记；实测超过 1s 的文件必须移进 `MEDIUM_FILES`，
-  否则 T1 会被悄悄拖慢。
-- `backend/tests/test_tier_assignment.py` 守护清单：条目指向的文件必须存在、三张清单
-  互斥、档位语义不被改动。清单改名后先跑 T0 即可发现死条目。
 
 ## 底层机制
 
-- **写前隔离**（根 `conftest.py` + `pytest_isolation.py`）：任何 `backend.*` import 之前
-  把 cwd 切到会话级隔离根，模块顶层实例化的日志/队列/配置文件全部落在临时目录；
-  每条用例 autouse fixture 前后断言隔离完好并重置运行时单例。测试代码路径一律按
-  `__file__` 绝对定位，不依赖 cwd。
-- **SSL context 缓存**（`pytest_ssl_cache.py`）：httpx 每次建客户端要 3.8s 的
-  `create_default_context`，缓存后全量测试从 ~750s 压到 ~110s。
-- **对账**（`run_tests.py`）：跑前 `--collect-only` 数预期用例数、跑后核对 passed 数，
-  防止"过滤条件写错漏掉整份文件却报全绿"。日志按 PID 落
-  `.tmp_pytest_run_<pid>.log`，多个实例并发互不污染。
-- **前端测试**：Vitest + @vue/test-utils + jsdom，`cd frontend && npm run test`，
-  由 T4 自动编排（`--no-frontend` 可跳过）。
-
-## 其他入口
-
-- `scripts/pytest_related.py`：改动相关性选择的实现，`run_tests.py --related` 复用其
-  `select()`；直接运行仍可独立使用（`--run` 执行，`--base` 指定比较基准）。
-- `scripts/pytest_split.py -n 8`：按文件切组、各起独立进程的备选并行方案，不依赖
-  xdist 插件（121–142s）。
-
-## 维护约定
-
-- 提交/推送前必须过一遍 T3 或 T4（`run_tests.py` 无参数即 T4），并在提交信息或
-  PR 描述里写明跑的是哪一档。
-- 测试数量以 `pytest --collect-only -q` 与 `npm run test:coverage` 实时为准。
-- dev 依赖（pytest-xdist / pytest-timeout / pytest-cov）见 `requirements-dev.txt`，
-  用 `uv pip install -r requirements-dev.txt` 安装（本仓库 .venv 由 uv 管理）。
+- **写前隔离**（根 `conftest.py` + `pytest_isolation.py`）：在任何 `backend.*` 模块导入前，把 `cwd` 和 `NOVEL_ROOT` 切到会话级临时目录，并清理本地代理环境变量，确保模块顶层实例化的日志、队列、配置文件绝不污染真实工作区。每条用例前后由 autouse fixture 校验隔离不变量并重置运行时单例。
+- **SSL Context 缓存**（`pytest_ssl_cache.py`）：缓存 `ssl.create_default_context`，避免 `httpx` / `AsyncOpenAI` 每次实例化客户端重复加载系统证书库。
