@@ -289,7 +289,7 @@ class KnowledgeBaseManager:
         return {}
 
     @staticmethod
-    def merge_results(output_dir: Path) -> KnowledgeBase:
+    def merge_results(output_dir: Path, preserve_archive: bool = False) -> KnowledgeBase:
         """
         脚本合并所有 chapter_*_result.json 生成最终KB（无LLM调用）。
         等同于 build_temp_knowledge 但会裁剪无限增长字段。
@@ -298,17 +298,55 @@ class KnowledgeBaseManager:
         kb = KnowledgeBaseManager.build_temp_knowledge(output_dir)
         # 深拷贝，避免 _trim_kb 原地修改缓存中的KB对象
         kb_copy = KnowledgeBase.from_dict(kb.to_dict())
-        KnowledgeBaseManager._trim_kb(kb_copy)
+        KnowledgeBaseManager._trim_kb(kb_copy, preserve_archive=preserve_archive)
         return kb_copy
 
     @staticmethod
-    def _trim_kb(kb: KnowledgeBase):
+    def _trim_kb(kb: KnowledgeBase, preserve_archive: bool = False):
         """裁剪无限增长字段，防止 knowledge.json 膨胀"""
+        if preserve_archive:
+            prev_archive = getattr(kb, "_archive", None)
+            prev_archive = prev_archive if isinstance(prev_archive, dict) else {}
+            full_fields = {}
+            for fname in (
+                "world_building",
+                "verified_facts",
+                "long_term_arcs",
+                "thematic_elements",
+                "foreshadowing_network",
+            ):
+                cur_list = list(getattr(kb, fname, []) or [])
+                old_list = list(prev_archive.get(fname, []) or [])
+                if old_list:
+                    seen = set(old_list)
+                    merged = list(old_list)
+                    for item in cur_list:
+                        if item not in seen:
+                            merged.append(item)
+                            seen.add(item)
+                    full_fields[fname] = merged
+                else:
+                    full_fields[fname] = cur_list
+            setattr(kb, "_archive", full_fields)
         kb.world_building = kb.world_building[-MAX_WORLD_BUILDING:]
         kb.verified_facts = kb.verified_facts[-MAX_VERIFIED_FACTS:]
         kb.long_term_arcs = kb.long_term_arcs[-MAX_LONG_TERM_ARCS:]
         kb.thematic_elements = kb.thematic_elements[-MAX_THEMATIC_ELEMENTS:]
         kb.foreshadowing_network = kb.foreshadowing_network[-MAX_FORESIGHT_NETWORK:]
+        if preserve_archive:
+            archive = getattr(kb, "_archive", {})
+            setattr(
+                kb,
+                "_trim_stats",
+                {
+                    k: {
+                        "total": len(v),
+                        "kept": len(getattr(kb, k, [])),
+                        "dropped": max(0, len(v) - len(getattr(kb, k, []))),
+                    }
+                    for k, v in archive.items()
+                },
+            )
 
     @staticmethod
     def _merge_analysis_results(results: List[AnalysisResult]) -> KnowledgeBase:

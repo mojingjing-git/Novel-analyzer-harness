@@ -87,6 +87,17 @@ FORESHADOW_CATEGORY_TEXT = "\n".join(
     f"  {name}：{desc}" for name, desc, _ in FORESHADOW_CATEGORY_DEFS
 )
 
+ANCHOR_QUOTE_BASE_PARAGRAPH = (
+    "`foreshadowing` 每条必须给 `anchor_quote`：**从本章正文里逐字照抄**一句能支撑这条伏笔的话，"
+    "长度不少于 6 个字，连同标点一起原样抄，不要改写、不要拼接、不要加省略号。"
+    "若本章找不到这样的原句，就不要列这条伏笔。`motif_key` 给一个 2-6 字的稳定母题词（同一伏笔在后续章节复用同一个词）。"
+)
+
+ANCHOR_B_PLUS_RULE_TEXT = """`foreshadowing` 的未解与锚点选择规则（Rule B+）：
+1. 全局未解守卫（以本章末尾为准）：在登记任何伏笔前，必须先通读本章全文。若某个问题在候选引文之后的本章正文中已经得到回答、揭晓或明确交代，则该问题属于“已回答”，一律不得登记！绝不能因为“在候选引文出现当时尚未被回答”就忽略本章后文已给出的答案。
+2. 引文处前提齐备（局部自足性守卫）：仅对截至本章末尾仍未被回答的问题，在选择 `anchor_quote` 位置时，把阅读范围暂时停在候选引文末尾检验前提自足性：仅凭该处及此前原文，应已足以提出当前 `question`；不能借候选引文之后才出现的信息，补出这个问题所需的人物关系、事件前提或具体问法。
+3. 最早合格位置：在同时满足“截至本章末尾仍未回答”与“读到引文末尾时提问前提已齐备”、且指向同一问题的合格句子中，选择本章正文范围内最早的一句。不要只因某句出现得早或与主题相关就选它；若问题依赖多处材料，要等所需前提已经出现后再选句。若没有这样的句子，不登记该问题。"""
+
 
 class PromptBuilder:
     """提示词构建器"""
@@ -104,6 +115,7 @@ class PromptBuilder:
         max_verified_facts: int = 15,
         max_themes: int = 8,
         max_content_chars: int = 30000,
+        enable_anchor_b_plus_rule: bool = False,
     ):
         self.max_arc_length = max_arc_length
         self.max_arcs = max_arcs
@@ -119,6 +131,7 @@ class PromptBuilder:
         # 正文是唯一无上限的 prompt 注入项；超窗确定性失败且退火无效。
         # 3 万字≈为 32k-token 窗口的 system+九路上下文留足余量；后续可接配置。
         self.max_content_chars = max_content_chars
+        self.enable_anchor_b_plus_rule = bool(enable_anchor_b_plus_rule)
 
     def build_messages(
         self,
@@ -206,7 +219,14 @@ class PromptBuilder:
         # 变化频率高的块（故事历史每章追加、章节正文每章全变）放后面。
         # 同时把累积去重、极少变化的 [已知世界观] / [主题元素] 挪进 system，
         # 与固定的 SYSTEM_PROMPT 合并成稳定前缀。
-        system_prompt = f"""{SYSTEM_PROMPT}
+        base_sys_prompt = SYSTEM_PROMPT
+        if self.enable_anchor_b_plus_rule:
+            base_sys_prompt = SYSTEM_PROMPT.replace(
+                ANCHOR_QUOTE_BASE_PARAGRAPH,
+                f"{ANCHOR_QUOTE_BASE_PARAGRAPH}\n\n{ANCHOR_B_PLUS_RULE_TEXT}",
+            )
+
+        system_prompt = f"""{base_sys_prompt}
 
 [伏笔分类表]
 {FORESHADOW_CATEGORY_TEXT}

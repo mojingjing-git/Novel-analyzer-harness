@@ -31,9 +31,26 @@ class KnowledgeBase:
     rolling_structured: dict = field(default_factory=dict)  # 结构化滚动总结 JSON
 
     def to_dict(self) -> dict:
-        """转换为字典"""
+        """转换为字典（当存在完整归档 _archive / _trim_stats 时一并持久化）"""
         from dataclasses import asdict
-        return asdict(self)
+        d = asdict(self)
+        archive = getattr(self, "_archive", None)
+        if isinstance(archive, dict) and archive:
+            d["_archive"] = {
+                k: list(v) for k, v in archive.items() if isinstance(v, list)
+            }
+        trim_stats = getattr(self, "_trim_stats", None)
+        if isinstance(trim_stats, dict) and trim_stats:
+            d["_trim_stats"] = dict(trim_stats)
+        return d
+
+    def get_full_field(self, field_name: str) -> List[str]:
+        """读取未裁剪的完整字段列表；若未启用归档则回退到当前字段列表"""
+        archive = getattr(self, "_archive", None)
+        if isinstance(archive, dict) and isinstance(archive.get(field_name), list):
+            old_list = list(archive[field_name]); cur = getattr(self, field_name, []); seen = set(old_list); return old_list + [x for x in (cur if isinstance(cur, list) else []) if not (x in seen or seen.add(x))]
+        val = getattr(self, field_name, [])
+        return list(val) if isinstance(val, list) else []
 
     @staticmethod
     def _load_rolling_structured(data: dict) -> dict:
@@ -113,4 +130,15 @@ class KnowledgeBase:
         if '_legacy_text' in (result.rolling_structured or {}):
             result.rolling_layer_early = ""
             result.rolling_layer_recent = ""
+        raw_archive = data.get("_archive")
+        if isinstance(raw_archive, dict) and raw_archive:
+            norm_archive = {}
+            for k in list_str_fields:
+                if isinstance(raw_archive.get(k), list):
+                    norm_archive[k] = cls._normalize_string_list(raw_archive[k])
+            if norm_archive:
+                setattr(result, "_archive", norm_archive)
+        raw_trim_stats = data.get("_trim_stats")
+        if isinstance(raw_trim_stats, dict) and raw_trim_stats:
+            setattr(result, "_trim_stats", dict(raw_trim_stats))
         return result

@@ -381,7 +381,7 @@ class AnalysisPipeline:
             # 不能在此直接 return：否则会跳过最终 KB 合并/保存（knowledge.json 不刷新）
             valid_block_ids = {b[0] for b in blocks}
             await state.flush_to_disk(output_dir)
-            final_kb = await asyncio.to_thread(KnowledgeBaseManager.merge_results, output_dir)
+            final_kb = await asyncio.to_thread(KnowledgeBaseManager.merge_results, output_dir, bool(getattr(getattr(self.config, "analysis", None), "fix_b4_flow_and_storage", False)))
             await asyncio.to_thread(KnowledgeBaseManager(self.knowledge_file).save, final_kb)
             logger.info(f"最终知识库已保存: {self.knowledge_file}")
             # 全量已完成：同样重生成汇总报告（保持与正常路径一致）
@@ -630,7 +630,7 @@ class AnalysisPipeline:
 
         # 9. 脚本合并所有结果生成最终KB（纯 CPU/IO，走线程池）
         logger.info("开始脚本合并所有章节结果...")
-        final_kb = await asyncio.to_thread(KnowledgeBaseManager.merge_results, output_dir)
+        final_kb = await asyncio.to_thread(KnowledgeBaseManager.merge_results, output_dir, bool(getattr(getattr(self.config, "analysis", None), "fix_b4_flow_and_storage", False)))
         await asyncio.to_thread(KnowledgeBaseManager(self.knowledge_file).save, final_kb)
         logger.info(f"最终知识库已保存: {self.knowledge_file}")
 

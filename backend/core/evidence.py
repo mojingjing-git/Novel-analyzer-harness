@@ -228,6 +228,44 @@ class EvidenceIndex:
         tail = "…" if end < len(text) else ""
         return f"{head}{snippet}{tail}"
 
+    def best_window(
+        self,
+        chapter: int,
+        keywords: Sequence[str],
+        *,
+        radius: int = WINDOW_RADIUS,
+    ) -> str:
+        """围绕章内多关键词局部密度最高的位置取窗口；若无命中则退回章首窗口。"""
+        text = self._chapters.get(chapter, "")
+        if not text:
+            return ""
+        positions: list[tuple[int, str]] = []
+        for w in keywords:
+            if not w:
+                continue
+            idx = text.find(w)
+            while idx >= 0:
+                positions.append((idx, w))
+                idx = text.find(w, idx + max(len(w), 1))
+        if not positions:
+            return self.window(chapter, "", radius=radius)
+        best_pos = positions[0][0]
+        best_score = -1
+        for pos, _w in positions:
+            lo = max(0, pos - radius)
+            hi = min(len(text), pos + radius)
+            matched = {w for p, w in positions if lo <= p < hi}
+            score = sum(len(w) for w in matched)
+            if score > best_score:
+                best_score = score
+                best_pos = pos
+        start = max(0, best_pos - radius)
+        end = min(len(text), best_pos + radius)
+        snippet = text[start:end].strip()
+        head = "…" if start > 0 else ""
+        tail = "…" if end < len(text) else ""
+        return f"{head}{snippet}{tail}"
+
     def bundle_for(
         self,
         *,
@@ -238,6 +276,8 @@ class EvidenceIndex:
         radius: int = WINDOW_RADIUS,
         unit_noun: str = "章",
         display_labels: Mapping[int, str] | None = None,
+        nominated_chapters: Sequence[int] = (),
+        density_window: bool = False,
     ) -> Bundle:
         """埋设处 + 后续命中处，拼成有界证据包。
 
@@ -273,19 +313,39 @@ class EvidenceIndex:
         dropped = 0
         # 多要一个命中，才知道"有没有因为窗口上限漏掉"——否则永远报不出截断
         hits = self.find_mentions(keywords, after=anchor_chapter, limit=max_windows + 1)
-        extra_hits = max(0, len(hits) - max_windows)
+        nominated_set: set[int] = set()
+        ordered_candidates: list[int] = []
+        for raw_ch in nominated_chapters or ():
+            ch_int = int(raw_ch or 0)
+            if ch_int > anchor_chapter and ch_int in self._chapters and ch_int not in nominated_set:
+                nominated_set.add(ch_int)
+                ordered_candidates.append(ch_int)
+        for ch_int in hits:
+            if ch_int not in nominated_set:
+                ordered_candidates.append(ch_int)
+
+        extra_hits = max(0, len(ordered_candidates) - max_windows)
         shown_hit_chapters: list[int] = []
-        for ch in hits[:max_windows]:
+        for ch in ordered_candidates[:max_windows]:
             if len(chapters) >= max_windows + 1:
                 break
-            # 取窗要对准**真正命中的那个词**：用 keywords[0] 会在它没出现时退化成章首，
-            # 于是"章节被选中、答案却没进包"——实测就是这样漏掉章末答案的。
-            hit_word = next((w for w in keywords if w and w in self.chapter_text(ch)), "")
-            if not hit_word:
-                dropped += 1
-                continue
-            _append(ch, self.window(ch, hit_word, radius=radius), _label(ch))
-            shown_hit_chapters.append(ch)
+            if density_window:
+                hit_word = next((w for w in keywords if w and w in self.chapter_text(ch)), "")
+                if not hit_word and ch not in nominated_set:
+                    dropped += 1
+                    continue
+                body = self.best_window(ch, keywords, radius=radius)
+                _append(ch, body, _label(ch))
+                shown_hit_chapters.append(ch)
+            else:
+                # 取窗要对准**真正命中的那个词**：用 keywords[0] 会在它没出现时退化成章首，
+                # 于是"章节被选中、答案却没进包"——实测就是这样漏掉章末答案的。
+                hit_word = next((w for w in keywords if w and w in self.chapter_text(ch)), "")
+                if not hit_word and ch not in nominated_set:
+                    dropped += 1
+                    continue
+                _append(ch, self.window(ch, hit_word, radius=radius), _label(ch))
+                shown_hit_chapters.append(ch)
 
         # 截断只看"实际遗漏"：命中章比窗口多、或命中章里取不到词而跳过。
         # 不用 len(chapters) > max_windows 判断——恰好展示满时会误报截断。

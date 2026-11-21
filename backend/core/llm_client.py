@@ -378,17 +378,23 @@ class LLMClient:
     def __init__(self, config: APIConfig):
         self.config = config
         self.provider = detect_provider(config)
+        sdk_max_retries = getattr(config, "sdk_max_retries", 0)
+        if getattr(config, "max_retries", None) == 0:
+            sdk_max_retries = 0
+
         if self.provider == "anthropic":
             self.client = None
             self.anthropic = AsyncAnthropic(
                 base_url=config.base_url or None,
                 api_key=config.api_key if config.api_key else "empty",
+                max_retries=sdk_max_retries,
             )
         else:
             self.anthropic = None
             self.client = AsyncOpenAI(
                 base_url=config.base_url,
-                api_key=config.api_key if config.api_key else "empty"
+                api_key=config.api_key if config.api_key else "empty",
+                max_retries=sdk_max_retries,
             )
         self._stats_lock = threading.Lock()
         self._request_count = 0
@@ -1258,10 +1264,10 @@ class LLMClient:
             self.config.temperature
             - (self.config.temperature_max_retries - 1) * self.config.temperature_step,
         )
-        # 限流判定走分类结论
+        # 限流判定走分类结论（仅在允许退避时对限流加码；若 backoff_max_retries 为 0 则严格不退避）
         backoff_rounds = (
             max(self.config.backoff_max_retries, 3)
-            if classify_message(last_error).cls is ErrorClass.RATE_LIMIT
+            if (self.config.backoff_max_retries > 0 and classify_message(last_error).cls is ErrorClass.RATE_LIMIT)
             else self.config.backoff_max_retries
         )
         for retry_num in range(backoff_rounds):
@@ -1566,6 +1572,20 @@ class LLMClient:
             moderation_log_backoff="⛔ 内容审核拦截，跳过该章节",
         )
 
+    async def chat_single(
+        self,
+        messages: List[dict],
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+    ) -> LLMResult:
+        """明确的单次非流式传输入口（返回 LLMResult 对象）。
+
+        关闭所有包装层重试（无温度退火循环、无指数退避、无 429 隐式加码）。
+        对应且仅对应一次底层网络传输尝试，供外部预算控制器做逐次预留与独立结算。
+        """
+        temp = self.config.temperature if temperature is None else temperature
+        return await self.chat(messages, temperature=temp, max_tokens=max_tokens)
+
     async def chat_auto(
         self,
         messages: List[dict],
@@ -1573,10 +1593,13 @@ class LLMClient:
         validate_response: Optional[Callable] = None,
         retry_messages_builder: Optional[Callable] = None,
         on_progress: Optional[Callable[[StreamChunk], Awaitable[None]]] = None,
+        *,
+        disable_retries: bool = False,
     ) -> LLMResult:
         """根据 self.config.streaming_enabled 自动选 chat_with_retry / chat_stream_with_retry
 
         业务接入统一入口：
+        - disable_retries=True → 直接调 chat_single（单次传输，关闭客户端与 SDK 层所有重试）
         - streaming_enabled=True（默认）→ chat_stream_with_retry（流式，每 chunk 回调 on_progress）
         - streaming_enabled=False → chat_with_retry（非流式 API，on_progress 忽略）
 
@@ -1584,6 +1607,8 @@ class LLMClient:
         StreamResult 自带 verdict，这里原样透传，使 final_summary / style_analyzer
         在流式失败时也能拿到判定。
         """
+        if disable_retries:
+            return await self.chat_single(messages, max_tokens=max_tokens)
         if self.config.streaming_enabled:
             result = await self.chat_stream_with_retry(
                 messages, max_tokens=max_tokens,

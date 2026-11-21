@@ -5,7 +5,7 @@
 """
 
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 
 # 编码选择策略：采样罚分择优（而非首个解码成功即返回）。
@@ -194,6 +194,9 @@ def deduplicate_foreshadows(
     clues: list,
     keyword_overlap_min: int = 2,
     similarity_threshold: float = 0.6,
+    *,
+    trace: Any = None,
+    preserve_merged_metadata: bool = False,
 ) -> list:
     """
     伏笔线索去重：从所有章节的 foreshadowing clue 中提取唯一伏笔。
@@ -270,14 +273,23 @@ def deduplicate_foreshadows(
     # 现在只与共享 >=1 个关键词的组比较（粗筛阈值不变）。
     groups = []  # 每组 = [entry_indices...]
     keyword_index: Dict[str, set] = {}  # 关键词 -> 含该关键词的组号集合
+    motif_index: Dict[str, int] = {}  # motif_key -> 组号（preserve_merged_metadata 开启时生效）
 
     for i, entry in enumerate(entries):
         matched_group = None
+        mk = entry.get('motif_key', '').strip()
+
+        if preserve_merged_metadata and len(mk) >= 2 and mk in motif_index:
+            g_cand = motif_index[mk]
+            rep_cand = entries[groups[g_cand][0]]
+            if entry['keywords'] & rep_cand['keywords']:
+                matched_group = g_cand
 
         # 候选组：与本条目共享任意关键词的组
         candidates = set()
-        for kw in entry['keywords']:
-            candidates |= keyword_index.get(kw, set())
+        if matched_group is None:
+            for kw in entry['keywords']:
+                candidates |= keyword_index.get(kw, set())
 
         for g_idx in sorted(candidates):
             # 取组内第一条作为代表
@@ -306,6 +318,8 @@ def deduplicate_foreshadows(
         # 更新倒排索引
         for kw in entry['keywords']:
             keyword_index.setdefault(kw, set()).add(g)
+        if preserve_merged_metadata and len(mk) >= 2 and mk not in motif_index:
+            motif_index[mk] = g
 
     # 构建去重结果
     catalog = []
@@ -314,7 +328,40 @@ def deduplicate_foreshadows(
         # 取首次出现的 clue 作为代表
         members.sort(key=lambda e: e['chapter'])
         rep = members[0]
-        all_chapters = sorted(set(e['chapter'] for e in members))
+        chapter_set = set(e['chapter'] for e in members)
+        if preserve_merged_metadata:
+            for e in members:
+                ach = int(e.get('anchor_chapter', 0) or 0)
+                ech = int(e.get('chapter', 0) or 0)
+                if ach > 0:
+                    if ech <= 0 or abs(ach - ech) <= 20:
+                        chapter_set.add(ach)
+                    else:
+                        # 修正旧产物中因正文伪标题（如第831章引用“第一章”）导致的越界 anchor_chapter
+                        e['anchor_chapter'] = ech
+                        chapter_set.add(ech)
+        all_chapters = sorted(chapter_set)
+
+        anchor_src = (
+            next((m for m in members if m.get('anchor_quote')), rep)
+            if preserve_merged_metadata
+            else rep
+        )
+        motif_src = (
+            next((m for m in members if m.get('motif_key')), rep)
+            if preserve_merged_metadata
+            else rep
+        )
+        question_src = (
+            next((m for m in members if m.get('question')), rep)
+            if preserve_merged_metadata
+            else rep
+        )
+        criteria_src = (
+            next((m for m in members if m.get('answer_criteria')), rep)
+            if preserve_merged_metadata
+            else rep
+        )
 
         # 取最高置信度（高>中>低）
         conf_order = {"高": 3, "中": 2, "低": 1}
@@ -329,8 +376,45 @@ def deduplicate_foreshadows(
                 type_counts[m['type']] = type_counts.get(m['type'], 0) + 1
         best_type = max(type_counts, key=lambda k: type_counts[k], default=rep['type'])
 
+        fs_id = f"fs_{g_idx + 1:03d}"
+        if trace is not None:
+            trace.record(
+                item_id=fs_id,
+                stage="catalog_dedup",
+                state_before="categorized_clue",
+                state_after="dedup_representative",
+                reason_code="DEDUP_REPRESENTATIVE_KEPT",
+                meta={"chapter": rep.get("chapter", 0), "merged_count": len(members)},
+            )
+            if len(members) > 1:
+                for m_idx, member in enumerate(members[1:], start=1):
+                    trace.record(
+                        item_id=f"{fs_id}_m{m_idx}",
+                        stage="catalog_dedup",
+                        state_before="categorized_clue",
+                        state_after="merged_into_group",
+                        reason_code="DEDUP_MERGED_INTO_GROUP",
+                        meta={"target_id": fs_id, "chapter": member.get("chapter", 0)},
+                    )
+                if not anchor_src.get("anchor_quote") and any(m.get("anchor_quote") for m in members[1:]):
+                    trace.record(
+                        item_id=fs_id,
+                        stage="catalog_dedup",
+                        state_before="member_with_anchor",
+                        state_after="rep_without_anchor",
+                        reason_code="DEDUP_ANCHOR_LOST_ON_MERGE",
+                    )
+                if not question_src.get("question") and any(m.get("question") for m in members[1:]):
+                    trace.record(
+                        item_id=fs_id,
+                        stage="catalog_dedup",
+                        state_before="member_with_question",
+                        state_after="rep_without_question",
+                        reason_code="DEDUP_QUESTION_LOST_ON_MERGE",
+                    )
+
         catalog.append({
-            'id': f"fs_{g_idx + 1:03d}",
+            'id': fs_id,
             'clue': rep['clue'],
             'first_seen': all_chapters[0],
             'last_seen': all_chapters[-1],
@@ -340,11 +424,11 @@ def deduplicate_foreshadows(
             'confidence': best_conf['confidence'],
             'importance': best_imp['importance'],
             # 代表条目的锚点原样带出：没有锚点，后面复检就只能听模型自述
-            'anchor_quote': rep.get('anchor_quote', ''),
-            'motif_key': rep.get('motif_key', ''),
-            'question': rep.get('question', ''),
-            'answer_criteria': rep.get('answer_criteria', ''),
-            'anchor_chapter': rep.get('anchor_chapter', 0),
+            'anchor_quote': anchor_src.get('anchor_quote', ''),
+            'motif_key': motif_src.get('motif_key', ''),
+            'question': question_src.get('question', ''),
+            'answer_criteria': criteria_src.get('answer_criteria', ''),
+            'anchor_chapter': anchor_src.get('anchor_chapter', 0),
         })
 
     return catalog

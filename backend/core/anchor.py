@@ -86,14 +86,30 @@ def chapter_number_from_heading(heading: str) -> int | None:
     return None
 
 
-def build_chapter_spans(block_text: str, first_chapter: int) -> list[tuple[int, int, int]]:
+def build_chapter_spans(
+    block_text: str,
+    first_chapter: int,
+    expected_range: tuple[int, int] | None = None,
+) -> list[tuple[int, int, int]]:
     """返回块内每章的 ``(chapter_number, start, end)``。
 
     块由"按故事序拼接的若干章"组成，标题在正文里；这里用标题位置切边界。
     章号优先取**标题里写的**章号（`chapter_number_from_heading`），解析不出才退回
     ``first_chapter + 序号``。找不到标题时返回单段（整块算一章）。
+    若提供 ``expected_range=(lo, hi)``，则过滤掉解析出的章号明显越界的正文伪标题
+    （例如第831章正文里引用“第一章 ……”导致后续锚点全部被错标为第1章）。
     """
-    matches = list(CHAPTER_HEADING_RE.finditer(block_text))
+    raw_matches = list(CHAPTER_HEADING_RE.finditer(block_text))
+    if expected_range is not None:
+        lo, hi = expected_range
+        matches = []
+        for m in raw_matches:
+            parsed = chapter_number_from_heading(m.group(0))
+            if parsed is not None and not (lo <= parsed <= hi):
+                continue
+            matches.append(m)
+    else:
+        matches = raw_matches
     if len(matches) < 2:
         return [(first_chapter, 0, len(block_text))]
     spans: list[tuple[int, int, int]] = []
@@ -150,7 +166,11 @@ def _chapter_of(spans: Iterable[tuple[int, int, int]], pos: int) -> tuple[int, s
 
 
 def verify_result_anchors(
-    result, block_text: str, first_chapter: int, min_chars: int = MIN_ANCHOR_CHARS
+    result,
+    block_text: str,
+    first_chapter: int,
+    min_chars: int = MIN_ANCHOR_CHARS,
+    expected_range: tuple[int, int] | None = None,
 ) -> dict:
     """就地校验一条 ``AnalysisResult`` 的伏笔锚点，返回统计。
 
@@ -166,7 +186,7 @@ def verify_result_anchors(
     if not items:
         return stats
 
-    spans = build_chapter_spans(block_text, first_chapter)
+    spans = build_chapter_spans(block_text, first_chapter, expected_range=expected_range)
     for item in items:
         quote = (getattr(item, "anchor_quote", "") or "").strip()
         if not quote:
@@ -221,7 +241,11 @@ def mark_leads(foreshadowing) -> int:
     return count
 
 
-def split_block_into_chapters(block_text: str, first_chapter: int) -> dict[int, str]:
+def split_block_into_chapters(
+    block_text: str,
+    first_chapter: int,
+    expected_range: tuple[int, int] | None = None,
+) -> dict[int, str]:
     """把一个块按标题切成 {真实章号: 章正文}。
 
     复检要按章号取原文，索引与锚点必须用**同一套章号**；这套章号来自标题，
@@ -229,5 +253,7 @@ def split_block_into_chapters(block_text: str, first_chapter: int) -> dict[int, 
     """
     return {
         chapter: block_text[start:end]
-        for chapter, start, end in build_chapter_spans(block_text, first_chapter)
+        for chapter, start, end in build_chapter_spans(
+            block_text, first_chapter, expected_range=expected_range
+        )
     }

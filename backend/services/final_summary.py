@@ -12,7 +12,7 @@ import hashlib
 import shutil
 from dataclasses import replace
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple, Callable
+from typing import Any, List, Dict, Optional, Tuple, Callable
 
 from backend.config.settings import AppConfig
 from backend.config.constants import (
@@ -914,7 +914,13 @@ class FinalSummaryRunner:
             logger.warning(f"加载伏笔 type 映射失败: {e}，按原始 type 兜底")
             return None
 
-    async def _build_foreshadow_catalog(self, results: List[dict]) -> list:
+    async def _build_foreshadow_catalog(
+        self,
+        results: List[dict],
+        *,
+        trace: Any = None,
+        preserve_full_catalog: bool = False,
+    ) -> list:
         """
         从逐章分析结果的 foreshadowing 字段构建伏笔总表。
 
@@ -935,11 +941,20 @@ class FinalSummaryRunner:
             foreshadows = r.get("foreshadowing_raw", [])
             if not foreshadows:
                 continue
-            for fs in foreshadows:
+            for fs_idx, fs in enumerate(foreshadows):
                 if not isinstance(fs, dict):
                     continue
                 clue = fs.get("clue", "")
                 if not clue or len(clue.strip()) < 15:
+                    if trace is not None:
+                        trace.record(
+                            item_id=f"raw_ch{ch}_{fs_idx}",
+                            stage="catalog_filter",
+                            state_before="raw_foreshadow",
+                            state_after="dropped",
+                            reason_code="SHORT_CLUE_DROPPED",
+                            meta={"chapter": ch, "clue_len": len((clue or "").strip())},
+                        )
                     continue
                 ftype = fs.get("type", "") or ""
                 conf = fs.get("confidence", "中") or "中"
@@ -970,14 +985,32 @@ class FinalSummaryRunner:
         # 第 6..10 位是锚点与三问字段（anchor_quote / anchor_chapter / motif_key /
         # question / answer_criteria）。用 *extra 接住，绝不写成固定 5 位解包：
         # 那样只要书里有伏笔就抛 ValueError，整个总结阶段直接崩。
-        for ch, clue, ftype, conf, imp, *extra in all_clues:
+        for raw_idx, (ch, clue, ftype, conf, imp, *extra) in enumerate(all_clues):
             # importance 阈值
             if not self._imp_at_least(imp, a.foreshadow_min_importance):
                 skipped_importance += 1
+                if trace is not None:
+                    trace.record(
+                        item_id=f"raw_{raw_idx}_ch{ch}",
+                        stage="catalog_filter",
+                        state_before="raw_foreshadow",
+                        state_after="dropped",
+                        reason_code="IMPORTANCE_FILTERED",
+                        meta={"chapter": ch, "importance": imp, "clue": clue[:40]},
+                    )
                 continue
             # confidence 阈值
             if not self._imp_at_least(conf, a.foreshadow_min_confidence):
                 skipped_confidence += 1
+                if trace is not None:
+                    trace.record(
+                        item_id=f"raw_{raw_idx}_ch{ch}",
+                        stage="catalog_filter",
+                        state_before="raw_foreshadow",
+                        state_after="dropped",
+                        reason_code="CONFIDENCE_FILTERED",
+                        meta={"chapter": ch, "confidence": conf, "clue": clue[:40]},
+                    )
                 continue
             # category 解析：type 合法直接用；否则查映射；仍无则先用通用别名表归一
             # （模型自造的复合词，如"身份揭示""修炼线索"）；最后才落兜底。
@@ -991,6 +1024,15 @@ class FinalSummaryRunner:
                     category = FORESHADOW_CATEGORY_FALLBACK
             if category not in set(a.foreshadow_kept_categories):
                 skipped_category += 1
+                if trace is not None:
+                    trace.record(
+                        item_id=f"raw_{raw_idx}_ch{ch}",
+                        stage="catalog_filter",
+                        state_before="raw_foreshadow",
+                        state_after="dropped",
+                        reason_code="CATEGORY_FILTERED",
+                        meta={"chapter": ch, "category": category, "ftype": ftype, "clue": clue[:40]},
+                    )
                 continue
             # 第 6..10 位原样透传：deduplicate_foreshadows 从 item[5:10] 读锚点与三问，
             # 把 category 塞在第 6 位会被它当成 anchor_quote（旧版本的静默错位）。
@@ -1002,8 +1044,15 @@ class FinalSummaryRunner:
             f"confidence 丢 {skipped_confidence}, category 丢 {skipped_category}）"
         )
 
+        use_b4_fix = bool(
+            preserve_full_catalog or getattr(a, "fix_b4_flow_and_storage", False)
+        )
         # 去重（按 ch/clue/type/confidence/importance 解析，透传 importance）
-        catalog = deduplicate_foreshadows(categorized)
+        catalog = deduplicate_foreshadows(
+            categorized,
+            trace=trace,
+            preserve_merged_metadata=use_b4_fix,
+        )
 
         # 综合排序：importance * 100 + confidence * 10 + evidence_count(≤50) + span(≤49)
         # 组合因子：evidence_count 捕捉"被反复检测"，span 捕捉"跨章时间范围"
@@ -1038,24 +1087,130 @@ class FinalSummaryRunner:
             reverse=True,
         )
 
+        if use_b4_fix:
+            self._last_full_catalog = [dict(c) for c in catalog]
+
+        def _stratified_select(items_list: list[dict], cap: int) -> tuple[list[dict], list[dict]]:
+            if cap < 0 or len(items_list) <= cap:
+                return list(items_list), []
+            if cap == 0:
+                return [], list(items_list)
+            if not use_b4_fix:
+                return list(items_list[:cap]), list(items_list[cap:])
+            # 1) 跨多章复现条目（evidence_count > 1 或 span > 0）优先保留
+            multi_hit = [
+                c for c in items_list
+                if len(c.get("evidence_chapters", [])) > 1
+                or (int(c.get("last_seen", 0)) - int(c.get("first_seen", 0))) > 0
+            ]
+            single_hit = [
+                c for c in items_list
+                if not (
+                    len(c.get("evidence_chapters", [])) > 1
+                    or (int(c.get("last_seen", 0)) - int(c.get("first_seen", 0))) > 0
+                )
+            ]
+            if len(multi_hit) >= cap:
+                kept_ids = {id(c) for c in multi_hit[:cap]}
+                return (
+                    [c for c in items_list if id(c) in kept_ids],
+                    [c for c in items_list if id(c) not in kept_ids],
+                )
+            rem = cap - len(multi_hit)
+            # 2) 按全书章序分桶（最多20个章序分位数桶），桶内优先取带可核实锚点与问题的条目，保证全书前后半程均衡覆盖
+            ordered_single = sorted(single_hit, key=lambda c: int(c.get("first_seen", 0)))
+            n_pool = len(ordered_single)
+            if n_pool <= rem:
+                picked_single = ordered_single
+            else:
+                num_bins = min(20, rem, n_pool)
+                picked_single = []
+                for b_idx in range(num_bins):
+                    lo = int(b_idx * n_pool / num_bins)
+                    hi = int((b_idx + 1) * n_pool / num_bins)
+                    bin_items = ordered_single[lo:hi]
+                    q_lo = int(b_idx * rem / num_bins)
+                    q_hi = int((b_idx + 1) * rem / num_bins)
+                    quota = q_hi - q_lo
+                    if quota <= 0 or not bin_items:
+                        continue
+                    bin_adj = [
+                        c for c in bin_items
+                        if c.get("anchor_quote") and (c.get("question") or c.get("answer_criteria"))
+                    ]
+                    bin_other = [
+                        c for c in bin_items
+                        if not (c.get("anchor_quote") and (c.get("question") or c.get("answer_criteria")))
+                    ]
+                    ordered_bin = bin_adj + bin_other
+                    if len(ordered_bin) <= quota:
+                        picked_single.extend(ordered_bin)
+                    else:
+                        step_n = len(ordered_bin)
+                        picked_single.extend(
+                            ordered_bin[int(i * step_n / quota)] for i in range(quota)
+                        )
+            kept_ids = {id(c) for c in (*multi_hit, *picked_single)}
+            return (
+                [c for c in items_list if id(c) in kept_ids],
+                [c for c in items_list if id(c) not in kept_ids],
+            )
+
         truncated = []
         max_high = a.max_foreshadow_catalog_high
         max_mid = a.max_foreshadow_catalog_mid
-        if max_high == -1 or len(high_items) <= max_high:
-            truncated.extend(high_items)
-            high_kept = len(high_items)
-        else:
-            truncated.extend(high_items[:max_high])
-            high_kept = max_high
-            logger.info(f"高 importance 截断: {len(high_items)} -> {max_high}")
-        if len(mid_items) <= max_mid:
-            truncated.extend(mid_items)
-            mid_kept = len(mid_items)
-        else:
-            truncated.extend(mid_items[:max_mid])
-            mid_kept = max_mid
-            logger.info(f"中 importance 截断: {len(mid_items)} -> {max_mid}")
+        kept_high, dropped_high = _stratified_select(high_items, max_high)
+        truncated.extend(kept_high)
+        high_kept = len(kept_high)
+        if dropped_high:
+            logger.info(f"高 importance 截断: {len(high_items)} -> {high_kept}")
+            if trace is not None:
+                for dropped_item in dropped_high:
+                    trace.record(
+                        item_id=str(dropped_item.get("id", "")),
+                        stage="catalog_truncate",
+                        state_before="dedup_catalog",
+                        state_after="dropped_by_cap",
+                        reason_code="HIGH_CAP_TRUNCATED",
+                        meta={
+                            "first_seen": dropped_item.get("first_seen", 0),
+                            "composite_score": dropped_item.get("composite_score", 0),
+                            "clue": str(dropped_item.get("clue", ""))[:40],
+                        },
+                    )
+        kept_mid, dropped_mid = _stratified_select(mid_items, max_mid)
+        truncated.extend(kept_mid)
+        mid_kept = len(kept_mid)
+        if dropped_mid:
+            logger.info(f"中 importance 截断: {len(mid_items)} -> {mid_kept}")
+            if trace is not None:
+                for dropped_item in dropped_mid:
+                    trace.record(
+                        item_id=str(dropped_item.get("id", "")),
+                        stage="catalog_truncate",
+                        state_before="dedup_catalog",
+                        state_after="dropped_by_cap",
+                        reason_code="MID_CAP_TRUNCATED",
+                        meta={
+                            "first_seen": dropped_item.get("first_seen", 0),
+                            "composite_score": dropped_item.get("composite_score", 0),
+                            "clue": str(dropped_item.get("clue", ""))[:40],
+                        },
+                    )
         truncated.extend(other_items)
+        if trace is not None:
+            for kept_item in truncated:
+                trace.record(
+                    item_id=str(kept_item.get("id", "")),
+                    stage="catalog_truncate",
+                    state_before="dedup_catalog",
+                    state_after="catalog_kept",
+                    reason_code="CATALOG_KEPT",
+                    meta={
+                        "first_seen": kept_item.get("first_seen", 0),
+                        "importance": kept_item.get("importance", ""),
+                    },
+                )
 
         logger.info(
             f"伏笔总表构建完成：{len(all_clues)} 条原始 -> {len(categorized)} 条过滤 -> "
@@ -1671,6 +1826,16 @@ class FinalSummaryRunner:
             # `res.tokens` 仍持有已扣费的 token，先抛就把真实花费丢了
             # （与 summary/final/reconciliation 各调用点"先记账后判成败"同序）。
             self._record_tokens("recheck", getattr(res, "tokens", None))
+            # 行车记录仪：把这次调用的用量挂到提示词哈希上，
+            # 复检层落盘请求时按同一哈希取用——不改调用协议，也不额外发请求。
+            if request_log is not None:
+                from backend.common.recheck_request_log import sha256_text
+
+                usage = getattr(res, "tokens", None)
+                if usage is not None:
+                    request_log.setdefault("usage_by_prompt_sha256", {})[
+                        sha256_text(prompt)
+                    ] = usage
             # 失败必须抛出去：`chat_auto` 在 400/401/404 时返回
             # `success=False, content=""` 而**不抛异常**，只取 content 会让
             # `failed_batches` 永远是 0、整轮静默 0 判定。
@@ -1687,6 +1852,49 @@ class FinalSummaryRunner:
             "message": "[阶段2/4] 带证据伏笔复检...",
         })
         self._emit_progress({"type": "status", "message": "正在核对伏笔证据..."})
+        enable_c_audit = bool(
+            getattr(getattr(self.config, "analysis", None), "enable_c_on_demand_audit", False)
+        )
+        c_audit_cache_path = self.output_dir / "c_audit_cache.json"
+        c_audit_cache: dict = {}
+        if enable_c_audit and c_audit_cache_path.is_file():
+            try:
+                loaded_c = json.loads(c_audit_cache_path.read_text(encoding="utf-8"))
+                if isinstance(loaded_c, dict):
+                    c_audit_cache = loaded_c
+            except Exception as exc:
+                logger.warning(f"读取 c_audit_cache.json 失败，忽略旧缓存：{exc}")
+        eff_model, eff_base = self._recheck_channel()
+        audit_m_cfg = {
+            "model": eff_model,
+            "base_url": eff_base,
+            "temperature": float(getattr(getattr(recheck_client, "config", None), "temperature", 0) or 0),
+            "reasoning_effort": str(getattr(getattr(recheck_client, "config", None), "reasoning_effort", "") or ""),
+            "max_tokens": max_tokens,
+        }
+        # 行车记录仪：把这一轮真实发出的复检请求与回包落盘。
+        # 目的是把"没找到 / 没送到 / 没判断对"三者分开——旧运行只留哈希，
+        # 且哈希对应的是单候选渲染，与真正发出的批次提示词对不上。
+        request_log: dict = {}
+        try:
+            from backend.common.provenance_cache import compute_gate_code_snapshot
+            from backend.common.recheck_request_log import make_run_identity
+
+            request_log = {
+                "schema": "recheck_request_log_v1",
+                "run": make_run_identity(
+                    work_id=str(self.output_dir),
+                    output_dir=str(self.output_dir),
+                    code_snapshot_id=compute_gate_code_snapshot(),
+                    model_config=audit_m_cfg,
+                    contract_version="recheck_v2",
+                ),
+                "requests": [],
+                "usage_by_prompt_sha256": {},
+            }
+        except Exception as exc:
+            logger.warning(f"准备复检请求日志失败，本轮不记录：{exc}")
+            request_log = {}
         outcome = await run_recheck_v2(
             self.ledger.items,
             chapters=chapters,
@@ -1698,11 +1906,39 @@ class FinalSummaryRunner:
             unit_noun="文件",
             display_labels=build_display_labels(chapters),
             block_size=int(getattr(getattr(self.config, "analysis", None), "block_size", 4) or 4),
+            enhanced_retrieval=bool(
+                getattr(getattr(self.config, "analysis", None), "fix_b2_evidence_and_recheck", False)
+            ),
+            enable_c_on_demand_audit=enable_c_audit,
+            audit_cache=c_audit_cache if enable_c_audit else None,
+            audit_model_config=audit_m_cfg,
+            request_log=request_log or None,
+            trace=getattr(self, "_b_trace", None),
             **recheck_kwargs,
             emit=lambda summary: self._emit_progress(
                 {"type": "status", "message": _recheck_progress_message(summary)}
             ),
         )
+        if enable_c_audit and c_audit_cache:
+            try:
+                from backend.common.provenance_cache import atomic_save_json
+                atomic_save_json(c_audit_cache_path, c_audit_cache)
+            except Exception as exc:
+                logger.warning(f"保存 c_audit_cache.json 失败：{exc}")
+        if request_log and request_log.get("requests"):
+            # 请求日志里带完整提示词与证据原文，体积大；单独存一个文件，
+            # 不塞进 recheck_verdicts.json（那个文件会被接口读）。
+            try:
+                from backend.common.recheck_request_log import save_request_log
+
+                log_payload = {
+                    "schema": request_log.get("schema"),
+                    "run": request_log.get("run"),
+                    "requests": request_log.get("requests"),
+                }
+                save_request_log(self.output_dir / "recheck_request_log.json", log_payload)
+            except Exception as exc:
+                logger.warning(f"保存 recheck_request_log.json 失败：{exc}")
         self.ledger.save(self.ledger_path)
         self.last_recheck_summary = outcome.summary()
         # 逐条判定必须落盘：summary 只有计数，跑完一本长书只剩
@@ -1927,12 +2163,39 @@ class FinalSummaryRunner:
         logger.info(f"加载{total_chapters}块，分为{total_batches}批，每批{self.batch_size}章")
 
         # 构建伏笔总表（async：含 type→category LLM 归一化调用）
-        foreshadow_catalog = await self._build_foreshadow_catalog(results)
+        use_b4_fix = bool(
+            getattr(getattr(self.config, "analysis", None), "fix_b4_flow_and_storage", False)
+        )
+        use_b_trace = bool(
+            getattr(getattr(self.config, "analysis", None), "enable_b_trace", False)
+        )
+        if use_b_trace:
+            from backend.common.b_trace import BTraceCollector
+            self._b_trace = BTraceCollector(run_id=f"summary_{int(t_start)}")
+        else:
+            self._b_trace = None
+        foreshadow_catalog = await self._build_foreshadow_catalog(
+            results, preserve_full_catalog=use_b4_fix, trace=self._b_trace
+        )
+        full_catalog_for_ledger = (
+            getattr(self, "_last_full_catalog", None) or foreshadow_catalog
+            if use_b4_fix
+            else foreshadow_catalog
+        )
+        if use_b4_fix and hasattr(self, "output_dir") and self.output_dir:
+            try:
+                safe_save_json(
+                    {"items_total": len(full_catalog_for_ledger), "items": full_catalog_for_ledger},
+                    self.output_dir / "foreshadow_full_catalog.json",
+                    ensure_ascii=False,
+                )
+            except Exception as exc:
+                logger.warning(f"完整伏笔目录落盘失败: {exc}")
 
         # 同步伏笔总表到账本（账本为空时初始化，让 reconciliation 有条目可更新）
         existing_ids = {i.id for i in self.ledger.items}
         added = 0
-        for cat in foreshadow_catalog:
+        for cat in full_catalog_for_ledger:
             if cat["id"] not in existing_ids:
                 self.ledger.items.append(ForeshadowItem(
                     id=cat["id"], description=cat["clue"],
@@ -2096,6 +2359,16 @@ class FinalSummaryRunner:
                 await self._run_recheck_v2(results)
             else:
                 await self._run_global_foreshadow_recheck(volume_summaries, foreshadow_catalog, volume_ranges)
+            if getattr(self, "_b_trace", None) is not None and hasattr(self, "output_dir") and self.output_dir:
+                try:
+                    await asyncio.to_thread(
+                        safe_save_json,
+                        self._b_trace.to_dict(),
+                        self.output_dir / "b_trace_audit.json",
+                        ensure_ascii=False,
+                    )
+                except Exception as exc:
+                    logger.warning(f"B 追踪产物落盘失败: {exc}")
             if self._stop_requested:
                 # 复检可能已回收伏笔，保存账本保留进度后退出
                 self.ledger.save(self.ledger_path)

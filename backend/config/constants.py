@@ -49,6 +49,7 @@ MAX_OUTPUT_TOKENS = 130000           # 单次LLM输出最大token数
 DEFAULT_TIMEOUT = 300              # API超时时间（秒）—— 章节分析/单块调用
 DEFAULT_SUMMARY_TIMEOUT = 600      # 最终总结 API 超时时间（秒）—— 最终报告输入更大（11 万字符级），需要更长超时；用于 final_summary 服务创建的所有 LLM 调用（卷摘要、最终报告、伏笔 reconciliation/复检、风格提取）
 MAX_RETRIES = 5                    # 预留：APIConfig.max_retries 当前仅用于失败日志标注（record_failure 的 "尝试 n/m"），未接入重试循环；重试由 temperature_max_retries / backoff_max_retries 控制
+SDK_MAX_RETRIES = 0                # SDK 底层 httpx 自动重试次数。设为 0，防止 SDK 隐式重试绕过上层重试控制与预算记账
 DEFAULT_TEMPERATURE = 0.1          # 默认温度（温度退火起始值）
 DEFAULT_TEMPERATURE_STEP = 0.05    # 温度退火每次降低量
 # 注：本模块不定义 TEMPERATURE_SEQUENCE——该字段从未被重试逻辑

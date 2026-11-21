@@ -14,6 +14,8 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
+import time as _time_mod
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Awaitable, Callable, Iterable, Mapping, Sequence
@@ -43,6 +45,10 @@ OPEN = "OPEN"
 DEFAULT_BATCH_SIZE = 6
 #: 同时在途的批次上限（只影响墙钟时间，不影响花费）
 DEFAULT_CONCURRENCY = 4
+#: 审核输出**格式非法**时允许的重试次数（上限 1）。
+#: 只对格式失败重试：模型没说清话，再问一次可能说清。
+#: 语义拒绝（restating/off_topic）**绝不重试**——重试到"通过"等于放宽审核标准。
+AUDIT_FORMAT_RETRY_LIMIT = 1
 
 PROMPT_TEMPLATE = """你是长篇小说的伏笔审校员。任务：判断**这条伏笔**在后文里是否已经被回收。
 
@@ -130,10 +136,22 @@ class RecheckOutcome:
     #: 首个非空原始回包（截断 2000 字）。只在"0 条判定落账"这类事故里才有价值：
     #: 有了它就能分清"模型答了但格式不对"与"根本没答"。
     raw_sample: str = ""
+    audit_routes: dict[str, dict] = field(default_factory=dict)
+    audit_calls: int = 0
+    audit_cache_hits: int = 0
+    recheck_cache_hits: int = 0
+    audit_pending_ids: list[str] = field(default_factory=list)
+    #: 因**输出格式非法**而重试的次数（语义拒绝不计入、不重试）
+    audit_format_retries: int = 0
 
     def summary(self) -> dict:
         return {
             "calls": self.calls,
+            "audit_calls": self.audit_calls,
+            "audit_cache_hits": self.audit_cache_hits,
+            "recheck_cache_hits": self.recheck_cache_hits,
+            "audit_format_retries": self.audit_format_retries,
+            "audit_pending_ids": list(self.audit_pending_ids),
             "applied": dict(self.applied),
             "coverage": dict(self.coverage),
             "status": self.status,
@@ -197,6 +215,12 @@ def dump_recheck_detail(
         "applied": dict(outcome.applied),
         "resolved_chapters": dict(outcome.resolved_chapters),
         "verdicts": [v.to_dict() for v in outcome.verdicts],
+        "locate_records": dict(outcome.locate_records),
+        "audit_routes": dict(outcome.audit_routes),
+        "audit_calls": outcome.audit_calls,
+        "audit_cache_hits": outcome.audit_cache_hits,
+        "recheck_cache_hits": outcome.recheck_cache_hits,
+        "audit_pending_ids": list(outcome.audit_pending_ids),
     }
 
 
@@ -244,6 +268,92 @@ def _display_chapter(
     return int(fallback or 0)
 
 
+def _compute_cited_ordering(
+    *,
+    chapters: Mapping[int, str] | None,
+    audit_item: Mapping[str, Any],
+    nli_obj: Any,
+) -> dict | None:
+    """按**裁决实际引用的句子**算时序。
+
+    窗口只当来源容器：裁决没引用的句子不该参与判断，
+    窗口包住锚点也不该把窗口内部的句子一并豁免。
+
+    时序结果**不进请求身份**：它由同一份证据推导，放进 audit_item 会改掉
+    input_fingerprint，使已有审计缓存全部失效。
+    """
+    try:
+        from backend.common.evidence_ordering import resolve_cited_ordering
+
+        return resolve_cited_ordering(
+            chapters=chapters,
+            anchor_quote=str(audit_item.get("anchor_quote") or ""),
+            evidence_segments=audit_item.get("evidence_segments") or [],
+            nli=nli_obj if isinstance(nli_obj, Mapping) else None,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"时序判定失败，按时序待定处理：{exc}")
+        return None
+
+
+def _regate_cached_record(
+    entry: Mapping[str, Any],
+    *,
+    audit_item: dict,
+    chapters: Mapping[int, str] | None,
+    gate_fn: Callable[..., dict],
+    parse_fn: Callable[..., Any],
+) -> dict:
+    """缓存命中时**重跑本地门禁**，而不是沿用旧裁决。
+
+    复用的只有模型原始响应——**不增加模型调用**。
+    但最终裁决依赖时序判定，时序依赖原文与实际引用跨度：
+    原文变了、引用变了，旧裁决就可能不再成立，所以必须重裁。
+
+    **重裁失败就待审**，不沿用旧裁决：重裁做不成恰恰说明旧结论是否仍有效
+    无法确认——没有原始响应就无从重裁，解析不了也一样。
+    ``regated:false`` 只说明"没重裁"，不能替旧结论背书。
+    旧裁决保留在缓存里供追查，但不控制当前通过状态。
+    """
+    raw = str(entry.get("raw_response_text") or "")
+    if not raw:
+        return {
+            "decision": None,
+            "assessment_status": "unconfirmed",
+            "reasons": [],
+            "claim_check": None,
+            "regated": False,
+            "pending_review": True,
+            "regate_note": "缓存记录没有原始响应，无法重裁；旧裁决不作数，转待审",
+        }
+    nli_obj = parse_fn(raw)
+    if not isinstance(nli_obj, dict):
+        return {
+            "decision": None,
+            "assessment_status": "unconfirmed",
+            "reasons": [],
+            "claim_check": None,
+            "regated": False,
+            "pending_review": True,
+            "regate_note": "缓存的原始响应无法解析，无法重裁；旧裁决不作数，转待审",
+        }
+    ordering = _compute_cited_ordering(
+        chapters=chapters, audit_item=audit_item, nli_obj=nli_obj
+    )
+    if ordering is not None:
+        audit_item["evidence_ordering"] = ordering
+    fresh = gate_fn(audit_item, nli_obj)
+    return {
+        "decision": fresh.get("decision"),
+        "assessment_status": fresh.get("assessment_status", "unconfirmed"),
+        "reasons": list(fresh.get("reasons") or []),
+        "claim_check": fresh.get("claim_check"),
+        "regated": True,
+        "pending_review": False,
+        "regate_note": "缓存命中后按最新原文绑定与时序结果重跑本地门禁",
+    }
+
+
 async def run_recheck_v2(
     items: Sequence[Any],
     *,
@@ -258,6 +368,14 @@ async def run_recheck_v2(
     unit_noun: str = "章",
     display_labels: Mapping[int, str] | None = None,
     block_size: int = 4,
+    trace: Any = None,
+    enhanced_retrieval: bool = False,
+    enable_c_on_demand_audit: bool = False,
+    call_audit_model: Callable[[str], Awaitable[str]] | None = None,
+    audit_cache: dict[str, dict[str, Any]] | None = None,
+    recheck_cache: dict[str, dict[str, Any]] | None = None,
+    audit_model_config: Mapping[str, Any] | None = None,
+    request_log: dict[str, Any] | None = None,
 ) -> RecheckOutcome:
     """对账本里的伏笔做一轮核对。
 
@@ -304,6 +422,14 @@ async def run_recheck_v2(
             # 只是线索（没给出可关闭事项）：不进复检队列，也不计入 not_checked——
             # 它本来就不是"待核实但没查"，而是"没有可核实的问题"。
             leads_skipped += 1
+            if trace is not None:
+                trace.record(
+                    item_id=str(getattr(item, "id", "")),
+                    stage="recheck_gate",
+                    state_before="active",
+                    state_after="skipped_lead",
+                    reason_code="LEAD_SKIPPED",
+                )
             continue
         quote = (getattr(item, "anchor_quote", "") or "").strip()
         chapter = int(getattr(item, "anchor_chapter", 0) or 0)
@@ -312,6 +438,14 @@ async def run_recheck_v2(
             outcome.dropped_no_anchor += 1
             outcome.not_checked.append(getattr(item, "id", ""))
             outcome.dropped_ids.append(getattr(item, "id", ""))
+            if trace is not None:
+                trace.record(
+                    item_id=str(getattr(item, "id", "")),
+                    stage="recheck_gate",
+                    state_before="active",
+                    state_after="dropped_no_anchor",
+                    reason_code="DROPPED_NO_ANCHOR",
+                )
             continue
         # 定位：**候选块范围优先**。
         #
@@ -363,6 +497,15 @@ async def run_recheck_v2(
             outcome.dropped_anchor_missing += 1
             outcome.not_checked.append(getattr(item, "id", ""))
             outcome.dropped_ids.append(getattr(item, "id", ""))
+            if trace is not None:
+                trace.record(
+                    item_id=str(getattr(item, "id", "")),
+                    stage="recheck_gate",
+                    state_before="active",
+                    state_after="dropped_anchor_missing",
+                    reason_code="DROPPED_ANCHOR_MISSING",
+                    meta={"anchor_chapter": chapter},
+                )
             continue
         candidates.append(
             {
@@ -407,16 +550,46 @@ async def run_recheck_v2(
             ]
             return
         item = cand["item"]
-        bundle = index.bundle_for(
-            anchor_chapter=cand["chapter"],
-            anchor_quote=(getattr(item, "anchor_quote", "") or "").strip(),
-            hint_texts=[
+        if enhanced_retrieval:
+            ek = str(getattr(item, "entity_key", "") or "").strip()
+            ek_hint = "" if ek.startswith("clue:") else ek
+            hint_list = [
                 getattr(item, "question", "") or "",
                 getattr(item, "description", "") or "",
-            ],
-            unit_noun=unit_noun,
-            display_labels=display_labels,
-        )
+                getattr(item, "answer_criteria", "") or "",
+                getattr(item, "resolution", "") or "",
+                ek_hint,
+            ]
+            nom_chapters: list[int] = []
+            res_ch = int(getattr(item, "resolved_chapter", 0) or 0)
+            if res_ch > cand["chapter"]:
+                nom_chapters.append(res_ch)
+                for offset in range(1, max(block_size, 1)):
+                    if (res_ch - offset) > cand["chapter"]:
+                        nom_chapters.append(res_ch - offset)
+            for ev_ch in (getattr(item, "evidence_chapters", None) or []):
+                if int(ev_ch or 0) > cand["chapter"]:
+                    nom_chapters.append(int(ev_ch))
+            bundle = index.bundle_for(
+                anchor_chapter=cand["chapter"],
+                anchor_quote=(getattr(item, "anchor_quote", "") or "").strip(),
+                hint_texts=hint_list,
+                unit_noun=unit_noun,
+                display_labels=display_labels,
+                nominated_chapters=nom_chapters,
+                density_window=True,
+            )
+        else:
+            bundle = index.bundle_for(
+                anchor_chapter=cand["chapter"],
+                anchor_quote=(getattr(item, "anchor_quote", "") or "").strip(),
+                hint_texts=[
+                    getattr(item, "question", "") or "",
+                    getattr(item, "description", "") or "",
+                ],
+                unit_noun=unit_noun,
+                display_labels=display_labels,
+            )
         segments: list[dict] = []
         for chapter, start, end in bundle.spans:
             body = bundle.text[start:end].strip()
@@ -432,12 +605,123 @@ async def run_recheck_v2(
                 {"evidence_id": cand["evidence_id"], "chapter": cand["chapter"], "text": fallback_text}
             )
         cand["segments"] = segments
+        if trace is not None:
+            seg_chs = [int(s["chapter"]) for s in segments]
+            nom_ch = int(getattr(item, "resolved_chapter", 0) or 0)
+            if nom_ch > 0 and not any(abs(ch - nom_ch) < max(block_size, 1) for ch in seg_chs):
+                trace.record(
+                    item_id=cand["candidate_id"],
+                    stage="evidence_retrieve",
+                    state_before="nominated_resolution",
+                    state_after="nominated_chapter_missed",
+                    reason_code="NOMINATED_CHAPTER_NOT_IN_BUNDLE",
+                    meta={"nominated_chapter": nom_ch, "bundle_chapters": seg_chs},
+                )
+            if getattr(bundle, "truncated", False):
+                trace.record(
+                    item_id=cand["candidate_id"],
+                    stage="evidence_retrieve",
+                    state_before="hit_chapters",
+                    state_after="bundle_truncated",
+                    reason_code="EVIDENCE_HITS_TRUNCATED",
+                    meta={"omitted": getattr(bundle, "omitted", 0), "bundle_chapters": seg_chs},
+                )
+            trace.record(
+                item_id=cand["candidate_id"],
+                stage="evidence_retrieve",
+                state_before="candidate_located",
+                state_after="bundle_built",
+                reason_code="EVIDENCE_BUNDLE_BUILT",
+                meta={"bundle_chapters": seg_chs},
+            )
 
     if index is not None:
         # 检索位图只在后台线程建（整本约 2s 纯 CPU），不冻结与卷摘要/风格共用的事件循环
         await asyncio.to_thread(index.ensure_indexed)
 
     by_id = {c["candidate_id"]: c for c in candidates}
+
+    # ---- 行车记录仪（只记录，不参与判定）----
+    _current_round = [0]
+    _batch_counter = [0]
+
+    def _candidate_meta(c: dict) -> dict:
+        """重建提示词所需的候选元数据（不含模型输出）。"""
+        item_obj = c.get("item")
+        return {
+            "candidate_id": c["candidate_id"],
+            "description": getattr(item_obj, "description", "") or "",
+            "question": getattr(item_obj, "question", "") or "",
+            "answer_criteria": getattr(item_obj, "answer_criteria", "") or "",
+            "first_seen": getattr(item_obj, "first_seen_chapter", 0),
+            "last_seen": getattr(item_obj, "last_seen_chapter", 0),
+            "chapter": int(c.get("chapter") or 0),
+            "omitted": int(c.get("omitted", 0) or 0),
+            "truncated": bool(c.get("truncated")),
+        }
+
+    def _new_request_record(
+        log: dict, *, batch: list[dict], prompt: str, round_index: int
+    ) -> dict:
+        from backend.common.recheck_request_log import build_request_record
+
+        _batch_counter[0] += 1
+        evidence_batches = []
+        for c in batch:
+            for seg in c.get("segments") or []:
+                evidence_batches.append(
+                    {
+                        "candidate_id": c["candidate_id"],
+                        "evidence_id": seg.get("evidence_id"),
+                        "chapter": seg.get("chapter"),
+                        "text": seg.get("text"),
+                        "text_sha256": hashlib.sha256(
+                            str(seg.get("text") or "").encode("utf-8")
+                        ).hexdigest(),
+                    }
+                )
+        rec = build_request_record(
+            run=log.get("run") or {},
+            batch_index=_batch_counter[0],
+            round_index=round_index,
+            candidate_ids=[c["candidate_id"] for c in batch],
+            prompt=prompt,
+            evidence_batches=evidence_batches,
+            attempt_records=[],
+            contract_version=str((log.get("run") or {}).get("contract_version") or "recheck_v2"),
+        )
+        rec["candidate_meta"] = [_candidate_meta(c) for c in batch]
+        rec["recorded_at"] = _time_mod.strftime("%Y-%m-%dT%H:%M:%S%z")
+        log.setdefault("requests", []).append(rec)
+        return rec
+
+    def _append_attempt(
+        rec: dict,
+        *,
+        seconds: float,
+        response_text: str,
+        error: str | None,
+        request_log: dict | None,
+        prompt: str,
+    ) -> None:
+        from backend.common.recheck_request_log import sha256_text
+
+        usage = None
+        if request_log is not None:
+            usage = (request_log.get("usage_by_prompt_sha256") or {}).get(
+                sha256_text(prompt)
+            )
+        rec.setdefault("attempts", []).append(
+            {
+                "attempt": len(rec.get("attempts") or []) + 1,
+                "seconds": seconds,
+                "response_text": response_text,
+                "response_sha256": sha256_text(response_text),
+                "response_length": len(response_text or ""),
+                "error": error,
+                "usage": usage,
+            }
+        )
 
     def _seg_label(ch: int) -> str:
         """证据段标签。
@@ -509,6 +793,48 @@ async def run_recheck_v2(
                 # 只有一段证据时才替它补；多段时必须由模型点名是哪一段，
                 # 否则"引文落在被点名的那段里"这条门禁形同虚设。
                 payload = {**payload, "evidence_id": allowed[0]}
+            elif enhanced_retrieval and payload.get("verdict") in ("SUPPORTED", "DIFFERENT_ANSWER", "CONTRADICTED") and payload.get("supporting_quote"):
+                raw_eid = str(payload.get("evidence_id") or "")
+                raw_quote = str(payload.get("supporting_quote") or "")
+                need_align = (
+                    raw_eid not in allowed
+                    or not locate_quote(raw_quote, texts_by_evidence.get(raw_eid, "")).found
+                )
+                if need_align:
+                    matching_eids = [
+                        seg["evidence_id"]
+                        for seg in c["segments"]
+                        if locate_quote(raw_quote, texts_by_evidence.get(seg["evidence_id"], "")).found
+                    ]
+                    if len(matching_eids) == 1:
+                        aligned_eid = matching_eids[0]
+                        raw_cs = payload.get("counter_search")
+                        if isinstance(raw_cs, Mapping) and isinstance(
+                            raw_cs.get("checked_evidence_ids"), (list, tuple)
+                        ):
+                            raw_checked = list(raw_cs["checked_evidence_ids"])
+                            if raw_eid and raw_eid in raw_checked:
+                                cs = dict(raw_cs)
+                                cs["checked_evidence_ids"] = [
+                                    aligned_eid if x == raw_eid else x for x in raw_checked
+                                ]
+                                payload = {
+                                    **payload,
+                                    "evidence_id": aligned_eid,
+                                    "counter_search": cs,
+                                }
+                            else:
+                                payload = {**payload, "evidence_id": aligned_eid}
+                        else:
+                            payload = {**payload, "evidence_id": aligned_eid}
+                        if trace is not None:
+                            trace.record(
+                                item_id=c["candidate_id"],
+                                stage="recheck_parse",
+                                state_before=f"eid:{raw_eid}",
+                                state_after=f"eid:{aligned_eid}",
+                                reason_code="INTRA_CANDIDATE_EVIDENCE_ID_ALIGNED",
+                            )
             verdict = parse_recheck(
                 payload,
                 allowed_candidate_ids=[c["candidate_id"]],
@@ -520,6 +846,86 @@ async def run_recheck_v2(
                 ),
                 evidence_text=lambda eid: texts_by_evidence.get(eid, ""),
             )
+            anchor_quote_raw = str(
+                getattr(c.get("item"), "anchor_quote", "") or c.get("anchor_quote") or ""
+            )
+            if (
+                enhanced_retrieval
+                and verdict.verdict in ("SUPPORTED", "DIFFERENT_ANSWER")
+                and verdict.quote
+                and anchor_quote_raw
+            ):
+                q_norm = re.sub(r"\W+", "", verdict.quote)
+                a_norm = re.sub(r"\W+", "", anchor_quote_raw)
+                if len(q_norm) >= 6 and a_norm and q_norm in a_norm:
+                    verdict = CandidateVerdict(
+                        c["candidate_id"],
+                        "INSUFFICIENT",
+                        reason="QUOTE_EQUALS_ANCHOR",
+                        counter_search_performed=verdict.counter_search_performed,
+                    )
+            if enable_c_on_demand_audit and verdict.verdict in ("SUPPORTED", "DIFFERENT_ANSWER"):
+                from backend.common.c_audit_selector import select_audit_route
+                item_obj = c.get("item")
+                route_dec = select_audit_route(
+                    {
+                        "candidate_id": c["candidate_id"],
+                        "question": getattr(item_obj, "question", "") or c.get("question", ""),
+                        "answer_criteria": getattr(item_obj, "answer_criteria", "") or c.get("answer_criteria", ""),
+                        "answer": verdict.answer,
+                        "supporting_quote": verdict.quote,
+                        "anchor_quote": anchor_quote_raw,
+                        "anchor_chapter": int(getattr(item_obj, "anchor_chapter", 0) or c.get("anchor_chapter") or 0),
+                        "chapter": int(chapter_by_evidence.get(verdict.evidence_id, 0) or 0),
+                        "description": getattr(item_obj, "description", "") or c.get("description", ""),
+                    },
+                    enabled=True,
+                )
+                outcome.audit_routes[c["candidate_id"]] = {
+                    "route": route_dec.route,
+                    "trigger_claims_v2": route_dec.trigger_claims_v2,
+                    "trigger_reasons": list(route_dec.trigger_reasons),
+                    "hard_signals": list(route_dec.hard_signals),
+                    "soft_signals": list(route_dec.soft_signals),
+                    "answer_unit_count": route_dec.answer_unit_count,
+                    "criteria_logic_type": route_dec.criteria_logic_type,
+                    "audit_executed": False,
+                    "audit_status": (
+                        "rejected_mechanical"
+                        if route_dec.route == "hard_reject_mechanical"
+                        else ("pending_review" if route_dec.trigger_claims_v2 else "not_triggered")
+                    ),
+                }
+                if route_dec.route == "hard_reject_mechanical":
+                    outcome.audit_routes[c["candidate_id"]]["audit_decision"] = "拒绝"
+                    verdict = CandidateVerdict(
+                        c["candidate_id"],
+                        "INSUFFICIENT",
+                        answer=verdict.answer,
+                        evidence_id=verdict.evidence_id,
+                        located_span=verdict.located_span,
+                        quote_hash=verdict.quote_hash,
+                        quote=verdict.quote,
+                        reason="MECHANICAL_INCREMENT_REJECTED",
+                        counter_search_performed=verdict.counter_search_performed,
+                    )
+                elif route_dec.trigger_claims_v2:
+                    # T1: 初次 SUPPORTED 仅是暂定结果。复审完成前不得写为 SUPPORTED/resolved。
+                    pending_upgrade_audits[c["candidate_id"]] = (c, verdict, route_dec)
+                    verdict = CandidateVerdict(
+                        c["candidate_id"],
+                        "INSUFFICIENT",
+                        answer=verdict.answer,
+                        evidence_id=verdict.evidence_id,
+                        located_span=verdict.located_span,
+                        quote_hash=verdict.quote_hash,
+                        quote=verdict.quote,
+                        reason="C_AUDIT_PENDING:UNFINISHED",
+                        counter_search_performed=verdict.counter_search_performed,
+                    )
+            elif not enable_c_on_demand_audit and verdict.verdict in ("SUPPORTED", "DIFFERENT_ANSWER"):
+                # 开关关闭时不触发任何升级审核，保留原行为
+                pass
             # 补问后同一候选可能留下两行结论——以最新一条为准，否则
             # count_verdicts 会把它们判成"重复候选"，两条都作废。
             for idx in range(len(outcome.verdicts) - 1, -1, -1):
@@ -532,17 +938,643 @@ async def run_recheck_v2(
             # 它要留给补问轮再试一次，否则 16 块实测里 13% 的候选会白丢。
             if verdict.checked or verdict.cached_as_terminal:
                 done.add(c["candidate_id"])
+                if recheck_cache is not None:
+                    _store_recheck_cache_entry(c, raw, verdict)
         return done
 
+    pending_upgrade_audits: dict[str, tuple[dict, CandidateVerdict, Any]] = {}
     sem = limiter if limiter is not None else asyncio.Semaphore(max(1, concurrency))
 
+    def _set_verdict(new_v: CandidateVerdict) -> None:
+        for idx in range(len(outcome.verdicts) - 1, -1, -1):
+            if outcome.verdicts[idx].candidate_id == new_v.candidate_id:
+                outcome.verdicts.pop(idx)
+                break
+        outcome.verdicts.append(new_v)
+
+    def _build_recheck_identity(c: dict) -> tuple[dict[str, Any], str, dict[str, Any]]:
+        from backend.common.provenance_cache import build_request_identity
+        item_obj = c.get("item")
+        rc_item = {
+            "fs_id": c["candidate_id"],
+            "question": getattr(item_obj, "question", "") or c.get("question", ""),
+            "criteria": getattr(item_obj, "answer_criteria", "") or c.get("answer_criteria", ""),
+            "description": getattr(item_obj, "description", "") or c.get("description", ""),
+            "anchor_quote": str(getattr(item_obj, "anchor_quote", "") or c.get("anchor_quote") or ""),
+            "anchor_chapter": int(getattr(item_obj, "anchor_chapter", 0) or c.get("anchor_chapter") or 0),
+            "answer": "",
+            "quote": "",
+            "chapter": int(c.get("chapter") or 0),
+            "prereg": getattr(item_obj, "prereg", None),
+            "evidence_segments": list(c.get("segments") or []),
+        }
+        single_prompt = _render_batch([c])
+        ident = build_request_identity(
+            rc_item,
+            prompt=single_prompt,
+            model_config=audit_model_config or {},
+            contract_version="recheck_v2",
+        )
+        return rc_item, single_prompt, ident
+
+    def _store_recheck_cache_entry(c: dict, raw_text: str, v: CandidateVerdict) -> None:
+        if recheck_cache is None or not raw_text:
+            return
+        from backend.common.provenance_cache import build_verified_cache_record
+        rc_item, _, ident = _build_recheck_identity(c)
+        rec = build_verified_cache_record(
+            rc_item,
+            ident,
+            raw_response_text=raw_text,
+            gate_result={"decision": v.verdict, "assessment_status": "accepted" if v.verdict == "SUPPORTED" else "unconfirmed", "reasons": [v.reason] if v.reason else []},
+            tokens=0,
+            seconds=0.0,
+            attempts=1,
+            success=v.checked,
+        )
+        recheck_cache[ident["request_id"]] = rec
+        recheck_cache[c["candidate_id"]] = rec
+
+    async def _execute_pending_upgrade_audits() -> None:
+        if not pending_upgrade_audits:
+            return
+        import time as _time
+        from backend.common.c_claim_audit_gate import (
+            CLAIM_V2,
+            build_nli_prompt,
+            extract_json_object,
+            extract_json_object_with_repair,
+            gate,
+        )
+        from backend.common.provenance_cache import (
+            build_request_identity,
+            build_verified_cache_record,
+            re_adjudicate_cached_record,
+            verify_cache_entry,
+        )
+
+        audit_fn = call_audit_model or call_model
+        for cid, (c, tentative_v, _route_dec) in list(pending_upgrade_audits.items()):
+            pending_upgrade_audits.pop(cid, None)
+            item_obj = c.get("item")
+            allowed_segs = list(c.get("segments") or [])
+            allowed_eids = {str(s.get("evidence_id") or "") for s in allowed_segs}
+            if (
+                not allowed_segs
+                or not tentative_v.evidence_id
+                or tentative_v.evidence_id not in allowed_eids
+                or not locate_quote(
+                    tentative_v.quote,
+                    texts_by_evidence.get(tentative_v.evidence_id, ""),
+                ).found
+            ):
+                _set_verdict(
+                    CandidateVerdict(
+                        cid,
+                        "INSUFFICIENT",
+                        answer=tentative_v.answer,
+                        evidence_id=tentative_v.evidence_id,
+                        located_span=tentative_v.located_span,
+                        quote_hash=tentative_v.quote_hash,
+                        quote=tentative_v.quote,
+                        reason="C_AUDIT_REJECTED:EVIDENCE_MISSING_OR_FOREIGN",
+                        counter_search_performed=tentative_v.counter_search_performed,
+                    )
+                )
+                outcome.audit_routes[cid].update(
+                    {
+                        "audit_executed": False,
+                        "audit_status": "rejected_evidence_missing",
+                        "audit_decision": "拒绝",
+                        "audit_reasons": ["EVIDENCE_MISSING_OR_FOREIGN"],
+                    }
+                )
+                continue
+
+            ev_ch = int(chapter_by_evidence.get(tentative_v.evidence_id, 0) or c.get("chapter") or 0)
+            audit_item = {
+                "fs_id": cid,
+                "question": getattr(item_obj, "question", "") or c.get("question", ""),
+                "criteria": getattr(item_obj, "answer_criteria", "") or c.get("answer_criteria", ""),
+                "description": getattr(item_obj, "description", "") or c.get("description", ""),
+                "anchor_quote": str(getattr(item_obj, "anchor_quote", "") or c.get("anchor_quote") or ""),
+                "anchor_chapter": int(getattr(item_obj, "anchor_chapter", 0) or c.get("anchor_chapter") or 0),
+                "answer": tentative_v.answer,
+                "quote": tentative_v.quote,
+                "chapter": ev_ch,
+                "prereg": getattr(item_obj, "prereg", None) or c.get("prereg"),
+                "evidence_segments": allowed_segs,
+                "evidence_contract_version": CLAIM_V2,
+            }
+            prompt = build_nli_prompt(audit_item)
+            identity = build_request_identity(
+                audit_item,
+                prompt=prompt,
+                model_config=audit_model_config or {},
+                contract_version=CLAIM_V2,
+            )
+
+            gate_res: dict[str, Any] | None = None
+            cache_status = "miss"
+            if audit_cache is not None:
+                cand_entry = (
+                    audit_cache.get(identity["request_id"])
+                    or audit_cache.get(f"{cid}::{CLAIM_V2}")
+                    or audit_cache.get(cid)
+                )
+                if cand_entry is not None:
+                    v_check = verify_cache_entry(cand_entry, identity)
+                    cache_status = v_check.status
+                    if v_check.status == "verified_hit":
+                        outcome.audit_cache_hits += 1
+                        # 命中缓存**不等于**沿用旧裁决。
+                        #
+                        # 请求身份覆盖的是提示词与证据指纹；最终裁决还依赖
+                        # 时序判定——而时序依赖**原文**与**实际引用的跨度**，
+                        # 两者都不在请求身份里。原文变了、引用变了，
+                        # 旧裁决就可能不再成立。
+                        #
+                        # 这里复用同一份模型原始响应，**不增加模型调用**，
+                        # 但用最新的原文绑定与时序结果**重跑本地门禁**。
+                        gate_res = _regate_cached_record(
+                            cand_entry,
+                            audit_item=audit_item,
+                            chapters=chapters,
+                            gate_fn=gate,
+                            # extract_json_object_with_repair 返回 (dict|None, 修复记录)，
+                            # 这里只需要解析出的对象
+                            parse_fn=lambda raw: extract_json_object_with_repair(raw)[0],
+                        )
+                        if gate_res.get("pending_review"):
+                            # 重裁没做成 → **待审**，不是沿用旧裁决。
+                            #
+                            # 重裁失败恰恰说明旧结论是否仍有效**无法确认**：
+                            # 没有原始响应就无从重裁，解析不了也一样。
+                            # `regated:false` 只说明"没重裁"，不能替旧结论背书。
+                            # 旧裁决保留在缓存里供追查，但不控制当前通过状态。
+                            _set_verdict(
+                                CandidateVerdict(
+                                    cid,
+                                    "INSUFFICIENT",
+                                    answer=tentative_v.answer,
+                                    evidence_id=tentative_v.evidence_id,
+                                    located_span=tentative_v.located_span,
+                                    quote_hash=tentative_v.quote_hash,
+                                    quote=tentative_v.quote,
+                                    reason="C_AUDIT_PENDING:REGATE_UNVERIFIED",
+                                    counter_search_performed=tentative_v.counter_search_performed,
+                                )
+                            )
+                            outcome.audit_routes[cid].update(
+                                {
+                                    "audit_executed": True,
+                                    "audit_status": "pending_review",
+                                    "audit_decision": "待审",
+                                    "audit_reasons": [str(gate_res.get("regate_note") or "")],
+                                    "request_id": identity["request_id"],
+                                    "cache_status": cache_status,
+                                    "regated": False,
+                                    "prior_decision_for_trace": cand_entry.get("decision"),
+                                    "recovery": (
+                                        "旧裁决因无法重裁而不作数；再次提交会重新调用审核"
+                                    ),
+                                }
+                            )
+                            if cid not in outcome.audit_pending_ids:
+                                outcome.audit_pending_ids.append(cid)
+                            continue
+                    elif v_check.status == "re_adjudicate_needed":
+                        re_adj = re_adjudicate_cached_record(
+                            cand_entry,
+                            audit_item,
+                            identity,
+                            ordering_fn=lambda it, nli: _compute_cited_ordering(
+                                chapters=chapters, audit_item=it, nli_obj=nli
+                            ),
+                        )
+                        audit_cache[identity["request_id"]] = re_adj
+                        audit_cache[f"{cid}::{CLAIM_V2}"] = re_adj
+                        outcome.audit_cache_hits += 1
+                        gate_res = {
+                            "decision": re_adj["decision"],
+                            "assessment_status": re_adj.get("assessment_status", "unconfirmed"),
+                            "reasons": list(re_adj.get("reasons", [])),
+                            "claim_check": re_adj.get("claim_check"),
+                        }
+
+            if gate_res is None:
+                if outcome.calls >= max_calls:
+                    _set_verdict(
+                        CandidateVerdict(
+                            cid,
+                            "INSUFFICIENT",
+                            answer=tentative_v.answer,
+                            evidence_id=tentative_v.evidence_id,
+                            located_span=tentative_v.located_span,
+                            quote_hash=tentative_v.quote_hash,
+                            quote=tentative_v.quote,
+                            reason="C_AUDIT_PENDING:BUDGET_EXHAUSTED",
+                            counter_search_performed=tentative_v.counter_search_performed,
+                        )
+                    )
+                    outcome.audit_routes[cid].update(
+                        {
+                            "audit_executed": False,
+                            "audit_status": "pending_review",
+                            "audit_decision": "待审",
+                            "audit_reasons": ["BUDGET_EXHAUSTED"],
+                            "request_id": identity["request_id"],
+                            "cache_status": cache_status,
+                        }
+                    )
+                    if cid not in outcome.audit_pending_ids:
+                        outcome.audit_pending_ids.append(cid)
+                    continue
+
+                outcome.calls += 1
+                outcome.audit_calls += 1
+                t0 = _time.perf_counter()
+                try:
+                    async with sem:
+                        raw_audit = await audit_fn(prompt)
+                    sec = round(_time.perf_counter() - t0, 3)
+                except BaseException as exc:
+                    sec = round(_time.perf_counter() - t0, 3)
+                    outcome.failed_batches += 1
+                    err_tag = (
+                        "TIMEOUT"
+                        if isinstance(exc, (asyncio.TimeoutError, TimeoutError))
+                        else type(exc).__name__
+                    )
+                    if audit_cache is not None:
+                        audit_cache[identity["request_id"]] = build_verified_cache_record(
+                            audit_item,
+                            identity,
+                            raw_response_text="",
+                            gate_result=None,
+                            tokens=0,
+                            seconds=sec,
+                            attempts=1,
+                            success=False,
+                            error=f"{err_tag}:{str(exc)[:80]}",
+                        )
+                    _set_verdict(
+                        CandidateVerdict(
+                            cid,
+                            "INSUFFICIENT",
+                            answer=tentative_v.answer,
+                            evidence_id=tentative_v.evidence_id,
+                            located_span=tentative_v.located_span,
+                            quote_hash=tentative_v.quote_hash,
+                            quote=tentative_v.quote,
+                            reason=f"C_AUDIT_PENDING:MODEL_ERROR:{err_tag}",
+                            counter_search_performed=tentative_v.counter_search_performed,
+                        )
+                    )
+                    outcome.audit_routes[cid].update(
+                        {
+                            "audit_executed": False,
+                            "audit_status": "pending_review",
+                            "audit_decision": "待审",
+                            "audit_reasons": [f"MODEL_ERROR:{err_tag}"],
+                            "request_id": identity["request_id"],
+                            "cache_status": "live_failed",
+                        }
+                    )
+                    if cid not in outcome.audit_pending_ids:
+                        outcome.audit_pending_ids.append(cid)
+                    continue
+
+                nli_obj, parse_repair = extract_json_object_with_repair(raw_audit)
+                audit_attempts: list[dict] = [
+                    {
+                        "attempt": 1,
+                        "seconds": sec,
+                        "outcome": (
+                            "parsed"
+                            if isinstance(nli_obj, dict)
+                            and nli_obj.get("verdict")
+                            in ("answer_ok", "restating", "off_topic", "unclear")
+                            else "invalid_format"
+                        ),
+                        "parse_repair": parse_repair,
+                        "raw_response_length": len(raw_audit or ""),
+                        "raw_response_text": raw_audit or "",
+                    }
+                ]
+                if not isinstance(nli_obj, dict) or nli_obj.get("verdict") not in (
+                    "answer_ok",
+                    "restating",
+                    "off_topic",
+                    "unclear",
+                ):
+                    # 格式失败：**预算内允许再试一次**。
+                    #
+                    # 为什么只重试格式失败、不重试语义拒绝：
+                    # 格式失败是模型没说清话，再问一次可能说清；
+                    # 语义拒绝是模型对证据的判断，重试到"通过"等于放宽审核标准。
+                    # 重试仍失败就保留待审——保留待审是正确的保护措施，
+                    # 下次提交会重新调用审核，不是永久卡死。
+                    retry_used = 0
+                    retry_raw = raw_audit
+                    last_error: str | None = None
+                    while (
+                        outcome.calls < max_calls
+                        and retry_used < AUDIT_FORMAT_RETRY_LIMIT
+                    ):
+                        retry_used += 1
+                        outcome.calls += 1
+                        outcome.audit_calls += 1
+                        outcome.audit_format_retries += 1
+                        t0 = _time.perf_counter()
+                        try:
+                            async with sem:
+                                retry_raw = await audit_fn(prompt)
+                            attempt_sec = round(_time.perf_counter() - t0, 3)
+                            sec += attempt_sec
+                        except BaseException as exc:  # noqa: BLE001
+                            attempt_sec = round(_time.perf_counter() - t0, 3)
+                            sec += attempt_sec
+                            outcome.failed_batches += 1
+                            err_tag = (
+                                "TIMEOUT"
+                                if isinstance(exc, (asyncio.TimeoutError, TimeoutError))
+                                else type(exc).__name__
+                            )
+                            last_error = f"MODEL_ERROR:{err_tag}"
+                            audit_attempts.append(
+                                {
+                                    "attempt": 1 + retry_used,
+                                    "seconds": attempt_sec,
+                                    "outcome": "model_error",
+                                    "error": last_error,
+                                }
+                            )
+                            break
+                        retry_obj, retry_repair = extract_json_object_with_repair(retry_raw)
+                        retry_ok = (
+                            isinstance(retry_obj, dict)
+                            and retry_obj.get("verdict")
+                            in ("answer_ok", "restating", "off_topic", "unclear")
+                        )
+                        audit_attempts.append(
+                            {
+                                "attempt": 1 + retry_used,
+                                "seconds": attempt_sec,
+                                "outcome": "parsed" if retry_ok else "invalid_format",
+                                "parse_repair": retry_repair,
+                                "raw_response_length": len(retry_raw or ""),
+                                "raw_response_text": retry_raw or "",
+                            }
+                        )
+                        if retry_ok:
+                            nli_obj = retry_obj
+                            raw_audit = retry_raw
+                            break
+                    if not isinstance(nli_obj, dict) or nli_obj.get("verdict") not in (
+                        "answer_ok",
+                        "restating",
+                        "off_topic",
+                        "unclear",
+                    ):
+                        # 仍失败：保留待审。缓存里记**每一次**尝试的原文与耗时，
+                        # 便于事后分辨"模型没说清"与"调用出错"。
+                        if audit_cache is not None:
+                            audit_cache[identity["request_id"]] = build_verified_cache_record(
+                                audit_item,
+                                identity,
+                                raw_response_text=raw_audit or "",
+                                gate_result=None,
+                                tokens=0,
+                                seconds=sec,
+                                attempts=len(audit_attempts),
+                                success=False,
+                                error=last_error or "INVALID_FORMAT",
+                            )
+                            audit_cache[identity["request_id"]]["audit_attempts"] = audit_attempts
+                            audit_cache[identity["request_id"]]["attempt_raw_responses"] = [
+                                a.get("raw_response_text")
+                                for a in audit_attempts
+                                if a.get("raw_response_text")
+                            ]
+                        _set_verdict(
+                            CandidateVerdict(
+                                cid,
+                                "INSUFFICIENT",
+                                answer=tentative_v.answer,
+                                evidence_id=tentative_v.evidence_id,
+                                located_span=tentative_v.located_span,
+                                quote_hash=tentative_v.quote_hash,
+                                quote=tentative_v.quote,
+                                reason="C_AUDIT_PENDING:INVALID_FORMAT",
+                                counter_search_performed=tentative_v.counter_search_performed,
+                            )
+                        )
+                        outcome.audit_routes[cid].update(
+                            {
+                                "audit_executed": True,
+                                "audit_status": "pending_review",
+                                "audit_decision": "待审",
+                                "audit_reasons": [last_error or "INVALID_FORMAT"],
+                                "request_id": identity["request_id"],
+                                "cache_status": "live_invalid_format",
+                                "format_retries": retry_used,
+                                "audit_attempts": audit_attempts,
+                                "recovery": (
+                                    "再次提交会重新调用审核；若预算内重试仍失败，"
+                                    "该候选保持待审，不自动转正也不自动丢弃"
+                                ),
+                            }
+                        )
+                        if cid not in outcome.audit_pending_ids:
+                            outcome.audit_pending_ids.append(cid)
+                        continue
+                    if retry_used:
+                        outcome.audit_routes[cid]["format_retries"] = retry_used
+                    outcome.audit_routes[cid]["audit_attempts"] = audit_attempts
+                    outcome.audit_routes[cid]["parse_repair"] = parse_repair
+
+                # 时序判定按**裁决实际引用的句子**算，因此必须等响应解析完再算。
+                _ordering = _compute_cited_ordering(
+                    chapters=chapters, audit_item=audit_item, nli_obj=nli_obj
+                )
+                if _ordering is not None:
+                    audit_item["evidence_ordering"] = _ordering
+                gate_res = gate(audit_item, nli_obj)
+                claim_chk = gate_res.get("claim_check") or {}
+                protocol_errs = list(claim_chk.get("errors") or [])
+                if protocol_errs and gate_res["decision"] != "拒绝" and nli_obj.get("answer_supported") is True:
+                    if audit_cache is not None:
+                        audit_cache[identity["request_id"]] = build_verified_cache_record(
+                            audit_item,
+                            identity,
+                            raw_response_text=raw_audit or "",
+                            gate_result=None,
+                            tokens=0,
+                            seconds=sec,
+                            attempts=1,
+                            success=False,
+                            error=f"PROTOCOL_ERROR:{','.join(protocol_errs)}",
+                        )
+                    _set_verdict(
+                        CandidateVerdict(
+                            cid,
+                            "INSUFFICIENT",
+                            answer=tentative_v.answer,
+                            evidence_id=tentative_v.evidence_id,
+                            located_span=tentative_v.located_span,
+                            quote_hash=tentative_v.quote_hash,
+                            quote=tentative_v.quote,
+                            reason=f"C_AUDIT_PENDING:PROTOCOL_ERROR:{','.join(protocol_errs)}",
+                            counter_search_performed=tentative_v.counter_search_performed,
+                        )
+                    )
+                    outcome.audit_routes[cid].update(
+                        {
+                            "audit_executed": True,
+                            "audit_status": "pending_review",
+                            "audit_decision": "待审",
+                            "audit_reasons": protocol_errs,
+                            "request_id": identity["request_id"],
+                            "cache_status": "live_protocol_error",
+                        }
+                    )
+                    if cid not in outcome.audit_pending_ids:
+                        outcome.audit_pending_ids.append(cid)
+                    continue
+
+                cache_status = "live_recorded"
+                if audit_cache is not None:
+                    rec = build_verified_cache_record(
+                        audit_item,
+                        identity,
+                        raw_response_text=raw_audit,
+                        gate_result=gate_res,
+                        tokens=0,
+                        seconds=sec,
+                        attempts=1,
+                        success=True,
+                    )
+                    audit_cache[identity["request_id"]] = rec
+                    audit_cache[f"{cid}::{CLAIM_V2}"] = rec
+
+            # Apply gate_res to control final candidate verdict and ledger status
+            dec = gate_res["decision"]
+            assess = gate_res.get("assessment_status", "unconfirmed")
+            g_reasons = list(gate_res.get("reasons", []))
+            if dec == "接受":
+                _set_verdict(tentative_v)
+                outcome.audit_routes[cid].update(
+                    {
+                        "audit_executed": True,
+                        "audit_status": "accepted",
+                        "audit_decision": "接受",
+                        "audit_assessment": assess,
+                        "audit_reasons": g_reasons,
+                        "request_id": identity["request_id"],
+                        "cache_status": cache_status,
+                    }
+                )
+            elif dec == "拒绝":
+                _set_verdict(
+                    CandidateVerdict(
+                        cid,
+                        "INSUFFICIENT",
+                        answer=tentative_v.answer,
+                        evidence_id=tentative_v.evidence_id,
+                        located_span=tentative_v.located_span,
+                        quote_hash=tentative_v.quote_hash,
+                        quote=tentative_v.quote,
+                        reason=f"C_AUDIT_REJECTED:{';'.join(g_reasons)}",
+                        counter_search_performed=tentative_v.counter_search_performed,
+                    )
+                )
+                outcome.audit_routes[cid].update(
+                    {
+                        "audit_executed": True,
+                        "audit_status": "rejected",
+                        "audit_decision": "拒绝",
+                        "audit_assessment": assess,
+                        "audit_reasons": g_reasons,
+                        "request_id": identity["request_id"],
+                        "cache_status": cache_status,
+                    }
+                )
+            else:
+                if assess == "partial_answer":
+                    r_prefix = "C_AUDIT_PARTIAL_ANSWER"
+                    a_stat = "partial_answer"
+                else:
+                    r_prefix = "C_AUDIT_DOUBT"
+                    a_stat = "doubt"
+                _set_verdict(
+                    CandidateVerdict(
+                        cid,
+                        "INSUFFICIENT",
+                        answer=tentative_v.answer,
+                        evidence_id=tentative_v.evidence_id,
+                        located_span=tentative_v.located_span,
+                        quote_hash=tentative_v.quote_hash,
+                        quote=tentative_v.quote,
+                        reason=f"{r_prefix}:{';'.join(g_reasons)}",
+                        counter_search_performed=tentative_v.counter_search_performed,
+                    )
+                )
+                outcome.audit_routes[cid].update(
+                    {
+                        "audit_executed": True,
+                        "audit_status": a_stat,
+                        "audit_decision": "存疑",
+                        "audit_assessment": assess,
+                        "audit_reasons": g_reasons,
+                        "request_id": identity["request_id"],
+                        "cache_status": cache_status,
+                    }
+                )
+
     async def _ask(batch: list[dict]) -> tuple[list[dict], str]:
-        async with sem:
-            return batch, await call_model(_render_batch(batch))
+        # 行车记录仪：在**实际调用处**落盘最终提示词、证据包与哈希。
+        # 这里渲染的才是真正发出去的批次提示词——缓存里存的是单候选渲染，
+        # 两者对不上，历史请求因此无法复原。
+        prompt = _render_batch(batch)
+        record = None
+        if request_log is not None:
+            record = _new_request_record(
+                request_log,
+                batch=batch,
+                prompt=prompt,
+                round_index=_current_round[0],
+            )
+        t0 = _time_mod.perf_counter()
+        try:
+            async with sem:
+                raw = await call_model(prompt)
+        except BaseException as exc:  # noqa: BLE001
+            if record is not None:
+                _append_attempt(
+                    record,
+                    seconds=round(_time_mod.perf_counter() - t0, 3),
+                    response_text="",
+                    error=f"{type(exc).__name__}: {exc}",
+                    request_log=request_log,
+                    prompt=prompt,
+                )
+            raise
+        if record is not None:
+            _append_attempt(
+                record,
+                seconds=round(_time_mod.perf_counter() - t0, 3),
+                response_text=raw,
+                error=None,
+                request_log=request_log,
+                prompt=prompt,
+            )
+        return batch, raw
 
     done: set[str] = set()
     built_count = 0
     for attempt in range(2):
+        _current_round[0] = attempt
         queue = [c for c in candidates if c["candidate_id"] not in done]
         if not queue:
             break
@@ -550,7 +1582,11 @@ async def run_recheck_v2(
             # 第一轮漏掉的候选单独补一次：模型偶尔只答前几条，补问时只给它漏的那条，
             # 命中率高；仍漏就如实记 not_checked，不再反复花钱。
             outcome.retried_batches += 1
-        step = len(queue) if attempt == 1 else max(batch_size, 1)
+        step = (
+            max(batch_size, 1)
+            if enhanced_retrieval
+            else (len(queue) if attempt == 1 else max(batch_size, 1))
+        )
         batches = [queue[i : i + step] for i in range(0, len(queue), step)]
         width = max(1, concurrency)
         for wave_at in range(0, len(batches), width):
@@ -564,11 +1600,24 @@ async def run_recheck_v2(
             # 惰性构建：只建**本波**要用的证据包——这是每条候选最贵的一步，
             # 预算耗尽后未建的候选永远不用付这笔钱
             newly_built = 0
+            live_wave: list[list[dict]] = []
             for b in wave:
+                uncached_b: list[dict] = []
                 for cand in b:
                     if "segments" not in cand:
                         _build_evidence(cand)
                         newly_built += 1
+                    if recheck_cache is not None:
+                        from backend.common.provenance_cache import verify_cache_entry
+                        _, _, rc_ident = _build_recheck_identity(cand)
+                        rc_entry = recheck_cache.get(rc_ident["request_id"]) or recheck_cache.get(cand["candidate_id"])
+                        if rc_entry is not None and verify_cache_entry(rc_entry, rc_ident).reusable:
+                            outcome.recheck_cache_hits += 1
+                            done |= _consume([cand], str(rc_entry.get("raw_response_text") or ""))
+                            continue
+                    uncached_b.append(cand)
+                if uncached_b:
+                    live_wave.append(uncached_b)
             built_count += newly_built
             if emit is not None and newly_built:
                 emit({
@@ -576,18 +1625,21 @@ async def run_recheck_v2(
                     "built": built_count,
                     "total": len(candidates),
                 })
-            # 先记账再发：并发下"先发后记"会超预算，而超支是**已经花掉的钱**，
-            # 事后记账会把账做平却掩盖了超支事实。
-            outcome.calls += len(wave)
-            results = await asyncio.gather(*(_ask(b) for b in wave), return_exceptions=True)
-            for result in results:
-                if isinstance(result, BaseException):
-                    # 某一批失败不拖垮其他批：它的候选留在未完成集合里，
-                    # 由补问轮或收尾如实记 not_checked
-                    outcome.failed_batches += 1
-                    continue
-                batch, raw = result
-                done |= _consume(batch, raw)
+            if live_wave:
+                # 先记账再发：并发下"先发后记"会超预算，而超支是**已经花掉的钱**，
+                # 事后记账会把账做平却掩盖了超支事实。
+                outcome.calls += len(live_wave)
+                results = await asyncio.gather(*(_ask(b) for b in live_wave), return_exceptions=True)
+                for result in results:
+                    if isinstance(result, BaseException):
+                        # 某一批失败不拖垮其他批：它的候选留在未完成集合里，
+                        # 由补问轮或收尾如实记 not_checked
+                        outcome.failed_batches += 1
+                        continue
+                    batch, raw = result
+                    done |= _consume(batch, raw)
+            if pending_upgrade_audits:
+                await _execute_pending_upgrade_audits()
             if emit is not None:
                 emit({"stage": "recheck", "calls": outcome.calls, "checked": len(done)})
         if outcome.calls >= max_calls:
@@ -596,6 +1648,59 @@ async def run_recheck_v2(
     outcome.not_checked.extend(
         c["candidate_id"] for c in candidates if c["candidate_id"] not in done
     )
+    if trace is not None:
+        v_by_cid = {v.candidate_id: v for v in outcome.verdicts}
+        for c in candidates:
+            cid = c["candidate_id"]
+            v = v_by_cid.get(cid)
+            if v is None:
+                trace.record(
+                    item_id=cid,
+                    stage="recheck_adjudicate",
+                    state_before="bundle_built",
+                    state_after="not_checked",
+                    reason_code="NOT_CHECKED_BUDGET_EXHAUSTED" if outcome.calls >= max_calls else "NOT_CHECKED_AFTER_RETRY",
+                )
+            elif v.verdict == "SUPPORTED":
+                trace.record(
+                    item_id=cid,
+                    stage="recheck_adjudicate",
+                    state_before="bundle_built",
+                    state_after="supported",
+                    reason_code="VERDICT_SUPPORTED",
+                )
+            elif v.verdict == "INVALID":
+                r_code = (
+                    "VERDICT_INVALID_FOREIGN_ID"
+                    if v.reason == "FOREIGN_ID"
+                    else "VERDICT_INVALID_QUOTE_NOT_FOUND"
+                    if v.reason == "QUOTE_NOT_FOUND"
+                    else "VERDICT_INVALID_OTHER"
+                )
+                trace.record(
+                    item_id=cid,
+                    stage="recheck_adjudicate",
+                    state_before="bundle_built",
+                    state_after="invalid",
+                    reason_code=r_code,
+                    meta={"reason": v.reason},
+                )
+            elif v.verdict in ("DIFFERENT_ANSWER", "CONTRADICTED"):
+                trace.record(
+                    item_id=cid,
+                    stage="recheck_adjudicate",
+                    state_before="bundle_built",
+                    state_after=v.verdict.lower(),
+                    reason_code="EVIDENCE_PRESENT_VERDICT_CONFLICT",
+                )
+            else:
+                trace.record(
+                    item_id=cid,
+                    stage="recheck_adjudicate",
+                    state_before="bundle_built",
+                    state_after="insufficient",
+                    reason_code="VERDICT_INSUFFICIENT_NO_EVIDENCE",
+                )
 
     counts = count_verdicts(
         outcome.verdicts,
@@ -635,11 +1740,15 @@ async def run_recheck_v2(
     reasons: list[str] = []
     if pending:
         reasons.append(f"存在未核对候选（{len(pending)} 条）")
+    if outcome.audit_pending_ids:
+        reasons.append(f"存在待复审候选（{len(outcome.audit_pending_ids)} 条）")
     dropped = outcome.dropped_no_anchor + outcome.dropped_anchor_missing
     if dropped:
         reasons.append(f"部分条目无可用证据（{dropped} 条未进入候选）")
     if reasons:
         outcome.status_reason = "；".join(reasons)
+    if outcome.audit_pending_ids and outcome.status == "COMPLETED":
+        outcome.status = "PARTIAL"
     if dropped and outcome.status == "COMPLETED":
         # 有条目因为没有证据而整条没查：这不是"完成"，只是"候选都处理完了"
         outcome.status = "PARTIAL"
@@ -831,13 +1940,37 @@ def _apply_state(
     if state == PROPOSED_RESOLVED:
         item.needs_review = True
         notes = getattr(item, "notes", None)
-        if isinstance(notes, list):
-            notes.append("复检：后文有线索但不足以判回收，请人工确认")
+        note_text = "复检：后文有线索但不足以判回收，请人工确认"
+        for v in group:
+            r = str(v.reason or "")
+            if r.startswith("C_AUDIT_PENDING:"):
+                item.resolution_quality = "pending_audit"
+                note_text = f"复审待审（未完成）：{r}"
+                break
+            if r.startswith("C_AUDIT_REJECTED:"):
+                item.resolution_quality = "rejected_by_audit"
+                note_text = f"复审拒绝：{r}"
+                break
+            if r.startswith("C_AUDIT_PARTIAL_ANSWER:"):
+                item.resolution_quality = "partial_answer"
+                note_text = f"复审部分回答：{r}"
+                break
+            if r.startswith("C_AUDIT_DOUBT:"):
+                item.resolution_quality = "questioned"
+                note_text = f"复审存疑：{r}"
+                break
+            if r == "MECHANICAL_INCREMENT_REJECTED":
+                item.resolution_quality = "rejected_mechanical"
+                note_text = "复审机械拒止：引文等于锚点或无增量"
+                break
+        if isinstance(notes, list) and note_text not in notes:
+            notes.append(note_text)
         return
     # OPEN：保持原状，但把"查过但没结论"记进备注，避免与"没查"混淆
     notes = getattr(item, "notes", None)
     if isinstance(notes, list) and any(v.verdict == INSUFFICIENT for v in group):
-        notes.append("复检：证据不足")
+        if "复检：证据不足" not in notes:
+            notes.append("复检：证据不足")
 
 
 # ==================== audit 模式：存量回收清算 ====================

@@ -29,7 +29,7 @@ from .constants import (
     DEFAULT_BATCH_SUMMARY_MIN_WORDS,
     DEFAULT_FINAL_REPORT_MIN_WORDS,
     DEFAULT_VOLUME_COMPRESS_THRESHOLD, DEFAULT_VOLUME_COMPRESS_GROUP,
-    MAX_OUTPUT_TOKENS, DEFAULT_TIMEOUT, DEFAULT_SUMMARY_TIMEOUT, MAX_RETRIES,
+    MAX_OUTPUT_TOKENS, DEFAULT_TIMEOUT, DEFAULT_SUMMARY_TIMEOUT, MAX_RETRIES, SDK_MAX_RETRIES,
     DEFAULT_TEMPERATURE, DEFAULT_TEMPERATURE_STEP,
     TEMPERATURE_MAX_RETRIES, BACKOFF_MAX_RETRIES,
     ENCODING_CANDIDATES,
@@ -125,6 +125,7 @@ class APIConfig:
     timeout: int = DEFAULT_TIMEOUT
     summary_timeout: int = DEFAULT_SUMMARY_TIMEOUT  # 最终总结阶段 API 超时（秒）。比 timeout 长，因为最终报告 prompt 输入更大（11 万字符级）；final_summary 服务创建 LLMClient 时会覆盖 timeout 字段使用此值
     max_retries: int = MAX_RETRIES
+    sdk_max_retries: int = SDK_MAX_RETRIES
     json_mode: str = "default"  # default/qwen/deepseek/glm47
     temperature: float = DEFAULT_TEMPERATURE
     temperature_step: float = DEFAULT_TEMPERATURE_STEP
@@ -241,6 +242,12 @@ class AnalysisConfig:
     max_verified_facts: int = MAX_VERIFIED_FACTS
     max_long_term_arcs: int = MAX_LONG_TERM_ARCS
     max_thematic_elements: int = MAX_THEMATIC_ELEMENTS
+    # B/C 改进独立实验开关（默认全部关闭，保证基线零行为变化）
+    enable_b_trace: bool = False
+    fix_b4_flow_and_storage: bool = False
+    fix_b2_evidence_and_recheck: bool = False
+    enable_c_on_demand_audit: bool = False
+    enable_anchor_b_plus_rule: bool = False
 
 
 @dataclass

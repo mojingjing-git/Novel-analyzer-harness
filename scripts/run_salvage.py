@@ -36,6 +36,7 @@ sys.path.insert(0, str(ROOT))
 for _k in ("NO_PROXY", "no_proxy"):
     os.environ[_k] = "localhost,127.0.0.1"
 
+from backend.common.closure import validate_prereg_row, closing_satisfied, validate_branch_hits
 from backend.config.settings import ConfigManager  # noqa: E402
 from backend.core.llm_client import LLMClient  # noqa: E402
 from backend.services.recheck_v2 import (  # noqa: E402
@@ -266,72 +267,6 @@ PREREG_PROMPT = """你是判定标准分析员。下面每条伏笔有一条 ans
 [{{"fs_id": "...", "branches": [{{"branch_id": "c1", "text": "..."}}], "closing": {{"type": "AND"}}}}]
 """
 
-#: 分支文本低于该长度视为"碎分支"（主语/名物词），按 UNCERTAIN 转人工
-MIN_BRANCH_CHARS = 6
-
-
-def _norm_text(s: str) -> str:
-    """校验用的归一化：去空白与常见分隔标点（不影响语义比较）。"""
-    return re.sub(r"[\s，,。；;：:、（）()\"'“”‘’]", "", s or "")
-
-
-def _is_subsequence(needle: str, haystack: str) -> bool:
-    """needle 的字符是否按序出现在 haystack 里（允许补全谓词，禁止编造内容）。"""
-    it = iter(haystack)
-    return all(ch in it for ch in needle)
-
-
-#: 合取截断检测：OR 可关闭分支若是 criteria 真前缀、余量以这些连词开头 → 拒绝。
-#: 注意"及其"必须在"及"之前（否则 "及其…" 会被 "及" 提前匹配）。
-CONJ_PREFIX_RE = re.compile(r"^(及其|以及|并|且|和|加上|及)")
-
-
-def validate_prereg_row(row: dict, criteria: str) -> tuple[bool, str]:
-    """预登记后验校验（fail-closed）：任一不满足即判 UNCERTAIN。
-
-    - 分支非空，branch_id 唯一，text ≥ MIN_BRANCH_CHARS（防"丹阳子"式碎分支）；
-    - 每个 branch text 的字符必须按序出现在 criteria 中（归一化子序列）——
-      既拦编造内容，也允许"A/B 各自补全谓词"的合法展开；
-    - closing：AND 需 ≥1 分支；OR 需 closable 非空且 ⊆ 已登记 branch_id，且
-      closable 分支不得是 criteria 的"合取截断"（真前缀 + 余量以连词开头，
-      fs_205 型"并…"、fs_935 型"及其…"）——只拦已知截断形式，不承担完整
-      合取语义校验；UNCERTAIN 直接放行。
-    """
-    branches = [b for b in (row.get("branches") or []) if isinstance(b, dict)]
-    closing = row.get("closing") if isinstance(row.get("closing"), dict) else {}
-    ctype = closing.get("type")
-    if ctype == "UNCERTAIN":
-        return True, "uncertain"
-    if not branches:
-        return False, "no_branches"
-    norm_criteria = _norm_text(criteria)
-    ids = [b.get("branch_id") for b in branches]
-    if len(set(ids)) != len(ids):
-        return False, "duplicate_branch_id"
-    for b in branches:
-        text = (b.get("text") or "").strip()
-        norm_branch = _norm_text(text)
-        if len(norm_branch) < MIN_BRANCH_CHARS:
-            return False, f"fragment_branch:{text[:12]}"
-        if not _is_subsequence(norm_branch, norm_criteria):
-            return False, f"branch_not_in_criteria:{text[:12]}"
-    if ctype == "AND":
-        return (True, "and") if len(branches) >= 1 else (False, "and_no_branches")
-    if ctype == "OR":
-        closable = closing.get("closable") or []
-        if not closable or any(c not in ids for c in closable):
-            return False, "or_bad_closable"
-        by_id = {b.get("branch_id"): _norm_text(b.get("text") or "") for b in branches}
-        for c in closable:
-            norm_b = by_id.get(c, "")
-            if norm_b and norm_b != norm_criteria and norm_criteria.startswith(norm_b):
-                rest = norm_criteria[len(norm_b):]
-                if CONJ_PREFIX_RE.match(rest):
-                    return False, f"prefix_cut_conjunction:{norm_b[:12]}"
-        return True, "or"
-    return False, f"bad_closing_type:{ctype}"
-
-
 async def preregister_criteria(call_model, items: list[dict]) -> dict[str, dict]:
     """返回 {fs_id: {"branches": [...], "closing": {...}}}；UNCERTAIN 同样登记（由调用方分流）。"""
     reg: dict[str, dict] = {}
@@ -358,7 +293,8 @@ async def preregister_criteria(call_model, items: list[dict]) -> dict[str, dict]
                 # 后验校验不过 → UNCERTAIN 转人工（fail-closed：宁可人工，不可误关闭）
                 rejected[fid_row] = why
                 continue
-            reg[fid_row] = {"branches": row["branches"], "closing": row["closing"]}
+            reg[fid_row] = {"branches": row["branches"], "closing": row["closing"],
+                            "criteria_source": by_criteria[fid_row]}
             got += 1
         for fid_row, why in rejected.items():
             reg[fid_row] = {"branches": [], "closing": {"type": "UNCERTAIN"},
@@ -375,21 +311,6 @@ async def preregister_criteria(call_model, items: list[dict]) -> dict[str, dict]
     return reg
 
 
-def closing_satisfied(closing: dict, branch_hits: list[dict], reg: dict) -> bool | None:
-    """关闭条件是否满足。None = 无法判定（UNCERTAIN → 转人工）。
-
-    AND 的 branch 全集取预登记的 reg["branches"]（PREREG 输出的 closing 里没有
-    branches 字段——v2 曾因此恒 False，所有 AND 型 VERIFIED 全部 closing_unmet）。
-    """
-    ctype = closing.get("type")
-    hit_ids = {b.get("branch_id") for b in branch_hits if isinstance(b, dict)}
-    if ctype == "AND":
-        need = {b.get("branch_id") for b in (reg.get("branches") or []) if isinstance(b, dict)}
-        return bool(need) and need <= hit_ids
-    if ctype == "OR":
-        closable = set(closing.get("closable") or [])
-        return bool(closable & hit_ids)
-    return None  # UNCERTAIN：转人工
 
 
 # ---------------------------------------------------------------- Stage 2：Layer A 匹配
@@ -547,8 +468,9 @@ SALVAGE_PROMPT = """你是伏笔回收的复核员。账本中下面这条伏笔
    找到"问题并未被回答"的直接原句就写进 counter_quotes 并判 QUESTIONED(contradicted)。
 7. 判 VERIFIED 时 `supporting_quote` 必须从原文**逐字照抄**不少于 6 个字，
    `evidence_id` 原样回填该段证据的值；找不到支持性原句 → 只能 QUESTIONED(no_evidence)。
-8. `branch_hits` 必须按"分支预登记"逐个标注：{{"branch_id": "c1", "evidence_id": "..."}}；
+8. `branch_hits` 必须按"分支预登记"逐个标注：{{"branch_id": "c1", "evidence_id": "...", "supporting_quote": "支持该分支的逐字原句，至少6字"}}；
    预登记 closing 为 AND 时全部 branches 都要有命中记录，OR 时至少覆盖一个 closable 分支。
+   每个分支单独引用足以支持该命题的原句，不得只填分支编号。梦境、比喻、人物猜测不得写成已证实事实；答案中每个断言都必须有原文支持。
 
 判定枚举（只能用这两个词之一）：
 - `VERIFIED`：主张成立（reason_code: supported）
@@ -580,7 +502,7 @@ SALVAGE_PROMPT = """你是伏笔回收的复核员。账本中下面这条伏笔
   "supporting_quote": "原文逐字引文（判 QUESTIONED 时可留空）",
   "evidence_id": "引文所在段的 evidence_id",
   "counter_search": {{"performed": true, "checked_evidence_ids": ["..."], "counter_quotes": []}},
-  "branch_hits": [{{"branch_id": "c1", "evidence_id": "..."}}]
+  "branch_hits": [{{"branch_id": "c1", "evidence_id": "...", "supporting_quote": "支持该分支的逐字原句，至少6字"}}]
 }}
 """
 
@@ -658,6 +580,17 @@ async def layer_b_verify(call_model, candidates: list[dict], prereg: dict,
             fid = cand["fs_id"]
             item = items_by_id[fid]
             reg = prereg.get(fid) or {"branches": [], "closing": {"type": "UNCERTAIN"}}
+            valid, invalid_reason = validate_prereg_row(reg, item.answer_criteria)
+            if not valid or reg.get("criteria_source", item.answer_criteria) != item.answer_criteria:
+                results.append({"fs_id": fid, "outcome": "format_reject",
+                                "reason": "invalid_or_stale_prereg", "prereg_error": invalid_reason,
+                                "source_block_id": cand["source_block_id"]})
+                stats["format_rejects"] += 1
+                return
+            if reg["closing"]["type"] == "UNCERTAIN":
+                results.append({"fs_id": fid, "outcome": "closing_unmet",
+                                "reason": "uncertain_prereg", "source_block_id": cand["source_block_id"]})
+                return
             segments = build_evidence(cand, blocks_dir)
             if not segments:
                 results.append({"fs_id": fid, "outcome": "format_reject", "reason": "no_evidence_text",
@@ -715,6 +648,13 @@ async def layer_b_verify(call_model, candidates: list[dict], prereg: dict,
                                     "source_block_id": cand["source_block_id"]})
                     stats["format_rejects"] += 1
                     return
+                hits, hit_errors = validate_branch_hits(reg, hits, segments)
+                if hit_errors:
+                    results.append({"fs_id": fid, "outcome": "format_reject",
+                                    "reason": "branch_evidence_invalid", "branch_errors": hit_errors,
+                                    "source_block_id": cand["source_block_id"]})
+                    stats["format_rejects"] += 1
+                    return
                 sat = closing_satisfied(reg.get("closing") or {}, hits, reg)
                 if sat is not True:
                     # 引文真但关闭条件未满足/UNCERTAIN → 不落 resolved，转人工（C4/前沿 P1-3）
@@ -732,7 +672,16 @@ async def layer_b_verify(call_model, candidates: list[dict], prereg: dict,
                 results.append({"fs_id": fid, "outcome": "verified", "record": record,
                                 "branch_hits": hits, "chapter": chapter,
                                 "source_block_id": cand["source_block_id"],
-                                "pointer_chapter": pointer_ch, "expansion_rescue": rescue})
+                                "pointer_chapter": pointer_ch, "expansion_rescue": rescue,
+                                "acceptance_item": {
+                                    "fs_id": fid, "question": item.question,
+                                    "criteria": item.answer_criteria, "prereg": reg,
+                                    "description": item.description,
+                                    "anchor_quote": anchor_quote, "anchor_chapter": anchor_ch,
+                                    "answer": record.answer, "quote": record.quote,
+                                    "chapter": chapter, "branch_hits": hits,
+                                    "evidence_segments": segments,
+                                }})
                 stats["verified"] += 1
             else:
                 # 反证必须逐条定位（contradicted 才成立）；未定位则降级为 no_evidence。
@@ -830,7 +779,10 @@ def apply_to_shadow(shadow: ForeshadowLedger, results: list[dict], items_by_id: 
             applied_ids.add(fid)
             applied += 1
         elif outcome == "closing_unmet":
-            _note(item, f"打捞：引文成立但关闭条件未满足（hits={json.dumps(r.get('branch_hits'), ensure_ascii=False)[:120]}），转人工")
+            if r.get("reason") == "uncertain_prereg":
+                _note(item, "打捞：关闭条件尚未澄清，本轮未调用模型验证，待复核")
+            else:
+                _note(item, f"打捞：引文成立但关闭条件未满足（hits={json.dumps(r.get('branch_hits'), ensure_ascii=False)[:120]}），转人工")
             closing_unmet += 1
         elif outcome == "questioned":
             # reason_final 已把未定位反证降级为 no_evidence
@@ -1039,12 +991,19 @@ async def main() -> int:
         "layer_b_stats": b_stats, "actions": actions,
         "candidates": candidates,
         "results": [{k: v for k, v in r.items() if k != "record"} |
-                    {"reason": r["record"].reason, "answer": r["record"].answer,
+                    {"reason": r.get("reason", r["record"].reason), "answer": r["record"].answer,
                      "quote": r["record"].quote}
                     for r in results if r.get("record")] +
                    [r for r in results if not r.get("record")],
         "prereg": prereg,
     }
+    # 同份预登记与取证文本进入验收，避免手工组考卷时证据和标签错配。
+    from scripts.acceptance_gate import freeze_item
+    exam_items = [freeze_item(r["acceptance_item"]) for r in results if r.get("acceptance_item")]
+    exam_path = ledger_path.parent / f"acceptance_input_{ts}.json"
+    exam_path.write_text(json.dumps({"schema_version": 2, "source_run": ts,
+                                    "note": "未标注候选，不代表人工真值", "items": exam_items},
+                                   ensure_ascii=False, indent=2), encoding="utf-8")
     detail_path = ledger_path.parent / f"salvage_{ts}.json"
     detail_path.write_text(json.dumps(detail, ensure_ascii=False, indent=1), encoding="utf-8")
 
