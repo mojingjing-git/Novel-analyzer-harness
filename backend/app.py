@@ -238,7 +238,10 @@ def create_app() -> FastAPI:
     app.include_router(routes_prompt.router)
     app.include_router(routes_aggregate.router)
     app.include_router(routes_foreshadow.router)
-    app.include_router(routes_vnext.router)
+    # vnext 数据空间暂未接入生产流水线与前端，默认冻结其 HTTP 死路由；
+    # 如需调试可设环境变量 NOVEL_ENABLE_VNEXT_ROUTES=1 显式启用。
+    if os.environ.get("NOVEL_ENABLE_VNEXT_ROUTES") == "1":
+        app.include_router(routes_vnext.router)
 
     @app.get("/api/health")
     async def health():

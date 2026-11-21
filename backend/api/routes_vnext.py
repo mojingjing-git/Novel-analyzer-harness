@@ -1,4 +1,4 @@
-"""vnext 数据空间路由。
+"""vnext 数据空间路由（默认冻结，设置 ``NOVEL_ENABLE_VNEXT_ROUTES=1`` 时挂载）。
 
 口径与 1.x 路由的区别：
 

@@ -182,6 +182,13 @@ class JSONAggregator:
 
         return output_path
 
+    @staticmethod
+    def _write_json(data: Any, output_path: Path, label: str) -> None:
+        """创建父目录并原子写入聚合子产物，避免并发读写产生截断 JSON。"""
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        if safe_save_json(data, output_path, ensure_ascii=False):
+            logger.info(f"{label}已保存: {output_path}")
+
     def aggregate_core_events(self, output_path: Path = None) -> Dict[str, List[Dict]]:
         """
         聚合所有章节的核心事件
@@ -208,10 +215,7 @@ class JSONAggregator:
                 })
 
         if output_path:
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(output_path, 'w', encoding='utf-8') as f:
-                json.dump(aggregated, f, ensure_ascii=False, indent=2)
-            logger.info(f"核心事件聚合已保存: {output_path}")
+            self._write_json(aggregated, output_path, "核心事件聚合")
 
         return aggregated
 
@@ -242,10 +246,7 @@ class JSONAggregator:
                 })
 
         if output_path:
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(output_path, 'w', encoding='utf-8') as f:
-                json.dump(aggregated, f, ensure_ascii=False, indent=2)
-            logger.info(f"人物弧光聚合已保存: {output_path}")
+            self._write_json(aggregated, output_path, "人物弧光聚合")
 
         return aggregated
 
@@ -275,10 +276,7 @@ class JSONAggregator:
                 })
 
         if output_path:
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(output_path, 'w', encoding='utf-8') as f:
-                json.dump(aggregated, f, ensure_ascii=False, indent=2)
-            logger.info(f"伏笔聚合已保存: {output_path}")
+            self._write_json(aggregated, output_path, "伏笔聚合")
 
         return aggregated
 
@@ -355,10 +353,7 @@ class JSONAggregator:
             char_data["chapters"] = sorted(list(set(char_data["chapters"])))
 
         if output_path:
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(output_path, 'w', encoding='utf-8') as f:
-                json.dump(character_map, f, ensure_ascii=False, indent=2)
-            logger.info(f"角色追踪聚合已保存: {output_path}")
+            self._write_json(character_map, output_path, "角色追踪聚合")
 
         return character_map
 
@@ -372,10 +367,7 @@ class JSONAggregator:
             aggregated[chapter_key] = list(result.cross_block.unresolved_questions)
 
         if output_path:
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(output_path, 'w', encoding='utf-8') as f:
-                json.dump(aggregated, f, ensure_ascii=False, indent=2)
-            logger.info(f"未解决问题聚合已保存: {output_path}")
+            self._write_json(aggregated, output_path, "未解决问题聚合")
 
         return aggregated
 
@@ -389,10 +381,7 @@ class JSONAggregator:
             aggregated[chapter_key] = list(result.cross_block.new_leads)
 
         if output_path:
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(output_path, 'w', encoding='utf-8') as f:
-                json.dump(aggregated, f, ensure_ascii=False, indent=2)
-            logger.info(f"新线索聚合已保存: {output_path}")
+            self._write_json(aggregated, output_path, "新线索聚合")
 
         return aggregated
 
@@ -437,10 +426,7 @@ class JSONAggregator:
                         })
 
         if output_path:
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(output_path, 'w', encoding='utf-8') as f:
-                json.dump(world_building, f, ensure_ascii=False, indent=2)
-            logger.info(f"世界观构建聚合已保存: {output_path}")
+            self._write_json(world_building, output_path, "世界观构建聚合")
 
         return world_building
 
@@ -472,10 +458,7 @@ class JSONAggregator:
                         all_arcs.add(key)
 
         if output_path:
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(output_path, 'w', encoding='utf-8') as f:
-                json.dump({"long_term_arcs": long_term_arcs}, f, ensure_ascii=False, indent=2)
-            logger.info(f"长期弧光聚合已保存: {output_path}")
+            self._write_json({"long_term_arcs": long_term_arcs}, output_path, "长期弧光聚合")
 
         return {"long_term_arcs": long_term_arcs}
 
@@ -569,10 +552,7 @@ class JSONAggregator:
                     })
 
         if output_path:
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(output_path, 'w', encoding='utf-8') as f:
-                json.dump(insights, f, ensure_ascii=False, indent=2)
-            logger.info(f"长上下文洞察聚合已保存: {output_path}")
+            self._write_json(insights, output_path, "长上下文洞察聚合")
 
         return insights
 
@@ -599,10 +579,7 @@ class JSONAggregator:
                     })
 
         if output_path:
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(output_path, 'w', encoding='utf-8') as f:
-                json.dump({"plot_holes": plot_holes}, f, ensure_ascii=False, indent=2)
-            logger.info(f"逻辑漏洞聚合已保存: {output_path}")
+            self._write_json({"plot_holes": plot_holes}, output_path, "逻辑漏洞聚合")
 
         return {"plot_holes": plot_holes}
 

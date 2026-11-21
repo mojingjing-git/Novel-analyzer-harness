@@ -160,15 +160,18 @@ export interface AppConfigDto {
     timeout: number
     summary_timeout: number
     max_retries: number
+    sdk_max_retries?: number
     json_mode: string
     temperature: number
     temperature_step: number
     temperature_max_retries: number
     backoff_max_retries: number
     thinking_mode: Record<string, unknown>
+    reasoning_effort?: string
     summary_model: string
     summary_thinking_mode: Record<string, unknown>
     provider: string
+    streaming_enabled?: boolean
   }
   analysis: {
     max_arc_length: number
@@ -181,6 +184,10 @@ export interface AppConfigDto {
     max_character_states: number
     max_world_items: number
     max_foreshadow_entries: number
+    max_relationships?: number
+    max_themes?: number
+    max_content_chars?: number
+    max_verified_facts_in_prompt?: number
     foreshadow_kept_categories: string[]
     foreshadow_min_importance: string
     foreshadow_min_confidence: string
@@ -222,6 +229,11 @@ export interface AppConfigDto {
     max_thematic_elements: number
     volume_compress_threshold: number
     volume_compress_group: number
+    enable_b_trace?: boolean
+    fix_b4_flow_and_storage?: boolean
+    fix_b2_evidence_and_recheck?: boolean
+    enable_c_on_demand_audit?: boolean
+    enable_anchor_b_plus_rule?: boolean
   }
   gui: {
     language?: string  // i18n 接口预留

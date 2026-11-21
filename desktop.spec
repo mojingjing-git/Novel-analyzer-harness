@@ -25,6 +25,7 @@ block_cipher = None
 # 嵌入资源
 datas = [
     ('frontend/dist', 'frontend/dist'),
+    ('backend/data/models_dev.json', 'backend/data'),
     ('config.example.json', '.'),
     ('_welcome_workspace.md', '.'),
 ]
@@ -56,14 +57,12 @@ hiddenimports = [
     'fastapi.routing',
     'fastapi.middleware',
     'fastapi.middleware.cors',
-    # 测试相关（运行时不需要，但若被 import 链引用会报错）
-    'pytest_asyncio',
 ]
 
 # 自动收集 backend 全部业务子模块（排除 tests）
 # v0.2.0 关键修复：PyInstaller 静态分析抓不到 uvicorn.run("backend.app:app") 的字符串 import
 # 用 collect_submodules 自动发现整个 backend 包的所有子模块
-_backend_submods = [m for m in collect_submodules('backend') if '.tests.' not in m]
+_backend_submods = [m for m in collect_submodules('backend') if '.tests' not in m]
 hiddenimports += _backend_submods
 print(f"[spec] auto-collected backend submodules: {len(_backend_submods)}")
 

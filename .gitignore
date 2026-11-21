@@ -24,9 +24,6 @@ config_vnext.json
 # 会话鉴权 token（PR-1 引入，2026-09-10）
 session.token
 
-# 测试数据与备份残留
-1/
-
 # Python
 __pycache__/
 *.pyc
@@ -47,6 +44,8 @@ frontend/vite.config.d.ts
 .mimocode
 .zcode
 .agent
+.agents/
+.ruff_cache/
 
 # 一次性调试产物
 settings_resp.txt
