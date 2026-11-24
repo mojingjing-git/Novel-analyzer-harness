@@ -76,48 +76,7 @@ class _SensitiveFieldsFilter(logging.Filter):
 _file_handler.addFilter(_SensitiveFieldsFilter())
 logging.getLogger().addHandler(_file_handler)
 
-
-def _check_dependency_health() -> dict:
-    """启动时检查关键依赖是否真的能 import
-
-    json_repair 未安装时, 9 级容错链会静默跳过, 解析降级
-    但未崩溃。本函数目标: 把这种"未装"显式化, 避免再次发生。
-
-    Returns:
-        dict: {
-            "status": "ok" | "degraded" | "critical",
-            "deps": {label: {"status": "ok"|"missing", "version": str, "error": str}},
-            "missing": [str, ...],          # 所有缺失依赖名
-            "critical_missing": [str, ...],  # 标记为 critical 的缺失依赖
-        }
-    """
-    # (label, module_name, critical) — critical=True 表示该依赖缺失会显著降级功能
-    deps = [
-        ("json5", "json5", True),
-        ("json_repair", "json_repair", True),
-        ("openai", "openai", True),
-        ("anthropic", "anthropic", False),  # 可选, 仅使用 Anthropic provider 时需要
-        ("openpyxl", "openpyxl", True),
-        ("websockets", "websockets", True),
-    ]
-    health = {"status": "ok", "deps": {}, "missing": [], "critical_missing": []}
-    for label, module, critical in deps:
-        try:
-            m = __import__(module)
-            health["deps"][label] = {
-                "status": "ok",
-                "version": getattr(m, "__version__", "unknown"),
-            }
-        except ImportError as e:
-            health["deps"][label] = {"status": "missing", "error": str(e)}
-            health["missing"].append(label)
-            if critical:
-                health["critical_missing"].append(label)
-    if health["critical_missing"]:
-        health["status"] = "critical"
-    elif health["missing"]:
-        health["status"] = "degraded"
-    return health
+from backend.common.dep_health import check_dependency_health as _check_dependency_health  # noqa: E402
 
 
 def create_app() -> FastAPI:

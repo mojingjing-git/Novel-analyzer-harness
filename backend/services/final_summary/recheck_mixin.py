@@ -338,6 +338,12 @@ class RecheckMixin:
                 emit=lambda summary: self._emit_recheck_progress(summary, engine="v3"),
             )
         finally:
+            rc = getattr(self, "_recheck_client", None)
+            if rc is not None and getattr(rc, "breaker_tripped", False) is True:
+                self._recheck_breaker_tripped = True
+                raw_reason = getattr(rc, "breaker_reason", "")
+                if isinstance(raw_reason, str) and raw_reason.strip():
+                    self._recheck_breaker_reason = raw_reason.strip()
             self._active_concurrency = prev_conc
             self._recheck_client = None
 
@@ -394,6 +400,12 @@ class RecheckMixin:
                 emit=lambda summary: self._emit_recheck_progress(summary, engine="v2"),
             )
         finally:
+            rc = getattr(self, "_recheck_client", None)
+            if rc is not None and getattr(rc, "breaker_tripped", False) is True:
+                self._recheck_breaker_tripped = True
+                raw_reason = getattr(rc, "breaker_reason", "")
+                if isinstance(raw_reason, str) and raw_reason.strip():
+                    self._recheck_breaker_reason = raw_reason.strip()
             self._active_concurrency = prev_conc
             self._recheck_client = None
         await self._finalize_recheck_outcome(outcome, engine_label="V2", request_log=request_log)

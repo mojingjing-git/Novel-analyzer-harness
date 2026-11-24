@@ -5,6 +5,7 @@ Excel导出工具
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import List, Optional
 
@@ -208,7 +209,16 @@ def export_aggregated_to_excel(aggregated_dir: Path, output_path: Path = None) -
         raise ValueError(f"聚合目录缺少可识别的分析 JSON 文件，无法导出 Excel: {aggregated_dir}")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    wb.save(output_path)
+    tmp_path = output_path.with_name(f".{output_path.stem}.{os.getpid()}.tmp.xlsx")
+    try:
+        wb.save(tmp_path)
+        os.replace(tmp_path, output_path)
+    finally:
+        if tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
     logger.info(f"Excel已导出: {output_path} ({output_path.stat().st_size / 1024:.1f} KB)")
     return output_path
 

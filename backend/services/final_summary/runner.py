@@ -113,6 +113,8 @@ class FinalSummaryRunner(CatalogMixin, CheckpointMixin, RecheckMixin):
         self._llm = LLMClient(_api_cfg)
         self._summary_model_name = _api_cfg.model
         self._recheck_client: Optional[Any] = None
+        self._recheck_breaker_tripped: bool = False
+        self._recheck_breaker_reason: str = ""
 
         self.ledger_path = ledger_path or (self.output_dir / "foreshadow_ledger.json")
         self.ledger = ForeshadowLedger.load(self.ledger_path)

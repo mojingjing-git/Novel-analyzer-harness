@@ -10,15 +10,15 @@ import asyncio
 import json
 import logging
 from pathlib import Path
-from typing import Dict, Any, Literal, Optional
+from typing import Dict, Any, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from pydantic import BaseModel
 
 from backend.api.auth import require_session_token
+from backend.common.file_lock import BookLockError
 from backend.services import book_service
-from backend.utils.foreshadow_ledger import ForeshadowLedger
 
 logger = logging.getLogger(__name__)
 
@@ -128,74 +128,12 @@ async def get_book_ledger(book_id: str) -> dict:
 @router.get("/{book_id}/foreshadow_ranking")
 async def get_foreshadow_ranking(book_id: str) -> dict:
     """伏笔排行：按组合因子分数从大到小排列"""
-    output_dir = await asyncio.to_thread(book_service.get_output_dir, book_id)
-    if output_dir is None:
-        raise HTTPException(status_code=404, detail=f"书目不存在: {book_id}")
-
-    ledger_path = output_dir / "foreshadow_ledger.json"
-    if not ledger_path.exists():
-        raise HTTPException(status_code=404, detail="伏笔账本不存在，请先运行最终总结")
-
     try:
-        data = json.loads(await asyncio.to_thread(ledger_path.read_text, encoding="utf-8"))
-        items = data.get("items", [])
-
-        # 计算排行数据
-        ranking = []
-        for item in items:
-            evidence_count = len(item.get("evidence_chapters", []))
-            first_seen = item.get("first_seen_chapter", 0)
-            last_seen = item.get("last_seen_chapter", 0)
-            span = last_seen - first_seen
-            score = item.get("composite_score", 0)
-
-            # 旧数据（schema v2）没有 composite_score，实时计算
-            if score == 0 and item.get("importance"):
-                imp_order = {"高": 3, "中": 2, "低": 1}
-                conf_val = item.get("confidence", 0.8)
-                # float confidence → string
-                if conf_val >= 0.8:
-                    conf_str = "高"
-                elif conf_val >= 0.5:
-                    conf_str = "中"
-                else:
-                    conf_str = "低"
-                score = (
-                    imp_order.get(item.get("importance", "中"), 0) * 100
-                    + imp_order.get(conf_str, 0) * 10
-                    + min(evidence_count, 50)
-                    + min(span, 49)
-                )
-
-            ranking.append({
-                "id": item.get("id", ""),
-                "description": item.get("description", ""),
-                "composite_score": score,
-                "importance": item.get("importance", "中"),
-                "confidence": item.get("confidence", 0.8),
-                "status": item.get("status", "active"),
-                "first_seen_chapter": first_seen,
-                "last_seen_chapter": last_seen,
-                "span": span,
-                "evidence_count": evidence_count,
-                "evidence_chapters": item.get("evidence_chapters", []),
-                "resolution": item.get("resolution"),
-                "resolved_chapter": item.get("resolved_chapter"),
-                "needs_review": bool(item.get("needs_review", False)),
-                "resolution_quality": item.get("resolution_quality", ""),
-                "source_type": item.get("source_type", ""),
-            })
-
-        # 按分数降序
-        ranking.sort(key=lambda x: x["composite_score"], reverse=True)
-        lifecycle_bars = ForeshadowLedger.from_dict(data).lifecycle_bars()
-
-        return {
-            "book_id": book_id,
-            "total": len(ranking),
-            "ranking": ranking,
-            "lifecycle_bars": lifecycle_bars,
-        }
+        return await asyncio.to_thread(book_service.load_foreshadow_ranking, book_id)
+    except LookupError:
+        raise HTTPException(status_code=404, detail=f"书目不存在: {book_id}")
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="伏笔账本不存在，请先运行最终总结")
     except Exception as e:
         logger.error(f"读取伏笔排行失败: {e}")
         raise HTTPException(status_code=500, detail="排行读取失败")
@@ -206,6 +144,47 @@ class ForeshadowReviewRequest(BaseModel):
     resolution: Optional[str] = None
     resolved_chapter: Optional[int] = None
     note: Optional[str] = None
+
+
+class ForeshadowBatchReviewItem(BaseModel):
+    item_id: str
+    action: Literal["confirm_resolved", "reject_to_active", "mark_dormant"]
+    resolution: Optional[str] = None
+    resolved_chapter: Optional[int] = None
+    note: Optional[str] = None
+
+
+class ForeshadowBatchReviewRequest(BaseModel):
+    items: List[ForeshadowBatchReviewItem]
+
+
+def _translate_review_error(exc: Exception, book_id: str, item_id: str = "") -> HTTPException:
+    if isinstance(exc, BookLockError):
+        return HTTPException(status_code=409, detail="书目正在被其他进程操作，请稍后重试")
+    if isinstance(exc, LookupError):
+        msg = "伏笔账本不存在，请先运行最终总结" if str(exc) == "ledger_not_found" else f"书目不存在: {book_id}"
+        return HTTPException(status_code=404, detail=msg)
+    if isinstance(exc, KeyError):
+        return HTTPException(status_code=404, detail=f"伏笔条目不存在: {exc.args[0] if exc.args else item_id}")
+    if isinstance(exc, RuntimeError):
+        if str(exc) == "summary_running":
+            return HTTPException(status_code=409, detail="最终总结运行中，禁止并发改写伏笔账本")
+        logger.error(f"写入伏笔复核结果失败: {exc}")
+        return HTTPException(status_code=500, detail="保存伏笔账本失败")
+    if isinstance(exc, ValueError):
+        return HTTPException(status_code=400, detail=str(exc))
+    logger.error(f"伏笔复核覆写异常 ({book_id}/{item_id}): {exc}", exc_info=True)
+    return HTTPException(status_code=500, detail="伏笔复核覆写失败")
+
+
+@router.post("/{book_id}/ledger/batch_review", dependencies=[Depends(require_session_token)])
+async def batch_review_book_ledger_items(book_id: str, req: ForeshadowBatchReviewRequest) -> dict:
+    """原子批量人工复核覆写伏笔账本条目（受 session token 保护）。"""
+    try:
+        entries = [it.model_dump() for it in req.items]
+        return await asyncio.to_thread(book_service.batch_review_foreshadow_items, book_id, entries)
+    except Exception as e:
+        raise _translate_review_error(e, book_id)
 
 
 @router.post("/{book_id}/ledger/{item_id}/review", dependencies=[Depends(require_session_token)])
@@ -221,21 +200,8 @@ async def review_book_ledger_item(book_id: str, item_id: str, req: ForeshadowRev
             resolved_chapter=req.resolved_chapter,
             note=req.note,
         )
-    except LookupError as e:
-        msg = "伏笔账本不存在，请先运行最终总结" if str(e) == "ledger_not_found" else f"书目不存在: {book_id}"
-        raise HTTPException(status_code=404, detail=msg)
-    except KeyError:
-        raise HTTPException(status_code=404, detail=f"伏笔条目不存在: {item_id}")
-    except RuntimeError as e:
-        if str(e) == "summary_running":
-            raise HTTPException(status_code=409, detail="最终总结运行中，禁止并发改写伏笔账本")
-        logger.error(f"写入伏笔复核结果失败: {e}")
-        raise HTTPException(status_code=500, detail="保存伏笔账本失败")
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"伏笔复核覆写异常 ({book_id}/{item_id}): {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="伏笔复核覆写失败")
+        raise _translate_review_error(e, book_id, item_id)
 
 
 @router.get("/{book_id}/token_stats")

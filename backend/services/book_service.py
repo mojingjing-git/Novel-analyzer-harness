@@ -5,15 +5,22 @@
 GET /api/books 时刷新；其余接口按 id 惰性解析。
 """
 
-from dataclasses import asdict
 import json
 import logging
-import re
 import threading
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 
-from ..utils.foreshadow_ledger import ForeshadowLedger
+from .book_artifacts import (
+    batch_review_foreshadow_ledger,
+    book_info,
+    count_results as _count_results,
+    is_book_dir as _is_book_dir,
+    load_foreshadow_ranking_from_output,
+    load_recheck_verdicts_from_output,
+    load_style_profile_from_output,
+    review_foreshadow_ledger,
+)
 from .queue_service import get_service
 
 logger = logging.getLogger(__name__)
@@ -42,11 +49,6 @@ def _get_ledger_lock(book_id: str) -> threading.Lock:
             lock = threading.Lock()
             _ledger_review_locks[book_id] = lock
         return lock
-
-
-def _is_book_dir(d: Path) -> bool:
-    """书目录判定：含 blocks/ 或 output/ 子目录"""
-    return d.is_dir() and ((d / "blocks").exists() or (d / "output").exists())
 
 
 def _candidate_roots() -> List[Path]:
@@ -174,75 +176,12 @@ def latest_chapter(book_id: str) -> int:
     return _count_results(output_dir)[2]
 
 
-def _count_results(output_dir: Path) -> tuple[int, int, int]:
-    """统计结果文件：(数量, 最小章号, 最大章号)"""
-    chapters = []
-    if output_dir.exists():
-        for f in output_dir.glob("chapter_*_result.json"):
-            m = re.match(r"chapter_(\d+)_result\.json", f.name)
-            if m:
-                chapters.append(int(m.group(1)))
-    if not chapters:
-        return 0, 0, 0
-    return len(chapters), min(chapters), max(chapters)
-
-
-def book_info(book_id: str, path: Path) -> Dict[str, Any]:
-    """单本书的状态摘要"""
-    output_dir = path / "output"
-    result_count, ch_min, ch_max = _count_results(output_dir)
-    blocks_dir = path / "blocks"
-    total_blocks = len([f for f in blocks_dir.glob("*.txt")
-                        if re.match(r"^\d+\.txt$", f.name)]) if blocks_dir.exists() else 0
-    has_report = output_dir.exists() and any(output_dir.glob("final_summary_report*"))
-    from backend.config.constants import STORY_ATLAS_FILE
-    return {
-        "id": book_id,
-        "name": book_id,
-        "path": path.as_posix(),
-        "total_blocks": total_blocks,
-        "total_chapters": total_blocks,
-        "result_count": result_count,
-        "chapter_min": ch_min,
-        "chapter_max": ch_max,
-        "has_report": has_report,
-        "has_ledger": (output_dir / "foreshadow_ledger.json").exists(),
-        "has_audit": (output_dir / "foreshadow_audit.md").exists(),
-        "has_aggregated": (output_dir / "aggregated").exists(),
-        "has_atlas": (output_dir / STORY_ATLAS_FILE).exists(),
-    }
-
-
 def load_style_profile(book_id: str) -> Optional[Dict[str, Any]]:
     """读取总结 Stage 3 落盘的 style_profile.json；无书返回 None，缺失或损坏返回 exists=False。"""
     output_dir = get_output_dir(book_id)
     if output_dir is None:
         return None
-    from backend.config.constants import STYLE_PROFILE_CHECKPOINT_REL
-    path = output_dir / STYLE_PROFILE_CHECKPOINT_REL
-    empty = {"book_id": book_id, "exists": False, "statistical": None, "semantic": None, "sample_chapters": []}
-    if not path.exists():
-        return empty
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-        profile = raw.get("profile") if isinstance(raw, dict) else None
-        if not isinstance(profile, dict):
-            return empty
-        stat = profile.get("statistical")
-        sem = profile.get("semantic")
-        samples = profile.get("sample_chapters") or []
-        if not isinstance(stat, dict) or not stat:
-            return empty
-        return {
-            "book_id": book_id,
-            "exists": True,
-            "statistical": stat,
-            "semantic": sem if isinstance(sem, dict) else None,
-            "sample_chapters": samples if isinstance(samples, list) else [],
-        }
-    except Exception as e:
-        logger.warning(f"读取 style_profile.json 失败 ({book_id}): {e}")
-        return empty
+    return load_style_profile_from_output(output_dir, book_id)
 
 
 def load_recheck_verdicts(book_id: str) -> Optional[Dict[str, Any]]:
@@ -250,100 +189,15 @@ def load_recheck_verdicts(book_id: str) -> Optional[Dict[str, Any]]:
     output_dir = get_output_dir(book_id)
     if output_dir is None:
         return None
-    path = output_dir / "recheck_verdicts.json"
-    empty: Dict[str, Any] = {
-        "book_id": book_id,
-        "exists": False,
-        "engine": "",
-        "status": "",
-        "status_reason": "",
-        "model": "",
-        "generated_at": "",
-        "coverage": {},
-        "candidates_total": 0,
-        "verdicts": [],
-    }
-    if not path.exists():
-        return empty
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(raw, dict):
-            return empty
-        coverage = raw.get("coverage") if isinstance(raw.get("coverage"), dict) else {}
-        audit_routes = raw.get("audit_routes") if isinstance(raw.get("audit_routes"), dict) else {}
-        applied_map = raw.get("applied") if isinstance(raw.get("applied"), dict) else {}
-        resolved_map = raw.get("resolved_chapters") if isinstance(raw.get("resolved_chapters"), dict) else {}
+    return load_recheck_verdicts_from_output(output_dir, book_id)
 
-        is_v3 = bool(coverage.get("v3_tiers")) or any(
-            isinstance(r, dict) and r.get("engine") == "v3"
-            for r in audit_routes.values()
-        )
-        engine = "v3" if is_v3 else "v2"
 
-        # 容错读取台账以补充伏笔描述与核心问句
-        ledger_by_id: Dict[str, Dict[str, Any]] = {}
-        ledger_path = output_dir / "foreshadow_ledger.json"
-        if ledger_path.exists():
-            try:
-                ledger_raw = json.loads(ledger_path.read_text(encoding="utf-8"))
-                for item in ledger_raw.get("items") or []:
-                    if isinstance(item, dict) and item.get("id"):
-                        ledger_by_id[str(item["id"])] = item
-            except Exception as le:
-                logger.warning(f"补充读取 foreshadow_ledger.json 失败 ({book_id}): {le}")
-
-        verdicts_out: List[Dict[str, Any]] = []
-        for v in raw.get("verdicts") or []:
-            if not isinstance(v, dict):
-                continue
-            cid = str(v.get("candidate_id") or v.get("id") or "")
-            if not cid:
-                continue
-            ar = audit_routes.get(cid) if isinstance(audit_routes.get(cid), dict) else {}
-            l_item = ledger_by_id.get(cid) or {}
-            verdicts_out.append({
-                "id": cid,
-                "candidate_id": cid,
-                "verdict": str(v.get("verdict") or ""),
-                "tier": str(ar.get("tier") or ""),
-                "unresolved_type": str(ar.get("unresolved_type") or ""),
-                "answer": str(v.get("answer") or ""),
-                "quote": str(v.get("quote") or ""),
-                "reason": str(v.get("reason") or ""),
-                "applied": str(applied_map.get(cid) or ""),
-                "resolved_chapter": str(resolved_map.get(cid) or ""),
-                "hops_used": int(ar.get("hops_used") or 1),
-                "evidence_chain": list(ar.get("evidence_chain") or []),
-                "gate_demoted": bool(ar.get("gate_demoted", False)),
-                "gate_reason": str(ar.get("gate_reason") or ""),
-                "repaired": bool(ar.get("repaired", False)),
-                "description": str(l_item.get("description") or ""),
-                "question": str(l_item.get("question") or ""),
-                "first_seen_chapter": l_item.get("first_seen_chapter"),
-                "importance": str(l_item.get("importance") or ""),
-                "ledger_status": str(l_item.get("status") or ""),
-                "ledger_needs_review": bool(l_item.get("needs_review", False)),
-                "ledger_resolution_quality": str(l_item.get("resolution_quality") or ""),
-                "ledger_source_type": str(l_item.get("source_type") or ""),
-                "ledger_resolution": l_item.get("resolution"),
-                "ledger_resolved_chapter": l_item.get("resolved_chapter"),
-            })
-
-        return {
-            "book_id": book_id,
-            "exists": True,
-            "engine": engine,
-            "status": str(raw.get("status") or ""),
-            "status_reason": str(raw.get("status_reason") or ""),
-            "model": str(raw.get("model") or ""),
-            "generated_at": str(raw.get("generated_at") or ""),
-            "coverage": coverage,
-            "candidates_total": int(raw.get("candidates_total") or coverage.get("candidates_total") or len(verdicts_out)),
-            "verdicts": verdicts_out,
-        }
-    except Exception as e:
-        logger.warning(f"读取 recheck_verdicts.json 失败 ({book_id}): {e}")
-        return empty
+def load_foreshadow_ranking(book_id: str) -> Dict[str, Any]:
+    """按 book_id 读取伏笔排行；无书抛 LookupError，缺账本抛 FileNotFoundError。"""
+    output_dir = get_output_dir(book_id)
+    if output_dir is None:
+        raise LookupError("book_not_found")
+    return load_foreshadow_ranking_from_output(output_dir, book_id)
 
 
 def review_foreshadow_item(
@@ -359,8 +213,7 @@ def review_foreshadow_item(
     output_dir = get_output_dir(book_id)
     if output_dir is None:
         raise LookupError("book_not_found")
-    ledger_path = output_dir / "foreshadow_ledger.json"
-    if not ledger_path.exists():
+    if not (output_dir / "foreshadow_ledger.json").exists():
         raise LookupError("ledger_not_found")
 
     lock = _get_ledger_lock(book_id)
@@ -372,22 +225,37 @@ def review_foreshadow_item(
         if summary_svc.is_running and summary_svc.status().get("book_id") == book_id:
             raise RuntimeError("summary_running")
 
-        ledger = ForeshadowLedger.load(ledger_path)
-        item = ledger.apply_human_override(
+        return review_foreshadow_ledger(
+            output_dir,
+            book_id,
             item_id,
             action,
             resolution=resolution,
             resolved_chapter=resolved_chapter,
             note=note,
         )
-        if not ledger.save(ledger_path):
-            raise RuntimeError("ledger_save_failed")
-        return {
-            "book_id": book_id,
-            "item": asdict(item),
-            "lifecycle_bars": ledger.lifecycle_bars(),
-            "counts": ledger.get_item_count(),
-        }
+
+
+def batch_review_foreshadow_items(
+    book_id: str,
+    entries: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """在单书进程内锁与跨进程文件锁保护下原子批量覆写伏笔条目。"""
+    output_dir = get_output_dir(book_id)
+    if output_dir is None:
+        raise LookupError("book_not_found")
+    if not (output_dir / "foreshadow_ledger.json").exists():
+        raise LookupError("ledger_not_found")
+
+    lock = _get_ledger_lock(book_id)
+    with lock:
+        from .summary_service import get_summary_service
+
+        summary_svc = get_summary_service()
+        if summary_svc.is_running and summary_svc.status().get("book_id") == book_id:
+            raise RuntimeError("summary_running")
+
+        return batch_review_foreshadow_ledger(output_dir, book_id, entries)
 
 
 def list_books() -> List[Dict[str, Any]]:
