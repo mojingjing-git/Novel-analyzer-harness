@@ -1230,3 +1230,46 @@ def test_salvage_json_array_rows_recovers_truncated_prefix() -> None:
     salvaged = _salvage_json_array_rows(truncated)
     assert set(salvaged.keys()) == {"fs_1", "fs_2"}
     assert salvaged["fs_2"]["answer"] == "花括号}测试"
+
+
+def test_recheck_v3_package_layering_and_code_snapshot() -> None:
+    """recheck_v3 子包保持严格无环分层且 compute_recheck_code_snapshot 支持目录与单文件。"""
+    import ast
+    from pathlib import Path
+    import backend.services.recheck_v3 as rv3
+    from backend.common.recheck_request_log import compute_recheck_code_snapshot
+
+    snap_v3_a = compute_recheck_code_snapshot("recheck_v3")
+    snap_v3_b = compute_recheck_code_snapshot("recheck_v3")
+    snap_v2 = compute_recheck_code_snapshot("recheck_v2")
+    assert len(snap_v3_a) == 16 and snap_v3_a != "unknown"
+    assert snap_v3_a == snap_v3_b
+    assert len(snap_v2) == 16 and snap_v2 != "unknown"
+    assert snap_v3_a != snap_v2
+
+    # 校验子包四层无环拓扑：Layer(prompts=1) < Layer(parsers/preprocessing=2) < Layer(evidence_pool=3) < Layer(runner=4)
+    layer_rank = {
+        "prompts": 1,
+        "parsers": 2,
+        "preprocessing": 2,
+        "evidence_pool": 3,
+        "runner": 4,
+    }
+    pkg_dir = Path(rv3.__file__).resolve().parent
+    assert (pkg_dir / "runner.py").is_file()
+    for mod_name, rank in layer_rank.items():
+        tree = ast.parse((pkg_dir / f"{mod_name}.py").read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.level >= 1 and node.module:
+                target = node.module.split(".")[0]
+                if target in layer_rank:
+                    assert layer_rank[target] < rank, f"非法同层或反向依赖: {mod_name} -> {target}"
+
+    for sym in (
+        "WIDE_CHAPTER_CHARS",
+        "COMPACT_CHAPTER_CHARS",
+        "run_recheck_v3",
+        "verify_evidence_chain_v3",
+        "apply_v3_verdict_to_item",
+    ):
+        assert hasattr(rv3, sym)

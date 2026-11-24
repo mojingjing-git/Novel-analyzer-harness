@@ -24,11 +24,28 @@ def sha256_text(text: str) -> str:
 
 
 def compute_recheck_code_snapshot(contract_version: str = "recheck_v3") -> str:
-    """计算当前复检引擎源码字节的 SHA-256 前 16 位（仅路径哈希，不跨层 import services）。"""
-    target = "recheck_v2.py" if "v2" in (contract_version or "").lower() else "recheck_v3.py"
-    path = Path(__file__).resolve().parents[1] / "services" / target
+    """计算当前复检引擎源码字节的 SHA-256 前 16 位（仅路径哈希，不跨层 import services）。
+
+    兼容单文件模块与子包目录：子包按相对 POSIX 路径升序迭代所有 ``*.py``，
+    并对换行符做 ``\\r\\n -> \\n`` 归一化以保持跨平台确定性。
+    """
+    is_v2 = "v2" in (contract_version or "").lower()
+    services_dir = Path(__file__).resolve().parents[1] / "services"
+    pkg_dir = services_dir / ("recheck_v2" if is_v2 else "recheck_v3")
+    file_path = services_dir / ("recheck_v2.py" if is_v2 else "recheck_v3.py")
     try:
-        return hashlib.sha256(path.read_bytes()).hexdigest()[:16]
+        if pkg_dir.is_dir():
+            py_files = sorted(pkg_dir.rglob("*.py"), key=lambda p: p.relative_to(pkg_dir).as_posix())
+            if not py_files:
+                return "unknown"
+            h = hashlib.sha256()
+            for p in py_files:
+                rel = p.relative_to(pkg_dir).as_posix().encode("utf-8")
+                normalized = p.read_bytes().replace(b"\r\n", b"\n")
+                h.update(rel + b"\0" + normalized + b"\0")
+            return h.hexdigest()[:16]
+        normalized = file_path.read_bytes().replace(b"\r\n", b"\n")
+        return hashlib.sha256(normalized).hexdigest()[:16]
     except OSError:
         return "unknown"
 
