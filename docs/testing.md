@@ -4,7 +4,7 @@
 
 ## 目录与模块划分
 
-### 后端测试（`backend/tests/`，14 个领域测试文件）
+### 后端测试（`backend/tests/`，15 个领域测试文件）
 
 | 测试文件 | 覆盖领域 |
 |---|---|
@@ -22,6 +22,7 @@
 | `test_location_and_viz.py` | 人物分隔、`ensure_aggregated_cache` 按需缓存、Excel 自动聚合导出、全书图谱清洗与 `/api/viz/atlas`、别名归并角色卡 |
 | `test_queue_and_workspace.py` | `QueueManager` 状态机、ETA 计算、`UsageLedger` 跨进程累计账本与路由 |
 | `test_api_and_ws.py` | `X-Session-Token` 鉴权、`SPAStaticFiles` 回退、`ProgressHub` 广播、`/ws/progress` 心跳与断连 |
+| `test_cli.py` | CLI 解析、流隔离、只读检索、`ledger` 证据窗与原子批量复核、HTTP 代理、`.book.lock`、切分/分析/总结/独立复检、配置脱敏 |
 
 此外保留 `backend/tests/fixtures/classic_corpus.py`，供切分测试复用。
 

@@ -16,7 +16,7 @@
 - **后端**：FastAPI（异步），Python 3.11+
 - **桌面壳**：pywebview + WebView2（Windows）
 - **LLM 兼容**：任何 OpenAI 兼容 API（10 个厂商预设），以及 Anthropic 协议
-- **测试**：后端 14 个领域测试文件（`backend/tests/`），前端 5 个测试文件（`frontend/src/__tests__/`），统一由 `python scripts/run_tests.py` 运行（见 [docs/testing.md](./docs/testing.md)）。
+- **测试**：后端 15 个领域测试文件（`backend/tests/`），前端 5 个测试文件（`frontend/src/__tests__/`），统一由 `python scripts/run_tests.py` 运行（见 [docs/testing.md](./docs/testing.md)）。
   数量以 `pytest --collect-only -q` 与 `npm run test` 实时为准
 
 
@@ -26,12 +26,13 @@
 
 ```
 .
-├── backend/                      # FastAPI 后端（生产代码 96 个 .py）
+├── backend/                      # FastAPI 后端（生产代码 111 个 .py）
 │   ├── app.py                    # FastAPI 工厂（CORS、SPAStaticFiles 静态托管、路由注册、lifespan 工作区扫描）
 │   ├── main.py                   # 后端启动器（127.0.0.1:8000）
 │   ├── ws_events.py              # WS 协议权威定义（WSType 10 种 / WSState 8 种 / PipelineStatus + payload 契约）
 │   ├── progress_hub.py           # 进度广播中枢（分级驱逐慢消费者 + token_delta 250ms 节流 + log 转发）
-│   ├── common/                   # 共用纯逻辑层（10 个模块：错误分类 / 审核 / 关闭条件 / LLM 错误信号 / 复检请求日志 / proxy_env；只依赖标准库）
+│   ├── common/                   # 共用纯逻辑层（12 个模块：错误分类 / 审核 / 关闭条件 / LLM 错误信号 / 复检请求日志 / proxy_env / dep_health / file_lock；只依赖标准库）
+│   ├── cli/                      # 无头命令行接口（7 个模块：runtime / cmd_books / cmd_ledger / cmd_pipeline / main / __main__ / __init__；详见 docs/cli.md）
 │   ├── core/                     # 核心引擎（23 个模块；error_types / error_taxonomy / moderation 为 common 的兼容转发层）
 │   │   ├── pipeline.py           # 主分析流水线（预热 / 并发 / checkpoint / 滚动总结 / 失败补跑）
 │   │   ├── analyzer.py           # 单章分析引擎（LLM 调用 + 校验回调 + 知识库更新）
@@ -51,7 +52,8 @@
 │   │   ├── evidence.py           # 本地证据取材：把"全书"换成几段原文窗口
 │   │   ├── file_processor.py     # 章节文件扫描与编码读取
 │   │   └── moderation.py         # 内容审核拦截识别
-│   ├── services/                 # 15 个单文件模块 + final_summary/ 4 层无环子包 + recheck_v3/ 4 层无环子包
+│   ├── services/                 # 16 个单文件模块 + final_summary/ 4 层无环子包 + recheck_v3/ 4 层无环子包
+│   │   ├── book_artifacts.py     # 无单例纯路径书目产物读写与加锁伏笔覆写层（routes_books / book_service / cli 共用）
 │   │   ├── queue_service.py      # 分析运行编排（AnalysisService 单例）
 │   │   ├── queue_manager.py      # 队列状态机、扫描、模型预检与持久化
 │   │   ├── analysis_stats.py     # 会话统计累加
@@ -96,7 +98,7 @@
 │   │   ├── export_utils.py       # Markdown 导出
 │   │   ├── text_utils.py         # 编码检测 / 文本工具
 │   │   └── docx_extract.py       # DOCX 正文抽取（纯标准库）
-│   └── tests/                    # 14 个领域测试文件 + conftest / pytest_isolation / pytest_ssl_cache + fixtures 语料
+│   └── tests/                    # 15 个领域测试文件 + conftest / pytest_isolation / pytest_ssl_cache + fixtures 语料
 ├── frontend/src/                 # Vue 3 + TypeScript（含 __tests__/ 下 5 个聚合测试文件）
 │   ├── pages/                    # 9 个主页面（router.ts）
 │   │   ├── QueuePage.vue         # 分析队列
@@ -150,7 +152,7 @@
 | pywebview | 桌面 WebView2 壳 |
 | openpyxl | Excel 导出（懒加载） |
 | json5 / json_repair | JSON 容错解析 |
-| pytest | 默认收集 `backend/tests/`（14 个领域测试文件）；数量以 `pytest --collect-only -q` 为准 |
+| pytest | 默认收集 `backend/tests/`（15 个领域测试文件）；数量以 `pytest --collect-only -q` 为准 |
 
 ### 前端
 | 组件 | 版本/说明 |
@@ -347,10 +349,11 @@ self._char_rel_chapter: Dict[str, int]     # 角色关系单调章号水位线
 | `file_processor.py` | 章节文件扫描、编码探测与读取 |
 | `moderation.py` | 内容审核拦截识别（provider 无关） |
 
-### 5.2 服务层（backend/services/，15 个单文件模块 + final_summary/ 与 recheck_v3/ 两个子包）
+### 5.2 服务层（backend/services/，16 个单文件模块 + final_summary/ 与 recheck_v3/ 两个子包）
 
 | 模块 | 职责 |
 |---|---|
+| `book_artifacts.py` | 无单例纯路径书目产物读写、排行计算与 `.book.lock` 原子账本覆写 |
 | `queue_service.py` | 分析运行编排（`AnalysisService` 单例，含账户级熔断挂起队列与脱敏通知） |
 | `queue_manager.py` | 队列状态机、扫描、模型预检与持久化 |
 | `analysis_stats.py` | 会话统计累加（token、每章记录、重试成本） |
@@ -495,6 +498,10 @@ python scripts/run_tests.py --no-frontend -- -k recheck
 
 # 对齐 CI 的无缓存单进程全量校验
 python -m pytest -p no:cacheprovider -o addopts=""
+
+# CLI 无头入口（完整参数与 JSON 契约见 docs/cli.md）
+python -m backend.cli --help
+python -m backend.cli config health --json
 ```
 
 ### 前端

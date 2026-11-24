@@ -9,8 +9,9 @@
 |---|---|
 | [architecture.md](./architecture.md) | 系统结构、数据流、流水线与各子系统的职责边界 |
 | [api.md](./api.md) | 全部 HTTP 端点与 WebSocket 消息协议 |
+| [cli.md](./cli.md) | 面向外部模型与脚本调用的命令行接口、退出码、JSON 契约与示例 |
 | [configuration.md](./configuration.md) | `config.json` 全部配置项的默认值与语义 |
-| [testing.md](./testing.md) | 轻量领域聚合测试体系（14 后端 + 5 前端）、统一入口与运行隔离 |
+| [testing.md](./testing.md) | 轻量领域聚合测试体系（15 后端 + 5 前端）、统一入口与运行隔离 |
 | [troubleshooting.md](./troubleshooting.md) | 日志位置、常见故障的排查路径与调优建议 |
 | [build.md](./build.md) | PyInstaller 打包流程、产物布局与打包期问题 |
 | [自动验收器.md](./自动验收器.md) | 打捞结果的二次预筛：机械增量检测 + NLI 回答回路 + 评测口径 |
@@ -27,6 +28,7 @@
 - **第一次用**：根 README → [configuration.md](./configuration.md)（填 Key）→ [troubleshooting.md](./troubleshooting.md)
 - **要改后端**：根 [agent.md](../agent.md) → [architecture.md](./architecture.md)
 - **要接前端或写脚本**：[api.md](./api.md)
+- **要用 CLI 或外部模型联动审校**：[cli.md](./cli.md)
 - **要打包发布**：[build.md](./build.md)
 - **想知道现在做到什么程度、哪里还不稳**：[issues.md](./issues.md) + [baseline-data.md](./baseline-data.md)
 

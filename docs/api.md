@@ -53,7 +53,8 @@
 | `/api/books/{book_id}/report` | GET | 最终总结报告（Markdown） |
 | `/api/books/{book_id}/ledger` | GET | 伏笔账本 |
 | `/api/books/{book_id}/foreshadow_ranking` | GET | 伏笔排行（综合分降序，附每条 `source_type` 与全书 `lifecycle_bars`） |
-| `/api/books/{book_id}/ledger/{item_id}/review` | POST | 人工复核覆写伏笔账本条目（需 `X-Session-Token`；`action` 取 `confirm_resolved` / `reject_to_active` / `mark_dormant`，写入 `source_type="human_override"` 并刷新 `lifecycle_bars`） |
+| `/api/books/{book_id}/ledger/{item_id}/review` | POST | 人工复核覆写伏笔账本条目（需 `X-Session-Token`；`action` 取 `confirm_resolved` / `reject_to_active` / `mark_dormant`，写入 `source_type="human_override"` 并刷新 `lifecycle_bars`；运行期持 `.book.lock`，冲突返回 `409`） |
+| `/api/books/{book_id}/ledger/batch_review` | POST | 原子批量复核覆写伏笔账本条目（需 `X-Session-Token`；请求体 `{"items": [{"item_id", "action", "resolution"?, "resolved_chapter"?, "note"?}]}`，任一条校验失败则整批回滚并返回 `400` / `404`；持 `.book.lock` 防并发冲突，冲突返回 `409`） |
 | `/api/books/{book_id}/token_stats` | GET | 该书落盘的 token 统计 |
 | `/api/books/{book_id}/characters` | GET | 人物谱系索引（自动触发指纹聚合缓存与 `story_atlas.json` 马甲归并） |
 | `/api/books/{book_id}/characters/{character_name}` | GET | 单个角色卡详情（支持别名直查并自动合并别名下的弧光与事件） |

@@ -107,7 +107,12 @@ cd frontend && npm run dev                                 # 前端 http://local
 | `token_stats.json` / `summary_token_stats.json` | 分析侧 / 总结侧 token 统计 |
 | `final_summary_checkpoint/` | 总结断点 |
 
-所有操作也可以通过 [API](./docs/api.md) 直接调。
+所有操作也可以通过 [API](./docs/api.md) 或命令行工具 [CLI](./docs/cli.md) 直接调用：
+
+```bash
+python -m backend.cli books list --json
+python -m backend.cli ledger show 《书名》 <item_id> --with-evidence --json
+```
 
 ## 文档
 
@@ -116,6 +121,7 @@ cd frontend && npm run dev                                 # 前端 http://local
 | [docs/README.md](./docs/README.md) | 文档导航 |
 | [docs/architecture.md](./docs/architecture.md) | 系统结构与数据流 |
 | [docs/api.md](./docs/api.md) | 全部 HTTP 端点与 WebSocket 协议 |
+| [docs/cli.md](./docs/cli.md) | 命令行入口、JSON / NDJSON 契约与外部模型审校示例 |
 | [docs/configuration.md](./docs/configuration.md) | 配置项默认值与语义 |
 | [docs/testing.md](./docs/testing.md) | 轻量测试体系与统一运行入口 |
 | [docs/troubleshooting.md](./docs/troubleshooting.md) | 排障路径 |
@@ -184,7 +190,7 @@ python scripts/run_tests.py backend/tests/test_llm_client.py --no-frontend
 python scripts/run_tests.py --no-frontend -- -k recheck
 ```
 
-测试说明见 [docs/testing.md](./docs/testing.md)。后端 14 个领域测试文件覆盖模块导入冒烟、架构边界、LLM 重试链、JSON 容错、模型序列化、队列状态机、总结断点续跑、知识库快照隔离、伏笔账本、B/C 追踪与审核契约及复检裁决；前端 5 个 Vitest 测试文件覆盖 API 客户端、工具函数、核心组件与页面状态机。
+测试说明见 [docs/testing.md](./docs/testing.md)。后端 15 个领域测试文件覆盖模块导入冒烟、架构边界、LLM 重试链、JSON 容错、模型序列化、队列状态机、总结断点续跑、知识库快照隔离、伏笔账本、B/C 追踪与审核契约、复检裁决及 CLI 全链路契约；前端 5 个 Vitest 测试文件覆盖 API 客户端、工具函数、核心组件与页面状态机。
 
 修改后端后重启进程生效；修改前端后跑 `npm run build` 重新生成 `frontend/dist/`。新加
 `APIConfig` / `AnalysisConfig` dataclass 字段后，前端 `AppConfigDto` 必须同步补类型。

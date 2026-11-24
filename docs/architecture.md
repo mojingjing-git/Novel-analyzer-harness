@@ -17,14 +17,16 @@
 │   ├── common/                   # 共用纯逻辑语义层：错误分类（error_types /
 │   │                             #   error_taxonomy）、审核标记（moderation）、LLM 错误信号
 │   │                             #   （llm_signals）、复检请求日志（recheck_request_log）、
-│   │                             #   代理净化（proxy_env）等（10 个模块，只依赖标准库，禁止引用 core/services）
+│   │                             #   依赖健康探测（dep_health）、跨进程文件锁（file_lock）、
+│   │                             #   代理净化（proxy_env）等（12 个模块，只依赖标准库，禁止引用 core/services）
+│   ├── cli/                      # 无头命令行接口（7 个模块：runtime / cmd_books / cmd_ledger / cmd_pipeline / main / __main__ / __init__；复用 book_artifacts、file_lock、dep_health）
 │   ├── core/                     # 核心引擎（23 个模块）：分析流水线、LLM 客户端、知识库、风格提取等
 │   │                             #   （error_types / error_taxonomy / moderation 是 common 的兼容转发层）
-│   ├── services/                 # 15 个单文件模块 + final_summary/ 四层无环子包（8 个内部模块） + recheck_v3/ 四层无环子包（6 个内部模块）：编排层（队列、总结、切分、可视化、复检与裁决、用量账本…）
+│   ├── services/                 # 16 个单文件模块 + final_summary/ 四层无环子包（8 个内部模块） + recheck_v3/ 四层无环子包（6 个内部模块）：编排层（书目产物读取 book_artifacts、队列、总结、切分、可视化、复检与裁决、用量账本…）
 │   ├── config/                   # constants.py（默认值与常量）/ paths.py（路径真源）/ settings.py / presets.py
 │   ├── models/                   # AnalysisResult / KnowledgeBase
 │   ├── utils/                    # JSON 解析、按需聚合缓存、Excel、角色卡、账本、文本工具
-│   └── tests/                    # 14 个领域测试文件 + conftest / pytest_isolation / pytest_ssl_cache + fixtures 语料
+│   └── tests/                    # 15 个领域测试文件 + conftest / pytest_isolation / pytest_ssl_cache + fixtures 语料
 ├── frontend/
 │   └── src/
 │       ├── pages/                # 9 个主页面（旧入口保留带参重定向）
@@ -170,7 +172,7 @@ schema 版本号随分类表一起管理。`FORESHADOW_CATEGORY_TEXT` 是前端�
 ### 伏笔账本
 
 `foreshadow_ledger.json` 是全书伏笔的状态机，状态分 `active` / `resolved` / `dormant`。
-休眠判定按章距跨度 `DORMANT_CHAPTER_THRESHOLD`（200 章）触发，并跳过 `needs_review=True` 的待确认条目。`reconciliation` 逐批判定回收，全书复检兜底；前端保持纯只读展示（并在已有覆写结果时渲染只读状态徽章），后端同时开放 `POST /api/books/{book_id}/ledger/{item_id}/review` 接口（支持 `confirm_resolved` / `reject_to_active` / `mark_dormant`，写入 `source_type="human_override"` 并清空 `needs_review`），供脚本、CLI 或外部 Agent 调用，覆写后的条目受自动复检引擎跳过保护。
+休眠判定按章距跨度 `DORMANT_CHAPTER_THRESHOLD`（200 章）触发，并跳过 `needs_review=True` 的待确认条目。`reconciliation` 逐批判定回收，全书复检兜底；前端保持纯只读展示（并在已有覆写结果时渲染只读状态徽章），后端同时开放 `POST /api/books/{book_id}/ledger/{item_id}/review` 与原子批量端点 `POST /api/books/{book_id}/ledger/batch_review`（支持 `confirm_resolved` / `reject_to_active` / `mark_dormant`，写入 `source_type="human_override"` 并清空 `needs_review`），供脚本、`python -m backend.cli`（详见 [cli.md](./cli.md)）或外部 Agent 在 `.book.lock` 保护下调用；覆写后的条目受自动复检引擎跳过保护。
 
 ## 最终总结（`backend/services/final_summary/`）
 
