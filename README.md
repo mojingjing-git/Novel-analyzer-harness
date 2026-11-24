@@ -122,7 +122,7 @@ python -m backend.cli ledger show 《书名》 <item_id> --with-evidence --json
 | [docs/architecture.md](./docs/architecture.md) | 系统结构与数据流 |
 | [docs/api.md](./docs/api.md) | 全部 HTTP 端点与 WebSocket 协议 |
 | [docs/cli.md](./docs/cli.md) | 命令行入口、JSON / NDJSON 契约与外部模型审校示例 |
-| [docs/configuration.md](./docs/configuration.md) | 配置项默认值与语义 |
+| [docs/configuration.md](./docs/configuration.md) | 131 项全量配置默认值、分组与元模型说明 |
 | [docs/testing.md](./docs/testing.md) | 轻量测试体系与统一运行入口 |
 | [docs/troubleshooting.md](./docs/troubleshooting.md) | 排障路径 |
 | [docs/build.md](./docs/build.md) | 打包发布 |

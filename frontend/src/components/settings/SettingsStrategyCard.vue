@@ -15,7 +15,7 @@ defineProps<{
     <div class="sf-num-grid">
       <div class="sf-num-row">
         <label v-tooltip="tooltips.block_size">块大小 (章/块):</label>
-        <input v-model.number="config.analysis.block_size" :class="errCls('block_size')" type="number" min="1" max="10" class="glass-input sf-num-input" />
+        <input v-model.number="config.analysis.block_size" :class="errCls('block_size')" type="number" min="1" max="200" class="glass-input sf-num-input" />
       </div>
       <div class="sf-num-row">
         <label v-tooltip="tooltips.summary_batch_size">总结批次大小:</label>

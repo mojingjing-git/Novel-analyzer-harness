@@ -1,4 +1,5 @@
 /** SettingsPage tooltips, field key sets, JSON mode options, and detector labels. */
+import { ALL_ADVANCED_FIELD_KEYS } from './settingsSchema'
 
 export interface CategoryDef {
   name: string
@@ -57,18 +58,7 @@ export const tooltips: Record<string, string> = {
   checkpoint_interval: '每处理多少块做一次 checkpoint 落盘；0=关闭',
 }
 
-export const ADVANCED_FIELD_KEYS = new Set([
-  'max_tokens', 'timeout', 'summary_timeout', 'json_mode',
-  'temperature', 'temperature_step', 'temperature_max_retries', 'backoff_max_retries',
-  'recheck_max_tokens', 'recheck_timeout', 'recheck_v2_batch_size',
-  'max_arc_length', 'max_arcs_in_prompt', 'max_summaries_in_prompt', 'timeline_truncate',
-  'max_character_states', 'max_world_items', 'max_foreshadow_entries',
-  'batch_summary_min_words', 'final_report_min_words',
-  'volume_compress_threshold', 'volume_compress_group',
-  'rolling_early_chapters', 'rolling_max_milestones', 'rolling_max_momentum', 'checkpoint_interval',
-  'foreshadow_min_importance', 'foreshadow_min_confidence',
-  'max_foreshadow_catalog_high', 'max_foreshadow_catalog_mid', 'foreshadow_kept_categories',
-])
+export const ADVANCED_FIELD_KEYS = ALL_ADVANCED_FIELD_KEYS
 
 export const RECHECK_ENDPOINT_FIELD_KEYS = new Set([
   'recheck_base_url', 'recheck_api_key', 'recheck_provider', 'recheck_json_mode',

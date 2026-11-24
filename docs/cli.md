@@ -14,6 +14,8 @@ python -m backend.cli [全局选项] <命令> [子命令与参数]
 |---|---|
 | `--runtime-dir PATH` | 显式指定运行目录（默认读取 `paths.get_runtime_dir()`） |
 | `--book-dir PATH` | 显式指定单本书目目录（含 `blocks/` 或 `output/`）；指定后需双定位参数的子命令可省略书名 |
+| `--config PATH` | 显式指定配置文件路径（优先级高于 `<runtime_dir>/config.json`；文件不存在报退出码 `3`） |
+| `-o` / `--set KEY=VALUE` | 在内存中临时覆盖任意配置项（支持点路径与唯一短键名；可重复且跨父/子命令累积生效，不写回磁盘） |
 | `--server URL` | 显式指定运行中的桌面或 Web 后端地址 |
 | `--token TOKEN` | 显式提供 `X-Session-Token` 鉴权口令 |
 | `--offline` | 禁用活体服务代理，直接执行本地加锁读写 |
@@ -79,10 +81,16 @@ python -m backend.cli [全局选项] <命令> [子命令与参数]
 
 ### 配置与诊断（`config`）
 
-| 命令 | 说明 |
-|---|---|
-| `config show` | 输出当前生效配置，自动脱敏 `api_key`、`recheck_api_key` 与 URL 凭据；配置损坏时返回退出码 `2` |
-| `config health` | 返回运行目录、配置合法性、关键依赖就绪状态及活体后端探测摘要（仅输出 `token_present` 布尔标记，不打印口令） |
+| 命令 | 核心参数 | 说明 |
+|---|---|---|
+| `config show` | 无 | 输出当前生效配置（含 `--config` 与 `--set` 叠加视图），自动脱敏凭据与 URL 口令；配置损坏返回退出码 `2` |
+| `config health` | 无 | 返回运行目录、目标配置文件、配置合法性、关键依赖就绪状态及活体后端探测摘要 |
+| `config schema` | `--group` `--search` | 列出全量 131 项配置元模型、分组、类型与取值范围，支持按分组与关键词筛选 |
+| `config get KEY` | `--include-credentials` | 读取单个配置项的当前生效值与默认值元数据（敏感项默认脱敏） |
+| `config set KEY=VALUE ...` | 若干 `KEY=VALUE` | 校验并持久化修改一个或多个配置项；活体后端在线且未使用 `--config`/`--offline` 时走 HTTP `PATCH /api/settings` |
+| `config patch` | `--file PATH_OR_DASH` | 从 JSON 文件或 `-`（`stdin`）应用局部嵌套补丁；校验未知键并走 `PATCH /api/settings` 或原子写盘 |
+| `config reset` | `[KEYS ...] \| --all` `--include-credentials` | 将指定键或全量配置重置为默认值；`--all` 默认保留端点与密钥凭据，显式 `--include-credentials` 时一并清空 |
+| `config presets` | 无 | 列出内置 API 厂商预设（密钥字段脱敏） |
 
 ## 并发锁与活体后端代理
 

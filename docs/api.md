@@ -112,6 +112,7 @@
 | 端点 | 方法 | 说明 |
 |---|---|---|
 | `/api/settings` | GET / PUT / PATCH | 读 / 全量替换 / 局部更新配置。运行中受并发与阶段写护栏限制 |
+| `/api/settings/schema` | GET | 返回全量 131 项配置元模型、11 个 UI 分组、默认值与校验约束 |
 | `/api/settings/presets` | GET | 厂商预设列表 |
 | `/api/settings/models` | GET | 按已保存配置拉取可用模型 |
 | `/api/settings/preview/models` | POST | 用未保存的表单试查模型（不写回配置） |

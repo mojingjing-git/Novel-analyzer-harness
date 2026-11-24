@@ -53,6 +53,15 @@ import {
   decomposeThinkingMode,
   makeThinkingPresets,
 } from '../utils/settingsForm'
+import {
+  ADVANCED_GROUP_IDS,
+  ALL_ADVANCED_FIELD_KEYS,
+  buildDefaultAppConfig,
+  DEFAULT_SETTINGS_SCHEMA,
+  isFieldModified,
+  resetFieldToDefault,
+  setConfigValueByPath,
+} from '../utils/settingsSchema'
 import { applySummaryProgress, reconcileSummaryLanes } from '../utils/summaryLanes'
 import {
   SUMMARY_PHASES,
@@ -603,5 +612,31 @@ describe('summaryLanes & summaryProgress', () => {
       [],
     )
     expect(emptyReconciled.has(999001)).toBe(false)
+  })
+})
+
+describe('settingsSchema', () => {
+  it('131 项配置元模型与 11 个分组零遗漏、零重复且默认值辅助函数闭环', () => {
+    expect(DEFAULT_SETTINGS_SCHEMA.total_fields).toBe(131)
+    expect(DEFAULT_SETTINGS_SCHEMA.fields.length).toBe(131)
+    expect(DEFAULT_SETTINGS_SCHEMA.groups.length).toBe(11)
+    expect(ADVANCED_GROUP_IDS.length).toBe(7)
+    expect(ALL_ADVANCED_FIELD_KEYS.size).toBe(106)
+
+    const groupIds = new Set(DEFAULT_SETTINGS_SCHEMA.groups.map((g) => g.id))
+    const pathSet = new Set<string>()
+    for (const f of DEFAULT_SETTINGS_SCHEMA.fields) {
+      expect(groupIds.has(f.group)).toBe(true)
+      expect(pathSet.has(f.path)).toBe(false)
+      pathSet.add(f.path)
+    }
+
+    const cfg = buildDefaultAppConfig()
+    const poolSpec = DEFAULT_SETTINGS_SCHEMA.fields.find((f) => f.path === 'analysis.recheck_v3_pool_max_chars')!
+    expect(isFieldModified(cfg, poolSpec)).toBe(false)
+    setConfigValueByPath(cfg, poolSpec, 88888)
+    expect(isFieldModified(cfg, poolSpec)).toBe(true)
+    resetFieldToDefault(cfg, poolSpec)
+    expect(isFieldModified(cfg, poolSpec)).toBe(false)
   })
 })

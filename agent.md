@@ -84,6 +84,7 @@
 │   ├── config/
 │   │   ├── constants.py          # 全部硬编码默认值 + 50 类伏笔定义（7 组）
 │   │   ├── paths.py              # 代码根 / 资源根 / runtime 运行目录解析真源
+│   │   ├── schema.py             # 131 项配置元模型、分组、约束与 CLI 解析助手
 │   │   ├── settings.py           # APIConfig / AnalysisConfig / GUIConfig / AppConfig + ConfigManager
 │   │   └── presets.py            # 厂商预设
 │   ├── models/
@@ -428,7 +429,7 @@ Win11 Fluent 风格，颜色 / 圆角 / 阴影 / 间距统一走 `--win-*` 变�
 | 页面 | 职责 |
 |---|---|
 | `QueuePage.vue` | 分析队列：书籍队列、启停分析、进度车道、token 统计、日志下载 |
-| `SettingsPage.vue` | 设置编排页：挂载 `components/settings/` 下 4 张卡片组件管理 API / 模型矩阵 / 策略 / 高级参数与伏笔分类 |
+| `SettingsPage.vue` | 设置编排页：挂载 `components/settings/` 下 4 张卡片组件管理 API / 模型矩阵 / 策略 / 7 大可检索高级参数分组与伏笔分类 |
 | `CharacterCardPage.vue` | 人物谱系：核心关系网、别名检索与归并角色卡详情 |
 | `SummaryPage.vue` | 最终总结：总结启停、阶段进度、风格量化概览、复检明细只读查看、全书脉络报告与一键导出 Excel |
 | `SplitterPage.vue` | 切分预览、批量切分、书名推断 |
@@ -447,8 +448,8 @@ Win11 Fluent 风格，颜色 / 圆角 / 阴影 / 间距统一走 `--win-*` 变�
 
 ### 6.6 前端关键模式
 
-- **纯函数外置**：`utils/` 下 10 个模块承载车道注册表、自研 Markdown、队列状态机、总结进度、设置表单、
-  设置提示词表、切分视图、主题、工作区视图等逻辑，便于单测。
+- **纯函数外置**：`utils/` 下 11 个模块承载车道注册表、自研 Markdown、队列状态机、总结进度、设置表单、
+  设置元模型兜底、设置提示词表、切分视图、主题、工作区视图等逻辑，便于单测。
 - **自研 Markdown 渲染**：`utils/markdown.ts` 零依赖渲染 Markdown → HTML（已先做 `escapeHtml()` 转义）。
 - **请求超时**：`client.ts` 默认 30 秒超时，重活请求单独放宽到 120–300 秒。
 
@@ -466,11 +467,9 @@ Win11 Fluent 风格，颜色 / 圆角 / 阴影 / 间距统一走 `--win-*` 变�
 跨章记忆容器：时间轴、压缩主线、最近摘要、人物状态、人物关系、伏笔网络、世界观、
 已验证事实、长线主线、主题要素、节奏追踪等。`memory_state.py` 负责增量合并与裁剪。
 
-### 7.3 配置结构（backend/config/settings.py）
+### 7.3 配置结构（backend/config/settings.py & schema.py）
 
-`APIConfig` / `AnalysisConfig` / `GUIConfig` / `AppConfig` 四个 dataclass，加载时经
-`_coerce_fields` 过滤未知字段并做类型强转（字符串 `"4"` → `4`）；配置文件解析失败会置
-损坏标志，修复前拒绝写入，避免默认配置覆盖真实 API Key。
+`APIConfig` / `AnalysisConfig` / `GUIConfig` / `AppConfig` 四个 dataclass 与 `backend/config/schema.py`（131 项 `ConfigFieldSpec` 与 11 个 `CONFIG_GROUPS`）共同构成唯一配置真源；加载时经 `_coerce_fields` 过滤未知字段并做类型强转（字符串 `"4"` → `4`）；配置文件解析失败会置损坏标志，修复前拒绝写入，避免默认配置覆盖真实 API Key。
 
 字段清单与默认值见 [docs/configuration.md](./docs/configuration.md)。
 

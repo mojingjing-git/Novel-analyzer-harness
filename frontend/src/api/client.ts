@@ -151,6 +151,47 @@ export interface SyncModelsResponse {
   error?: string
 }
 
+export type ConfigFieldType =
+  | 'bool'
+  | 'dict'
+  | 'float'
+  | 'int'
+  | 'list_str'
+  | 'optional_str'
+  | 'str'
+
+export interface ConfigGroupSchemaDto {
+  id: string
+  title: string
+  description: string
+  ui_placement: 'core' | 'recheck_endpoint' | 'advanced'
+}
+
+export interface ConfigFieldSchemaDto {
+  path: string
+  section: 'api' | 'analysis' | 'gui' | 'root'
+  key: string
+  field_type: ConfigFieldType
+  default: unknown
+  group: string
+  label: string
+  description: string
+  min_val: number | null
+  max_val: number | null
+  step: number | null
+  choices: string[]
+  sensitive: boolean
+  is_url: boolean
+  status: 'active' | 'reserved' | 'legacy'
+  ui_placement: 'core' | 'recheck_endpoint' | 'advanced'
+}
+
+export interface ConfigSchemaDto {
+  total_fields: number
+  groups: ConfigGroupSchemaDto[]
+  fields: ConfigFieldSchemaDto[]
+}
+
 export interface AppConfigDto {
   api: {
     base_url: string
@@ -172,6 +213,14 @@ export interface AppConfigDto {
     summary_thinking_mode: Record<string, unknown>
     provider: string
     streaming_enabled?: boolean
+    temp_retry_wait_base?: number
+    rate_limit_wait_base?: number
+    rate_limit_wait_cap?: number
+    rate_limit_min_backoff_retries?: number
+    backoff_wait_cap?: number
+    hard_timeout_margin?: number
+    moderation_short_circuit_hits?: number
+    breaker_open_after?: number
   }
   analysis: {
     max_arc_length: number
@@ -195,21 +244,65 @@ export interface AppConfigDto {
     max_foreshadow_catalog_mid: number
     batch_summary_min_words: number
     final_report_min_words: number
+    volume_compress_threshold: number
+    volume_compress_group: number
+    volume_compress_ratio?: number
     rolling_early_chapters: number
+    rolling_update_interval?: number
+    rolling_summary_max_tokens?: number
+    rolling_summary_max_retries?: number
+    rolling_summary_temperature?: number
     rolling_max_milestones: number
     rolling_max_momentum: number
+    rolling_momentum_window?: number
+    rolling_archive_trigger_count?: number
+    rolling_max_paradigm_layers?: number
+    rolling_max_causal_chains?: number
+    rolling_archive_max_tokens?: number
     checkpoint_interval: number
+    failed_block_retry_rounds?: number
     auto_archive: boolean
     auto_summary: boolean
     summary_concurrency: number
     summary_batch_size: number
+    dormant_chapter_threshold?: number
+    foreshadow_min_clue_chars?: number
+    foreshadow_dedup_keyword_overlap?: number
+    foreshadow_dedup_similarity?: number
+    atlas_max_tokens?: number
+    atlas_max_characters?: number
+    atlas_max_locations?: number
+    style_sample_chapters?: number
+    style_sample_chars?: number
+    style_max_tokens?: number
+    style_temperature?: number
     anchor_quote_enabled: boolean
     anchor_min_chars: number
     recheck_max_calls: number
     recheck_max_tokens: number
     recheck_concurrency: number
     recheck_version?: string
+    recheck_v3_mode?: string
+    recheck_v3_batch_size?: number
+    recheck_v3_pool_max_chars?: number
+    recheck_v3_prompt_hard_cap_chars?: number
+    recheck_v3_u1_superchunk_chars?: number
+    recheck_v3_u1_split_batch_size?: number
+    recheck_v3_u1_route_q_batch?: number
+    recheck_v3_chapter_chars?: number
+    recheck_v3_max_post_windows?: number
+    recheck_v3_max_pre_windows?: number
+    recheck_v3_hop2_new_cap?: number
+    recheck_v3_hop3_new_cap?: number
+    recheck_v3_max_hops?: number
+    recheck_v3_max_audit_windows?: number
+    recheck_v3_pre_lookback_units?: number
+    recheck_v3_nms_cluster_radius?: number
+    recheck_v3_nms_max_per_cluster?: number
     recheck_v2_batch_size: number
+    recheck_v2_window_radius?: number
+    recheck_v2_max_windows?: number
+    recheck_v2_retry_rounds?: number
     recheck_v3_gray_u4?: boolean
     recheck_v3_mid_single_hop?: boolean
     recheck_model: string
@@ -228,8 +321,8 @@ export interface AppConfigDto {
     max_verified_facts: number
     max_long_term_arcs: number
     max_thematic_elements: number
-    volume_compress_threshold: number
-    volume_compress_group: number
+    max_kb_character_states?: number
+    max_kb_character_relationships?: number
   }
   gui: {
     language?: string  // i18n 接口预留
@@ -607,6 +700,7 @@ export const api = {
   }) =>
     request<AppConfigDto>('/api/settings', { method: 'PATCH', body: JSON.stringify(patch) }),
   getPresets: () => request<{ presets: Record<string, { base_url: string; api_key: string; model: string }> }>('/api/settings/presets'),
+  getSettingsSchema: () => request<ConfigSchemaDto>('/api/settings/schema'),
   getModels: () => request<{ models: string[] }>('/api/settings/models'),
   previewModels: (params: { base_url?: string; api_key?: string; provider?: string }) =>
     request<{ models: string[] }>('/api/settings/preview/models', { method: 'POST', body: JSON.stringify(params) }),

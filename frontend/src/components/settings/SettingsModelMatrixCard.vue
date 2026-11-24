@@ -279,7 +279,7 @@ onUnmounted(() => {
 
         <div class="mc-field mc-conc-field">
           <label class="mc-label" v-tooltip="tooltips.concurrency">分析并发</label>
-          <input v-model.number="config.analysis.concurrency" :class="errCls('concurrency')" type="number" min="1" max="20" class="glass-input w-full" />
+          <input v-model.number="config.analysis.concurrency" :class="errCls('concurrency')" type="number" min="1" max="64" class="glass-input w-full" />
         </div>
 
         <div class="mc-action-cell">
@@ -425,7 +425,7 @@ onUnmounted(() => {
 
         <div class="mc-field mc-conc-field">
           <label class="mc-label" v-tooltip="tooltips.summary_concurrency">总结并发 (0=跟随)</label>
-          <input v-model.number="config.analysis.summary_concurrency" :class="errCls('summary_concurrency')" type="number" min="0" max="20" class="glass-input w-full" />
+          <input v-model.number="config.analysis.summary_concurrency" :class="errCls('summary_concurrency')" type="number" min="0" max="64" class="glass-input w-full" />
         </div>
 
         <div class="mc-action-cell">
@@ -518,7 +518,7 @@ onUnmounted(() => {
 
         <div class="mc-field mc-conc-field">
           <label class="mc-label" v-tooltip="tooltips.recheck_concurrency">复检并发 (0=跟随)</label>
-          <input v-model.number="config.analysis.recheck_concurrency" :class="errCls('recheck_concurrency')" type="number" min="0" max="20" class="glass-input w-full" />
+          <input v-model.number="config.analysis.recheck_concurrency" :class="errCls('recheck_concurrency')" type="number" min="0" max="64" class="glass-input w-full" />
         </div>
 
         <div class="mc-action-cell flex items-center gap-2 flex-wrap">

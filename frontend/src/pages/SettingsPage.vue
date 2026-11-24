@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import { ref, computed, watch, inject, onMounted, onUnmounted } from 'vue'
 import { routeLocationKey, routerKey } from 'vue-router'
-import { api, type AppConfigDto, type ModelSpecDto } from '../api/client'
+import { api, type AppConfigDto, type ConfigSchemaDto, type ModelSpecDto } from '../api/client'
 import SettingsApiConnectionCard from '../components/settings/SettingsApiConnectionCard.vue'
 import SettingsStrategyCard from '../components/settings/SettingsStrategyCard.vue'
 import SettingsModelMatrixCard from '../components/settings/SettingsModelMatrixCard.vue'
 import SettingsAdvancedSection from '../components/settings/SettingsAdvancedSection.vue'
+import {
+  DEFAULT_SETTINGS_SCHEMA,
+  FIELD_GROUP_BY_KEY,
+  mergeSettingsSchema,
+} from '../utils/settingsSchema'
 import {
   pruneEmptyStrings, mapFieldErrors, toggleCategoryIn, CATEGORY_CLEAR_FALLBACK,
   inferThinkingState, makeThinkingPresets,
@@ -31,6 +36,8 @@ let savedTimer: ReturnType<typeof setTimeout> | undefined
 let disposed = false
 const showAdvanced = ref(false)
 const showRecheckEndpoint = ref(false)
+const settingsSchema = ref<ConfigSchemaDto>(DEFAULT_SETTINGS_SCHEMA)
+const advancedSectionRef = ref<InstanceType<typeof SettingsAdvancedSection> | null>(null)
 
 const categoryDefs = ref<CategoryDef[]>([])
 const keptSet = computed(() => new Set(config.value?.analysis.foreshadow_kept_categories ?? []))
@@ -199,9 +206,15 @@ async function runSyncCatalog() {
 async function load() {
   loadError.value = ''
   try {
-    config.value = await api.getSettings()
+    const [cfgRes, presetsRes, schemaRes] = await Promise.all([
+      api.getSettings(),
+      api.getPresets(),
+      api.getSettingsSchema?.().catch(() => null),
+    ])
+    config.value = cfgRes
     savedSnapshot.value = configSnapshot.value
-    presets.value = (await api.getPresets()).presets
+    presets.value = presetsRes.presets
+    settingsSchema.value = mergeSettingsSchema(schemaRes)
     syncThinkingFromConfig()
     syncSummaryThinkingFromConfig()
     await Promise.all([fetchModelSpec(), fetchSummaryModelSpec()])
@@ -266,8 +279,12 @@ async function save() {
     if (err.status === 422 && Array.isArray(err.detail)) {
       const { fieldErrors: fe, msgs } = mapFieldErrors(err.detail)
       fieldErrors.value = fe
+      const advGroups = Object.keys(fe)
+        .map((k) => FIELD_GROUP_BY_KEY[k])
+        .filter((g): g is string => Boolean(g))
       if (Object.keys(fe).some((k) => ADVANCED_FIELD_KEYS.has(k))) {
         showAdvanced.value = true
+        advancedSectionRef.value?.revealGroups(advGroups)
       }
       if (Object.keys(fe).some((k) => RECHECK_ENDPOINT_FIELD_KEYS.has(k))) {
         showRecheckEndpoint.value = true
@@ -553,8 +570,10 @@ onUnmounted(() => {
     </div>
 
     <SettingsAdvancedSection
+      ref="advancedSectionRef"
       :show="showAdvanced"
       :config="config"
+      :schema="settingsSchema"
       :categoryDefs="categoryDefs"
       :keptSet="keptSet"
       :errCls="errCls"
@@ -581,7 +600,7 @@ onUnmounted(() => {
         </Transition>
         <span v-if="!saving && hasUnsavedChanges" class="glass-badge badge-orange" style="font-size: 12px" role="status">有未保存的修改</span>
         <button type="button" @click="showAdvanced = !showAdvanced" class="glass-button ml-auto">
-          {{ showAdvanced ? '收起高级参数（3 大分组）' : '展开高级参数（3 大分组）' }}
+          {{ showAdvanced ? '收起高级参数（7 大分组）' : '展开高级参数（7 大分组）' }}
         </button>
       </div>
     </div>

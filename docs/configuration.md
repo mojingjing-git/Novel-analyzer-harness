@@ -1,19 +1,15 @@
 # 配置参考
 
-源码模式下配置文件位于 `runtime/config.json`，首次启动由 `desktop/config.example.json` 复制生成；打包便携 EXE 模式下则位于 EXE 同级目录 `config.json`。设置页提供图形化编辑，保存后立即落盘。
+源码模式下配置文件位于 `runtime/config.json`，首次启动由 `desktop/config.example.json` 复制生成；打包便携 EXE 模式下则位于 EXE 同级目录 `config.json`。系统通过统一配置元模型（`backend/config/schema.py`）暴露全量 **131 项**参数，设置页与 CLI `config schema` 均完整提供读写能力，保存后立即落盘。
 
-**所有默认值以 `backend/config/constants.py` 为准**。本文表格里的"默认"列是代码默认值，
-不是某一台机器上的实例值。
+**所有默认值以 `backend/config/constants.py` 与 `backend/config/schema.py` 为准**。本文表格里的"默认"列为代码默认值。
 
-## 配置的读写机制
+## 配置的读写机制与元模型
 
-- `PUT /api/settings` 是**全量覆盖**：请求体整体替换配置。分析正在运行时会被拒绝
-  （409），其余时候可以正常写入，**不需要重启**。
-- 设置页保存前会删掉所有空字符串字段，服务端据此把该项**回落成代码默认值**——
-  这就是"清空输入框 = 恢复默认"的实现方式。
-- 服务端只接受 dataclass 里声明过的键，并做类型强转（字符串 `"4"` → `4`）。
-  **未声明的键会被静默丢弃**，写错字段名不会报错，只会不生效。
-- 配置文件损坏时会被标记，修复前拒绝写入，避免默认配置覆盖真实 API Key。
+- 统一配置元模型 `backend/config/schema.py` 定义全量 **131 项**字段，划分为 **11 个分组**（3 个核心分组、1 个复检独立端点分组、7 个高级参数分组），`GET /api/settings/schema` 与 `python -m backend.cli config schema --json` 对外暴露同一套元数据。
+- `PUT /api/settings` 执行全量替换，`PATCH /api/settings` 执行局部增量更新；分析或总结运行中受写护栏保护（非纯总结参数返回 409），空闲期间写入立即生效，无需重启。
+- 设置页高级区域支持按名称/键名/说明关键词搜索、`仅看已修改`筛选、分组折叠与单字段一键重置；保存前会剪除空字符串字段以触发服务端默认值回落，`working_directory` 留空提交 `null`。
+- `ConfigManager` 对未知键按 dataclass 白名单清洗与强转，并在环境变量注入 `LLM_API_KEY` / `MINIMAX_API_KEY` 时保留既有磁盘 `api_key`，避免环境变量密钥写盘或抹除原有配置；配置文件解析失败时锁定写入，直到 JSON 修复。
 
 ## 环境变量
 
@@ -49,7 +45,15 @@
 | `reasoning_effort` | str | `""` | 推理深度档位（`low` / `medium` / `high` / `xhigh` / `max`）；空 = 不传，由服务端决定 |
 | `summary_model` | str | `""` | 总结专用模型，空值跟随 `model` |
 | `summary_thinking_mode` | dict | `{}` | 总结专用思考控制，空值跟随 `thinking_mode` |
-| `streaming_enabled` | bool | `true` | 是否走流式调用；关掉则回退非流式。**设置页没有这一项**，只能手改配置文件 |
+| `streaming_enabled` | bool | `true` | 是否走流式调用；关闭则回退非流式 |
+| `temp_retry_wait_base` | int | `3` | 温度退火重试基础等待秒数 |
+| `rate_limit_wait_base` | int | `30` | 429 限流重试基础等待秒数 |
+| `rate_limit_wait_cap` | int | `120` | 429 限流等待秒数上限 |
+| `rate_limit_min_backoff_retries` | int | `3` | 遭遇 429 时触发的最小退避轮数 |
+| `backoff_wait_cap` | int | `60` | 指数退避等待秒数上限 |
+| `hard_timeout_margin` | int | `30` | 硬超时附加安全边界（秒） |
+| `moderation_short_circuit_hits` | int | `2` | 单块内容审核拦截累计触发短路的次数阈值 |
+| `breaker_open_after` | int | `1` | 账户级熔断器连续失败触发开闸的阈值 |
 
 ## analysis 段
 
@@ -85,12 +89,22 @@
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
 | `rolling_early_chapters` | int | `100` | 首次生成结构化 JSON 的触发章数 |
-| `rolling_max_milestones` | int | `20` | 全局里程碑上限，FIFO 淘汰最旧的 |
-| `rolling_max_momentum` | int | `15` | 近期势头条目上限 |
+| `rolling_update_interval` | int | `0` | 滚动总结更新间隔块数；0 = 自适应默认 |
+| `rolling_summary_max_tokens` | int | `0` | 滚动总结输出上限；0 = 跟随策略默认 |
+| `rolling_summary_max_retries` | int | `1` | 滚动总结单次最大重试次数 |
+| `rolling_summary_temperature` | float | `0.2` | 滚动总结采样温度 |
+| `rolling_max_milestones` | int | `20` | 全局里程碑上限，FIFO 淘汰最旧条目 |
+| `rolling_max_momentum` | int | `15` | Prompt 中携带的近期势头条目上限 |
+| `rolling_momentum_window` | int | `50` | 滚动势头归档窗口长度 |
+| `rolling_archive_trigger_count` | int | `10` | 触发势头归档为里程碑的累积条数阈值 |
+| `rolling_max_paradigm_layers` | int | `5` | 范式层记录条数上限 |
+| `rolling_max_causal_chains` | int | `5` | 活跃因果链条数上限 |
+| `rolling_archive_max_tokens` | int | `100` | 势头归档摘要字数/token 上限 |
+| `failed_block_retry_rounds` | int | `3` | 分析流水线失败块补跑最大轮数 |
 
 ### 知识库容量
 
-以下字段限制磁盘知识库各子表的条目数，满了按写入顺序淘汰。设置页没有这几项。
+以下字段限制磁盘知识库各子表的条目数，满额按写入顺序淘汰。
 
 | 字段 | 默认 | 对应子表 |
 |---|---|---|
@@ -102,6 +116,8 @@
 | `max_verified_facts` | 200 | 已验证事实 |
 | `max_long_term_arcs` | 200 | 长线主线 |
 | `max_thematic_elements` | 100 | 主题要素 |
+| `max_kb_character_states` | 200 | 人物状态词典上限 |
+| `max_kb_character_relationships` | 300 | 人物关系词典上限 |
 
 ### 伏笔筛选
 
@@ -122,18 +138,32 @@
 | `batch_summary_min_words` | int | `2000` | 分卷摘要的建议最低字数 |
 | `final_report_min_words` | int | `5000` | 最终报告的建议最低字数 |
 | `volume_compress_threshold` | int | `80000` | **单位是字符数**：卷摘要拼接后的总字符数超过它就触发分层压缩 |
-| `volume_compress_group` | int | `5` | 压缩时每组几卷；首尾各一组保留全文，中间组截断到一半 |
+| `volume_compress_group` | int | `5` | 压缩时每组几卷；首尾各一组保留全文，中间组截断 |
+| `volume_compress_ratio` | float | `0.5` | 中间卷摘要截断保留比例（0.1–1.0） |
+| `dormant_chapter_threshold` | int | `200` | 伏笔长期未复现进入 `dormant` 状态的章节跨度阈值 |
+| `foreshadow_min_clue_chars` | int | `15` | 伏笔线索最小有效字符数 |
+| `foreshadow_dedup_keyword_overlap` | int | `2` | 伏笔去重关键词重叠阈值 |
+| `foreshadow_dedup_similarity` | float | `0.6` | 伏笔描述相似度合并阈值 |
+| `atlas_max_tokens` | int | `32768` | Stage 4 全书图谱提取输出上限 |
+| `atlas_max_characters` | int | `60` | 确定性图谱锚点提取角色上限 |
+| `atlas_max_locations` | int | `50` | 确定性图谱锚点提取地点上限 |
+| `style_sample_chapters` | int | `6` | 写作风格提取采样章节数 |
+| `style_sample_chars` | int | `1500` | 单章风格采样字符上限 |
+| `style_max_tokens` | int | `20000` | 写作风格语义提取输出上限 |
+| `style_temperature` | float | `0.3` | 写作风格提取采样温度 |
 | `auto_summary` | bool | `false` | 队列里的书全部分析完成后，逐本自动跑最终总结 |
 | `auto_archive` | bool | `false` | 队列分析完成后，自动把整本书的目录归档到 `分析结果/` |
 
 ### 伏笔复检
 
-总结第 2 阶段对每条伏笔用原文证据核对回收判定。默认使用带证据 V3 多跳证据链引擎（`recheck_version = "v3"`），也可切换为 V2（`"v2"`）。
+总结复检阶段对每条伏笔用原文证据核对回收判定，默认使用带证据 V3 多跳证据链引擎（`recheck_version = "v3"`），也可切换为 V2（`"v2"`）。全量复检参数均在 `recheck_tuning` 分组暴露，完整列表与边界可通过 `config schema --group recheck_tuning` 或设置页高级区域查看：
 
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
 | `recheck_version` | str | `"v3"` | 带证据复检引擎版本：`v3`（默认共享池单阶段多跳引擎）或 `v2`（批量窗口核对） |
-| `recheck_v2_batch_size` | int | `6` | 仅 V2：每次调用让判定模型同时核对几条候选 |
+| `recheck_v3_mode` | str | `"auto"` | V3 窗口容量模式：`auto` / `wide` / `compact` |
+| `recheck_v3_batch_size` .. `recheck_v3_nms_max_per_cluster` | int | `0` 等 | V3 U1 超块切分/拆解/路由批大小、章节与共享池上限、前后窗数、多跳上限、预埋回溯距离与 NMS 聚类半径等 16 项调优参数（`0` 表示跟随模式默认；详细说明以 `schema.py` 为准） |
+| `recheck_v2_batch_size` / `recheck_v2_window_radius` / `recheck_v2_max_windows` / `recheck_v2_retry_rounds` | int | `6 / 400 / 3 / 2` | V2 单跳批大小、窗口半径、最大窗口数与缺漏重试轮数 |
 | `recheck_v3_gray_u4` | bool | `false` | 仅 V3：是否在单阶段裁决后对多跳/非高置信/争议条目追加灰区 U4 终审 |
 | `recheck_v3_mid_single_hop` | bool | `false` | 仅 V3：是否将中重要度条目缩至 3 窗口并跳过二三跳（高重要度主线保持 5 窗 3 跳） |
 | `recheck_max_calls` | int | `1200` | 一次复检最多调用多少次，超出的候选记「未核对」，可续跑 |
@@ -146,10 +176,10 @@
 | `recheck_timeout` | int | `0` | 判定请求超时（秒）；0 = 跟随 `api.timeout` |
 | `recheck_json_mode` | str | `""` | 判定 JSON 输出约束；空=跟随 `api.json_mode`（判定通道是本地地址时整体跳过） |
 | `recheck_reasoning_effort` | str | `""` | 判定思考档位；空=跟随主配置的思考设置（low/medium/high 显式覆盖） |
-| `anchor_quote_enabled` | bool | `true` | 逐章采集锚点引文；关掉则复检退化为无证据模式 |
+| `anchor_quote_enabled` | bool | `true` | 逐章采集锚点引文；关闭则复检退化为无证据模式 |
 | `anchor_min_chars` | int | `6` | 锚点引文的最短字数 |
 
-引擎版本、V3 灰区终审与支线单跳开关、判定通道全参数（预设 / base_url / api_key / model / provider / timeout / json_mode / effort）、并发、批大小与调用/输出上限均可在设置页修改；锚点两项通过编辑 `config.json` 配置。
+全部 131 项配置参数（含 `api`、`analysis`、`gui` 与顶层路径字段）均可在设置页 7 大可检索高级分组及 CLI `config schema / get / set / patch / reset` 中直接查看与修改。
 
 判定模型与判定通道必须同源：网关专用模型名（含 `/`，如 `codex/gpt-6-luna`）配官方端点会在运行时被阻断（复检记 `PARTIAL`）。
 
@@ -185,9 +215,8 @@
 `analysis.rolling_summary_target_chars`、`analysis.rolling_early_target_chars`、
 `analysis.rolling_recent_target_chars`。
 
-## 修改配置时注意
+## 配置扩展约定
 
-- `APIConfig` / `AnalysisConfig` 是 dataclass，新增字段后旧 `config.json` 仍能加载
-  （`_coerce_fields` 过滤未知字段并清洗类型）。
-- 前端 `AppConfigDto` 必须同步补类型，否则 TypeScript 编译不过。
-- 改动 `thinking_mode`、提示词内容会让远端 KV cache 失效，缓存命中率会掉一截。
+- `backend/config/schema.py` 与 `APIConfig` / `AnalysisConfig` / `GUIConfig` / `AppConfig` 保持 1:1 字段对齐（`test_config.py` 校验双射与 `desktop/config.example.json` 一致性）。
+- 前端 `AppConfigDto`（`frontend/src/api/client.ts`）与 `frontend/src/utils/settingsSchema.ts` 随后端元模型同步维护，并通过前端单测守护全量覆盖。
+- 改动 `thinking_mode`、提示词内容会让远端 KV cache 失效，缓存命中率会下降。

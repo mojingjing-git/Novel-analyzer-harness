@@ -23,7 +23,7 @@
 │   ├── core/                     # 核心引擎（23 个模块）：分析流水线、LLM 客户端、知识库、风格提取等
 │   │                             #   （error_types / error_taxonomy / moderation 是 common 的兼容转发层）
 │   ├── services/                 # 16 个单文件模块 + final_summary/ 四层无环子包（8 个内部模块） + recheck_v3/ 四层无环子包（6 个内部模块）：编排层（书目产物读取 book_artifacts、队列、总结、切分、可视化、复检与裁决、用量账本…）
-│   ├── config/                   # constants.py（默认值与常量）/ paths.py（路径真源）/ settings.py / presets.py
+│   ├── config/                   # constants.py（默认值与常量）/ paths.py（路径真源）/ schema.py（131 项元模型）/ settings.py / presets.py
 │   ├── models/                   # AnalysisResult / KnowledgeBase
 │   ├── utils/                    # JSON 解析、按需聚合缓存、Excel、角色卡、账本、文本工具
 │   └── tests/                    # 15 个领域测试文件 + conftest / pytest_isolation / pytest_ssl_cache + fixtures 语料
@@ -33,7 +33,7 @@
 │       ├── components/           # 14 个通用组件 + settings/（4 个配置卡片组件）
 │       ├── composables/          # 5 个组合式函数（含 useSelectedBook）
 │       ├── api/                  # client.ts / sessionToken.ts / useProgressSocket.ts
-│       ├── utils/                # 10 个工具模块（含 settingsTooltips.ts）
+│       ├── utils/                # 11 个工具模块（含 settingsSchema.ts 与 settingsTooltips.ts）
 │       └── router.ts
 ├── scripts/                      # 测试、打捞验收与基线测量脚本
 └── runtime/                      # 源码模式统一运行目录（.gitignore 忽略：config.json / queue_state.json / usage_state.json / workspace/ / logs）
@@ -251,8 +251,7 @@ CORS 放行 `localhost:5173`。
 
 ## 新增配置字段
 
-`APIConfig` / `AnalysisConfig` 是 dataclass，加字段即自动读写（`_coerce_fields` 过滤
-未知字段并清洗类型，保证旧 `config.json` 兼容）。前端 `AppConfigDto` 必须同步补类型。
+`backend/config/schema.py` 是前后端与 CLI 共用的配置字段元模型真源；新增或调整字段时同步更新 `AppConfig`、`schema.py`、`desktop/config.example.json` 以及前端 `AppConfigDto` / `settingsSchema.ts`，`test_config.py` 与前端单测共同守护全量键集合 1:1 对齐。
 
 ## 提示词调整注意
 

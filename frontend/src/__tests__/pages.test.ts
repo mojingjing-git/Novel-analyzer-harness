@@ -64,6 +64,7 @@ vi.mock('../api/client', () => ({
     putSettings: vi.fn(),
     patchSettings: vi.fn(),
     getPresets: vi.fn(),
+    getSettingsSchema: vi.fn().mockResolvedValue(null),
     getForeshadowCategories: vi.fn(),
     previewModels: vi.fn(),
     getModels: vi.fn().mockResolvedValue({ models: ['m-a'] }),
@@ -459,7 +460,7 @@ describe('SettingsPage', () => {
     await settle()
 
     // 初始高级区折叠（v-show=false）
-    expect(wrapper.text()).toContain('展开高级参数（3 大分组）')
+    expect(wrapper.text()).toContain('展开高级参数（7 大分组）')
     await wrapper.findAll('button').find((b) => b.text().includes('保存设置'))!.trigger('click')
     await settle()
 
@@ -476,7 +477,7 @@ describe('SettingsPage', () => {
     }))
     await wrapper.findAll('button').find((b) => b.text().includes('保存设置'))!.trigger('click')
     await settle()
-    expect(wrapper.text()).toContain('收起高级参数（3 大分组）')
+    expect(wrapper.text()).toContain('收起高级参数（7 大分组）')
     expect(wrapper.find('input.input-invalid').exists()).toBe(true)
     wrapper.unmount()
   })
@@ -615,6 +616,70 @@ describe('SettingsPage', () => {
     expect(mockedApi.putSettings).toHaveBeenCalledWith(expect.objectContaining({
       analysis: expect.objectContaining({ summary_concurrency: 0, recheck_concurrency: 0 }),
     }))
+    wrapper.unmount()
+  })
+
+  it('SettingsPage：7 大分组搜索过滤、仅看已修改、单字段重置、空工作目录归一化与深层 422 清理过滤', async () => {
+    const cfg = mkCfg()
+    cfg.working_directory = 'D:\\novels'
+    mockedApi.getSettings.mockResolvedValueOnce(cfg)
+    mockedApi.putSettings.mockResolvedValue(cfg)
+
+    const wrapper = mount(SettingsPage, { global: { directives: { tooltip: {} } } })
+    await settle()
+
+    await wrapper.findAll('button').find((b) => b.text().includes('展开高级参数（7 大分组）'))!.trigger('click')
+    await nextTick()
+
+    // 1) 搜索过滤命中目标参数
+    const searchInput = wrapper.get<HTMLInputElement>('input[data-test="advanced-search"]')
+    await searchInput.setValue('recheck_v3_pool_max_chars')
+    await nextTick()
+    expect(wrapper.find('[data-field-path="analysis.recheck_v3_pool_max_chars"]').exists()).toBe(true)
+    expect(wrapper.find('[data-field-path="api.breaker_open_after"]').exists()).toBe(false)
+
+    // 2) 修改参数值并启用「仅看已修改」+ 单字段重置
+    const poolInput = wrapper.get<HTMLInputElement>('[data-field-input="analysis.recheck_v3_pool_max_chars"]')
+    await poolInput.setValue('90000')
+    await searchInput.setValue('')
+    const onlyModCheckbox = wrapper.get<HTMLInputElement>('input[data-test="advanced-only-modified"]')
+    await onlyModCheckbox.setValue(true)
+    await nextTick()
+    expect(wrapper.find('[data-field-path="analysis.recheck_v3_pool_max_chars"]').exists()).toBe(true)
+
+    await wrapper.get('button[data-reset-field="analysis.recheck_v3_pool_max_chars"]').trigger('click')
+    await onlyModCheckbox.setValue(false)
+    await nextTick()
+    expect(wrapper.get<HTMLInputElement>('[data-field-input="analysis.recheck_v3_pool_max_chars"]').element.value).toBe('0')
+
+    // 3) working_directory 留空转为 null，encoding_priority 逗号分隔转为数组
+    const wdInput = wrapper.get<HTMLInputElement>('[data-field-input="working_directory"]')
+    await wdInput.setValue('   ')
+    const encInput = wrapper.get<HTMLInputElement>('[data-field-input="analysis.encoding_priority"]')
+    await encInput.setValue('utf-8, gbk')
+    await encInput.trigger('change')
+
+    await wrapper.findAll('button').find((b) => b.text().includes('保存设置'))!.trigger('click')
+    await settle()
+    expect(mockedApi.putSettings).toHaveBeenLastCalledWith(expect.objectContaining({
+      working_directory: null,
+      analysis: expect.objectContaining({ encoding_priority: ['utf-8', 'gbk'] }),
+    }))
+
+    // 4) 过滤生效且分组折叠时，深层高级字段 422 应清空过滤并展开对应分组红框
+    await searchInput.setValue('不存在的关键词_xyz')
+    await wrapper.findAll('button').find((b) => b.text().trim() === '全部折叠')!.trigger('click')
+    await nextTick()
+
+    mockedApi.putSettings.mockRejectedValueOnce(Object.assign(new Error('校验失败'), {
+      status: 422,
+      detail: [{ loc: ['body', 'analysis', 'recheck_v3_pool_max_chars'], msg: '超出范围' }],
+    }))
+    await wrapper.findAll('button').find((b) => b.text().includes('保存设置'))!.trigger('click')
+    await settle()
+
+    expect(searchInput.element.value).toBe('')
+    expect(wrapper.get('[data-field-input="analysis.recheck_v3_pool_max_chars"]').classes()).toContain('input-invalid')
     wrapper.unmount()
   })
 })
