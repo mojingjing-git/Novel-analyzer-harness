@@ -25,7 +25,13 @@ from .cmd_ledger import (
 )
 from .cmd_pipeline import (
     handle_analyze,
+    handle_config_get,
     handle_config_health,
+    handle_config_patch,
+    handle_config_presets,
+    handle_config_reset,
+    handle_config_schema,
+    handle_config_set,
     handle_config_show,
     handle_recheck,
     handle_split,
@@ -36,12 +42,15 @@ from .runtime import (
     EXIT_INTERRUPTED,
     EXIT_OK,
     EXIT_USAGE,
+    AppendOverrideAction,
     CliArgumentParser,
     CliContext,
     CliError,
+    MergingNamespace,
     collect_known_secrets,
     configure_cli_io,
     emit_error,
+    extract_raw_argv_override_secrets,
     load_cli_config,
 )
 
@@ -53,6 +62,15 @@ def _make_common_parser() -> CliArgumentParser:
     common = CliArgumentParser(add_help=False)
     common.add_argument("--runtime-dir", default=argparse.SUPPRESS, help="显式指定 runtime 数据根目录")
     common.add_argument("--book-dir", default=argparse.SUPPRESS, help="显式指定单本书目目录（含 blocks/ 或 output/）")
+    common.add_argument("--config", dest="config_file", default=argparse.SUPPRESS, help="显式指定配置文件路径（覆盖 runtime/config.json）")
+    common.add_argument(
+        "-o", "--set",
+        dest="config_overrides",
+        action=AppendOverrideAction,
+        default=argparse.SUPPRESS,
+        metavar="KEY=VALUE",
+        help="临时覆盖单个配置项（可重复，支持点路径或唯一短键名）",
+    )
     common.add_argument("--server", default=argparse.SUPPRESS, help="指定运行中桌面/Web 后端 URL")
     common.add_argument("--token", default=argparse.SUPPRESS, help="显式传入 X-Session-Token")
     common.add_argument("--offline", action="store_true", default=argparse.SUPPRESS, help="禁止代理运行中服务，强制本地直读/直写")
@@ -208,7 +226,7 @@ def _register_pipeline_and_config_parsers(subparsers: argparse._SubParsersAction
     p_recheck.add_argument("--include-dormant", action="store_true", help="临时纳入 dormant 伏笔参与本轮复检")
     p_recheck.set_defaults(handler=handle_recheck)
 
-    p_cfg = subparsers.add_parser("config", parents=[common], help="配置展示与运行健康检查")
+    p_cfg = subparsers.add_parser("config", parents=[common], help="配置展示、元模型查询、读写与运行健康检查")
     c_sub = p_cfg.add_subparsers(dest="config_cmd", parser_class=CliArgumentParser)
 
     p_cshow = c_sub.add_parser("show", parents=[common], help="展示脱敏后的当前配置")
@@ -216,6 +234,33 @@ def _register_pipeline_and_config_parsers(subparsers: argparse._SubParsersAction
 
     p_chealth = c_sub.add_parser("health", parents=[common], help="检查依赖完整性、配置及活体服务状态")
     p_chealth.set_defaults(handler=handle_config_health)
+
+    p_cschema = c_sub.add_parser("schema", parents=[common], help="列出全量配置元模型与分组说明")
+    p_cschema.add_argument("--group", default=None, help="按分组 ID 过滤")
+    p_cschema.add_argument("--search", default=None, help="按路径、标签或说明关键字搜索")
+    p_cschema.set_defaults(handler=handle_config_schema)
+
+    p_cget = c_sub.add_parser("get", parents=[common], help="读取单个配置项的生效值与元数据")
+    p_cget.add_argument("key", help="配置点路径或唯一短键名")
+    p_cget.add_argument("--include-credentials", action="store_true", help="明文显示敏感凭据字段（默认脱敏）")
+    p_cget.set_defaults(handler=handle_config_get)
+
+    p_cset = c_sub.add_parser("set", parents=[common], help="持久化设置一个或多个配置项（支持活体服务同步）")
+    p_cset.add_argument("assignments", nargs="+", metavar="KEY=VALUE", help="一条或多条 KEY=VALUE 赋值")
+    p_cset.set_defaults(handler=handle_config_set)
+
+    p_cpatch = c_sub.add_parser("patch", parents=[common], help="从 JSON 文件或 stdin (`-`) 批量局部更新配置")
+    p_cpatch.add_argument("--file", required=True, help="JSON 补丁文件路径或 `-` 从 stdin 读取")
+    p_cpatch.set_defaults(handler=handle_config_patch)
+
+    p_creset = c_sub.add_parser("reset", parents=[common], help="将指定键或全部配置重置为默认值")
+    p_creset.add_argument("keys", nargs="*", help="要重置的配置键名（与 --all 二选一）")
+    p_creset.add_argument("--all", dest="reset_all", action="store_true", help="重置全量配置（默认保留端点/密钥凭据）")
+    p_creset.add_argument("--include-credentials", action="store_true", help="配合 --all 时一并重置端点与密钥凭据")
+    p_creset.set_defaults(handler=handle_config_reset)
+
+    p_cpresets = c_sub.add_parser("presets", parents=[common], help="列出内置 API 厂商预设")
+    p_cpresets.set_defaults(handler=handle_config_presets)
 
 
 def build_parser() -> CliArgumentParser:
@@ -243,9 +288,15 @@ def _ctx_from_namespace(ns: Optional[argparse.Namespace], fallback_json: bool) -
     rt_dir = Path(raw_rt).expanduser().resolve() if raw_rt else _default_runtime_dir().resolve()
     raw_bdir = getattr(ns, "book_dir", None) if ns is not None else None
     bdir = Path(raw_bdir) if raw_bdir else None
+    raw_cfg = getattr(ns, "config_file", None) if ns is not None else None
+    cfg_file = Path(raw_cfg) if raw_cfg else None
+    raw_ovr = getattr(ns, "config_overrides", None) if ns is not None else None
+    overrides = tuple(str(x) for x in raw_ovr) if raw_ovr else ()
     return CliContext(
         runtime_dir=rt_dir,
         explicit_book_dir=bdir,
+        config_file=cfg_file,
+        config_overrides=overrides,
         server_url=getattr(ns, "server", None) if ns is not None else None,
         token=getattr(ns, "token", None) if ns is not None else None,
         offline=bool(getattr(ns, "offline", False)) if ns is not None else False,
@@ -270,7 +321,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
 
     try:
-        ns = parser.parse_args(raw_argv)
+        ns = parser.parse_args(raw_argv, namespace=MergingNamespace())
         ctx = _ctx_from_namespace(ns, fallback_json=pre_json)
         configure_cli_io(verbose=ctx.verbose, quiet=ctx.quiet)
 
@@ -283,23 +334,23 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         code = exc.code if isinstance(exc.code, int) else EXIT_OK
         return code
     except CliError as err:
-        secrets: List[str] = []
+        secrets = extract_raw_argv_override_secrets(raw_argv)
         try:
-            cfg, _ = load_cli_config(ctx, require_valid=False)
-            secrets = collect_known_secrets(ctx, cfg)
+            cfg, _ = load_cli_config(ctx, require_valid=False, apply_overrides=False)
+            secrets.extend(collect_known_secrets(ctx, cfg))
         except Exception:
-            secrets = collect_known_secrets(ctx, None)
+            secrets.extend(collect_known_secrets(ctx, None))
         emit_error(ctx, err, secrets)
         return err.exit_code
     except KeyboardInterrupt:
         emit_error(ctx, CliError(EXIT_INTERRUPTED, "interrupted", "任务已由用户中断"))
         return EXIT_INTERRUPTED
     except Exception as exc:
-        secrets = []
+        secrets = extract_raw_argv_override_secrets(raw_argv)
         try:
-            cfg, _ = load_cli_config(ctx, require_valid=False)
-            secrets = collect_known_secrets(ctx, cfg)
+            cfg, _ = load_cli_config(ctx, require_valid=False, apply_overrides=False)
+            secrets.extend(collect_known_secrets(ctx, cfg))
         except Exception:
-            secrets = collect_known_secrets(ctx, None)
+            secrets.extend(collect_known_secrets(ctx, None))
         emit_error(ctx, CliError(EXIT_ERROR, "unexpected_error", str(exc) or exc.__class__.__name__), secrets)
         return EXIT_ERROR

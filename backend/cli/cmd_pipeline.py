@@ -9,10 +9,11 @@ from dataclasses import asdict
 import json
 from pathlib import Path
 import signal
+import sys
 import threading
 import time
 from types import SimpleNamespace
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from .runtime import (
     EXIT_BREAKER,
@@ -23,13 +24,18 @@ from .runtime import (
     EXIT_USAGE,
     CliContext,
     CliError,
+    apply_key_value_assignments,
+    collect_known_secrets,
     discover_live_server,
     emit_output,
     emit_progress_jsonl,
     ensure_server_idle_for_write,
+    format_validation_errors,
     load_cli_config,
     mask_url_secrets,
+    redact_secrets,
     resolve_book,
+    resolve_config_path,
     resolve_workspace_dir,
 )
 
@@ -226,10 +232,13 @@ def handle_analyze(ctx: CliContext, args: argparse.Namespace) -> Dict[str, Any]:
         if ctx.progress_jsonl:
             emit_progress_jsonl({"event": "token_stats", **payload})
 
+    kf_raw = str(getattr(run_cfg, "knowledge_file", "") or "").strip() or "knowledge.json"
+    knowledge_path = Path(kf_raw) if Path(kf_raw).is_absolute() else (book_dir / kf_raw)
+
     pipeline = AnalysisPipeline(
         config=run_cfg,
         directory=blocks_dir,
-        knowledge_file=output_dir / "knowledge_base.json",
+        knowledge_file=knowledge_path,
         start_chapter=start_ch,
         end_chapter=end_ch,
         on_progress=_on_progress,
@@ -283,7 +292,7 @@ def handle_summary(ctx: CliContext, args: argparse.Namespace) -> Dict[str, Any]:
     run_cfg = copy.deepcopy(cfg)
     run_cfg.working_directory = str(book_dir)
     if getattr(args, "concurrency", None):
-        run_cfg.analysis.concurrency = max(1, int(args.concurrency))
+        run_cfg.analysis.summary_concurrency = max(1, int(args.concurrency))
     if getattr(args, "batch_size", None):
         run_cfg.analysis.summary_batch_size = max(1, int(args.batch_size))
     if getattr(args, "recheck_version", None):
@@ -553,30 +562,148 @@ def handle_recheck(ctx: CliContext, args: argparse.Namespace) -> Dict[str, Any]:
     return data
 
 
+def _mask_config_payload(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """按元模型标记对配置字典中的敏感字段与 URL 内嵌凭据统一脱敏。"""
+    from backend.config.schema import SPEC_BY_PATH
+
+    out = copy.deepcopy(raw)
+    for spec in SPEC_BY_PATH.values():
+        if spec.section == "root":
+            if spec.key not in out:
+                continue
+            val = out.get(spec.key)
+            if spec.sensitive:
+                is_set = bool(str(val or "").strip())
+                out[f"{spec.key}_set"] = is_set
+                out[spec.key] = "***" if is_set else ""
+            elif spec.is_url:
+                out[spec.key] = mask_url_secrets(str(val or ""))
+        else:
+            sec_dict = out.get(spec.section)
+            if not isinstance(sec_dict, dict):
+                continue
+            val = sec_dict.get(spec.key)
+            if spec.sensitive:
+                is_set = bool(str(val or "").strip())
+                sec_dict[f"{spec.key}_set"] = is_set
+                sec_dict[spec.key] = "***" if is_set else ""
+            elif spec.is_url:
+                sec_dict[spec.key] = mask_url_secrets(str(val or ""))
+    return out
+
+
+def _persist_config_mutation(
+    ctx: CliContext,
+    payload: Dict[str, Any],
+    *,
+    full_replace: bool,
+    allow_credential_reset: bool = False,
+) -> Tuple[Any, str, Optional[str]]:
+    """持久化配置修改：未显式 --config / --offline 且活体服务在线时走 API，否则原子写盘。"""
+    from backend.config.settings import AppConfig, ConfigManager, validate_settings_payload
+
+    errs = validate_settings_payload(payload)
+    if errs:
+        raise CliError(
+            EXIT_USAGE,
+            "validation_error",
+            f"配置校验未通过: {format_validation_errors(errs)}",
+            details={"validation_errors": errs},
+        )
+
+    srv = None if ctx.config_file is not None else discover_live_server(ctx)
+    if srv is not None:
+        import httpx
+
+        headers = {"X-Session-Token": srv.token} if srv.token else {}
+        method = "PUT" if full_replace else "PATCH"
+        try:
+            with httpx.Client(timeout=10.0, trust_env=False) as client:
+                resp = client.request(method, f"{srv.url}/api/settings", headers=headers, json=payload)
+        except Exception as exc:
+            raise CliError(EXIT_ERROR, "http_error", f"请求运行中服务失败: {exc}") from exc
+
+        if resp.status_code in (401, 403):
+            raise CliError(
+                EXIT_ERROR,
+                "unauthorized",
+                f"后端鉴权失败 (HTTP {resp.status_code})，请传入 --token 或设置 NOVEL_ANALYZER_SESSION_TOKEN",
+            )
+        if resp.status_code == 409:
+            raise CliError(EXIT_CONFLICT, "server_conflict", f"后端当前状态冲突 (HTTP 409): {resp.text[:300]}")
+        if resp.status_code == 422:
+            raise CliError(EXIT_USAGE, "validation_error", f"后端参数校验未通过 (HTTP 422): {resp.text[:300]}")
+        if resp.status_code >= 400:
+            raise CliError(EXIT_ERROR, "http_error", f"后端返回错误 (HTTP {resp.status_code}): {resp.text[:300]}")
+
+        updated = AppConfig.from_dict(resp.json())
+        return updated, "live_server", srv.url
+
+    cfg_path = resolve_config_path(ctx)
+    cm = ConfigManager(cfg_path)
+    if cfg_path.exists():
+        cm.load()
+        if getattr(cm, "_load_failed", False):
+            raise CliError(
+                EXIT_USAGE,
+                "invalid_config",
+                f"配置文件解析失败（{cfg_path}），拒绝覆写损坏文件",
+            )
+
+    if full_replace:
+        new_cfg = AppConfig.from_dict(payload)
+        if allow_credential_reset:
+            cm._api_key_from_env = False
+            cm._disk_api_key = ""
+        if not cm.save(new_cfg):
+            raise CliError(EXIT_ERROR, "config_save_failed", f"保存配置文件失败: {cfg_path}")
+        return new_cfg, "disk", None
+
+    patched = cm.patch(payload)
+    if patched is None:
+        raise CliError(EXIT_ERROR, "config_save_failed", f"更新配置文件失败: {cfg_path}")
+    return patched, "disk", None
+
+
+def _validate_patch_keys(patch_obj: Dict[str, Any]) -> None:
+    """校验 config patch 载荷中的键均为已知元模型字段，防止静默忽略拼写错误。"""
+    from backend.config.schema import SPEC_BY_PATH
+
+    if not patch_obj:
+        raise CliError(EXIT_USAGE, "empty_patch", "JSON 补丁对象不能为空")
+
+    for top_k, top_v in patch_obj.items():
+        if top_k in ("api", "analysis", "gui"):
+            if not isinstance(top_v, dict):
+                raise CliError(EXIT_USAGE, "invalid_patch", f"节 {top_k} 必须为 JSON 对象")
+            for sub_k in top_v:
+                full = f"{top_k}.{sub_k}"
+                if full not in SPEC_BY_PATH:
+                    raise CliError(EXIT_USAGE, "unknown_config_key", f"未知配置键: {full}")
+        elif top_k in SPEC_BY_PATH:
+            continue
+        else:
+            raise CliError(EXIT_USAGE, "unknown_config_key", f"未知配置键或顶层节: {top_k}")
+
+
 def handle_config_show(ctx: CliContext, _args: argparse.Namespace) -> Dict[str, Any]:
     """输出脱敏后的当前生效配置（永不输出明文密钥或 URL 凭据）。"""
     cfg, _ = load_cli_config(ctx, require_valid=True)
-    raw = asdict(cfg)
-
+    raw = _mask_config_payload(cfg.to_dict())
     api_sec = raw.get("api", {})
-    raw_api_key = str(api_sec.get("api_key") or "")
-    api_sec["api_key_set"] = bool(raw_api_key.strip())
-    api_sec["api_key"] = "***" if raw_api_key.strip() else ""
-    api_sec["base_url"] = mask_url_secrets(str(api_sec.get("base_url") or ""))
-
     ana_sec = raw.get("analysis", {})
-    raw_rc_key = str(ana_sec.get("recheck_api_key") or "")
-    ana_sec["recheck_api_key_set"] = bool(raw_rc_key.strip())
-    ana_sec["recheck_api_key"] = "***" if raw_rc_key.strip() else ""
-    ana_sec["recheck_base_url"] = mask_url_secrets(str(ana_sec.get("recheck_base_url") or ""))
+    secrets = collect_known_secrets(ctx, cfg)
+    masked_overrides = [redact_secrets(item, secrets) for item in ctx.config_overrides]
 
     data = {
         "runtime_dir": ctx.runtime_dir.as_posix(),
-        "config_path": (ctx.runtime_dir / "config.json").as_posix(),
+        "config_path": resolve_config_path(ctx).as_posix(),
+        "overrides": masked_overrides,
         "config": raw,
     }
     human = (
         f"运行目录: {ctx.runtime_dir}\n"
+        f"配置文件: {resolve_config_path(ctx)}\n"
         f"主模型: {api_sec.get('model')} | base_url={api_sec.get('base_url')} | "
         f"api_key_set={api_sec.get('api_key_set')}\n"
         f"复检引擎: {ana_sec.get('recheck_version')} | recheck_model={ana_sec.get('recheck_model') or '(跟随主模型)'} | "
@@ -590,7 +717,7 @@ def handle_config_health(ctx: CliContext, _args: argparse.Namespace) -> Dict[str
     """检查运行目录、配置文件合法性、关键依赖完整性及活体后端状态。"""
     from backend.common.dep_health import check_dependency_health
 
-    _cfg, load_failed = load_cli_config(ctx, require_valid=False)
+    _cfg, load_failed = load_cli_config(ctx, require_valid=False, apply_overrides=False)
     deps = check_dependency_health()
 
     live_info: Dict[str, Any] = {"running": False, "url": None, "from_lock": False, "token_present": False}
@@ -612,9 +739,10 @@ def handle_config_health(ctx: CliContext, _args: argparse.Namespace) -> Dict[str
             "error": exc.message,
         }
 
-    cfg_path = ctx.runtime_dir / "config.json"
+    cfg_path = resolve_config_path(ctx)
     data = {
         "runtime_dir": ctx.runtime_dir.as_posix(),
+        "config_path": cfg_path.as_posix(),
         "config_exists": cfg_path.exists(),
         "config_valid": not load_failed,
         "dependencies": deps,
@@ -626,4 +754,229 @@ def handle_config_health(ctx: CliContext, _args: argparse.Namespace) -> Dict[str
         f"活体后端: {live_info.get('url') or '未运行'}"
     )
     emit_output(ctx, data, human)
+    return data
+
+
+def handle_config_schema(ctx: CliContext, args: argparse.Namespace) -> Dict[str, Any]:
+    """输出全量 131 项配置元模型与分组说明，支持按组或关键词筛选。"""
+    from backend.config.schema import get_config_schema
+
+    doc = get_config_schema()
+    group_filter = (getattr(args, "group", None) or "").strip()
+    search_q = (getattr(args, "search", None) or "").strip().lower()
+
+    fields = doc["fields"]
+    if group_filter:
+        valid_groups = {g["id"] for g in doc["groups"]}
+        if group_filter not in valid_groups:
+            raise CliError(
+                EXIT_USAGE,
+                "unknown_config_group",
+                f"未知配置分组 {group_filter!r}，可选: {', '.join(sorted(valid_groups))}",
+            )
+        fields = [f for f in fields if f["group"] == group_filter]
+    if search_q:
+        fields = [
+            f for f in fields
+            if search_q in f["path"].lower()
+            or search_q in f["key"].lower()
+            or search_q in f["label"].lower()
+            or search_q in f["description"].lower()
+        ]
+
+    data = {
+        "total_fields": doc["total_fields"],
+        "matched_fields": len(fields),
+        "groups": doc["groups"],
+        "fields": fields,
+    }
+    lines = [f"配置元模型：共 {doc['total_fields']} 项，匹配 {len(fields)} 项"]
+    for f in fields[:50]:
+        lines.append(f"- {f['path']} ({f['field_type']}, default={f['default']!r}): {f['label']}")
+    if len(fields) > 50:
+        lines.append(f"... 另有 {len(fields) - 50} 项，请使用 --json 或 --search 查看完整列表")
+    emit_output(ctx, data, "\n".join(lines))
+    return data
+
+
+def handle_config_get(ctx: CliContext, args: argparse.Namespace) -> Dict[str, Any]:
+    """按点路径或唯一短键名查询单个配置项的生效值与元数据。"""
+    from dataclasses import asdict
+    from backend.config.schema import clone_default_value, read_value_from_dict, resolve_spec
+
+    raw_key = str(getattr(args, "key", "") or "").strip()
+    try:
+        spec = resolve_spec(raw_key)
+    except KeyError as exc:
+        raise CliError(EXIT_USAGE, "unknown_config_key", str(exc)) from exc
+
+    cfg, _ = load_cli_config(ctx, require_valid=True)
+    raw_val = read_value_from_dict(cfg.to_dict(), spec)
+    include_creds = bool(getattr(args, "include_credentials", False))
+
+    is_set: Optional[bool] = None
+    display_val = raw_val
+    if spec.sensitive:
+        is_set = bool(str(raw_val or "").strip())
+        if not include_creds:
+            display_val = "***" if is_set else ""
+    elif spec.is_url and not include_creds:
+        display_val = mask_url_secrets(str(raw_val or ""))
+
+    data: Dict[str, Any] = {
+        "path": spec.path,
+        "value": display_val,
+        "default": clone_default_value(spec),
+        "modified": raw_val != spec.default,
+        "spec": asdict(spec),
+    }
+    if is_set is not None:
+        data["is_set"] = is_set
+    emit_output(ctx, data, f"{spec.path} = {display_val!r} (default={spec.default!r}, modified={data['modified']})")
+    return data
+
+
+def handle_config_set(ctx: CliContext, args: argparse.Namespace) -> Dict[str, Any]:
+    """通过一条或多条 ``KEY=VALUE`` 赋值持久化修改配置（在线时同步到活体后端）。"""
+    pairs = list(getattr(args, "assignments", None) or ())
+    patch_payload, _, updated_paths = apply_key_value_assignments(pairs)
+    updated_cfg, mode, srv_url = _persist_config_mutation(ctx, patch_payload, full_replace=False)
+    data = {
+        "config_path": resolve_config_path(ctx).as_posix(),
+        "persistence": mode,
+        "server_url": srv_url,
+        "updated_paths": updated_paths,
+        "config": _mask_config_payload(updated_cfg.to_dict()),
+    }
+    emit_output(ctx, data, f"配置已更新 ({mode}): {', '.join(updated_paths)}")
+    return data
+
+
+def handle_config_patch(ctx: CliContext, args: argparse.Namespace) -> Dict[str, Any]:
+    """从 JSON 文件或 stdin (``-``) 读取嵌套局部补丁并校验持久化。"""
+    file_arg = str(getattr(args, "file", "") or "").strip()
+    if file_arg == "-":
+        raw_text = sys.stdin.read()
+    else:
+        p = Path(file_arg).expanduser()
+        if not p.is_file():
+            raise CliError(EXIT_NOT_FOUND, "file_not_found", f"补丁文件不存在: {p}")
+        raw_text = p.read_text(encoding="utf-8-sig")
+
+    try:
+        patch_obj = json.loads(raw_text)
+    except Exception as exc:
+        raise CliError(EXIT_USAGE, "invalid_json", f"补丁 JSON 解析失败: {exc}") from exc
+    if not isinstance(patch_obj, dict):
+        raise CliError(EXIT_USAGE, "invalid_patch", "补丁内容必须为 JSON 对象")
+
+    _validate_patch_keys(patch_obj)
+    updated_cfg, mode, srv_url = _persist_config_mutation(ctx, patch_obj, full_replace=False)
+    data = {
+        "config_path": resolve_config_path(ctx).as_posix(),
+        "persistence": mode,
+        "server_url": srv_url,
+        "config": _mask_config_payload(updated_cfg.to_dict()),
+    }
+    emit_output(ctx, data, f"配置补丁已应用 ({mode}) -> {resolve_config_path(ctx)}")
+    return data
+
+
+def handle_config_reset(ctx: CliContext, args: argparse.Namespace) -> Dict[str, Any]:
+    """将指定配置键或全部配置重置为默认值（``--all`` 默认保留端点与密钥凭据）。"""
+    from backend.config.schema import (
+        SPEC_BY_PATH,
+        clone_default_value,
+        iter_credential_paths,
+        read_value_from_dict,
+        resolve_spec,
+        set_nested_value,
+    )
+    from backend.config.settings import AppConfig
+
+    reset_all = bool(getattr(args, "reset_all", False))
+    keys = [str(k).strip() for k in (getattr(args, "keys", None) or ()) if str(k).strip()]
+    include_creds = bool(getattr(args, "include_credentials", False))
+
+    if reset_all and keys:
+        raise CliError(EXIT_USAGE, "invalid_arguments", "--all 不能与具体键名同时使用")
+    if not reset_all and not keys:
+        raise CliError(EXIT_USAGE, "missing_argument", "请指定至少一个要重置的配置键，或传入 --all")
+
+    if reset_all:
+        payload = AppConfig().to_dict()
+        if not include_creds:
+            cur_cfg, _ = load_cli_config(ctx, require_valid=False, apply_overrides=False)
+            cur_dict = cur_cfg.to_dict()
+            for cred_path in iter_credential_paths():
+                spec = SPEC_BY_PATH[cred_path]
+                cur_val = read_value_from_dict(cur_dict, spec)
+                set_nested_value(payload, spec, cur_val)
+        updated_cfg, mode, srv_url = _persist_config_mutation(
+            ctx,
+            payload,
+            full_replace=True,
+            allow_credential_reset=include_creds,
+        )
+        data = {
+            "config_path": resolve_config_path(ctx).as_posix(),
+            "persistence": mode,
+            "server_url": srv_url,
+            "reset_all": True,
+            "credentials_preserved": not include_creds,
+            "config": _mask_config_payload(updated_cfg.to_dict()),
+        }
+        emit_output(
+            ctx,
+            data,
+            f"已重置全部配置为默认值 ({mode}，凭据{'已重置' if include_creds else '已保留'})",
+        )
+        return data
+
+    patch_payload: Dict[str, Any] = {}
+    reset_paths: List[str] = []
+    for k in keys:
+        try:
+            spec = resolve_spec(k)
+        except KeyError as exc:
+            raise CliError(EXIT_USAGE, "unknown_config_key", str(exc)) from exc
+        set_nested_value(patch_payload, spec, clone_default_value(spec))
+        if spec.path not in reset_paths:
+            reset_paths.append(spec.path)
+
+    updated_cfg, mode, srv_url = _persist_config_mutation(
+        ctx,
+        patch_payload,
+        full_replace=False,
+    )
+    data = {
+        "config_path": resolve_config_path(ctx).as_posix(),
+        "persistence": mode,
+        "server_url": srv_url,
+        "reset_paths": reset_paths,
+        "config": _mask_config_payload(updated_cfg.to_dict()),
+    }
+    emit_output(ctx, data, f"已重置配置项 ({mode}): {', '.join(reset_paths)}")
+    return data
+
+
+def handle_config_presets(ctx: CliContext, _args: argparse.Namespace) -> Dict[str, Any]:
+    """列出内置 API 厂商预设（密钥字段按规则脱敏）。"""
+    from backend.config.presets import API_PRESETS
+
+    masked_presets: Dict[str, Dict[str, Any]] = {}
+    for name, info in API_PRESETS.items():
+        row = dict(info)
+        raw_key = str(row.get("api_key") or "")
+        row["api_key_set"] = bool(raw_key.strip())
+        row["api_key"] = "***" if raw_key.strip() else ""
+        if "base_url" in row:
+            row["base_url"] = mask_url_secrets(str(row.get("base_url") or ""))
+        masked_presets[name] = row
+
+    data = {"presets": masked_presets}
+    lines = ["内置 API 预设："]
+    for name, row in masked_presets.items():
+        lines.append(f"- {name}: model={row.get('model')} | base_url={row.get('base_url')}")
+    emit_output(ctx, data, "\n".join(lines))
     return data

@@ -13,6 +13,7 @@ from .runtime import (
     CliError,
     discover_books,
     emit_output,
+    load_cli_config,
     resolve_book,
     resolve_two_positionals,
 )
@@ -90,9 +91,10 @@ def handle_books_status(ctx: CliContext, args: argparse.Namespace) -> Dict[str, 
     blocks_dir = book_dir / "blocks"
     info = book_info(book_id, book_dir)
 
+    cfg, _ = load_cli_config(ctx, require_valid=False)
     chapter_nums: List[int] = []
     if blocks_dir.is_dir():
-        chapter_nums = FileProcessor(blocks_dir).scan_chapters()
+        chapter_nums = FileProcessor(blocks_dir, cfg.analysis.encoding_priority).scan_chapters()
 
     ledger_summary: Optional[Dict[str, Any]] = None
     ledger_path = output_dir / "foreshadow_ledger.json"
@@ -166,9 +168,10 @@ def handle_books_chapter(ctx: CliContext, args: argparse.Namespace) -> Dict[str,
     blocks_dir = book_dir / "blocks"
     output_dir = book_dir / "output"
 
+    cfg, _ = load_cli_config(ctx, require_valid=False)
     text_payload: Optional[Dict[str, Any]] = None
     if view in ("text", "both") and blocks_dir.is_dir():
-        fp = FileProcessor(blocks_dir)
+        fp = FileProcessor(blocks_dir, cfg.analysis.encoding_priority)
         available = fp.scan_chapters()
         if chapter_num in available:
             raw_text = fp.read_chapter(chapter_num)
@@ -238,7 +241,8 @@ def handle_books_search(ctx: CliContext, args: argparse.Namespace) -> Dict[str, 
     if not blocks_dir.is_dir():
         raise CliError(EXIT_NOT_FOUND, "blocks_not_found", f"书目 {book_id} 缺少 blocks/ 原文目录")
 
-    fp = FileProcessor(blocks_dir)
+    cfg, _ = load_cli_config(ctx, require_valid=False)
+    fp = FileProcessor(blocks_dir, cfg.analysis.encoding_priority)
     all_chapters = fp.scan_chapters()
     if not all_chapters:
         raise CliError(EXIT_NOT_FOUND, "blocks_empty", f"书目 {book_id} 的 blocks/ 目录中没有正文章节")

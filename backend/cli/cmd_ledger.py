@@ -119,7 +119,10 @@ def _extract_item_evidence(
     if not blocks_dir.is_dir():
         return {"available": False, "reason": "blocks_dir_missing", "setup": None, "payoffs": []}
 
-    fp = FileProcessor(blocks_dir)
+    cfg, _ = load_cli_config(ctx, require_valid=False)
+    block_size = max(1, int(getattr(getattr(cfg, "analysis", None), "block_size", 4) or 4))
+
+    fp = FileProcessor(blocks_dir, cfg.analysis.encoding_priority)
     available_chs = fp.scan_chapters()
     unit_cache: Dict[int, str] = {}
 
@@ -132,9 +135,6 @@ def _extract_item_evidence(
         if txt is not None:
             unit_cache[unit_id] = txt
         return txt
-
-    cfg, _ = load_cli_config(ctx, require_valid=False)
-    block_size = max(1, int(getattr(getattr(cfg, "analysis", None), "block_size", 4) or 4))
 
     # 1. 埋设原文窗：优先复用 recheck_verdicts.json 中的 locate_records
     setup_win: Optional[Dict[str, Any]] = None

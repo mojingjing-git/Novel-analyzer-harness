@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 from dataclasses import dataclass
 import json
 import logging
@@ -13,7 +14,7 @@ import sys
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 from urllib.parse import urlparse
 
-from backend.config.settings import AppConfig, ConfigManager
+from backend.config.settings import AppConfig, ConfigManager, validate_settings_payload
 from backend.services.book_artifacts import is_book_dir
 
 EXIT_OK = 0
@@ -55,8 +56,44 @@ class CliError(Exception):
         self.details = details or {}
 
 
+class MergingNamespace(argparse.Namespace):
+    """跨父/子级解析器累积可重复覆盖列表，防止 subparser 空属性覆写前置参数。"""
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name == "config_overrides":
+            existing = self.__dict__.get(name)
+            if isinstance(existing, list) and isinstance(value, list) and existing is not value:
+                merged = list(existing)
+                merged.extend(value)
+                super().__setattr__(name, merged)
+                return
+        super().__setattr__(name, value)
+
+
+class AppendOverrideAction(argparse.Action):
+    """就地追加 ``-o`` / ``--set`` 覆盖项，避免同级多次传入时触发重复合并。"""
+
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: Any,
+        option_string: Optional[str] = None,
+    ) -> None:
+        cur = namespace.__dict__.get(self.dest)
+        if not isinstance(cur, list):
+            cur = []
+            setattr(namespace, self.dest, cur)
+        cur.append(values)
+
+
 class CliArgumentParser(argparse.ArgumentParser):
     """将参数解析失败转为 CliError(EXIT_USAGE)，确保 --json 下仍输出纯 JSON 错误。"""
+
+    def parse_known_args(self, args=None, namespace=None):  # type: ignore[override]
+        if namespace is None:
+            namespace = MergingNamespace()
+        return super().parse_known_args(args, namespace)
 
     def error(self, message: str) -> None:  # type: ignore[override]
         raise CliError(EXIT_USAGE, "usage_error", message)
@@ -66,6 +103,8 @@ class CliArgumentParser(argparse.ArgumentParser):
 class CliContext:
     runtime_dir: Path
     explicit_book_dir: Optional[Path] = None
+    config_file: Optional[Path] = None
+    config_overrides: Tuple[str, ...] = ()
     server_url: Optional[str] = None
     token: Optional[str] = None
     offline: bool = False
@@ -139,9 +178,137 @@ def mask_url_secrets(url: str) -> str:
     return redact_secrets(url)
 
 
-def load_cli_config(ctx: CliContext, *, require_valid: bool = True) -> Tuple[AppConfig, bool]:
-    """显式按 ``ctx.runtime_dir / config.json`` 加载配置，不依赖进程全局 cwd/env。"""
-    cfg_path = ctx.runtime_dir / "config.json"
+def resolve_config_path(ctx: CliContext) -> Path:
+    """解析目标配置文件路径；显式 ``--config`` 优先于 ``runtime/config.json``。"""
+    if ctx.config_file is not None:
+        return ctx.config_file.expanduser().resolve()
+    return ctx.runtime_dir / "config.json"
+
+
+def _is_sensitive_override_key(raw_key: str) -> bool:
+    from backend.config.schema import resolve_spec
+
+    k = (raw_key or "").strip()
+    try:
+        spec = resolve_spec(k)
+        if spec.sensitive or spec.is_url:
+            return True
+    except KeyError:
+        pass
+    low = k.lower()
+    return any(tok in low for tok in ("api_key", "token", "secret", "password"))
+
+
+def extract_override_secrets(overrides: Sequence[str]) -> List[str]:
+    """从 ``KEY=VALUE`` 覆盖列表提取可能包含凭据的原值，防止异常信息回显泄露。"""
+    secrets: List[str] = []
+    for raw_item in overrides:
+        if "=" not in raw_item:
+            continue
+        raw_key, raw_val = raw_item.split("=", 1)
+        val = raw_val.strip()
+        if not val:
+            continue
+        if _is_sensitive_override_key(raw_key) or ("://" in val and "@" in val):
+            secrets.append(raw_val)
+            if val != raw_val:
+                secrets.append(val)
+    return secrets
+
+
+def extract_raw_argv_override_secrets(raw_argv: Sequence[str]) -> List[str]:
+    """兜底扫描未完成解析前的原始命令行中的 ``-o`` / ``--set`` 凭据值。"""
+    pairs: List[str] = []
+    i = 0
+    total = len(raw_argv)
+    while i < total:
+        tok = raw_argv[i]
+        if tok in ("-o", "--set") and i + 1 < total:
+            pairs.append(raw_argv[i + 1])
+            i += 2
+            continue
+        if tok.startswith("--set="):
+            pairs.append(tok[6:])
+        elif tok.startswith("-o="):
+            pairs.append(tok[3:])
+        elif tok.startswith("-o") and len(tok) > 2 and "=" in tok:
+            pairs.append(tok[2:])
+        i += 1
+    return extract_override_secrets(pairs)
+
+
+def format_validation_errors(errs: Sequence[Dict[str, Any]]) -> str:
+    """将 validate_settings_payload 错误列表格式化为紧凑中文错误提示。"""
+    parts: List[str] = []
+    for err in errs:
+        loc = err.get("loc") or ()
+        path = ".".join(str(seg) for seg in loc if seg != "body") or "?"
+        msg = str(err.get("msg") or "校验失败")
+        parts.append(f"{path}: {msg}")
+    return "; ".join(parts)
+
+
+def apply_key_value_assignments(
+    pairs: Sequence[str],
+    *,
+    base_dict: Optional[Dict[str, Any]] = None,
+) -> Tuple[Dict[str, Any], Dict[str, Any], List[str]]:
+    """解析 ``KEY=VALUE`` 列表、应用到 ``base_dict``（若提供）并返回补丁字典、新全量字典与规范路径列表。"""
+    from backend.config.schema import parse_cli_value, resolve_spec, set_nested_value
+
+    if not pairs:
+        raise CliError(EXIT_USAGE, "missing_argument", "至少需要一条 KEY=VALUE 参数")
+
+    patch_payload: Dict[str, Any] = {}
+    merged = copy.deepcopy(base_dict) if base_dict is not None else None
+    updated_paths: List[str] = []
+    for raw_item in pairs:
+        if "=" not in raw_item:
+            raise CliError(
+                EXIT_USAGE,
+                "invalid_override",
+                f"参数格式无效（需要 KEY=VALUE）: {raw_item}",
+            )
+        raw_key, raw_val = raw_item.split("=", 1)
+        try:
+            spec = resolve_spec(raw_key)
+        except KeyError as exc:
+            raise CliError(EXIT_USAGE, "unknown_config_key", str(exc)) from exc
+        try:
+            parsed = parse_cli_value(spec, raw_val)
+        except ValueError as exc:
+            raise CliError(EXIT_USAGE, "invalid_config_value", str(exc)) from exc
+        set_nested_value(patch_payload, spec, parsed)
+        if merged is not None:
+            set_nested_value(merged, spec, parsed)
+        if spec.path not in updated_paths:
+            updated_paths.append(spec.path)
+
+    target_to_validate = merged if merged is not None else patch_payload
+    errs = validate_settings_payload(target_to_validate)
+    if errs:
+        raise CliError(
+            EXIT_USAGE,
+            "validation_error",
+            f"配置校验未通过: {format_validation_errors(errs)}",
+            details={"validation_errors": errs},
+        )
+    return patch_payload, (merged if merged is not None else patch_payload), updated_paths
+
+
+def load_cli_config(
+    ctx: CliContext,
+    *,
+    require_valid: bool = True,
+    apply_overrides: bool = True,
+) -> Tuple[AppConfig, bool]:
+    """显式加载 ``--config`` 或 ``runtime/config.json``，并在内存中应用 ``--set`` 覆盖。"""
+    cfg_path = resolve_config_path(ctx)
+    if ctx.config_file is not None and not cfg_path.exists():
+        if require_valid:
+            raise CliError(EXIT_NOT_FOUND, "config_not_found", f"指定的配置文件不存在: {cfg_path}")
+        return AppConfig(), False
+
     cm = ConfigManager(cfg_path)
     cfg = cm.load()
     load_failed = bool(getattr(cm, "_load_failed", False))
@@ -151,6 +318,12 @@ def load_cli_config(ctx: CliContext, *, require_valid: bool = True) -> Tuple[App
             "invalid_config",
             f"配置文件解析失败（{cfg_path}），请检查 JSON 语法或编码 BOM",
         )
+    if apply_overrides and ctx.config_overrides:
+        _, merged, _ = apply_key_value_assignments(
+            ctx.config_overrides,
+            base_dict=cfg.to_dict(),
+        )
+        cfg = AppConfig.from_dict(merged)
     return cfg, load_failed
 
 
@@ -422,6 +595,8 @@ def collect_known_secrets(ctx: CliContext, cfg: Optional[AppConfig] = None) -> L
     env_tok = os.environ.get(ENV_SESSION_TOKEN)
     if env_tok:
         secrets.append(env_tok)
+    if ctx.config_overrides:
+        secrets.extend(extract_override_secrets(ctx.config_overrides))
     if cfg is not None:
         if getattr(cfg.api, "api_key", None):
             secrets.append(str(cfg.api.api_key))

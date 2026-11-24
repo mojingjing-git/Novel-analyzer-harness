@@ -984,3 +984,303 @@ def test_config_show_health_masking_and_corrupt_json(
     c_bad, p_bad, _ = _run_json(capsys, ["--json", "--runtime-dir", str(rt), "config", "show"])
     assert c_bad == EXIT_USAGE
     assert p_bad["error"]["type"] == "invalid_config"
+
+
+def test_cli_config_file_merging_set_overrides_and_secret_redaction(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    rt = tmp_path / "rt"
+    _write_config(rt, api_key="sk-rt-default-123456")
+    ext_cfg = tmp_path / "ext_preset.json"
+    ext_cfg.write_text(
+        json.dumps({
+            "api": {"base_url": "https://api.example.invalid/v1", "api_key": "sk-ext-key-999999", "model": "gpt6-luna"},
+            "analysis": {"block_size": 12, "recheck_v3_mode": "auto"},
+        }, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    # 1) 显式 --config 不存在 -> EXIT_NOT_FOUND (3)
+    c_nf, p_nf, _ = _run_json(
+        capsys,
+        ["--json", "--runtime-dir", str(rt), "--config", str(tmp_path / "missing.json"), "config", "show"],
+    )
+    assert c_nf == EXIT_NOT_FOUND
+    assert p_nf["error"]["type"] == "config_not_found"
+
+    # 2) 前置/中间/后置多层 -o / --set 全部累积生效，且不修改磁盘 ext_preset.json
+    c_ov, p_ov, _ = _run_json(
+        capsys,
+        [
+            "--json",
+            "--runtime-dir", str(rt),
+            "--config", str(ext_cfg),
+            "--set", "api.max_tokens=16384",
+            "-o", "block_size=8",
+            "config",
+            "-o", "recheck_v3_mode=compact",
+            "show",
+            "--set", "recheck_v3_max_hops=1",
+        ],
+    )
+    assert c_ov == EXIT_OK
+    cfg_out = p_ov["data"]["config"]
+    assert cfg_out["api"]["model"] == "gpt6-luna"
+    assert cfg_out["api"]["max_tokens"] == 16384
+    assert cfg_out["analysis"]["block_size"] == 8
+    assert cfg_out["analysis"]["recheck_v3_mode"] == "compact"
+    assert cfg_out["analysis"]["recheck_v3_max_hops"] == 1
+    assert json.loads(ext_cfg.read_text(encoding="utf-8"))["analysis"]["block_size"] == 12
+
+    # 3) --set 同时传明文 api_key 与越界参数触发校验失败时，原始密钥不得出现在 stderr/stdout
+    raw_secret = "custom-plain-secret-key-abcdef987654"
+    c_err, p_err, err_txt = _run_json(
+        capsys,
+        [
+            "--json",
+            "--runtime-dir", str(rt),
+            "--set", f"api.api_key={raw_secret}",
+            "-o", "analysis.block_size=999",
+            "config", "show",
+        ],
+    )
+    assert c_err == EXIT_USAGE
+    assert raw_secret not in json.dumps(p_err, ensure_ascii=False)
+    assert raw_secret not in err_txt
+
+
+def test_cli_config_schema_get_set_patch_reset_and_presets(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    rt = tmp_path / "rt"
+    secret = "sk-stored-secret-abcdef123456"
+    _write_config(rt, api_key=secret)
+
+    # 1) schema 过滤检索
+    c_sc, p_sc, _ = _run_json(capsys, ["--json", "--runtime-dir", str(rt), "config", "schema"])
+    assert c_sc == EXIT_OK
+    assert p_sc["data"]["total_fields"] == 131
+    assert p_sc["data"]["matched_fields"] == 131
+
+    c_sf, p_sf, _ = _run_json(
+        capsys,
+        ["--json", "--runtime-dir", str(rt), "config", "schema", "--group", "recheck_tuning", "--search", "recheck_v3_pool_max_chars"],
+    )
+    assert c_sf == EXIT_OK
+    assert [f["path"] for f in p_sf["data"]["fields"]] == ["analysis.recheck_v3_pool_max_chars"]
+
+    # 2) get 默认脱敏，--include-credentials 可见；短键名解析有效
+    c_g1, p_g1, _ = _run_json(capsys, ["--json", "--runtime-dir", str(rt), "config", "get", "api_key"])
+    assert c_g1 == EXIT_OK
+    assert p_g1["data"]["value"] == "***"
+    assert p_g1["data"]["is_set"] is True
+
+    c_g2, p_g2, _ = _run_json(
+        capsys,
+        ["--json", "--runtime-dir", str(rt), "config", "get", "api.api_key", "--include-credentials"],
+    )
+    assert c_g2 == EXIT_OK
+    assert p_g2["data"]["value"] == secret
+
+    # 3) set / patch(文件与stdin) + 未知键拒绝
+    c_set, p_set, _ = _run_json(
+        capsys,
+        ["--json", "--runtime-dir", str(rt), "config", "set", "recheck_v3_mode=wide", "block_size=15"],
+    )
+    assert c_set == EXIT_OK
+    assert p_set["data"]["config"]["analysis"]["recheck_v3_mode"] == "wide"
+    assert p_set["data"]["config"]["analysis"]["block_size"] == 15
+
+    patch_file = tmp_path / "patch.json"
+    patch_file.write_text(json.dumps({"analysis": {"atlas_max_characters": 80}}), encoding="utf-8")
+    c_pf, p_pf, _ = _run_json(
+        capsys,
+        ["--json", "--runtime-dir", str(rt), "config", "patch", "--file", str(patch_file)],
+    )
+    assert c_pf == EXIT_OK
+    assert p_pf["data"]["config"]["analysis"]["atlas_max_characters"] == 80
+
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps({"analysis": {"dormant_chapter_threshold": 150}})))
+    c_ps, p_ps, _ = _run_json(
+        capsys,
+        ["--json", "--runtime-dir", str(rt), "config", "patch", "--file", "-"],
+    )
+    assert c_ps == EXIT_OK
+    assert p_ps["data"]["config"]["analysis"]["dormant_chapter_threshold"] == 150
+
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps({"analysis": {"no_such_field": 1}})))
+    c_bad_p, p_bad_p, _ = _run_json(
+        capsys,
+        ["--json", "--runtime-dir", str(rt), "config", "patch", "--file", "-"],
+    )
+    assert c_bad_p == EXIT_USAGE
+    assert p_bad_p["error"]["type"] == "unknown_config_key"
+
+    # 4) reset 单键 & reset --all 默认保凭据、--include-credentials 全清
+    c_rk, p_rk, _ = _run_json(capsys, ["--json", "--runtime-dir", str(rt), "config", "reset", "block_size"])
+    assert c_rk == EXIT_OK
+    assert p_rk["data"]["config"]["analysis"]["block_size"] == 1
+    assert p_rk["data"]["config"]["analysis"]["recheck_v3_mode"] == "wide"
+
+    c_ra, p_ra, _ = _run_json(capsys, ["--json", "--runtime-dir", str(rt), "config", "reset", "--all"])
+    assert c_ra == EXIT_OK
+    assert p_ra["data"]["credentials_preserved"] is True
+    assert p_ra["data"]["config"]["analysis"]["recheck_v3_mode"] == "auto"
+    assert json.loads((rt / "config.json").read_text(encoding="utf-8"))["api"]["api_key"] == secret
+
+    c_rac, p_rac, _ = _run_json(
+        capsys,
+        ["--json", "--runtime-dir", str(rt), "config", "reset", "--all", "--include-credentials"],
+    )
+    assert c_rac == EXIT_OK
+    assert p_rac["data"]["credentials_preserved"] is False
+    assert json.loads((rt / "config.json").read_text(encoding="utf-8"))["api"]["api_key"] == ""
+
+    # 5) presets 列出内置预设
+    c_pr, p_pr, _ = _run_json(capsys, ["--json", "--runtime-dir", str(rt), "config", "presets"])
+    assert c_pr == EXIT_OK
+    assert isinstance(p_pr["data"]["presets"], dict) and len(p_pr["data"]["presets"]) >= 1
+
+
+def test_cli_config_mutation_routes_to_live_server(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from types import SimpleNamespace
+    import httpx
+    from fastapi import FastAPI
+    from backend.api import routes_settings
+    from backend.config.settings import ConfigManager
+
+    rt = tmp_path / "rt"
+    _write_config(rt, api_key="sk-live-cfg-123456")
+    srv_cfg_path = tmp_path / "srv_config.json"
+    srv_cfg_path.write_text((rt / "config.json").read_text(encoding="utf-8"), encoding="utf-8")
+    srv_mgr = ConfigManager(srv_cfg_path)
+    srv_mgr.load()
+    fake_analysis = SimpleNamespace(is_running=False, config_manager=srv_mgr)
+    fake_summary = SimpleNamespace(is_running=False)
+    monkeypatch.setattr(routes_settings, "get_service", lambda: fake_analysis)
+    monkeypatch.setattr("backend.services.summary_service.get_summary_service", lambda: fake_summary)
+
+    token = "cli-settings-live-token"
+    monkeypatch.setenv("NOVEL_ANALYZER_SESSION_TOKEN", token)
+    (rt / "session.token").write_text(token, encoding="utf-8")
+    (rt / "app.lock").write_text(json.dumps({"pid": 1001, "port": 18888, "started_at": 1}), encoding="utf-8")
+
+    mini_app = FastAPI()
+
+    @mini_app.get("/api/health")
+    async def _health():
+        return {"app": "novel-analyzer-web", "status": "ok"}
+
+    mini_app.include_router(routes_settings.router)
+    test_client = TestClient(mini_app)
+    seen_calls: List[tuple[str, str]] = []
+
+    class _SettingsBridge:
+        def __init__(self, **_kwargs: Any) -> None:
+            pass
+
+        def __enter__(self) -> "_SettingsBridge":
+            return self
+
+        def __exit__(self, *_exc: Any) -> bool:
+            return False
+
+        def get(self, url: str, **kwargs: Any) -> Any:
+            path = "/" + url.split("://", 1)[1].split("/", 1)[1] if "://" in url else url
+            seen_calls.append(("GET", path))
+            return test_client.get(path, **kwargs)
+
+        def request(self, method: str, url: str, **kwargs: Any) -> Any:
+            path = "/" + url.split("://", 1)[1].split("/", 1)[1] if "://" in url else url
+            seen_calls.append((method, path))
+            return test_client.request(method, path, **kwargs)
+
+    monkeypatch.setattr(httpx, "Client", _SettingsBridge)
+
+    c_set, p_set, _ = _run_json(
+        capsys,
+        ["--json", "--runtime-dir", str(rt), "config", "set", "analysis.block_size=9"],
+    )
+    assert c_set == EXIT_OK
+    assert p_set["data"]["persistence"] == "live_server"
+    assert ("PATCH", "/api/settings") in seen_calls
+    assert json.loads(srv_cfg_path.read_text(encoding="utf-8"))["analysis"]["block_size"] == 9
+
+    c_rst, p_rst, _ = _run_json(
+        capsys,
+        ["--json", "--runtime-dir", str(rt), "config", "reset", "--all"],
+    )
+    assert c_rst == EXIT_OK
+    assert p_rst["data"]["persistence"] == "live_server"
+    assert ("PUT", "/api/settings") in seen_calls
+    srv_disk = json.loads(srv_cfg_path.read_text(encoding="utf-8"))
+    assert srv_disk["analysis"]["block_size"] == 1
+    assert srv_disk["api"]["api_key"] == "sk-live-cfg-123456"
+
+
+def test_cli_analyze_knowledge_file_and_summary_concurrency_wiring(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import backend.core.pipeline as pipeline_mod
+    import backend.services.final_summary.runner as runner_mod
+
+    rt = tmp_path / "rt"
+    _write_config(rt)
+    book_dir = _seed_book(rt, "连线测试书", with_ledger=False, with_verdicts=False, with_report=False)
+    seen: Dict[str, Any] = {}
+
+    class _FakePipe:
+        def __init__(self, config, directory, knowledge_file, **_kw: Any) -> None:
+            seen["knowledge_file"] = Path(knowledge_file)
+            seen["max_tokens"] = config.api.max_tokens
+
+        def stop(self) -> None:
+            pass
+
+        async def run(self) -> Dict[str, Any]:
+            return {"stopped": False, "total_analyzed": 1, "errors": [], "failed_chapters": []}
+
+    class _FakeSumRunner:
+        def __init__(self, config, output_dir, **kw: Any) -> None:
+            seen["summary_concurrency"] = config.analysis.summary_concurrency
+            seen["main_concurrency"] = config.analysis.concurrency
+            seen["kw_concurrency"] = kw.get("concurrency")
+            self.ledger = ForeshadowLedger()
+
+        def stop(self) -> None:
+            pass
+
+        def get_token_stats(self) -> Dict[str, Any]:
+            return {}
+
+        async def run(self) -> str:
+            return "# 报告"
+
+    monkeypatch.setattr(pipeline_mod, "AnalysisPipeline", _FakePipe)
+    monkeypatch.setattr(runner_mod, "FinalSummaryRunner", _FakeSumRunner)
+
+    c_an, _p_an, _ = _run_json(
+        capsys,
+        ["--json", "--runtime-dir", str(rt), "-o", "knowledge_file=custom_kb.json", "-o", "max_tokens=32768", "analyze", "连线测试书"],
+    )
+    assert c_an == EXIT_OK
+    assert seen["knowledge_file"] == book_dir / "custom_kb.json"
+    assert seen["max_tokens"] == 32768
+
+    c_su, _p_su, _ = _run_json(
+        capsys,
+        ["--json", "--runtime-dir", str(rt), "summary", "连线测试书", "--concurrency", "7"],
+    )
+    assert c_su == EXIT_OK
+    assert seen["summary_concurrency"] == 7
+    assert seen["main_concurrency"] == 2
+    assert seen["kw_concurrency"] == 7
