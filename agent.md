@@ -51,13 +51,13 @@
 │   │   ├── evidence.py           # 本地证据取材：把"全书"换成几段原文窗口
 │   │   ├── file_processor.py     # 章节文件扫描与编码读取
 │   │   └── moderation.py         # 内容审核拦截识别
-│   ├── services/                 # 16 个单文件模块 + final_summary/ 4 层无环子包
+│   ├── services/                 # 15 个单文件模块 + final_summary/ 4 层无环子包 + recheck_v3/ 4 层无环子包
 │   │   ├── queue_service.py      # 分析运行编排（AnalysisService 单例）
 │   │   ├── queue_manager.py      # 队列状态机、扫描、模型预检与持久化
 │   │   ├── analysis_stats.py     # 会话统计累加
 │   │   ├── pipeline_events.py    # WS 事件翻译层
 │   │   ├── final_summary/        # 最终总结四层子包（prompts / parsers / atlas_extractor -> catalog_mixin / checkpoint_mixin / recheck_mixin -> runner -> __init__）
-│   │   ├── recheck_v3.py         # 带证据的伏笔复检 V3 多跳证据链（默认）
+│   │   ├── recheck_v3/           # 伏笔复检 V3 四层无环子包（prompts -> parsers / preprocessing -> evidence_pool -> runner -> __init__，默认）
 │   │   ├── recheck_v2.py         # 带证据的伏笔复检 V2 批量核对
 │   │   ├── recheck_resolution.py # 原文证据校验与全自动裁决核
 │   │   ├── splitter_service.py   # 切分引擎（18 条章正则 + 5 条卷正则 + 去重/合并/拆分）
@@ -100,23 +100,22 @@
 ├── frontend/src/                 # Vue 3 + TypeScript（含 __tests__/ 下 5 个聚合测试文件）
 │   ├── pages/                    # 9 个主页面（router.ts）
 │   │   ├── QueuePage.vue         # 分析队列
-│   │   ├── SettingsPage.vue      # 设置（API/模型调用与并发/策略/高级区 3 大纯配置分组）
+│   │   ├── SettingsPage.vue      # 设置编排页（组合 components/settings/ 下 4 张配置卡片）
 │   │   ├── CharacterCardPage.vue # 人物谱系（ECharts 关系网 + 别名检索 + 角色卡）
-│   │   ├── SummaryPage.vue       # 最终总结（含文风量化栏与 Excel 导出）
+│   │   ├── SummaryPage.vue       # 最终总结（含文风量化栏、复检明细人工覆写与 Excel 导出）
 │   │   ├── SplitterPage.vue      # 小说切分
 │   │   ├── WorkspacePage.vue     # 工作区与归档
 │   │   ├── WorldStagePage.vue    # 世界舞台（换地图阶段流 + 多世界树）
 │   │   ├── StatsPage.vue         # 统计与诊断（累计账本 / 会话 / 历史 / 日志 / Prompt 预览）
-│   │   └── TimelinePage.vue      # 时间线
-│   ├── components/               # 14 个（AppLayout / BookSelector / ChapterDetailPanel /
-│   │                             #   ChapterValue / ConfirmDialog / CountUp / DiscoveryFeed /
-│   │                             #   Icon / LaneView / LogConsole / ProgressBar / RunDashboard /
-│   │                             #   ThroughputChart / ToggleSwitch）
+│   │   └── TimelinePage.vue      # 时间线（含伏笔待确认过滤与人工复核覆写）
+│   ├── components/               # 14 个通用组件 + settings/（SettingsApiConnectionCard /
+│   │                             #   SettingsStrategyCard / SettingsModelMatrixCard /
+│   │                             #   SettingsAdvancedSection）
 │   ├── composables/              # useLocale / useLogStore / useRipple / useSelectedBook / vTooltip
 │   ├── api/                      # client.ts / sessionToken.ts / useProgressSocket.ts
-│   ├── utils/                    # 9 个纯函数模块（laneRegistry / markdown / queueFeed /
-│   │                             #   settingsForm / splitterView / summaryLanes /
-│   │                             #   summaryProgress / theme / workspaceView）
+│   ├── utils/                    # 10 个纯函数模块（laneRegistry / markdown / queueFeed /
+│   │                             #   settingsForm / settingsTooltips / splitterView /
+│   │                             #   summaryLanes / summaryProgress / theme / workspaceView）
 │   ├── router.ts                 # 1 个根布局 + 9 条主路由 + 4 条兼容重定向
 │   └── main.css                  # Win11 Fluent 设计系统（--win-* 变量）
 ├── desktop/                      # 桌面入口与打包资产
@@ -252,9 +251,9 @@ user:   时间线 + 角色状态 + 角色关系 + 已验证事实 + 前情摘要
 ### 4.5 知识库管理（knowledge_base.py）
 
 **三种 KB 构建方式：**
-1. `merge_results(output_dir)` — 全量合并（最终保存用，带裁剪）
+1. `merge_results(output_dir, kb_limits=None)` — 全量合并（统一由 `KnowledgeBaseManager._trim_kb` 按 `kb_limits` 裁剪列表与字典）
 2. `build_temp_knowledge(output_dir, chapter_limit)` — 带缓存的临时 KB
-3. `_merge_incremental(kb, new_results)` — 增量更新（缓存命中时）
+3. `_merge_incremental(kb, new_results)` — 增量更新（缓存命中时，交由 `merge_results` 统一裁剪）
 
 **内存缓存（`_temp_kb_cache`）：**
 - key: `(output_dir, chapter_limit)`
@@ -270,15 +269,17 @@ self.results: Dict[int, AnalysisResult]    # {章号: 结果}
 self.kb: KnowledgeBase                     # 增量维护的 KB
 self.rolling: dict                         # 滚动总结数据
 self._flushed_chapters: Set[int]           # 已落盘的章号集合
+self._char_state_chapter: Dict[str, int]   # 角色状态单调章号水位线
+self._char_rel_chapter: Dict[str, int]     # 角色关系单调章号水位线
 ```
 
 **KB 快照隔离（`get_kb_snapshot(chapter_limit)`）：**
 - 三级缓存策略：精确命中 / 增量扩展 / 从子集重建
 - 只允许请求 limit ≥ 缓存 limit 才扩展，防止并发低章号块读到未来知识
 
-**乱序保护（`_merge_one`）：**
-- `_kb_last_chapter` 跟踪最大已合并章号
-- 低章号迟到结果只合并非进度内容（事实/角色/世界等），跳过 timeline/recent_summaries
+**乱序保护与字典定界（`_merge_one` / `_trim_kb`）：**
+- `_kb_last_chapter` 跟踪最大已合并章号，低章号迟到结果跳过 timeline/recent_summaries
+- `_char_state_chapter` / `_char_rel_chapter` 阻止低章号乱序结果覆写高章号状态；同/高章号命中通过 `pop` + 重插保尾，`_trim_kb` 按配置裁剪 7 个列表及 `character_states` / `character_relationships` 字典（保留单调水位线防被裁键复活）
 
 ### 4.7 最终总结（backend/services/final_summary/）
 
@@ -346,16 +347,16 @@ self._flushed_chapters: Set[int]           # 已落盘的章号集合
 | `file_processor.py` | 章节文件扫描、编码探测与读取 |
 | `moderation.py` | 内容审核拦截识别（provider 无关） |
 
-### 5.2 服务层（backend/services/，16 个单文件模块 + final_summary/ 子包）
+### 5.2 服务层（backend/services/，15 个单文件模块 + final_summary/ 与 recheck_v3/ 两个子包）
 
 | 模块 | 职责 |
 |---|---|
-| `queue_service.py` | 分析运行编排（`AnalysisService` 单例） |
+| `queue_service.py` | 分析运行编排（`AnalysisService` 单例，含账户级熔断挂起队列与脱敏通知） |
 | `queue_manager.py` | 队列状态机、扫描、模型预检与持久化 |
 | `analysis_stats.py` | 会话统计累加（token、每章记录、重试成本） |
 | `pipeline_events.py` | WS 事件翻译层：流水线回调 → 广播消息 |
 | `final_summary/` | 最终总结四层子包（`prompts` / `parsers` / `atlas_extractor` / `catalog_mixin` / `checkpoint_mixin` / `recheck_mixin` / `runner`）与三阶段断点续跑 |
-| `recheck_v3.py` | 带证据的伏笔复检 V3 多跳证据链引擎（默认） |
+| `recheck_v3/` | 带证据的伏笔复检 V3 四层无环子包（`prompts` → `parsers` / `preprocessing` → `evidence_pool` → `runner` → `__init__`，默认） |
 | `recheck_v2.py` | 带证据的伏笔复检 V2 批量核对引擎（可选） |
 | `recheck_resolution.py` | 原文证据校验与全自动裁决核 |
 | `splitter_service.py` | 切分引擎：18 条章节正则 + 5 条卷正则，去重 / 合并 / 超章拆分 / 书名推断 |
@@ -424,25 +425,27 @@ Win11 Fluent 风格，颜色 / 圆角 / 阴影 / 间距统一走 `--win-*` 变�
 | 页面 | 职责 |
 |---|---|
 | `QueuePage.vue` | 分析队列：书籍队列、启停分析、进度车道、token 统计、日志下载 |
-| `SettingsPage.vue` | 设置：API / 模型调用与并发 / 流程策略 / 高级参数与伏笔保留类别（3 大纯配置分组） |
+| `SettingsPage.vue` | 设置编排页：挂载 `components/settings/` 下 4 张卡片组件管理 API / 模型矩阵 / 策略 / 高级参数与伏笔分类 |
 | `CharacterCardPage.vue` | 人物谱系：核心关系网、别名检索与归并角色卡详情 |
-| `SummaryPage.vue` | 最终总结：总结启停、阶段进度、风格量化概览、全书脉络报告与一键导出 Excel |
+| `SummaryPage.vue` | 最终总结：总结启停、阶段进度、风格量化概览、复检明细人工覆写、全书脉络报告与一键导出 Excel |
 | `SplitterPage.vue` | 切分预览、批量切分、书名推断 |
 | `WorkspacePage.vue` | 工作区与归档列表、切分还原、归档与删除 |
 | `WorldStagePage.vue` | 世界舞台：主线换地图阶段流与 ECharts 多世界层级拓扑树 |
 | `StatsPage.vue` | 统计与诊断：跨进程累计账本、会话统计、按书历史、实时日志与 Prompt 预览 |
-| `TimelinePage.vue` | 时间线与伏笔分类排名 |
+| `TimelinePage.vue` | 时间线与伏笔分类排名（含「待确认」过滤与人工复核覆写操作） |
 
-### 6.5 组件（14 个）
+### 6.5 组件（14 个通用组件 + 4 个配置子组件）
 
-`AppLayout.vue`（根布局）、`BookSelector.vue`、`ChapterDetailPanel.vue`、
-`ChapterValue.vue`、`ConfirmDialog.vue`、`CountUp.vue`、`DiscoveryFeed.vue`、`Icon.vue`、
-`LaneView.vue`、`LogConsole.vue`、`ProgressBar.vue`、`RunDashboard.vue`、`ThroughputChart.vue`、`ToggleSwitch.vue`。
+- 通用组件：`AppLayout.vue`（根布局）、`BookSelector.vue`、`ChapterDetailPanel.vue`、
+  `ChapterValue.vue`、`ConfirmDialog.vue`、`CountUp.vue`、`DiscoveryFeed.vue`、`Icon.vue`、
+  `LaneView.vue`、`LogConsole.vue`、`ProgressBar.vue`、`RunDashboard.vue`、`ThroughputChart.vue`、`ToggleSwitch.vue`。
+- 设置子组件（`components/settings/`）：`SettingsApiConnectionCard.vue`、`SettingsStrategyCard.vue`、
+  `SettingsModelMatrixCard.vue`、`SettingsAdvancedSection.vue`。
 
 ### 6.6 前端关键模式
 
-- **纯函数外置**：`utils/` 下 9 个模块承载车道注册表、自研 Markdown、队列状态机、总结进度、设置表单、
-  切分视图、主题、工作区视图等逻辑，便于单测。
+- **纯函数外置**：`utils/` 下 10 个模块承载车道注册表、自研 Markdown、队列状态机、总结进度、设置表单、
+  设置提示词表、切分视图、主题、工作区视图等逻辑，便于单测。
 - **自研 Markdown 渲染**：`utils/markdown.ts` 零依赖渲染 Markdown → HTML（已先做 `escapeHtml()` 转义）。
 - **请求超时**：`client.ts` 默认 30 秒超时，重活请求单独放宽到 120–300 秒。
 

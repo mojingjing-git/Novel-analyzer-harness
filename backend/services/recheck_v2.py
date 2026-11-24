@@ -305,6 +305,8 @@ async def run_recheck_v2(
     leads_skipped = 0
     outcome.input_total = len(items)
     for item in items:
+        if getattr(item, "source_type", "") == "human_override":
+            continue
         if getattr(item, "status", "") not in ("open", "active"):
             continue
         if getattr(item, "lead", False):

@@ -5,6 +5,7 @@
 GET /api/books 时刷新；其余接口按 id 惰性解析。
 """
 
+from dataclasses import asdict
 import json
 import logging
 import re
@@ -12,6 +13,7 @@ import threading
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 
+from ..utils.foreshadow_ledger import ForeshadowLedger
 from .queue_service import get_service
 
 logger = logging.getLogger(__name__)
@@ -28,6 +30,18 @@ _manual_books: Dict[str, Path] = {}
 _refreshing = False
 _refresh_lock = threading.Lock()
 _books_lock = threading.RLock()
+_ledger_review_locks: Dict[str, threading.Lock] = {}
+_ledger_review_locks_guard = threading.Lock()
+
+
+def _get_ledger_lock(book_id: str) -> threading.Lock:
+    """按 book_id 获取串行化伏笔台账人工覆写写入锁。"""
+    with _ledger_review_locks_guard:
+        lock = _ledger_review_locks.get(book_id)
+        if lock is None:
+            lock = threading.Lock()
+            _ledger_review_locks[book_id] = lock
+        return lock
 
 
 def _is_book_dir(d: Path) -> bool:
@@ -307,6 +321,12 @@ def load_recheck_verdicts(book_id: str) -> Optional[Dict[str, Any]]:
                 "question": str(l_item.get("question") or ""),
                 "first_seen_chapter": l_item.get("first_seen_chapter"),
                 "importance": str(l_item.get("importance") or ""),
+                "ledger_status": str(l_item.get("status") or ""),
+                "ledger_needs_review": bool(l_item.get("needs_review", False)),
+                "ledger_resolution_quality": str(l_item.get("resolution_quality") or ""),
+                "ledger_source_type": str(l_item.get("source_type") or ""),
+                "ledger_resolution": l_item.get("resolution"),
+                "ledger_resolved_chapter": l_item.get("resolved_chapter"),
             })
 
         return {
@@ -324,6 +344,50 @@ def load_recheck_verdicts(book_id: str) -> Optional[Dict[str, Any]]:
     except Exception as e:
         logger.warning(f"读取 recheck_verdicts.json 失败 ({book_id}): {e}")
         return empty
+
+
+def review_foreshadow_item(
+    book_id: str,
+    item_id: str,
+    action: str,
+    *,
+    resolution: Optional[str] = None,
+    resolved_chapter: Optional[int] = None,
+    note: Optional[str] = None,
+) -> Dict[str, Any]:
+    """人工复核覆写指定书目的伏笔账本条目，按 book_id 加锁并校验总结未运行。"""
+    output_dir = get_output_dir(book_id)
+    if output_dir is None:
+        raise LookupError("book_not_found")
+    ledger_path = output_dir / "foreshadow_ledger.json"
+    if not ledger_path.exists():
+        raise LookupError("ledger_not_found")
+
+    lock = _get_ledger_lock(book_id)
+    with lock:
+        # 延迟导入避免与 summary_service（顶层 import book_service）循环依赖
+        from .summary_service import get_summary_service
+
+        summary_svc = get_summary_service()
+        if summary_svc.is_running and summary_svc.status().get("book_id") == book_id:
+            raise RuntimeError("summary_running")
+
+        ledger = ForeshadowLedger.load(ledger_path)
+        item = ledger.apply_human_override(
+            item_id,
+            action,
+            resolution=resolution,
+            resolved_chapter=resolved_chapter,
+            note=note,
+        )
+        if not ledger.save(ledger_path):
+            raise RuntimeError("ledger_save_failed")
+        return {
+            "book_id": book_id,
+            "item": asdict(item),
+            "lifecycle_bars": ledger.lifecycle_bars(),
+            "counts": ledger.get_item_count(),
+        }
 
 
 def list_books() -> List[Dict[str, Any]]:

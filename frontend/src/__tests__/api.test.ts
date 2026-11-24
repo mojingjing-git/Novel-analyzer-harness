@@ -95,6 +95,22 @@ describe('api client', () => {
       detail,
     })
   })
+
+  it('reviewForeshadowItem 对路径段做 URL 编码并以 POST 携带 X-Session-Token', async () => {
+    __setSessionTokenForTests('sec-token')
+    fetchMock.mockResolvedValueOnce(jsonResponse({
+      book_id: '书 A',
+      item: { id: 'fs#1', status: 'resolved', source_type: 'human_override', needs_review: false, resolution_quality: 'verified' },
+      lifecycle_bars: { resolved_verified: 1 },
+      counts: { total: 1, active: 0, resolved: 1, dormant: 0 },
+    }))
+    await api.reviewForeshadowItem('书 A', 'fs#1', { action: 'confirm_resolved', resolved_chapter: 18 })
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/books/%E4%B9%A6%20A/ledger/fs%231/review')
+    expect(init.method).toBe('POST')
+    expect((init.headers as Record<string, string>)['X-Session-Token']).toBe('sec-token')
+    expect(JSON.parse(init.body as string)).toEqual({ action: 'confirm_resolved', resolved_chapter: 18 })
+  })
 })
 
 describe('useProgressSocket', () => {

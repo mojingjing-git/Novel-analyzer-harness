@@ -138,6 +138,8 @@ async def run_recheck_v3(
         if getattr(item, "lead", False):
             leads_skipped += 1
             continue
+        if getattr(item, "source_type", "") == "human_override":
+            continue
         if getattr(item, "status", "active") != "active":
             continue
         cid = str(getattr(item, "id", "") or "")

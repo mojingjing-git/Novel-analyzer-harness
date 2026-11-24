@@ -72,45 +72,27 @@
 把"判定方说已回收、复核方说没交代"降级为待复核；以及 0 成本的章号闭包做前置筛。
 这两条都还没有实现，等决策。
 
-### 复检"待确认"条目的人工出口待 GUI
-
-复检对证据不足/冲突的条目只置 `needs_review`（status 不动），休眠收尾也已跳过
-它们；但"待确认"目前没有人工处置入口——无 UI、无 API 写点、
-`human_override` 这个 source_type 从未被赋值。存量可见不可操作：
-冻结待审 221 条（历史冻结，出路只能走 GUI）+ 质疑 326 条（audit 批产物）。
-人工出口（confirm/reject + 四栏呈现）随前端接线落地。
-
 ### 43 条无锚点的旧回收无法自动复审
 
 `llm_judged` 的已回收条目里 43 条没有可用锚点引文，证据复检进不去，
-只能等锚点迁移（D-1 的 `anchor_file_index`/`anchor_content_hash`）或人工处理。
-
-### 账户级熔断覆盖范围
-
-`backend/core/breaker.py` 已在 `llm_client` 逐调用记账并短路，在欠费或认证失效首次结构化命中时跳闸，
-同实例后续调用零成本短路并交由 `backend/core/pipeline.py` 登记致命块；但队列级的自动提前停止尚未接入。
+只能等锚点迁移（D-1 的 `anchor_file_index`/`anchor_content_hash`）或通过人工复核页面处置。
 
 ## 二、数据层语义
 
-以下几条在生产路径上仍然成立，且互相牵连：滚动摘要与人物状态只有一个
-`last_updated_chapter` 标量，没有"快照上界排他"的概念，因此**越早补跑的块既进不了
-摘要，又会被后面高章号的结果覆盖**。
+以下几条在生产路径上仍然成立：
 
 | 问题 | 位置 | 表现 |
 |---|---|---|
-| 滚动摘要按标量上界过滤 | `backend/core/pipeline.py` | 补跑的旧块被排除在摘要之外 |
-| 人物状态覆写不受顺序保护 | `backend/core/memory_state.py:402-404`（`:348-358` 只护住 timeline） | 后到的高章号状态盖掉先到的 |
-| 已验证事实没有来源 | `backend/core/memory_state.py:387-390` | `verified_facts` 直接原样入账，无法溯源 |
-| 同章共现直接写成关系 | `backend/core/memory_state.py:406-412` | 逐章阶段同一章出现就判定两人有关系（全书图谱在 Stage 4 另行洗出语义关系） |
+| 滚动摘要按标量上界过滤 | `backend/core/pipeline.py` | 补跑历史块时通过提示词标注避免 `current_context` 倒退，但推进进度仍受单向最大章号标量约束 |
+| 已验证事实没有来源 | `backend/core/memory_state.py` | `verified_facts` 直接原样入账，无法溯源 |
+| 同章共现直接写成关系 | `backend/core/memory_state.py` | 逐章阶段同一章出现即判定两人有关系（全书图谱在 Stage 4 另行洗出语义关系） |
 | 知识库没有版本字段 | `backend/models/knowledge.py:14-31` | 无法判断快照是哪个版本的规则生成的 |
-| 知识库两个 dict 不裁剪 | `backend/core/memory_state.py:427-436` | `_trim_kb` 只裁 7 个 list，两个 dict 无上限 |
 
 ## 三、总结与产物
 
 | 问题 | 位置 | 表现 |
 |---|---|---|
 | 卷摘要压缩是纯字符截断 | `backend/services/final_summary/checkpoint_mixin.py` | 截断会切在半句上，摘要读起来断裂 |
-| 上下文裁剪来源有两套 | `backend/core/memory_state.py:414` 读配置 vs `backend/core/knowledge_base.py:309` 硬编码 | 同一条上限在不同路径下生效值不同 |
 
 ## 四、前端
 

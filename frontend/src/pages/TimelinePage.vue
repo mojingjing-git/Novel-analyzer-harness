@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, computed, onMounted } from 'vue'
 import BookSelector from '../components/BookSelector.vue'
-import { api, type ForeshadowRankItem } from '../api/client'
+import { api, type ForeshadowRankItem, type ForeshadowReviewAction } from '../api/client'
 
 interface TimelineEvent {
   chapter: number
@@ -33,10 +33,16 @@ const events = ref<TimelineEvent[]>([])
 const foreshadows = ref<Foreshadow[]>([])
 const ranking = ref<ForeshadowRankItem[]>([])
 const minImportance = ref<'低' | '中' | '高'>('低')
-const rankingStatusFilter = ref<'all' | 'active' | 'resolved' | 'dormant'>('all')
+const rankingStatusFilter = ref<'all' | 'active' | 'resolved' | 'dormant' | 'needs_review'>('all')
+const rankingLifecycleBars = ref<Record<string, number> | null>(null)
+const reviewBusyId = ref('')
+const reviewError = ref('')
 
 const filteredRanking = computed(() => {
   if (rankingStatusFilter.value === 'all') return ranking.value
+  if (rankingStatusFilter.value === 'needs_review') {
+    return ranking.value.filter(item => Boolean(item.needs_review) || item.resolution_quality === 'questioned')
+  }
   return ranking.value.filter(item => item.status === rankingStatusFilter.value)
 })
 
@@ -88,13 +94,18 @@ async function loadRanking() {
   const id = bookId.value
   const seq = ++rankingSeq
   ranking.value = []
+  rankingLifecycleBars.value = null
   rankingError.value = ''
   rankingMissing.value = ''
+  reviewError.value = ''
   rankingLoading.value = Boolean(id)
   if (!id) return
   try {
     const res = await api.getForeshadowRanking(id)
-    if (seq === rankingSeq) ranking.value = res.ranking
+    if (seq === rankingSeq) {
+      ranking.value = res.ranking
+      rankingLifecycleBars.value = res.lifecycle_bars ?? null
+    }
   } catch (error) {
     if (seq !== rankingSeq) return
     const err = error as Error & { status?: number }
@@ -102,6 +113,39 @@ async function loadRanking() {
     else rankingError.value = err.message || '无法读取伏笔排行'
   } finally {
     if (seq === rankingSeq) rankingLoading.value = false
+  }
+}
+
+async function submitRankingReview(item: ForeshadowRankItem, action: ForeshadowReviewAction) {
+  const id = bookId.value
+  if (!id || reviewBusyId.value) return
+  reviewBusyId.value = item.id
+  reviewError.value = ''
+  try {
+    const res = await api.reviewForeshadowItem(id, item.id, { action })
+    if (bookId.value !== id) return
+    ranking.value = ranking.value.map((row) =>
+      row.id === item.id
+        ? {
+            ...row,
+            status: res.item.status,
+            needs_review: res.item.needs_review,
+            resolution_quality: res.item.resolution_quality,
+            source_type: res.item.source_type,
+            resolution: res.item.resolution,
+            resolved_chapter: res.item.resolved_chapter,
+            confidence: res.item.confidence,
+            evidence_chapters: res.item.evidence_chapters,
+          }
+        : row,
+    )
+    rankingLifecycleBars.value = res.lifecycle_bars
+  } catch (error) {
+    if (bookId.value === id) {
+      reviewError.value = (error as Error).message || '人工复核保存失败'
+    }
+  } finally {
+    if (reviewBusyId.value === item.id) reviewBusyId.value = ''
   }
 }
 
@@ -230,12 +274,13 @@ const categoryStats = computed(() => {
             { key: 'active', label: '活跃' },
             { key: 'resolved', label: '已回收' },
             { key: 'dormant', label: '休眠' },
+            { key: 'needs_review', label: '待确认' },
           ]"
           :key="opt.key"
           type="button"
           class="glass-pill text-xs"
           :class="{ 'is-active': rankingStatusFilter === opt.key }"
-          @click="rankingStatusFilter = opt.key as 'all' | 'active' | 'resolved' | 'dormant'"
+          @click="rankingStatusFilter = opt.key as 'all' | 'active' | 'resolved' | 'dormant' | 'needs_review'"
         >{{ opt.label }}</button>
       </div>
     </div>
@@ -272,6 +317,7 @@ const categoryStats = computed(() => {
       <button type="button" class="glass-button" @click="retryCurrentView">重试</button>
     </div>
     <div v-else-if="mode === 'ranking'" class="space-y-2">
+      <p v-if="reviewError" class="glass-tinted-red px-3 py-2 rounded text-xs" role="alert">{{ reviewError }}</p>
       <div v-if="ranking.length === 0" class="glass-card p-8 text-center text-sm" style="color: var(--win-text-disabled)">
         {{ rankingMissing || '暂无排行数据' }}
       </div>
@@ -290,6 +336,7 @@ const categoryStats = computed(() => {
               <span v-if="item.status === 'active'" class="status-tag badge-blue" style="font-size: 11px">活跃</span>
               <span v-else-if="item.status === 'resolved'" class="status-tag badge-green" style="font-size: 11px">已回收</span>
               <span v-else-if="item.status === 'dormant'" class="status-tag badge-gray" style="font-size: 11px">休眠</span>
+              <span v-if="item.source_type === 'human_override'" class="status-tag badge-purple" style="font-size: 11px">人工复核</span>
               <span v-if="item.resolved_chapter != null && item.resolved_chapter > 0" style="color: var(--win-success)">
                 回收于第{{ item.resolved_chapter }}章
               </span>
@@ -301,6 +348,32 @@ const categoryStats = computed(() => {
             <p v-if="item.resolution" class="text-xs" style="color: var(--win-text-secondary)">
               回收说明：{{ item.resolution }}
             </p>
+            <div class="flex items-center gap-1.5 flex-wrap pt-1">
+              <button
+                v-if="item.status !== 'resolved' || item.needs_review || item.resolution_quality === 'questioned'"
+                type="button"
+                class="glass-button text-xs"
+                style="padding: 2px 8px; min-height: 24px"
+                :disabled="reviewBusyId === item.id"
+                @click="submitRankingReview(item, 'confirm_resolved')"
+              >确认回收</button>
+              <button
+                v-if="item.status !== 'active' || item.needs_review"
+                type="button"
+                class="glass-button text-xs"
+                style="padding: 2px 8px; min-height: 24px"
+                :disabled="reviewBusyId === item.id"
+                @click="submitRankingReview(item, 'reject_to_active')"
+              >驳回为活跃</button>
+              <button
+                v-if="item.status !== 'dormant' || item.needs_review"
+                type="button"
+                class="glass-button text-xs"
+                style="padding: 2px 8px; min-height: 24px"
+                :disabled="reviewBusyId === item.id"
+                @click="submitRankingReview(item, 'mark_dormant')"
+              >标为休眠</button>
+            </div>
           </div>
           <div class="shrink-0 flex flex-col items-end gap-1">
             <span class="glass-badge" :class="importanceBadge[item.importance] || 'badge-gray'">{{ item.importance }}</span>

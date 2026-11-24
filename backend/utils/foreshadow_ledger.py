@@ -237,3 +237,58 @@ class ForeshadowLedger:
             'resolved': sum(1 for i in self.items if i.status == 'resolved'),
             'dormant': sum(1 for i in self.items if i.status == 'dormant')
         }
+
+    def apply_human_override(
+        self,
+        item_id: str,
+        action: str,
+        *,
+        resolution: Optional[str] = None,
+        resolved_chapter: Optional[int] = None,
+        note: Optional[str] = None,
+    ) -> ForeshadowItem:
+        """人工复核覆写：设置 source_type='human_override' 并清空 needs_review。"""
+        if action not in ("confirm_resolved", "reject_to_active", "mark_dormant"):
+            raise ValueError(f"不支持的人工复核动作: {action}")
+        if resolved_chapter is not None and (
+            isinstance(resolved_chapter, bool)
+            or not isinstance(resolved_chapter, int)
+            or resolved_chapter <= 0
+        ):
+            raise ValueError("resolved_chapter 必须为正整数")
+
+        item = self._find_item(item_id)
+        if item is None:
+            raise KeyError(item_id)
+
+        item.source_type = "human_override"
+        item.needs_review = False
+        item.confidence = 1.0
+
+        if action == "confirm_resolved":
+            item.status = "resolved"
+            item.resolution_quality = "verified"
+            clean_res = (resolution or "").strip()
+            item.resolution = clean_res if clean_res else (item.resolution or "人工确认已回收")
+            if resolved_chapter is not None:
+                item.resolved_chapter = resolved_chapter
+                if resolved_chapter not in item.evidence_chapters:
+                    item.evidence_chapters.append(resolved_chapter)
+        elif action == "reject_to_active":
+            item.status = "active"
+            item.resolution = None
+            item.resolved_chapter = None
+            item.resolved_batch = None
+            item.resolution_quality = ""
+        elif action == "mark_dormant":
+            item.status = "dormant"
+            item.resolution = None
+            item.resolved_chapter = None
+            item.resolved_batch = None
+            item.resolution_quality = ""
+
+        clean_note = (note or "").strip()
+        item.notes.append(
+            f"[人工复核:{action}] {clean_note}" if clean_note else f"[人工复核:{action}]"
+        )
+        return item

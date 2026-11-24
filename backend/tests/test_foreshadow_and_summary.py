@@ -855,3 +855,72 @@ def test_stage2_fingerprint_reacts_to_v3_switches(tmp_path):
         r = FinalSummaryRunner(config=cfg, output_dir=out_dir, start_chapter=1, end_chapter=1)
         fps.append(r._compute_stage2_fingerprint("s1", "blk", "v3"))
     assert len(set(fps)) == 3
+
+
+async def test_ledger_apply_human_override_and_recheck_skip():
+    """人工复核覆写状态机应正确流转，且 source_type='human_override' 在 V3/V2 中均被跳过。"""
+    import pytest
+    from backend.services.recheck_v2 import run_recheck_v2
+    from backend.services.recheck_v3 import run_recheck_v3
+
+    ledger = ForeshadowLedger(
+        items=[
+            ForeshadowItem(
+                id="fs_h1",
+                description="旧玉佩的来历",
+                first_seen_chapter=2,
+                first_seen_batch=1,
+                last_seen_chapter=8,
+                last_seen_batch=2,
+                status="active",
+                needs_review=True,
+                anchor_quote="他从怀里摸出一枚残缺旧玉佩。",
+                anchor_chapter=2,
+                question="旧玉佩究竟属于谁？",
+            )
+        ]
+    )
+
+    confirmed = ledger.apply_human_override(
+        "fs_h1", "confirm_resolved", resolution="第12章确认归主角生母所有", resolved_chapter=12, note="人工核验"
+    )
+    assert confirmed.status == "resolved"
+    assert confirmed.resolution_quality == "verified"
+    assert confirmed.source_type == "human_override"
+    assert confirmed.needs_review is False
+    assert confirmed.resolved_chapter == 12
+    assert 12 in confirmed.evidence_chapters
+
+    dormant = ledger.apply_human_override("fs_h1", "mark_dormant")
+    assert dormant.status == "dormant"
+    assert dormant.resolution is None
+    assert dormant.resolved_chapter is None
+
+    reopened = ledger.apply_human_override("fs_h1", "reject_to_active")
+    assert reopened.status == "active"
+    assert reopened.source_type == "human_override"
+    assert reopened.needs_review is False
+
+    with pytest.raises(ValueError):
+        ledger.apply_human_override("fs_h1", "bad_action")
+    with pytest.raises(ValueError):
+        ledger.apply_human_override("fs_h1", "confirm_resolved", resolved_chapter=True)
+    with pytest.raises(KeyError):
+        ledger.apply_human_override("fs_missing", "mark_dormant")
+
+    # 即使 status=='active'，human_override 条目在 V3/V2 复检中也不得再次调用模型或被覆盖
+    calls = 0
+
+    async def never_call(_prompt: str) -> str:
+        nonlocal calls
+        calls += 1
+        return "[]"
+
+    chapters = {2: "他从怀里摸出一枚残缺旧玉佩。"}
+    v3_out = await run_recheck_v3(ledger.items, chapters=chapters, call_model=never_call)
+    v2_out = await run_recheck_v2(ledger.items, chapters=chapters, call_model=never_call, max_calls=5)
+    assert calls == 0
+    assert v3_out.coverage["candidates_total"] == 0
+    assert v2_out.coverage["candidates_total"] == 0
+    assert reopened.status == "active"
+    assert reopened.source_type == "human_override"

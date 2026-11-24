@@ -448,6 +448,23 @@ export interface ForeshadowRankItem {
   resolved_chapter: number | null
   needs_review?: boolean
   resolution_quality?: string
+  source_type?: string
+}
+
+export type ForeshadowReviewAction = 'confirm_resolved' | 'reject_to_active' | 'mark_dormant'
+
+export interface ForeshadowReviewPayload {
+  action: ForeshadowReviewAction
+  resolution?: string
+  resolved_chapter?: number
+  note?: string
+}
+
+export interface ForeshadowReviewResponse {
+  book_id: string
+  item: ForeshadowRankItem & { confidence: number; notes?: string[]; source_type: string }
+  lifecycle_bars: Record<string, number>
+  counts: { total: number; active: number; resolved: number; dormant: number }
 }
 
 export interface RecheckEvidenceDto {
@@ -477,6 +494,12 @@ export interface RecheckVerdictItemDto {
   question: string
   first_seen_chapter: number | null
   importance: string
+  ledger_status?: string
+  ledger_needs_review?: boolean
+  ledger_resolution_quality?: string
+  ledger_source_type?: string
+  ledger_resolution?: string | null
+  ledger_resolved_chapter?: number | null
 }
 
 export interface RecheckVerdictsResponse {
@@ -697,7 +720,13 @@ export const api = {
     book_id: string
     total: number
     ranking: ForeshadowRankItem[]
+    lifecycle_bars?: Record<string, number>
   }>(`/api/books/${seg(book_id)}/foreshadow_ranking`),
+  reviewForeshadowItem: (book_id: string, item_id: string, body: ForeshadowReviewPayload) =>
+    request<ForeshadowReviewResponse>(`/api/books/${seg(book_id)}/ledger/${seg(item_id)}/review`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   getForeshadowCategories: () => request<{
     schema_version: number
     fallback: string

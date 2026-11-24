@@ -12,7 +12,7 @@
 │   ├── app.py                    # FastAPI 应用工厂（路由挂载 / SPAStaticFiles 静态托管 / 日志 / 健康检查）
 │   ├── main.py                   # 后端启动器
 │   ├── ws_events.py              # WebSocket 消息协议的唯一权威定义
-│   ├── progress_hub.py           # WebSocket 广播中枢（节流 + 慢消费者驱逐）
+│   ├── progress_hub.py           # WebSocket 广播中枢（节流 + 最坏 O(1) FIFO 分级慢消费者驱逐）
 │   ├── api/                      # 10 个路由模块 + auth.py + ws.py（业务编排在 services，规则由 test_smoke.py 守护）
 │   ├── common/                   # 共用纯逻辑语义层：错误分类（error_types /
 │   │                             #   error_taxonomy）、审核标记（moderation）、LLM 错误信号
@@ -20,7 +20,7 @@
 │   │                             #   代理净化（proxy_env）等（10 个模块，只依赖标准库，禁止引用 core/services）
 │   ├── core/                     # 核心引擎（23 个模块）：分析流水线、LLM 客户端、知识库、风格提取等
 │   │                             #   （error_types / error_taxonomy / moderation 是 common 的兼容转发层）
-│   ├── services/                 # 16 个单文件模块 + final_summary/ 四层无环子包（8 个内部模块）：编排层（队列、总结、切分、可视化、复检与裁决、用量账本…）
+│   ├── services/                 # 15 个单文件模块 + final_summary/ 四层无环子包（8 个内部模块） + recheck_v3/ 四层无环子包（6 个内部模块）：编排层（队列、总结、切分、可视化、复检与裁决、用量账本…）
 │   ├── config/                   # constants.py（默认值与常量）/ paths.py（路径真源）/ settings.py / presets.py
 │   ├── models/                   # AnalysisResult / KnowledgeBase
 │   ├── utils/                    # JSON 解析、按需聚合缓存、Excel、角色卡、账本、文本工具
@@ -28,10 +28,10 @@
 ├── frontend/
 │   └── src/
 │       ├── pages/                # 9 个主页面（旧入口保留带参重定向）
-│       ├── components/           # 14 个组件
+│       ├── components/           # 14 个通用组件 + settings/（4 个配置卡片组件）
 │       ├── composables/          # 5 个组合式函数（含 useSelectedBook）
 │       ├── api/                  # client.ts / sessionToken.ts / useProgressSocket.ts
-│       ├── utils/                # 9 个工具模块
+│       ├── utils/                # 10 个工具模块（含 settingsTooltips.ts）
 │       └── router.ts
 ├── scripts/                      # 测试、打捞验收与基线测量脚本
 └── runtime/                      # 源码模式统一运行目录（.gitignore 忽略：config.json / queue_state.json / usage_state.json / workspace/ / logs）
@@ -78,11 +78,10 @@ flowchart TD
 
 1. **切块**：按实际存在的章号切块，容错断号目录，块大小由 `analysis.block_size` 决定。
 2. **串行预热**：前 N = 并发数 块顺序分析，先建立初始知识库，保证后面的块读不到未来章节。
-3. **流式并发**：`asyncio.Semaphore` 限流 + `asyncio.as_completed` 并发，每 N 批 checkpoint 落盘。
-4. **失败补跑**：最多 3 轮串行重试；致命错误类（认证、计费、上下文超限、参数错）不重试。
+3. **流式并发**：`asyncio.Semaphore` 限流 + `asyncio.as_completed` 并发，每 N 批 checkpoint 落盘；`MemoryState` 与 `KnowledgeBaseManager` 统一按 `kb_limits` 裁剪 7 个列表与 2 个角色字典（通过尾部热键重插与单调章号水位线防止乱序历史块覆写高章号状态）。
+4. **失败补跑**：最多 3 轮串行重试；致命错误类（认证、计费、上下文超限、参数错）不重试，账户级熔断触发后立即停止流水线，队列层（`queue_service.py`）保留当前书目 `pending` 并附脱敏错误理由、暂停后续队列与自动总结。
 5. **滚动总结**：后台独立任务，跨阈值触发，增量更新四层 JSON（时间轴 / 范式层 / 里程碑 /
-   因果链）与近期势头。里程碑 FIFO 淘汰但锁定首条与每个范式层首条；近期势头满窗时
-   触发 LLM 归档压缩。
+   因果链）与近期势头；历史补跑批附带防倒退提示词约束且同步受账户级熔断守卫。里程碑 FIFO 淘汰但锁定首条与每个范式层首条；近期势头满窗时触发 LLM 归档压缩。
 
 ## LLM 客户端（`backend/core/llm_client.py`）
 
@@ -171,8 +170,7 @@ schema 版本号随分类表一起管理。`FORESHADOW_CATEGORY_TEXT` 是前端�
 ### 伏笔账本
 
 `foreshadow_ledger.json` 是全书伏笔的状态机，状态分 `active` / `resolved` / `dormant`。
-休眠判定：连续 15 批未出现且跨度不少于 200 章。reconciliation 逐批判定回收，
-全书复检兜底。
+休眠判定按章距跨度 `DORMANT_CHAPTER_THRESHOLD`（200 章）触发，并跳过 `needs_review=True` 的待确认条目。`reconciliation` 逐批判定回收，全书复检兜底；人工可通过 `POST /api/books/{book_id}/ledger/{item_id}/review` 及前端「时间线 / 伏笔排行」或「最终总结 / 复检明细」页执行 `confirm_resolved` / `reject_to_active` / `mark_dormant` 覆写（写入 `source_type="human_override"` 并清空 `needs_review`），覆写后的条目受自动复检引擎跳过保护。
 
 ## 最终总结（`backend/services/final_summary/`）
 
@@ -201,13 +199,14 @@ flowchart LR
 
 阶段 2/4 由 `recheck_version` 选择带证据复检引擎（`"v3"` 默认 / `"v2"` 可选）：
 
-- **V3 共享证据池多跳引擎（默认，`backend/services/recheck_v3.py`）**：
+- **V3 共享证据池多跳引擎（默认，四层无环子包 `backend/services/recheck_v3/`）**：
+  - 模块拓扑为 `prompts.py`（Layer 1 静态常量与模板）→ `parsers.py` / `preprocessing.py`（Layer 2 解析与跨题材文本预处理）→ `evidence_pool.py`（Layer 3 共享证据池与证据链核验）→ `runner.py`（Layer 4 主执行器 `run_recheck_v3`），经 `__init__.py` 统一导出；目录级代码快照由 `compute_recheck_code_snapshot()` 跨平台归一化计算。
   - **均衡超块与双向路由（U1）**：按作品篇幅将章节事件摘要均衡切分为受上下文预算约束的超块，批量拆解核心问题与次要支线（`50` 条/批，紧凑模式 `25` 条/批），抽取并合并实体别名词典后执行双向路由。
   - **严格前置门控、共享证据池与跨池继受（U2 / U3 / U5）**：每条伏笔默认选取至多 `5` 个设伏后原文窗口（超长单章自动双窗采样），严格仅在 `needs_pre_setup_backref` 为真时附带 `1` 个设伏前因果回指窗；批内按章节重合度装箱并使用去重【共享正文证据池】执行单阶段核查与终审，保留至多 `3` 跳深挖追踪，支持同池章节跨题继受；确定性校验层核对逐字引文锚点并触发单轮精确修复，且在落账时优先选择设伏后兑现章写入 `resolved_chapter`。
   - **可选审检与省费开关**：`recheck_v3_gray_u4`（默认 `false`）开启后对多跳、非高置信或争议条目追加一轮灰区共享池 U4 终审；`recheck_v3_mid_single_hop`（默认 `false`）开启后中重要度条目在 U2 缩减至 `3` 个后文窗并跳过二三跳（高重要度条目保留全窗多跳）。
-  - **四态分层裁决与账本回写**：判定结果归类为 `RESOLVED_EXPLICIT`、`RESOLVED_IMPLICIT`、`PARTIALLY_RESOLVED` 或 `UNRESOLVED`（细分 `ATMOSPHERIC_HOOK` 与 `UNFILLED_PIT`）；其中未解条目会清除阶段 1 留下的未证实暂挂标记，确保长期未回收的伏笔能按账本规则正常进入 `dormant`。
+  - **四态分层裁决与账本回写**：自动跳过 `source_type == "human_override"` 的人工覆写条目；其余活跃候选判定归类为 `RESOLVED_EXPLICIT`、`RESOLVED_IMPLICIT`、`PARTIALLY_RESOLVED` 或 `UNRESOLVED`（细分 `ATMOSPHERIC_HOOK` 与 `UNFILLED_PIT`）；其中未解条目会清除阶段 1 留下的未证实暂挂标记，确保长期未回收的伏笔能按账本规则正常进入 `dormant`。
   - **无硬编码通用化**：基于语料统计自动识别主角与超高频词作为过滤停用词，支持正篇/番外标签识别与译名间隔号实体分词。
-- **V2 批量窗口引擎（可选，`backend/services/recheck_v2.py`）**：基于关键词检索局部原文窗口并按批核对，裁决逻辑由 `backend/services/recheck_resolution.py` 提供。
+- **V2 批量窗口引擎（可选，`backend/services/recheck_v2.py`）**：同样跳过 `human_override` 条目，基于关键词检索局部原文窗口并按批核对，裁决逻辑由 `backend/services/recheck_resolution.py` 提供。
   - 裁决关键设计：**模型只给原话，位置由程序算**。模型回包里的 `supporting_span` 不是必需字段，程序用引文去原文定位并写出 `located_span`；引文在原文中找不到或多处命中时，按既定规则降级为 `INVALID`，而不是让模型自己报坐标。
 
 总结可以用独立的模型与思考模式（`summary_model` / `summary_thinking_mode`），空值跟随

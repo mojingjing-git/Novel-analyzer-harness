@@ -6,7 +6,7 @@ import LogConsole, { type LogEntry } from '../components/LogConsole.vue'
 import Icon from '../components/Icon.vue'
 import LaneView from '../components/LaneView.vue'
 import ThroughputChart from '../components/ThroughputChart.vue'
-import { api, type SummaryStatus, type SummaryInflightLane, type StyleProfileDto, type RecheckVerdictsResponse } from '../api/client'
+import { api, type SummaryStatus, type SummaryInflightLane, type StyleProfileDto, type RecheckVerdictsResponse, type RecheckVerdictItemDto, type ForeshadowReviewAction } from '../api/client'
 import { useProgressSocket, type ProgressMessage } from '../api/useProgressSocket'
 import { renderMarkdownWithToc } from '../utils/markdown'
 import {
@@ -163,6 +163,16 @@ const activeTab = ref<SummaryViewTab>('report')
 const recheckVerdicts = ref<RecheckVerdictsResponse | null>(null)
 const recheckVerdictsLoading = ref(false)
 const recheckTierFilter = ref<string>('all')
+const verdictReviewBusyId = ref('')
+const verdictReviewError = ref('')
+
+function ledgerOverrideLabel(v: RecheckVerdictItemDto): string {
+  if (v.ledger_source_type !== 'human_override') return ''
+  if (v.ledger_status === 'resolved') return '人工已确认'
+  if (v.ledger_status === 'active') return '人工已驳回'
+  if (v.ledger_status === 'dormant') return '人工已休眠'
+  return '人工复核'
+}
 
 const VERDICT_TIER_LABELS: Record<string, string> = {
   RESOLVED_EXPLICIT: '显式回收',
@@ -214,6 +224,7 @@ const semanticStyleRows = computed(() => {
 
 async function loadRecheckVerdicts() {
   const bid = bookId.value
+  verdictReviewError.value = ''
   if (!bid) { recheckVerdicts.value = null; return }
   recheckVerdictsLoading.value = true
   try {
@@ -224,6 +235,30 @@ async function loadRecheckVerdicts() {
     if (bid === bookId.value) recheckVerdicts.value = null
   } finally {
     if (bid === bookId.value) recheckVerdictsLoading.value = false
+  }
+}
+
+async function submitVerdictReview(v: RecheckVerdictItemDto, action: ForeshadowReviewAction) {
+  const bid = bookId.value
+  const itemId = v.id || v.candidate_id
+  if (!bid || !itemId || verdictReviewBusyId.value) return
+  verdictReviewBusyId.value = itemId
+  verdictReviewError.value = ''
+  try {
+    const res = await api.reviewForeshadowItem(bid, itemId, { action })
+    if (bid !== bookId.value) return
+    v.ledger_status = res.item.status
+    v.ledger_needs_review = res.item.needs_review
+    v.ledger_resolution_quality = res.item.resolution_quality
+    v.ledger_source_type = res.item.source_type
+    v.ledger_resolution = res.item.resolution
+    v.ledger_resolved_chapter = res.item.resolved_chapter
+  } catch (err) {
+    if (bid === bookId.value) {
+      verdictReviewError.value = (err as Error).message || '人工复核保存失败'
+    }
+  } finally {
+    if (verdictReviewBusyId.value === itemId) verdictReviewBusyId.value = ''
   }
 }
 const summaryStatus = ref<SummaryStatus | null>(null)
@@ -1070,6 +1105,9 @@ onUnmounted(() => {
         <p v-if="recheckVerdicts.status_reason" class="text-xs glass-tinted-orange px-3 py-1.5 rounded">
           {{ recheckVerdicts.status_reason }}
         </p>
+        <p v-if="verdictReviewError" class="text-xs glass-tinted-red px-3 py-1.5 rounded" role="alert">
+          {{ verdictReviewError }}
+        </p>
 
         <div v-if="filteredVerdicts.length === 0" class="text-xs py-6 text-center" style="color: var(--win-text-muted)">
           当前筛选下暂无判定记录
@@ -1083,6 +1121,7 @@ onUnmounted(() => {
                   {{ VERDICT_TIER_LABELS[v.tier || v.verdict] || v.tier || v.verdict || '未知' }}
                 </span>
                 <span v-if="v.applied" class="status-tag badge-green" style="font-size: 11px">已写入账本</span>
+                <span v-if="ledgerOverrideLabel(v)" class="status-tag badge-purple" style="font-size: 11px">{{ ledgerOverrideLabel(v) }}</span>
                 <span v-if="v.gate_demoted" class="status-tag badge-orange" style="font-size: 11px">门控降级</span>
                 <span v-if="v.repaired" class="status-tag badge-blue" style="font-size: 11px">已修复</span>
               </div>
@@ -1122,6 +1161,32 @@ onUnmounted(() => {
                 </div>
               </div>
             </details>
+            <div v-if="(v.id || v.candidate_id)" class="flex items-center gap-1.5 flex-wrap pt-1">
+              <button
+                v-if="v.ledger_status !== 'resolved' || v.ledger_needs_review"
+                type="button"
+                class="glass-button text-xs"
+                style="padding: 2px 8px; min-height: 24px"
+                :disabled="verdictReviewBusyId === (v.id || v.candidate_id)"
+                @click="submitVerdictReview(v, 'confirm_resolved')"
+              >确认回收</button>
+              <button
+                v-if="v.ledger_status !== 'active' || v.ledger_needs_review"
+                type="button"
+                class="glass-button text-xs"
+                style="padding: 2px 8px; min-height: 24px"
+                :disabled="verdictReviewBusyId === (v.id || v.candidate_id)"
+                @click="submitVerdictReview(v, 'reject_to_active')"
+              >驳回为活跃</button>
+              <button
+                v-if="v.ledger_status !== 'dormant' || v.ledger_needs_review"
+                type="button"
+                class="glass-button text-xs"
+                style="padding: 2px 8px; min-height: 24px"
+                :disabled="verdictReviewBusyId === (v.id || v.candidate_id)"
+                @click="submitVerdictReview(v, 'mark_dormant')"
+              >标为休眠</button>
+            </div>
           </div>
         </div>
       </div>

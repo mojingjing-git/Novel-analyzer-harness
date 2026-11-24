@@ -48,11 +48,12 @@
 | `/api/books/register` | POST | 手动注册一本书（不入队） |
 | `/api/books/{book_id}/results` | GET | 该书的聚合结果（经 `ensure_aggregated_cache` 指纹透明刷新 `output/aggregated/`） |
 | `/api/books/{book_id}/style_profile` | GET | Stage 3 落盘的 `style_profile.json` 量化与语义画像（未生成时返回 `200 exists=false`） |
-| `/api/books/{book_id}/recheck_verdicts` | GET | 读取落盘的 `recheck_verdicts.json` 复检明细（兼容 V3/V2；未生成返回 `200 exists=false`） |
+| `/api/books/{book_id}/recheck_verdicts` | GET | 读取落盘的 `recheck_verdicts.json` 复检明细，并叠加账本实时状态字段（`ledger_status` / `ledger_needs_review` / `ledger_resolution_quality` / `ledger_source_type` / `ledger_resolution` / `ledger_resolved_chapter`；兼容 V3/V2，未生成返回 `200 exists=false`） |
 | `/api/books/{book_id}/latest_chapter` | GET | 已分析的最大章节号 |
 | `/api/books/{book_id}/report` | GET | 最终总结报告（Markdown） |
 | `/api/books/{book_id}/ledger` | GET | 伏笔账本 |
-| `/api/books/{book_id}/foreshadow_ranking` | GET | 伏笔排行（综合分降序） |
+| `/api/books/{book_id}/foreshadow_ranking` | GET | 伏笔排行（综合分降序，附每条 `source_type` 与全书 `lifecycle_bars`） |
+| `/api/books/{book_id}/ledger/{item_id}/review` | POST | 人工复核覆写伏笔账本条目（需 `X-Session-Token`；`action` 取 `confirm_resolved` / `reject_to_active` / `mark_dormant`，写入 `source_type="human_override"` 并刷新 `lifecycle_bars`） |
 | `/api/books/{book_id}/token_stats` | GET | 该书落盘的 token 统计 |
 | `/api/books/{book_id}/characters` | GET | 人物谱系索引（自动触发指纹聚合缓存与 `story_atlas.json` 马甲归并） |
 | `/api/books/{book_id}/characters/{character_name}` | GET | 单个角色卡详情（支持别名直查并自动合并别名下的弧光与事件） |

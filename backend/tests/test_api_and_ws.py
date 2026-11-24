@@ -438,3 +438,86 @@ async def test_priority_evicting_queue_fifo_and_cancel_safety():
     q.put_evicting({"type": WSType.STATE_CHANGE, "id": 99})
     got = await asyncio.wait_for(q.get(), timeout=0.2)
     assert got["id"] == 99
+
+
+def test_book_ledger_review_endpoint_and_ranking_overlay(tmp_path, monkeypatch):
+    """POST /api/books/{id}/ledger/{item_id}/review 鉴权/冲突/落盘及排行/明细叠加字段契约。"""
+    from types import SimpleNamespace
+    from fastapi import FastAPI
+    from backend.api import routes_books
+    from backend.services import summary_service
+
+    monkeypatch.setenv(_ENV_VAR, "secret-token")
+    out_dir = tmp_path / "书名" / "output"
+    out_dir.mkdir(parents=True)
+    monkeypatch.setattr("backend.services.book_service.get_output_dir", lambda bid: out_dir if bid == "b1" else None)
+
+    fake_summary = SimpleNamespace(is_running=False, status=lambda: {"book_id": ""})
+    monkeypatch.setattr(summary_service, "get_summary_service", lambda: fake_summary)
+
+    (out_dir / "foreshadow_ledger.json").write_text(json.dumps({
+        "schema_version": 6,
+        "items": [{
+            "id": "fs_01",
+            "description": "青铜钥匙的来历",
+            "question": "钥匙能打开什么？",
+            "first_seen_chapter": 3,
+            "first_seen_batch": 1,
+            "last_seen_chapter": 12,
+            "last_seen_batch": 2,
+            "status": "active",
+            "needs_review": True,
+            "importance": "高",
+            "confidence": 0.7,
+            "evidence_chapters": [3, 12],
+        }],
+    }, ensure_ascii=False), encoding="utf-8")
+    (out_dir / "recheck_verdicts.json").write_text(json.dumps({
+        "status": "COMPLETED",
+        "coverage": {"checked": 1, "candidates_total": 1, "v3_tiers": {"UNRESOLVED": 1}},
+        "audit_routes": {"fs_01": {"engine": "v3", "tier": "UNRESOLVED"}},
+        "applied": {"fs_01": "已回收"},
+        "resolved_chapters": {"fs_01": 18},
+        "verdicts": [{"id": "fs_01", "verdict": "UNRESOLVED", "tier": "UNRESOLVED"}],
+    }, ensure_ascii=False), encoding="utf-8")
+
+    test_app = FastAPI()
+    test_app.include_router(routes_books.router)
+    client = TestClient(test_app)
+    headers = {"X-Session-Token": "secret-token"}
+
+    # 未携带 token 被拒
+    assert client.post("/api/books/b1/ledger/fs_01/review", json={"action": "confirm_resolved"}).status_code == 403
+    # 不存在的条目返回 404
+    assert client.post("/api/books/b1/ledger/missing/review", headers=headers, json={"action": "confirm_resolved"}).status_code == 404
+
+    # 同书正在跑总结返回 409
+    fake_summary.is_running = True
+    fake_summary.status = lambda: {"book_id": "b1"}
+    assert client.post("/api/books/b1/ledger/fs_01/review", headers=headers, json={"action": "confirm_resolved"}).status_code == 409
+    fake_summary.is_running = False
+
+    # 人工确认回收
+    resp = client.post(
+        "/api/books/b1/ledger/fs_01/review",
+        headers=headers,
+        json={"action": "confirm_resolved", "resolution": "第18章拧开密室", "resolved_chapter": 18},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["item"]["status"] == "resolved"
+    assert body["item"]["source_type"] == "human_override"
+    assert body["item"]["resolution_quality"] == "verified"
+    assert body["lifecycle_bars"]["resolved_verified"] == 1
+
+    # 排行与复检明细均能读取 live ledger 状态，同时保留原始 applied/resolved_chapter 字段
+    rank_data = client.get("/api/books/b1/foreshadow_ranking").json()
+    assert rank_data["ranking"][0]["source_type"] == "human_override"
+    assert rank_data["lifecycle_bars"]["resolved_verified"] == 1
+
+    verdict_row = client.get("/api/books/b1/recheck_verdicts").json()["verdicts"][0]
+    assert verdict_row["applied"] == "已回收"
+    assert verdict_row["resolved_chapter"] == "18"
+    assert verdict_row["ledger_status"] == "resolved"
+    assert verdict_row["ledger_source_type"] == "human_override"
+    assert verdict_row["ledger_resolved_chapter"] == 18
