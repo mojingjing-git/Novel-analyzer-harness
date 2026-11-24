@@ -85,6 +85,7 @@ from .prompts import (
     U3_POOL_SINGLE_STAGE_PROMPT,
     U4_POOL_AUDITOR_PROMPT,
     U5_QUOTE_REPAIR_PROMPT,
+    V3RecheckOptions,
     WIDE_CHAPTER_CHARS,
     _GENERIC_ENTITY_STOP,
 )
@@ -111,6 +112,7 @@ async def run_recheck_v3(
     compact_mode: bool = False,
     enable_gray_u4: bool = False,
     mid_single_hop: bool = False,
+    options: V3RecheckOptions | None = None,
     request_log: dict[str, Any] | None = None,
     should_stop: Callable[[], bool] | None = None,
 ) -> RecheckOutcome:
@@ -169,15 +171,24 @@ async def run_recheck_v3(
         return outcome
 
     sem = limiter if limiter is not None else asyncio.Semaphore(max(1, concurrency))
-    max_chapter_chars = COMPACT_CHAPTER_CHARS if compact_mode else WIDE_CHAPTER_CHARS
-    max_post_windows = 4 if compact_mode else 5
-    max_pre_windows = 1
-    hop2_new_cap, hop3_new_cap = (3, 2) if compact_mode else (4, 3)
-    max_audit_windows = 6 if compact_mode else 8
-    pool_max_chars = DEFAULT_V3_COMPACT_POOL_MAX_CHARS if compact_mode else DEFAULT_V3_POOL_MAX_CHARS
-    split_bs = U1_COMPACT_SPLIT_BATCH_SIZE if compact_mode else U1_SPLIT_BATCH_SIZE
-    route_q_batch = U1_COMPACT_ROUTE_Q_BATCH if compact_mode else U1_ROUTE_Q_BATCH
-    route_prompt_cap = 50_000 if compact_mode else DEFAULT_V3_POOL_MAX_CHARS
+    opts_obj = options if options is not None else V3RecheckOptions()
+    resolved_opts = opts_obj.resolve(compact_mode=compact_mode, explicit_batch_size=batch_size)
+    max_chapter_chars = resolved_opts["chapter_chars"]
+    max_post_windows = resolved_opts["max_post_windows"]
+    max_pre_windows = resolved_opts["max_pre_windows"]
+    hop2_new_cap = resolved_opts["hop2_new_cap"]
+    hop3_new_cap = resolved_opts["hop3_new_cap"]
+    max_hops = resolved_opts["max_hops"]
+    max_audit_windows = resolved_opts["max_audit_windows"]
+    pool_max_chars = resolved_opts["pool_max_chars"]
+    prompt_hard_cap_chars = resolved_opts["prompt_hard_cap_chars"]
+    u1_superchunk_chars = resolved_opts["u1_superchunk_chars"]
+    split_bs = resolved_opts["u1_split_batch_size"]
+    route_q_batch = resolved_opts["u1_route_q_batch"]
+    route_prompt_cap = resolved_opts["route_prompt_cap"]
+    pre_lookback_units = resolved_opts["pre_lookback_units"]
+    nms_cluster_radius = resolved_opts["nms_cluster_radius"]
+    nms_max_per_cluster = resolved_opts["nms_max_per_cluster"]
     small_corpus = len(chapters_map) <= 12
 
     def _stopped() -> bool:
@@ -311,7 +322,11 @@ async def run_recheck_v3(
         blocks_per_macro=15,
     )
     route_chunks = await asyncio.to_thread(
-        _build_balanced_superchunks, block_tuples, compact_mode=compact_mode
+        _build_balanced_superchunks,
+        block_tuples,
+        compact_mode=compact_mode,
+        target_chars=u1_superchunk_chars,
+        prompt_hard_cap_chars=prompt_hard_cap_chars,
     )
     if not route_chunks:
         route_chunks = macro_chunks
@@ -329,16 +344,30 @@ async def run_recheck_v3(
         if output_dir is not None
         else None
     )
-    index_fp = hashlib.sha256(
-        "|".join([
-            "v3.2",
-            "compact" if compact_mode else "wide",
-            str(len(chapters_map)),
-            str(max(chapters_map)),
-            str(len(route_chunks)),
-            ",".join(sorted(x["fs_id"] for x in eligible)),
-        ]).encode("utf-8")
-    ).hexdigest()[:16]
+    fp_parts = [
+        "v3.2",
+        "compact" if compact_mode else "wide",
+        str(len(chapters_map)),
+        str(max(chapters_map)),
+        str(len(route_chunks)),
+        ",".join(sorted(x["fs_id"] for x in eligible)),
+    ]
+    u1_extra: list[str] = []
+    if pre_lookback_units != 45:
+        u1_extra.append(f"pre={pre_lookback_units}")
+    if opts_obj.u1_superchunk_chars > 0:
+        spans = ",".join(f"{c.get('start_unit')}-{c.get('end_unit')}" for c in route_chunks)
+        u1_extra.append(f"sc={u1_superchunk_chars}:{spans}")
+    if opts_obj.u1_split_batch_size > 0:
+        u1_extra.append(f"sb={split_bs}")
+    if opts_obj.u1_route_q_batch > 0:
+        u1_extra.append(f"rq={route_q_batch}")
+    default_route_cap = 50_000 if compact_mode else DEFAULT_V3_POOL_MAX_CHARS
+    if route_prompt_cap != default_route_cap:
+        u1_extra.append(f"rcap={route_prompt_cap}")
+    if u1_extra:
+        fp_parts.append("|".join(u1_extra))
+    index_fp = hashlib.sha256("|".join(fp_parts).encode("utf-8")).hexdigest()[:16]
 
     splits: dict[str, dict[str, Any]] = {}
     alias_lexicon: list[dict[str, Any]] = []
@@ -497,7 +526,7 @@ async def run_recheck_v3(
 
         def _build_chunk_route_batches(chunk: Mapping[str, Any]) -> list[tuple[list[dict[str, Any]], str]]:
             end_u = int(chunk["end_unit"])
-            elig_chunk = [x for x in eligible if int(x["setup_unit"]) - 45 <= end_u]
+            elig_chunk = [x for x in eligible if int(x["setup_unit"]) - pre_lookback_units <= end_u]
             if not elig_chunk:
                 return []
 
@@ -675,7 +704,7 @@ async def run_recheck_v3(
             if u == setup_unit and not _can_use_setup():
                 return
             if u < setup_unit:
-                if not allow_pre or not allow_pre_mode or u < max(1, setup_unit - 45):
+                if not allow_pre or not allow_pre_mode or u < max(1, setup_unit - pre_lookback_units):
                     return
                 old = pre_scores.get(u, 0.0)
                 bonus = 0.25 if src not in pre_srcs[u] else 0.0
@@ -730,7 +759,7 @@ async def run_recheck_v3(
                             else chapters_map[cu]
                         )
                         post_ch.append((_score_chapter_against_terms(txt, weighted_terms), is_direct, cu))
-                    elif allow_pre_mode and cu >= max(1, setup_unit - 45):
+                    elif allow_pre_mode and cu >= max(1, setup_unit - pre_lookback_units):
                         sc = _score_chapter_against_terms(chapters_map[cu], weighted_terms)
                         if is_direct or sc >= 4.0:
                             pre_ch.append((sc, is_direct, cu))
@@ -786,7 +815,7 @@ async def run_recheck_v3(
         for au in alias_units:
             if au > setup_unit:
                 _bump(au, 7.5, "别名揭示点")
-            elif allow_pre_mode and au >= max(1, setup_unit - 45):
+            elif allow_pre_mode and au >= max(1, setup_unit - pre_lookback_units):
                 _bump(au, 7.5, "别名先前提及", allow_pre=True)
 
         if not small_corpus:
@@ -814,13 +843,18 @@ async def run_recheck_v3(
                             _bump(best_cu, 5.8, "摘要匹配精排")
 
             if needs_backref:
-                pre_lo = max(1, setup_unit - 45)
+                pre_lo = max(1, setup_unit - pre_lookback_units)
                 if pre_lo < setup_unit:
                     for rank, (pu, _raw_idf) in enumerate(_find_mentions_in_range(chapters_map, index, disc_terms, min_u=pre_lo, max_u=setup_unit - 1, limit=6)):
                         _bump(pu, max(3.5, 7.5 - rank * 0.8), "前驱词频", allow_pre=True)
 
         post_cands = [(u, sc, post_srcs[u]) for u, sc in post_scores.items()]
-        chosen_post = _nms_episode_select(post_cands, max_windows=item_max_post, cluster_radius=3, max_per_cluster=2)
+        chosen_post = _nms_episode_select(
+            post_cands,
+            max_windows=item_max_post,
+            cluster_radius=nms_cluster_radius,
+            max_per_cluster=nms_max_per_cluster,
+        )
 
         chosen_pre: list[tuple[int, float, list[str]]] = []
         if allow_pre_mode:
@@ -883,12 +917,8 @@ async def run_recheck_v3(
             "detective_res": {},
         }
 
-    # ---------- Stage U3: 共享章节证据池 + 单阶段联合终审 + 有界 3 跳 ----------
-    step_bs = (
-        max(1, int(batch_size))
-        if batch_size is not None
-        else (DEFAULT_V3_COMPACT_BATCH_SIZE if compact_mode else DEFAULT_V3_BATCH_SIZE)
-    )
+    # ---------- Stage U3: 共享章节证据池 + 单阶段联合终审 + 有界多跳 ----------
+    step_bs = resolved_opts["batch_size"]
     bin_pool_units_by_item: dict[str, set[int]] = defaultdict(set)
 
     async def _run_shared_pool_bins(
@@ -937,6 +967,7 @@ async def run_recheck_v3(
                     }
                     if hop is not None:
                         extra_ev["hop"] = hop
+                        extra_ev["max_hops"] = max_hops
                     _emit_stage(stage_name, silent=True, extra=extra_ev)
 
             parsed = _parse_rows_by_id(raw)
@@ -981,6 +1012,7 @@ async def run_recheck_v3(
         hop1_total = len(eligible)
         _emit_stage("u3_hop", extra={
             "hop": 1,
+            "max_hops": max_hops,
             "checked": 0,
             "stage_done": 0,
             "stage_total": hop1_total,
@@ -1000,6 +1032,7 @@ async def run_recheck_v3(
             max_chars=pool_max_chars,
             max_chapter_chars=max_chapter_chars,
             prompt_overhead_chars=5500,
+            prompt_hard_cap_chars=prompt_hard_cap_chars,
         )
 
         def _build_h1_bin(bn: Sequence[tuple[dict[str, Any], list[int], list[int]]]) -> str:
@@ -1008,7 +1041,7 @@ async def run_recheck_v3(
                 max_chapter_chars=max_chapter_chars, unit_noun=unit_noun,
             )
             cards = [
-                _render_detective_card_pool(x, packs[x["fs_id"]], pu, preu, 1)
+                _render_detective_card_pool(x, packs[x["fs_id"]], pu, preu, 1, max_hops=max_hops)
                 for x, pu, preu in bn
             ]
             return U3_POOL_SINGLE_STAGE_PROMPT.format(
@@ -1027,7 +1060,8 @@ async def run_recheck_v3(
         for fid, row in h1_res.items():
             state[fid]["detective_res"] = row
 
-    for hop_idx, max_new_u in ((2, hop2_new_cap), (3, hop3_new_cap)):
+    hop_schedule = [(h, hop2_new_cap if h == 2 else hop3_new_cap) for h in range(2, max_hops + 1)]
+    for hop_idx, max_new_u in hop_schedule:
         if _stopped() or outcome.calls >= max_calls:
             break
         need_hop: list[dict[str, Any]] = []
@@ -1049,7 +1083,7 @@ async def run_recheck_v3(
                 if v_prev == "RESOLVED_EXPLICIT" and conf_prev == "high" and not has_fu:
                     should_hop = False
             else:
-                should_hop = (st["hops_used"] == 2) and has_fu and (v_prev in ("UNRESOLVED", "PARTIALLY_RESOLVED") or conf_prev != "high")
+                should_hop = (st["hops_used"] == hop_idx - 1) and has_fu and (v_prev in ("UNRESOLVED", "PARTIALLY_RESOLVED") or conf_prev != "high")
 
             if not should_hop:
                 continue
@@ -1099,7 +1133,7 @@ async def run_recheck_v3(
                 for ch_req in range(max(1, lo_r), min(max_u, hi_r) + 1):
                     cand_us = [ch_req] + [
                         m for m in _disambiguate_chapter_to_units(
-                            chapters_map, labels, label_num_to_units, ch_req, after_unit=max(0, su_item - 46)
+                            chapters_map, labels, label_num_to_units, ch_req, after_unit=max(0, su_item - (pre_lookback_units + 1))
                         ) if m != ch_req
                     ]
                     for cu in cand_us:
@@ -1108,7 +1142,7 @@ async def run_recheck_v3(
                         if cu >= su_item:
                             added_seen.add(cu)
                             post_c.append((cu, 12.5, ["侦探点名范围"]))
-                        elif allow_pre_hop and cu >= max(1, su_item - 45):
+                        elif allow_pre_hop and cu >= max(1, su_item - pre_lookback_units):
                             added_seen.add(cu)
                             pre_c.append((11.5, cu, "侦探前驱范围"))
 
@@ -1123,14 +1157,19 @@ async def run_recheck_v3(
                                 added_seen.add(nu)
                                 post_c.append((nu, 5.5, ["多跳邻章"]))
                 if allow_pre_hop:
-                    pre_lo = max(1, su_item - 45)
+                    pre_lo = max(1, su_item - pre_lookback_units)
                     if pre_lo < su_item:
                         for rank, (pu, _sc) in enumerate(_find_mentions_in_range(chapters_map, index, q_terms, min_u=pre_lo, max_u=su_item - 1, limit=4)):
                             if _ok_u(pu):
                                 added_seen.add(pu)
                                 pre_c.append((max(4.0, 8.0 - rank * 0.8), pu, "多跳前驱词检"))
 
-            post_nms = _nms_episode_select(post_c, max_windows=max_new_u, cluster_radius=3, max_per_cluster=2)
+            post_nms = _nms_episode_select(
+                post_c,
+                max_windows=max_new_u,
+                cluster_radius=nms_cluster_radius,
+                max_per_cluster=nms_max_per_cluster,
+            )
             pre_sorted = sorted(pre_c, key=lambda r: (-r[0], r[1])) if allow_pre_hop else []
 
             nu_post: list[int] = []
@@ -1171,7 +1210,15 @@ async def run_recheck_v3(
                     cu = _safe_int_unit(e.get("unit_id"))
                     if cu is not None:
                         cited_u.append(cu)
-            focus_u = cited_u + nu_post + nu_pre + st["selected_post"][:5] + st["selected_pre"][:1]
+            hop_is_high_imp = str(getattr(x["item"], "importance", "") or "") == "高"
+            item_keep_post = min(3, max_post_windows) if (mid_single_hop and not hop_is_high_imp) else max_post_windows
+            focus_u = (
+                cited_u
+                + nu_post
+                + nu_pre
+                + st["selected_post"][:item_keep_post]
+                + st["selected_pre"][:max_pre_windows]
+            )
             f_post = list(dict.fromkeys(u for u in focus_u if u in st["allowed_post"]))
             f_pre = list(dict.fromkeys(u for u in focus_u if u in st["allowed_pre"] and u not in f_post))
             hop_unit_lists[fid] = (f_post, f_pre)
@@ -1182,6 +1229,7 @@ async def run_recheck_v3(
         hn_total = len(need_hop)
         _emit_stage("u3_hop", extra={
             "hop": hop_idx,
+            "max_hops": max_hops,
             "checked": len(eligible) - hn_total,
             "stage_done": 0,
             "stage_total": hn_total,
@@ -1197,6 +1245,7 @@ async def run_recheck_v3(
             max_chars=pool_max_chars,
             max_chapter_chars=max_chapter_chars,
             prompt_overhead_chars=6000,
+            prompt_hard_cap_chars=prompt_hard_cap_chars,
         )
 
         def _build_hn_bin(
@@ -1209,7 +1258,10 @@ async def run_recheck_v3(
                 max_chapter_chars=max_chapter_chars, unit_noun=unit_noun,
             )
             cards = [
-                _render_detective_card_pool(x, packs[x["fs_id"]], pu, preu, _hi, state[x["fs_id"]]["detective_res"])
+                _render_detective_card_pool(
+                    x, packs[x["fs_id"]], pu, preu, _hi, state[x["fs_id"]]["detective_res"],
+                    max_hops=max_hops,
+                )
                 for x, pu, preu in bn
             ]
             return U3_POOL_SINGLE_STAGE_PROMPT.format(
@@ -1243,6 +1295,7 @@ async def run_recheck_v3(
                 chapters_map, labels, unit_headers, x, packs[fid], state[fid], rd_u3,
                 bin_pool_units_by_item[fid],
                 max_chapter_chars=max_chapter_chars, unit_noun=unit_noun,
+                pre_lookback_units=pre_lookback_units,
             )
 
     audit_bundles: dict[str, str] = {}
@@ -1314,6 +1367,7 @@ async def run_recheck_v3(
                 max_chars=pool_max_chars,
                 max_chapter_chars=max_chapter_chars,
                 prompt_overhead_chars=6000,
+                prompt_hard_cap_chars=prompt_hard_cap_chars,
             )
 
             def _build_u4_bin(bn: Sequence[tuple[dict[str, Any], list[int], list[int]]]) -> str:
@@ -1344,6 +1398,7 @@ async def run_recheck_v3(
                         chapters_map, labels, unit_headers, x, packs[fid], state[fid], u4_map[fid],
                         bin_pool_units_by_item[fid],
                         max_chapter_chars=max_chapter_chars, unit_noun=unit_noun,
+                        pre_lookback_units=pre_lookback_units,
                     )
                     b_txt, u_list = _build_audit_bundle_and_lists(
                         state[fid], u4_map[fid], max_windows=max_audit_windows, fallback_bundle=packs[fid]["bundle_text"],
@@ -1375,6 +1430,7 @@ async def run_recheck_v3(
             allowed_pre_units=st["allowed_pre"],
             setup_after_offset=x["setup_after_offset"],
             needs_pre_setup_backref=pk["needs_pre_setup_backref"],
+            pre_lookback_units=pre_lookback_units,
         )
         if raw_v != "UNRESOLVED" and not ev_ok and fid in audit_bundles and not _stopped() and outcome.calls < max_calls:
             repair_queue.append((x, dict(r4), demote_reason))
@@ -1438,6 +1494,7 @@ async def run_recheck_v3(
                 allowed_pre_units=st["allowed_pre"],
                 setup_after_offset=x["setup_after_offset"],
                 needs_pre_setup_backref=pk["needs_pre_setup_backref"],
+                pre_lookback_units=pre_lookback_units,
             )
             final_v = raw_v if ev_ok else "UNRESOLVED"
             sub_type = "" if final_v != "UNRESOLVED" else str(r_rep.get("unresolved_type") or "UNFILLED_PIT")
@@ -1544,6 +1601,7 @@ async def run_recheck_v3(
         "gray_u4": bool(enable_gray_u4),
         "mid_single_hop": bool(mid_single_hop),
     }
+    cov_dict["v3_tuning"] = dict(resolved_opts)
     outcome.coverage = cov_dict
 
     was_stopped = _stopped()

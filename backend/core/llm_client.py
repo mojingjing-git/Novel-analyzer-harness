@@ -332,7 +332,8 @@ def _fail_result(error: str, verdict: Optional[ClassVerdict] = None) -> LLMResul
 
 
 def _error_action(error: str, moderation_hits: int,
-                  verdict: Optional[ClassVerdict] = None) -> Tuple[str, ClassVerdict]:
+                  verdict: Optional[ClassVerdict] = None,
+                  short_circuit_hits: int = 2) -> Tuple[str, ClassVerdict]:
     """重试循环统一错误决策。返回 (action, verdict)：
     - "moderation_stop"：审核短路（INPUT 确定性 / structured 首次 / text 连续第 3 次）
     - "moderation_count"：审核 text 置信，计入 3 次短路计数器后继续重试
@@ -353,7 +354,7 @@ def _error_action(error: str, moderation_hits: int,
     if verdict.cls in _MODERATION_CLASSES:
         if (verdict.cls is ErrorClass.MODERATION_INPUT
                 or verdict.confidence == "structured"
-                or moderation_hits >= 2):
+                or moderation_hits >= max(1, int(short_circuit_hits))):
             return "moderation_stop", verdict
         return "moderation_count", verdict
     if verdict.is_permanent():
@@ -404,9 +405,10 @@ class LLMClient:
         self._cached_tokens = 0
         self._stop_requested = False  # 外部可设置，让进行中的重试链尽快退出
         self._stop_event = asyncio.Event()  # 触发后立即取消进行中的 API 请求
-        # 账户级熔断：欠费/认证失效等结构化判定的账户级永久错误第一次命中即跳闸，
+        # 账户级熔断：欠费/认证失效等结构化判定的账户级永久错误达到阈值即跳闸，
         # 之后本实例的所有调用入口零成本短路（见 backend/core/breaker.py 的三条边界）
-        self._breaker = Breaker()
+        breaker_open_after = max(1, int(getattr(config, "breaker_open_after", 1) or 1))
+        self._breaker = Breaker(open_after=breaker_open_after)
         self._tripped_verdict: Optional[ErrorVerdict] = None  # 触发跳闸的那次判定，短路回包复用
 
     @property
@@ -641,7 +643,8 @@ class LLMClient:
                     )
                 )
             stop_wait = asyncio.create_task(self._stop_event.wait())
-            hard_timeout = asyncio.create_task(asyncio.sleep(self.config.timeout + 30))  # 硬超时：比 SDK timeout 多 30s 余量
+            hard_margin = max(0, int(getattr(self.config, "hard_timeout_margin", 30) or 0))
+            hard_timeout = asyncio.create_task(asyncio.sleep(self.config.timeout + hard_margin))  # 硬超时：比 SDK timeout 多余量秒数
 
             try:
                 done, _pending = await asyncio.wait(
@@ -758,7 +761,8 @@ class LLMClient:
             )
 
         except asyncio.TimeoutError:
-            error_msg = f"请求硬超时 (timeout={self.config.timeout + 30}s): API 无响应"
+            hard_margin = max(0, int(getattr(self.config, "hard_timeout_margin", 30) or 0))
+            error_msg = f"请求硬超时 (timeout={self.config.timeout + hard_margin}s): API 无响应"
             logger.warning(error_msg)
             _get_failure_logger().record_failure(
                 attempt_num=0,
@@ -1115,8 +1119,10 @@ class LLMClient:
         # 以免 provider_code / http_status / source_channel / retry_after 全丢，
         # 最终结果上的判定退化成"凭置信度重建"的仿制品。
         raw_verdict = verdict
+        sc_hits = max(1, int(getattr(self.config, "moderation_short_circuit_hits", 2) or 2))
         action, class_verdict = _error_action(
-            error, moderation_hits, _to_class_verdict(raw_verdict)
+            error, moderation_hits, _to_class_verdict(raw_verdict),
+            short_circuit_hits=sc_hits,
         )
         verdict = raw_verdict if raw_verdict is not None else _to_error_verdict(class_verdict, error)
         max_retries = self.config.temperature_max_retries + self.config.backoff_max_retries
@@ -1187,11 +1193,14 @@ class LLMClient:
             # 优先用结构化判定里的 typed retry_after——结构化通道拿到的秒数是数字；
             # 文本通道才需要从错误串里正则捞。
             typed = getattr(raw_verdict, "retry_after", None)
+            rl_base = max(0, int(getattr(self.config, "rate_limit_wait_base", 30)))
+            rl_cap = max(1, int(getattr(self.config, "rate_limit_wait_cap", 120) or 120))
             next_wait = min(
-                typed or self._retry_after_seconds(error) or 30 * (attempt + 1), 120
+                typed or self._retry_after_seconds(error) or rl_base * (attempt + 1), rl_cap
             )
         else:
-            next_wait = 3 * (attempt + 1)
+            temp_wait_base = max(0, int(getattr(self.config, "temp_retry_wait_base", 3)))
+            next_wait = temp_wait_base * (attempt + 1)
         return RetryDecision("continue", error, moderation_hits, next_wait, verdict)
 
     async def _retry_chain(
@@ -1280,8 +1289,10 @@ class LLMClient:
             - (self.config.temperature_max_retries - 1) * self.config.temperature_step,
         )
         # 限流判定走分类结论（仅在允许退避时对限流加码；若 backoff_max_retries 为 0 则严格不退避）
+        rl_min_retries = max(0, int(getattr(self.config, "rate_limit_min_backoff_retries", 3)))
+        sc_hits = max(1, int(getattr(self.config, "moderation_short_circuit_hits", 2) or 2))
         backoff_rounds = (
-            max(self.config.backoff_max_retries, 3)
+            max(self.config.backoff_max_retries, rl_min_retries)
             if (self.config.backoff_max_retries > 0 and classify_message(last_error).cls is ErrorClass.RATE_LIMIT)
             else self.config.backoff_max_retries
         )
@@ -1291,7 +1302,7 @@ class LLMClient:
                 return await hooks.on_stop(total_attempts)
             # 温度循环已连续命中审核拦截 → 直接放弃，不进指数退避，
             # 避免对"永久拒绝"白等 30 分钟
-            if is_moderation_error(last_error) and moderation_hits >= 2:
+            if is_moderation_error(last_error) and moderation_hits >= sc_hits:
                 return await hooks.on_moderation_short_circuit(
                     last_error, total_attempts, final_temp
                 )
@@ -1300,9 +1311,12 @@ class LLMClient:
                 self._attempts += 1
 
             if classify_message(last_error).cls is ErrorClass.RATE_LIMIT:
-                wait_time = min(self._retry_after_seconds(last_error) or 30 * (retry_num + 1), 120)
+                rl_base = max(0, int(getattr(self.config, "rate_limit_wait_base", 30)))
+                rl_cap = max(1, int(getattr(self.config, "rate_limit_wait_cap", 120) or 120))
+                wait_time = min(self._retry_after_seconds(last_error) or rl_base * (retry_num + 1), rl_cap)
             else:
-                wait_time = min(2 ** (retry_num + 1), 60)
+                bo_cap = max(1, int(getattr(self.config, "backoff_wait_cap", 60) or 60))
+                wait_time = min(2 ** (retry_num + 1), bo_cap)
 
             logger.info(f"\n[指数退避] 尝试 {total_attempts}，"
                         f"等待{wait_time}秒，temperature={final_temp} "
@@ -1505,7 +1519,8 @@ class LLMClient:
                         error_message=error_msg, messages_length=messages_length,
                     )
                     if attempt < self.config.temperature_max_retries - 1:
-                        await self._sleep(3 * (attempt + 1))
+                        temp_wait = max(0, int(getattr(self.config, "temp_retry_wait_base", 3))) * (attempt + 1)
+                        await self._sleep(temp_wait)
                 return _AttemptOutcome("retry_soon", error=error_msg)
 
             if validate_response:
@@ -1517,7 +1532,8 @@ class LLMClient:
                         messages = retry_messages_builder(validation_error, messages)
                     _record_validation_failure(validation_error, temp, total_attempts)
                     if phase == "temperature" and attempt < self.config.temperature_max_retries - 1:
-                        await self._sleep(3 * (attempt + 1))
+                        temp_wait = max(0, int(getattr(self.config, "temp_retry_wait_base", 3))) * (attempt + 1)
+                        await self._sleep(temp_wait)
                     return _AttemptOutcome("retry_soon",
                                            error=f"响应验证失败: {validation_error}")
 
@@ -1801,7 +1817,7 @@ class LLMClient:
                             messages_length=messages_length,
                         )
                         if phase == "temperature" and attempt < self.config.temperature_max_retries - 1:
-                            wait = 3 * (attempt + 1)
+                            wait = max(0, int(getattr(self.config, "temp_retry_wait_base", 3))) * (attempt + 1)
                             logger.info(f"⏳ 等待{wait}秒后进行下一次温度尝试...")
                             await self._sleep(wait)
                         return _AttemptOutcome("retry_soon", error=last_error_msg)

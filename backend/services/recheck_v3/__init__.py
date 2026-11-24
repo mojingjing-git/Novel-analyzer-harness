@@ -43,6 +43,7 @@ from .prompts import (
     U4_POOL_AUDITOR_PROMPT,
     U5_QUOTE_REPAIR_PROMPT,
     V3_PROMPT_HARD_CAP_CHARS,
+    V3RecheckOptions,
     WIDE_CHAPTER_CHARS,
 )
 from .runner import run_recheck_v3
@@ -72,6 +73,7 @@ __all__ = [
     "U4_POOL_AUDITOR_PROMPT",
     "U5_QUOTE_REPAIR_PROMPT",
     "V3_PROMPT_HARD_CAP_CHARS",
+    "V3RecheckOptions",
     "WIDE_CHAPTER_CHARS",
     "_salvage_json_array_rows",
     "_select_primary_evidence",

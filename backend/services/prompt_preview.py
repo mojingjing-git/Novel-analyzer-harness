@@ -78,12 +78,20 @@ def build_prompt_preview(book_id: str, chapter: int, max_chars: int = 0) -> dict
     except Exception as e:
         logger.warning("KB 构建失败（使用空KB继续）: %s", e)
 
-    # 构建 prompt
+    # 构建 prompt（与 AnalysisAnalyzer 保持全部上限一致）
     pb = PromptBuilder(
         max_arc_length=config.analysis.max_arc_length,
         max_arcs=config.analysis.max_arcs_in_prompt,
         max_summaries=config.analysis.max_summaries_in_prompt,
         timeline_truncate=config.analysis.timeline_truncate,
+        max_character_states=config.analysis.max_character_states,
+        max_world_items=config.analysis.max_world_items,
+        max_foreshadow_entries=config.analysis.max_foreshadow_entries,
+        max_relationships=config.analysis.max_relationships,
+        max_verified_facts=config.analysis.max_verified_facts_in_prompt,
+        max_themes=config.analysis.max_themes,
+        max_content_chars=config.analysis.max_content_chars,
+        rolling_max_momentum=config.analysis.rolling_max_momentum,
     )
     messages = pb.build_messages(chapter_content, 0, kb)
 

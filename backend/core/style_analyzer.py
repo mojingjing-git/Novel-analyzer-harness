@@ -8,8 +8,9 @@ import re
 import json
 import logging
 import random
+from dataclasses import replace
 from pathlib import Path
-from typing import List, Dict, Tuple, Optional
+from typing import Any, List, Dict, Tuple, Optional, Union
 
 from backend.config.settings import APIConfig
 from backend.core.llm_client import LLMClient
@@ -89,9 +90,10 @@ def count_word_metrics(text: str) -> Dict[str, int]:
     return counts
 
 
-def _read_text_multi_encoding(f: Path) -> Optional[str]:
-    """按常见中文编码依次尝试读取"""
-    for enc in ['utf-8', 'gbk', 'gb2312', 'gb18030']:
+def _read_text_multi_encoding(f: Path, encoding_priority: Optional[List[str]] = None) -> Optional[str]:
+    """按配置或常见中文编码依次尝试读取"""
+    candidates = list(encoding_priority) if encoding_priority else ['utf-8', 'gbk', 'gb2312', 'gb18030']
+    for enc in candidates:
         try:
             return f.read_text(encoding=enc)
         except UnicodeDecodeError:
@@ -195,8 +197,14 @@ def aggregate_stats(results: List[Dict]) -> Dict:
 # 章节采样
 # ============================================================
 
-def sample_chapters(blocks_dir: Path, n: int = 6, limit: int = 0) -> List[Tuple[int, str]]:
-    """取 n 个代表性章节（前半随机3 + 后半随机3），每章随机位置取 1500 字"""
+def sample_chapters(
+    blocks_dir: Path,
+    n: int = 6,
+    limit: int = 0,
+    max_chars: int = 1500,
+    encoding_priority: Optional[List[str]] = None,
+) -> List[Tuple[int, str]]:
+    """前后均衡取 n 个代表性章节，每章随机位置取 max_chars 字"""
     rng = random.Random(42)  # 独立 RNG，不干扰全局种子
     # 只取数字命名的正文章节：split_report.txt 等报告文件不得作为"第0章"采样
     # （与 compute_book_stats 的 ^\d+ 守卫对齐，否则切分报告会进 LLM 语义分析输入）
@@ -209,13 +217,25 @@ def sample_chapters(blocks_dir: Path, n: int = 6, limit: int = 0) -> List[Tuple[
     if not files:
         return []
 
+    target_n = max(1, int(n or 6))
+    char_limit = max(100, int(max_chars or 1500))
     total = len(files)
-    half = total // 2
-    first_half = list(range(0, half))
-    second_half = list(range(half, total))
-    picked_first = rng.sample(first_half, min(3, len(first_half)))
-    picked_second = rng.sample(second_half, min(3, len(second_half)))
-    indices = sorted(set(picked_first + picked_second))
+    if total <= target_n:
+        indices = list(range(total))
+    else:
+        half = total // 2
+        first_half = list(range(0, half))
+        second_half = list(range(half, total))
+        head_need = min((target_n + 1) // 2, len(first_half))
+        tail_need = min(target_n - head_need, len(second_half))
+        picked_first = rng.sample(first_half, head_need) if head_need > 0 else []
+        picked_second = rng.sample(second_half, tail_need) if tail_need > 0 else []
+        picked_set = set(picked_first + picked_second)
+        if len(picked_set) < target_n:
+            remaining = [i for i in range(total) if i not in picked_set]
+            extra = rng.sample(remaining, min(target_n - len(picked_set), len(remaining)))
+            picked_set.update(extra)
+        indices = sorted(picked_set)
 
     samples = []
     for idx in indices:
@@ -223,19 +243,21 @@ def sample_chapters(blocks_dir: Path, n: int = 6, limit: int = 0) -> List[Tuple[
         m = re.match(r'(\d+)', f.stem)
         ch_num = int(m.group(1)) if m else idx
         try:
-            text = _read_text_multi_encoding(f)
+            text = _read_text_multi_encoding(f, encoding_priority)
             if text is None:
                 continue
-            # 随机位置取 1500 字（避免总是开头）。
+            # 随机位置取 char_limit 字（避免总是开头）。
             # 在原文上按"第 offset 个汉字"定位窗口，保留标点/引号/段落，
             # 否则对话与节奏分析失去核心证据。
             cjk_len = count_cjk(text)
-            if cjk_len > 1500:
-                offset = rng.randint(0, cjk_len - 1500)
+            if cjk_len > char_limit:
+                offset = rng.randint(0, cjk_len - char_limit)
                 start = _locate_cjk_offset(text, offset)
-                end = _locate_cjk_offset(text, offset + 1500)
+                end = _locate_cjk_offset(text, offset + char_limit)
                 if start is not None:
                     text = text[start:end or len(text)]
+            elif len(text) > char_limit * 2:
+                text = text[:char_limit * 2]
             samples.append((ch_num, text))
         except Exception:
             continue
@@ -262,13 +284,19 @@ def _locate_cjk_offset(text: str, n: int) -> Optional[int]:
 # 语义风格提取（LLM）
 # ============================================================
 
-def build_semantic_prompt(agg: Dict, samples: List[Tuple[int, str]], book_name: str) -> str:
+def build_semantic_prompt(
+    agg: Dict,
+    samples: List[Tuple[int, str]],
+    book_name: str,
+    sample_chars: int = 1500,
+) -> str:
     """构建语义风格提取 prompt"""
     stats_text = json.dumps(agg, ensure_ascii=False, indent=2)
+    cap = max(100, int(sample_chars or 1500))
 
     chapter_samples = ""
     for ch_num, text in samples:
-        sample = text[:1500]
+        sample = text[:cap]
         chapter_samples += f"\n\n### 第{ch_num}章片段\n{sample}"
 
     return f"""你是一位专业的中文小说写作风格分析师。请分析《{book_name}》的写作风格。
@@ -317,27 +345,44 @@ def _validate_semantic_result(result: dict) -> dict:
     return result
 
 
-async def call_llm_semantic(prompt: str, api_config: dict,
-                            token_sink=None, book_name: str = "") -> Optional[dict]:
+async def call_llm_semantic(
+    prompt: str,
+    api_config: Union[APIConfig, Dict[str, Any]],
+    token_sink=None,
+    book_name: str = "",
+    max_tokens: int = 20000,
+    temperature: float = 0.3,
+) -> Optional[dict]:
     """调用 LLM 获取语义风格特征（async）；token_sink 可选，接收 (in, out) 元组
 
     用 chat_auto() 按 streaming_enabled 自动选流式/非流式；
     流式模式下 on_progress 回调 broadcast token_delta 给前端（context="summary_phase_3"）。
     """
-    client = LLMClient(APIConfig(
-        base_url=api_config['base_url'],
-        api_key=api_config['api_key'],
-        model=api_config['model'],
-        provider=api_config.get('provider', 'auto'),
-        max_tokens=20000,
-        timeout=api_config.get('timeout', 120),
-        temperature=0.3,
-        temperature_step=0.1,
-        temperature_max_retries=2,
-        backoff_max_retries=1,
-        thinking_mode=api_config.get('thinking_mode', {}),
-        streaming_enabled=api_config.get('streaming_enabled', True),
-    ))
+    eff_max_tokens = max(512, int(max_tokens or 20000))
+    eff_temp = float(temperature if temperature is not None else 0.3)
+    if isinstance(api_config, APIConfig):
+        client_cfg = replace(
+            api_config,
+            max_tokens=eff_max_tokens,
+            temperature=eff_temp,
+        )
+    else:
+        client_cfg = APIConfig(
+            base_url=api_config['base_url'],
+            api_key=api_config['api_key'],
+            model=api_config['model'],
+            provider=api_config.get('provider', 'auto'),
+            max_tokens=eff_max_tokens,
+            timeout=api_config.get('timeout', 120),
+            temperature=eff_temp,
+            temperature_step=api_config.get('temperature_step', 0.1),
+            temperature_max_retries=api_config.get('temperature_max_retries', 2),
+            backoff_max_retries=api_config.get('backoff_max_retries', 1),
+            thinking_mode=api_config.get('thinking_mode', {}),
+            reasoning_effort=api_config.get('reasoning_effort', ''),
+            streaming_enabled=api_config.get('streaming_enabled', True),
+        )
+    client = LLMClient(client_cfg)
 
     messages = [
         {"role": "system", "content": "你是专业的中文小说写作风格分析师。输出纯 JSON，不要 Markdown。"},
@@ -357,7 +402,7 @@ async def call_llm_semantic(prompt: str, api_config: dict,
     )
 
     llm_result = await client.chat_auto(
-        messages, max_tokens=20000, on_progress=on_progress,
+        messages, max_tokens=eff_max_tokens, on_progress=on_progress,
     )
     if token_sink:
         try:
@@ -387,9 +432,22 @@ async def call_llm_semantic(prompt: str, api_config: dict,
     return None
 
 
-def compute_book_stats(blocks_dir: Path, limit: int = 0) -> Tuple[Dict, List[Tuple[int, str]]]:
+def compute_book_stats(
+    blocks_dir: Path,
+    limit: int = 0,
+    *,
+    sample_n: int = 6,
+    sample_chars: int = 1500,
+    encoding_priority: Optional[List[str]] = None,
+) -> Tuple[Dict, List[Tuple[int, str]]]:
     """全书统计 + 采样（纯 CPU/IO，供 asyncio.to_thread 调用）"""
-    samples = sample_chapters(blocks_dir, n=6, limit=limit)
+    samples = sample_chapters(
+        blocks_dir,
+        n=sample_n,
+        limit=limit,
+        max_chars=sample_chars,
+        encoding_priority=encoding_priority,
+    )
     if not samples:
         return {}, []
 
@@ -403,7 +461,7 @@ def compute_book_stats(blocks_dir: Path, limit: int = 0) -> Tuple[Dict, List[Tup
     all_chapters = []
     for f in chapter_files:
         try:
-            text = _read_text_multi_encoding(f)
+            text = _read_text_multi_encoding(f, encoding_priority)
             if text is not None:
                 all_chapters.append(text)
         except Exception:
@@ -416,15 +474,34 @@ def compute_book_stats(blocks_dir: Path, limit: int = 0) -> Tuple[Dict, List[Tup
     return aggregate_stats(stats), samples
 
 
-async def extract_style_profile(blocks_dir: Path, book_name: str, api_config: dict,
-                                token_sink=None, limit: int = 0, on_phase=None) -> Optional[dict]:
+async def extract_style_profile(
+    blocks_dir: Path,
+    book_name: str,
+    api_config: Union[APIConfig, Dict[str, Any]],
+    token_sink=None,
+    limit: int = 0,
+    on_phase=None,
+    *,
+    sample_n: int = 6,
+    sample_chars: int = 1500,
+    max_tokens: int = 20000,
+    temperature: float = 0.3,
+    encoding_priority: Optional[List[str]] = None,
+) -> Optional[dict]:
     """
     提取风格 profile JSON（供 FinalSummaryRunner 注入 prompt）。
     统计部分走线程池，语义部分 async LLM；token_sink 可选，透传给语义 LLM 调用。
     """
     import asyncio
 
-    agg, samples = await asyncio.to_thread(compute_book_stats, blocks_dir, limit)
+    agg, samples = await asyncio.to_thread(
+        compute_book_stats,
+        blocks_dir,
+        limit,
+        sample_n=sample_n,
+        sample_chars=sample_chars,
+        encoding_priority=encoding_priority,
+    )
     if not samples:
         logger.warning("风格分析：无可用章节样本")
         return None
@@ -434,9 +511,16 @@ async def extract_style_profile(blocks_dir: Path, book_name: str, api_config: di
 
     if callable(on_phase):
         on_phase("llm_extract")
-    semantic_prompt = build_semantic_prompt(agg, samples, book_name)
+    semantic_prompt = build_semantic_prompt(agg, samples, book_name, sample_chars=sample_chars)
     logger.info(f"语义风格提取中 (样本{len(samples)}章, ~{len(semantic_prompt)}字符)...")
-    semantic = await call_llm_semantic(semantic_prompt, api_config, token_sink=token_sink)
+    semantic = await call_llm_semantic(
+        semantic_prompt,
+        api_config,
+        token_sink=token_sink,
+        book_name=book_name,
+        max_tokens=max_tokens,
+        temperature=temperature,
+    )
     if semantic is None:
         logger.warning("语义风格提取失败，返回默认值")
         semantic = {f: '（提取失败）' for f in SEMANTIC_FIELDS}

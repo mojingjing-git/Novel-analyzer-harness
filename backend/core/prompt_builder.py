@@ -110,6 +110,7 @@ class PromptBuilder:
         max_verified_facts: int = 15,
         max_themes: int = 8,
         max_content_chars: int = 30000,
+        rolling_max_momentum: int = 15,
     ):
         self.max_arc_length = max_arc_length
         self.max_arcs = max_arcs
@@ -123,8 +124,8 @@ class PromptBuilder:
         self.max_verified_facts = max_verified_facts
         self.max_themes = max_themes
         # 正文是唯一无上限的 prompt 注入项；超窗确定性失败且退火无效。
-        # 3 万字≈为 32k-token 窗口的 system+九路上下文留足余量；后续可接配置。
         self.max_content_chars = max_content_chars
+        self.rolling_max_momentum = max(1, int(rolling_max_momentum or 15))
 
     def build_messages(
         self,
@@ -146,7 +147,10 @@ class PromptBuilder:
         # 构建完整故事历史
         history_parts = []
         # 第一层：结构化滚动总结（优先）或旧格式降级
-        rendered_rolling = self._render_structured_rolling(knowledge_base.rolling_structured)
+        rendered_rolling = self._render_structured_rolling(
+            knowledge_base.rolling_structured,
+            max_momentum=self.rolling_max_momentum,
+        )
         if rendered_rolling:
             history_parts.append(rendered_rolling)
         # 第二层：近期逐章 timeline（保持原逻辑）
@@ -266,7 +270,7 @@ class PromptBuilder:
         return messages
 
     @staticmethod
-    def _render_structured_rolling(structured_data: dict) -> str:
+    def _render_structured_rolling(structured_data: dict, max_momentum: int = 15) -> str:
         """渲染结构化滚动总结为可读文本，注入到分析 prompt 中"""
         if not structured_data:
             return ""
@@ -323,7 +327,8 @@ class PromptBuilder:
         momentum = structured_data.get("recent_momentum", [])
         if momentum:
             lines.append("近期势头：")
-            for r in momentum[-15:]:
+            cap = max(1, int(max_momentum or 15))
+            for r in momentum[-cap:]:
                 lines.append(f"- {r}")
 
         return "\n".join(lines)

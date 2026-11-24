@@ -263,6 +263,9 @@ async def run_recheck_v2(
     unit_noun: str = "章",
     display_labels: Mapping[int, str] | None = None,
     block_size: int = 4,
+    window_radius: int = 400,
+    max_windows: int = 3,
+    retry_rounds: int = 2,
     request_log: dict[str, Any] | None = None,
     should_stop: Callable[[], bool] | None = None,
 ) -> RecheckOutcome:
@@ -423,6 +426,8 @@ async def run_recheck_v2(
                 getattr(item, "question", "") or "",
                 getattr(item, "description", "") or "",
             ],
+            radius=max(50, int(window_radius or 400)),
+            max_windows=max(1, int(max_windows or 3)),
             unit_noun=unit_noun,
             display_labels=display_labels,
         )
@@ -668,14 +673,15 @@ async def run_recheck_v2(
 
     done: set[str] = set()
     built_count = 0
-    for attempt in range(2):
+    total_rounds = max(1, int(retry_rounds or 1))
+    for attempt in range(total_rounds):
         if should_stop is not None and should_stop():
             break
         _current_round[0] = attempt
         queue = [c for c in candidates if c["candidate_id"] not in done]
         if not queue:
             break
-        if attempt == 1:
+        if attempt >= 1:
             # 第一轮漏掉的候选单独补一次：模型偶尔只答前几条，补问时只给它漏的那条，
             # 命中率高；仍漏就如实记 not_checked，不再反复花钱。
             outcome.retried_batches += 1

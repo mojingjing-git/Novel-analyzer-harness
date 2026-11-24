@@ -53,6 +53,7 @@ class CatalogMixin:
     ) -> list:
         """从逐章分析结果的 foreshadowing 字段构建伏笔总表。"""
         a = self.config.analysis
+        min_clue_chars = max(1, int(getattr(a, "foreshadow_min_clue_chars", 15) or 15))
         all_clues = []
         unique_types = set()
         for r in results:
@@ -64,7 +65,7 @@ class CatalogMixin:
                 if not isinstance(fs, dict):
                     continue
                 clue = fs.get("clue", "")
-                if not clue or len(clue.strip()) < 15:
+                if not clue or len(clue.strip()) < min_clue_chars:
                     continue
                 ftype = fs.get("type", "") or ""
                 conf = fs.get("confidence", "中") or "中"
@@ -115,7 +116,13 @@ class CatalogMixin:
             f"confidence 丢 {skipped_confidence}, category 丢 {skipped_category}）"
         )
 
-        catalog = deduplicate_foreshadows(categorized)
+        kw_overlap = max(1, int(getattr(a, "foreshadow_dedup_keyword_overlap", 2) or 2))
+        sim_thresh = float(getattr(a, "foreshadow_dedup_similarity", 0.6))
+        catalog = deduplicate_foreshadows(
+            categorized,
+            keyword_overlap_min=kw_overlap,
+            similarity_threshold=sim_thresh,
+        )
 
         imp_order = {"高": 3, "中": 2, "低": 1}
         conf_order = {"高": 3, "中": 2, "低": 1}
@@ -342,11 +349,13 @@ class CatalogMixin:
         """卷摘要拼接总字符超阈值时做轻量分层压缩（首尾各 1 组保留全文，中间组截断到 1/2）。"""
         threshold = self.config.analysis.volume_compress_threshold
         group_size = self.config.analysis.volume_compress_group
+        ratio = float(getattr(self.config.analysis, "volume_compress_ratio", 0.5))
+        ratio = max(0.1, min(1.0, ratio))
         joined = "\n\n".join(volume_summaries)
-        if len(joined) <= threshold or len(volume_summaries) <= 1:
+        if len(joined) <= threshold or len(volume_summaries) <= 1 or ratio >= 1.0:
             return joined
         logger.info(f"最终报告卷摘要超阈值（{len(joined)} 字符 > {threshold}），"
-                    f"执行分层压缩（{len(volume_summaries)} 卷，组大小 {group_size}）")
+                    f"执行分层压缩（{len(volume_summaries)} 卷，组大小 {group_size}，比例 {ratio:.2f}）")
         groups = [volume_summaries[i:i + group_size]
                   for i in range(0, len(volume_summaries), group_size)]
         parts = []
@@ -355,7 +364,7 @@ class CatalogMixin:
             if gi == 0 or gi == n - 1:
                 parts.append("\n\n".join(g))
             else:
-                trimmed = [vs[:len(vs) // 2] + "\n（此处已压缩，省略后半）" for vs in g]
+                trimmed = [vs[:max(1, int(len(vs) * ratio))] + "\n（此处已压缩，省略后半）" for vs in g]
                 parts.append("\n\n".join(trimmed))
         return "\n\n".join(parts)
 

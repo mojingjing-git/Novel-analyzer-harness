@@ -277,7 +277,7 @@ class RecheckMixin:
         """阶段 2（V3 默认引擎）：双向路由 + 剧情簇 NMS + 多跳侦探 + 四防对称外科终审。"""
         from backend.core.model_catalog import lookup_model_spec
         from backend.core.text_units import build_display_labels
-        from backend.services.recheck_v3 import run_recheck_v3
+        from backend.services.recheck_v3 import V3RecheckOptions, run_recheck_v3
 
         chapters = self._collect_chapters()
         if not chapters:
@@ -298,15 +298,46 @@ class RecheckMixin:
         base_conc = int(getattr(self.config.analysis, "concurrency", 0) or 0) or self.concurrency or 1
         v3_concurrency = max(1, recheck_config if recheck_config > 0 else base_conc)
 
-        compact_mode = max_tokens < 16384
-        if not compact_mode:
-            try:
-                spec = lookup_model_spec(self._recheck_model_name or "")
-                ctx_lim = int((spec or {}).get("limit", {}).get("context", 0) or 0)
-                if 0 < ctx_lim <= 36000:
-                    compact_mode = True
-            except Exception:
-                pass
+        analysis_cfg = getattr(self.config, "analysis", None)
+
+        def _cfg_int(name: str, default: int) -> int:
+            val = getattr(analysis_cfg, name, None)
+            return default if val is None else int(val)
+
+        v3_mode = str(getattr(analysis_cfg, "recheck_v3_mode", "auto") or "auto").strip().lower()
+        if v3_mode == "wide":
+            compact_mode = False
+        elif v3_mode == "compact":
+            compact_mode = True
+        else:
+            compact_mode = max_tokens < 16384
+            if not compact_mode:
+                try:
+                    spec = lookup_model_spec(self._recheck_model_name or "")
+                    ctx_lim = int((spec or {}).get("limit", {}).get("context", 0) or 0)
+                    if 0 < ctx_lim <= 36000:
+                        compact_mode = True
+                except Exception:
+                    pass
+
+        v3_options = V3RecheckOptions(
+            batch_size=_cfg_int("recheck_v3_batch_size", 0),
+            pool_max_chars=_cfg_int("recheck_v3_pool_max_chars", 0),
+            prompt_hard_cap_chars=_cfg_int("recheck_v3_prompt_hard_cap_chars", 0),
+            u1_superchunk_chars=_cfg_int("recheck_v3_u1_superchunk_chars", 0),
+            u1_split_batch_size=_cfg_int("recheck_v3_u1_split_batch_size", 0),
+            u1_route_q_batch=_cfg_int("recheck_v3_u1_route_q_batch", 0),
+            chapter_chars=_cfg_int("recheck_v3_chapter_chars", 0),
+            max_post_windows=_cfg_int("recheck_v3_max_post_windows", 0),
+            max_pre_windows=_cfg_int("recheck_v3_max_pre_windows", 1),
+            hop2_new_cap=_cfg_int("recheck_v3_hop2_new_cap", 0),
+            hop3_new_cap=_cfg_int("recheck_v3_hop3_new_cap", 0),
+            max_hops=_cfg_int("recheck_v3_max_hops", 3),
+            max_audit_windows=_cfg_int("recheck_v3_max_audit_windows", 0),
+            pre_lookback_units=_cfg_int("recheck_v3_pre_lookback_units", 45),
+            nms_cluster_radius=_cfg_int("recheck_v3_nms_cluster_radius", 3),
+            nms_max_per_cluster=_cfg_int("recheck_v3_nms_max_per_cluster", 2),
+        )
 
         _call_model = self._make_recheck_caller(recheck_client, max_tokens=max_tokens, request_log=request_log)
         prev_conc = getattr(self, "_active_concurrency", getattr(self, "concurrency", 1))
@@ -329,10 +360,11 @@ class RecheckMixin:
                 concurrency=v3_concurrency,
                 unit_noun="文件",
                 display_labels=build_display_labels(chapters),
-                block_size=int(getattr(getattr(self.config, "analysis", None), "block_size", 4) or 4),
+                block_size=int(getattr(analysis_cfg, "block_size", 4) or 4),
                 compact_mode=compact_mode,
-                enable_gray_u4=bool(getattr(self.config.analysis, "recheck_v3_gray_u4", False)),
-                mid_single_hop=bool(getattr(self.config.analysis, "recheck_v3_mid_single_hop", False)),
+                enable_gray_u4=bool(getattr(analysis_cfg, "recheck_v3_gray_u4", False)),
+                mid_single_hop=bool(getattr(analysis_cfg, "recheck_v3_mid_single_hop", False)),
+                options=v3_options,
                 request_log=request_log or None,
                 should_stop=lambda: self._stop_requested,
                 emit=lambda summary: self._emit_recheck_progress(summary, engine="v3"),
@@ -385,6 +417,10 @@ class RecheckMixin:
         self._emit_progress({"type": "status", "message": "正在核对伏笔证据..."})
 
         try:
+            v2_analysis = getattr(self.config, "analysis", None)
+            v2_wr = getattr(v2_analysis, "recheck_v2_window_radius", None)
+            v2_mw = getattr(v2_analysis, "recheck_v2_max_windows", None)
+            v2_rr = getattr(v2_analysis, "recheck_v2_retry_rounds", None)
             outcome = await run_recheck_v2(
                 self.ledger.items,
                 chapters=chapters,
@@ -393,7 +429,10 @@ class RecheckMixin:
                 batch_size=batch_size,
                 unit_noun="文件",
                 display_labels=build_display_labels(chapters),
-                block_size=int(getattr(getattr(self.config, "analysis", None), "block_size", 4) or 4),
+                block_size=int(getattr(v2_analysis, "block_size", 4) or 4),
+                window_radius=400 if v2_wr is None else int(v2_wr),
+                max_windows=3 if v2_mw is None else int(v2_mw),
+                retry_rounds=2 if v2_rr is None else int(v2_rr),
                 request_log=request_log or None,
                 should_stop=lambda: self._stop_requested,
                 concurrency=v2_conc,

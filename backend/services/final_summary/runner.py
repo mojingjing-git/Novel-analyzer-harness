@@ -377,7 +377,11 @@ class FinalSummaryRunner(CatalogMixin, CheckpointMixin, RecheckMixin):
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
-        max_tok = min(max(int(getattr(self.config.api, "max_tokens", 16384) or 16384), 16384), 32768)
+        atlas_tok_cfg = max(1024, int(getattr(self.config.analysis, "atlas_max_tokens", 32768) or 32768))
+        if atlas_tok_cfg == 32768:
+            max_tok = min(max(int(getattr(self.config.api, "max_tokens", 16384) or 16384), 16384), 32768)
+        else:
+            max_tok = atlas_tok_cfg
         is_char = system_prompt == ATLAS_CHAR_SYSTEM_PROMPT
         unit_idx = 2 if is_char else 3
         lane_id = 930000 + unit_idx
@@ -423,11 +427,21 @@ class FinalSummaryRunner(CatalogMixin, CheckpointMixin, RecheckMixin):
         if not volume_summaries or self._stop_requested:
             return
 
+        a = self.config.analysis
+        atlas_overrides = self._non_default_tuning(a, {
+            "atlas_max_tokens": 32768,
+            "atlas_max_characters": 60,
+            "atlas_max_locations": 50,
+            "volume_compress_threshold": 80000,
+            "volume_compress_group": 5,
+            "volume_compress_ratio": 0.5,
+        })
         target_fp = compute_atlas_fingerprint(
             stage1_fp=stage1_fp,
             volume_summaries=volume_summaries,
             model=getattr(self, "_summary_model_name", ""),
             provider=getattr(getattr(self, "_llm", None), "config", self.config.api).provider,
+            extra_overrides=atlas_overrides or None,
         )
         atlas_path = self.output_dir / STORY_ATLAS_FILE
         existing = await asyncio.to_thread(safe_load_json, atlas_path) if atlas_path.exists() else None
@@ -446,7 +460,13 @@ class FinalSummaryRunner(CatalogMixin, CheckpointMixin, RecheckMixin):
             return
 
         vol_ranges = [(idx, s, e) for idx, s, e, _ in sorted(batch_tasks, key=lambda t: t[0])]
-        anchors = await asyncio.to_thread(build_deterministic_anchors, self.output_dir, vol_ranges)
+        anchors = await asyncio.to_thread(
+            build_deterministic_anchors,
+            self.output_dir,
+            vol_ranges,
+            max_characters=max(1, int(getattr(a, "atlas_max_characters", 60) or 60)),
+            max_locations=max(1, int(getattr(a, "atlas_max_locations", 50) or 50)),
+        )
         compressed_vols = self._compress_volume_summaries(volume_summaries)
         vol_block = f"《{self.book_name}》全书分卷分析摘要（共{len(volume_summaries)}卷）：\n\n{compressed_vols}"
 
@@ -564,14 +584,13 @@ class FinalSummaryRunner(CatalogMixin, CheckpointMixin, RecheckMixin):
                 logger.info("风格分析：命中 style_profile.json 断点缓存，跳过 LLM 调用")
                 return cached
 
-        api_config = {
-            'base_url': self.config.api.base_url,
-            'api_key': self.config.api.api_key,
-            'model': self.config.api.summary_model or self.config.api.model,
-            'thinking_mode': self.config.api.summary_thinking_mode or self.config.api.thinking_mode,
-            'timeout': self.config.api.summary_timeout,
-            'provider': self.config.api.provider,
-        }
+        style_api_cfg = replace(
+            self.config.api,
+            model=self.config.api.summary_model or self.config.api.model,
+            thinking_mode=self.config.api.summary_thinking_mode or self.config.api.thinking_mode,
+            timeout=self.config.api.summary_timeout,
+        )
+        a = self.config.analysis
 
         try:
             await self._acquire_llm_slot()
@@ -579,8 +598,16 @@ class FinalSummaryRunner(CatalogMixin, CheckpointMixin, RecheckMixin):
             self._lane_start(920001, "写作风格分析", "style")
             try:
                 profile = await extract_style_profile(
-                    blocks_dir, self.book_name, api_config,
-                    token_sink=lambda t: self._record_tokens("style", t))
+                    blocks_dir,
+                    self.book_name,
+                    style_api_cfg,
+                    token_sink=lambda t: self._record_tokens("style", t),
+                    sample_n=max(1, int(getattr(a, "style_sample_chapters", 6) or 6)),
+                    sample_chars=max(100, int(getattr(a, "style_sample_chars", 1500) or 1500)),
+                    max_tokens=max(512, int(getattr(a, "style_max_tokens", 20000) or 20000)),
+                    temperature=float(getattr(a, "style_temperature", 0.3)),
+                    encoding_priority=getattr(a, "encoding_priority", None),
+                )
                 ok = profile is not None
             finally:
                 self._lane_done(920001, "写作风格分析", ok, "style")
@@ -941,8 +968,9 @@ class FinalSummaryRunner(CatalogMixin, CheckpointMixin, RecheckMixin):
                     await asyncio.to_thread(self._save_stage2_checkpoint, stage2_fp)
 
             if not self._stop_requested:
+                dormant_th = max(1, int(getattr(self.config.analysis, "dormant_chapter_threshold", 200) or 200))
                 for idx, _ch_start, ch_end, _prompt in sorted(batch_tasks, key=lambda t: t[0]):
-                    self.ledger.reconcile_and_update(idx, ch_end)
+                    self.ledger.reconcile_and_update(idx, ch_end, dormant_threshold=dormant_th)
 
             self.ledger.save(self.ledger_path)
             self._emit_progress({"type": "ledger_updated", "counts": self.ledger.get_item_count()})

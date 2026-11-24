@@ -116,7 +116,12 @@ class ForeshadowLedger:
             return cls()
         return cls.from_dict(data)
 
-    def reconcile_and_update(self, batch_idx: int, current_chapter: Optional[int] = None) -> None:
+    def reconcile_and_update(
+        self,
+        batch_idx: int,
+        current_chapter: Optional[int] = None,
+        dormant_threshold: int = DORMANT_CHAPTER_THRESHOLD,
+    ) -> None:
         """
         批次完成后执行 reconciliation：
         1. 检查休眠伏笔（章节跨度按"当前处理进度"计算，见 current_chapter 参数）
@@ -133,6 +138,7 @@ class ForeshadowLedger:
         否则长书会提前把后埋的伏笔判为休眠。
         current_chapter 为 None 时回退 total_chapters，兼容历史调用方。
         """
+        threshold = max(1, int(dormant_threshold or DORMANT_CHAPTER_THRESHOLD))
         for item in self.items:
             if item.status != 'active':
                 continue
@@ -142,13 +148,13 @@ class ForeshadowLedger:
                 continue
 
             if current_chapter is not None:
-                chapter_span = (current_chapter - item.last_seen_chapter) >= DORMANT_CHAPTER_THRESHOLD
+                chapter_span = (current_chapter - item.last_seen_chapter) >= threshold
             else:
-                chapter_span = (self.total_chapters - item.last_seen_chapter) >= DORMANT_CHAPTER_THRESHOLD
+                chapter_span = (self.total_chapters - item.last_seen_chapter) >= threshold
 
             if chapter_span:
                 item.status = 'dormant'
-                item.notes.append(f"批次{batch_idx}时自动标记为休眠（{DORMANT_CHAPTER_THRESHOLD}章未见）")
+                item.notes.append(f"批次{batch_idx}时自动标记为休眠（{threshold}章未见）")
 
     def lifecycle_bars(self) -> dict[str, int]:
         """生命周期七栏底表：互斥且完备（加总 = 条目总数），全部由账本字段自足推导。

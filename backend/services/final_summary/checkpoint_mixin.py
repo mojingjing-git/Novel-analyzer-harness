@@ -64,10 +64,29 @@ class CheckpointMixin:
                 parts.append(f"{f.name}:missing")
         return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()[:16]
 
+    @staticmethod
+    def _non_default_tuning(a: Any, defaults: Dict[str, Any]) -> Dict[str, Any]:
+        out: Dict[str, Any] = {}
+        for k, dflt in defaults.items():
+            val = getattr(a, k, dflt)
+            if isinstance(dflt, bool):
+                if bool(val) is not dflt:
+                    out[k] = bool(val)
+            elif isinstance(dflt, float):
+                if abs(float(val if val is not None else dflt) - dflt) > 1e-9:
+                    out[k] = float(val)
+            elif isinstance(dflt, int):
+                iv = int(val if val is not None else dflt)
+                if iv != dflt:
+                    out[k] = iv
+            elif str(val or dflt) != dflt:
+                out[k] = str(val or "")
+        return out
+
     def _compute_stage1_fingerprint(self, results_fp: str) -> str:
         """Stage 1 完整失效指纹：results_fp + 章节范围 + 批大小 + 伏笔过滤口径。"""
         a = self.config.analysis
-        payload = {
+        payload: Dict[str, Any] = {
             "results_fp": results_fp,
             "start_chapter": self.start_chapter,
             "end_chapter": self.end_chapter,
@@ -78,14 +97,23 @@ class CheckpointMixin:
             "max_foreshadow_catalog_high": int(getattr(a, "max_foreshadow_catalog_high", 500)),
             "max_foreshadow_catalog_mid": int(getattr(a, "max_foreshadow_catalog_mid", 200)),
         }
+        tuning = self._non_default_tuning(a, {
+            "foreshadow_min_clue_chars": 15,
+            "foreshadow_dedup_keyword_overlap": 2,
+            "foreshadow_dedup_similarity": 0.6,
+            "dormant_chapter_threshold": 200,
+            "batch_summary_min_words": 2000,
+        })
+        if tuning:
+            payload["tuning"] = tuning
         return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()[:16]
 
     def _compute_stage2_fingerprint(self, stage1_fp: str, blocks_fp: str, recheck_ver: str) -> str:
-        """Stage 2 复检失效指纹：stage1_fp + blocks_fp + 引擎版本 + 复检通道 + block_size + V3 开关。"""
+        """Stage 2 复检失效指纹：stage1_fp + blocks_fp + 引擎版本 + 复检通道 + block_size + 调优参数。"""
         a = self.config.analysis
         rc_model, rc_base = recheck_channel(self.config)
         is_v3 = recheck_ver == "v3"
-        payload = {
+        payload: Dict[str, Any] = {
             "stage1_fp": stage1_fp,
             "blocks_fp": blocks_fp,
             "recheck_version": recheck_ver,
@@ -96,16 +124,53 @@ class CheckpointMixin:
             "recheck_v3_mid_single_hop": bool(getattr(a, "recheck_v3_mid_single_hop", False)) if is_v3 else False,
             "v3_engine_rev": "tier2_pool_v1" if is_v3 else "v2",
         }
+        v3_defaults = {
+            "recheck_v3_mode": "auto",
+            "recheck_v3_batch_size": 0,
+            "recheck_v3_pool_max_chars": 0,
+            "recheck_v3_prompt_hard_cap_chars": 0,
+            "recheck_v3_u1_superchunk_chars": 0,
+            "recheck_v3_u1_split_batch_size": 0,
+            "recheck_v3_u1_route_q_batch": 0,
+            "recheck_v3_chapter_chars": 0,
+            "recheck_v3_max_post_windows": 0,
+            "recheck_v3_max_pre_windows": 1,
+            "recheck_v3_hop2_new_cap": 0,
+            "recheck_v3_hop3_new_cap": 0,
+            "recheck_v3_max_hops": 3,
+            "recheck_v3_max_audit_windows": 0,
+            "recheck_v3_pre_lookback_units": 45,
+            "recheck_v3_nms_cluster_radius": 3,
+            "recheck_v3_nms_max_per_cluster": 2,
+        }
+        v2_defaults = {
+            "recheck_v2_batch_size": 6,
+            "recheck_v2_window_radius": 400,
+            "recheck_v2_max_windows": 3,
+            "recheck_v2_retry_rounds": 2,
+        }
+        tuning = self._non_default_tuning(a, v3_defaults if is_v3 else v2_defaults)
+        if tuning:
+            payload["tuning"] = tuning
         return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()[:16]
 
     def _compute_style_fingerprint(self, blocks_fp: str) -> str:
-        """Stage 3 风格提取失效指纹：blocks_fp + 总结模型 + 协议。"""
+        """Stage 3 风格提取失效指纹：blocks_fp + 总结模型 + 协议 + 风格采样/生成参数。"""
         api = self.config.api
-        payload = {
+        a = self.config.analysis
+        payload: Dict[str, Any] = {
             "blocks_fp": blocks_fp,
             "model": str(getattr(api, "summary_model", "") or getattr(api, "model", "") or ""),
             "provider": str(getattr(api, "provider", "auto") or "auto"),
         }
+        tuning = self._non_default_tuning(a, {
+            "style_sample_chapters": 6,
+            "style_sample_chars": 1500,
+            "style_max_tokens": 20000,
+            "style_temperature": 0.3,
+        })
+        if tuning:
+            payload["tuning"] = tuning
         return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()[:16]
 
     @staticmethod

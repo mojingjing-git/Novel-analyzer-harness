@@ -164,3 +164,107 @@ def test_recheck_v3_option_flags_defaults_and_validation():
     assert validate_settings_payload({"analysis": {"recheck_v3_gray_u4": True, "recheck_v3_mid_single_hop": False}}) == []
     errs = validate_settings_payload({"analysis": {"recheck_v3_gray_u4": "maybe"}})
     assert [("body", "analysis", "recheck_v3_gray_u4")] == [tuple(e["loc"]) for e in errs]
+
+
+def test_schema_bijection_and_example_config_parity():
+    """schema.SPEC_BY_PATH 与 AppConfig 严格 1:1 双射，且 desktop/config.example.json 键集合完全对齐。"""
+    from pathlib import Path
+    from backend.config.schema import CONFIG_GROUPS, SPEC_BY_PATH, get_config_schema
+
+    def _flatten(d: dict) -> set[str]:
+        out: set[str] = set()
+        for k, v in d.items():
+            if isinstance(v, dict) and k in ("api", "analysis", "gui"):
+                for sk in v:
+                    out.add(f"{k}.{sk}")
+            else:
+                out.add(k)
+        return out
+
+    app_paths = _flatten(AppConfig().to_dict())
+    spec_paths = set(SPEC_BY_PATH.keys())
+    assert len(spec_paths) == 131
+    assert spec_paths == app_paths
+
+    schema_doc = get_config_schema()
+    assert schema_doc["total_fields"] == 131
+    assert len(schema_doc["groups"]) == len(CONFIG_GROUPS) == 11
+
+    ex_path = Path(__file__).resolve().parents[2] / "desktop" / "config.example.json"
+    example_cfg = json.loads(ex_path.read_text(encoding="utf-8-sig"))
+    assert _flatten(example_cfg) == app_paths
+    assert validate_settings_payload(example_cfg) == []
+
+
+def test_env_api_key_preserves_disk_key_on_save_and_patch(tmp_path, monkeypatch):
+    """环境变量注入 LLM_API_KEY 时，load 返回环境密钥但 save/patch 不得覆写或抹除磁盘 api_key。"""
+    cfg_path = tmp_path / "config.json"
+    cfg_path.write_text(
+        json.dumps({"api": {"model": "m1", "api_key": "disk-secret-key"}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LLM_API_KEY", "env-override-key")
+
+    mgr = ConfigManager(cfg_path)
+    loaded = mgr.load()
+    assert loaded.api.api_key == "env-override-key"
+
+    assert mgr.save(loaded) is True
+    on_disk_after_save = json.loads(cfg_path.read_text(encoding="utf-8"))
+    assert on_disk_after_save["api"]["api_key"] == "disk-secret-key"
+
+    patched = mgr.patch({"analysis": {"block_size": 3}})
+    assert patched is not None
+    assert patched.api.api_key == "env-override-key"
+    assert patched.analysis.block_size == 3
+    on_disk_after_patch = json.loads(cfg_path.read_text(encoding="utf-8"))
+    assert on_disk_after_patch["api"]["api_key"] == "disk-secret-key"
+    assert on_disk_after_patch["analysis"]["block_size"] == 3
+
+
+def test_schema_resolve_spec_parse_cli_value_and_promoted_validation():
+    """resolve_spec/parse_cli_value 与新增调优参数范围校验（含 block_size=200、enum 等）应准确生效。"""
+    import pytest
+    from backend.config.schema import parse_cli_value, resolve_spec
+
+    assert resolve_spec("api.max_tokens").path == "api.max_tokens"
+    assert resolve_spec("max_tokens").path == "api.max_tokens"
+    assert resolve_spec("recheck_v3_mode").path == "analysis.recheck_v3_mode"
+    with pytest.raises(KeyError):
+        resolve_spec("nonexistent_key_xyz")
+
+    assert parse_cli_value(resolve_spec("analysis.block_size"), "42") == 42
+    assert parse_cli_value(resolve_spec("analysis.volume_compress_ratio"), "0.35") == 0.35
+    assert parse_cli_value(resolve_spec("analysis.auto_archive"), "true") is True
+    assert parse_cli_value(resolve_spec("analysis.auto_archive"), "off") is False
+    assert parse_cli_value(resolve_spec("working_directory"), "") is None
+    assert parse_cli_value(resolve_spec("analysis.encoding_priority"), "utf-8, gbk , utf-8-sig") == [
+        "utf-8", "gbk", "utf-8-sig",
+    ]
+    assert parse_cli_value(resolve_spec("api.thinking_mode"), '{"reasoning_effort": "low"}') == {
+        "reasoning_effort": "low",
+    }
+
+    assert validate_settings_payload({
+        "analysis": {
+            "block_size": 200,
+            "recheck_v3_mode": "wide",
+            "recheck_v3_max_hops": 5,
+            "volume_compress_ratio": 0.5,
+        },
+        "api": {"breaker_open_after": 3, "temp_retry_wait_base": 5},
+    }) == []
+
+    bad = validate_settings_payload({
+        "analysis": {
+            "block_size": 201,
+            "recheck_v3_mode": "invalid_mode",
+            "recheck_v3_max_hops": 9,
+            "volume_compress_ratio": 1.05,
+        }
+    })
+    bad_locs = {tuple(e["loc"]) for e in bad}
+    assert ("body", "analysis", "block_size") in bad_locs
+    assert ("body", "analysis", "recheck_v3_mode") in bad_locs
+    assert ("body", "analysis", "recheck_v3_max_hops") in bad_locs
+    assert ("body", "analysis", "volume_compress_ratio") in bad_locs

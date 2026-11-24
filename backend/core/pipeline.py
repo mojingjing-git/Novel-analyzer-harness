@@ -346,6 +346,8 @@ class AnalysisPipeline:
             'max_verified_facts': self.config.analysis.max_verified_facts,
             'max_long_term_arcs': self.config.analysis.max_long_term_arcs,
             'max_thematic_elements': self.config.analysis.max_thematic_elements,
+            'max_kb_character_states': getattr(self.config.analysis, 'max_kb_character_states', 200),
+            'max_kb_character_relationships': getattr(self.config.analysis, 'max_kb_character_relationships', 300),
         }
         self.state = MemoryState(
             checkpoint_interval=self.config.analysis.checkpoint_interval,
@@ -470,7 +472,8 @@ class AnalysisPipeline:
         _rolling_done = asyncio.Event()
         _rolling_done.set()
         _completed_since_rolling = 0
-        _rolling_batch_size = concurrency  # 每 N 块完成触发一次 rolling
+        raw_interval = int(getattr(self.config.analysis, "rolling_update_interval", 0) or 0)
+        _rolling_batch_size = max(1, raw_interval if raw_interval > 0 else concurrency)  # 每 N 块完成触发一次 rolling
         _rolling_state = {"last_chapter": rolling_last_chapter}
 
         async def _async_rolling(completed_block_ids):
@@ -595,9 +598,10 @@ class AnalysisPipeline:
         # 提前计算 valid_block_ids（补跑阶段也需要使用）
         valid_block_ids = {b[0] for b in blocks}
 
-        # 7c. 失败块自动补跑（最多3轮，每轮串行逐个重试以确保KB正确）
+        # 7c. 失败块自动补跑（每轮串行逐个重试以确保KB正确）
         _actually_retried_succeeded: set[int] = set()
-        for retry_round in range(3):
+        retry_rounds = max(0, int(getattr(self.config.analysis, "failed_block_retry_rounds", 3)))
+        for retry_round in range(retry_rounds):
             if self._stop_requested:
                 break
             failed_block_ids = [bid for bid, _ in blocks
@@ -1044,14 +1048,19 @@ class AnalysisPipeline:
             )}
         ]
 
+        rolling_retries = max(0, int(getattr(self.config.analysis, "rolling_summary_max_retries", ROLLING_SUMMARY_MAX_RETRIES)))
+        rolling_temp = float(getattr(self.config.analysis, "rolling_summary_temperature", ROLLING_SUMMARY_TEMPERATURE))
+        raw_rolling_max_tok = int(getattr(self.config.analysis, "rolling_summary_max_tokens", 0) or 0)
+        rolling_max_tok = raw_rolling_max_tok if raw_rolling_max_tok > 0 else ROLLING_SUMMARY_MAX_TOKENS
+
         new_json = None
-        for attempt in range(1 + ROLLING_SUMMARY_MAX_RETRIES):
+        for attempt in range(1 + rolling_retries):
             if self._stop_requested:
                 return last_chapter
             llm_result = await rolling_client.chat(
                 messages,
-                temperature=ROLLING_SUMMARY_TEMPERATURE,
-                max_tokens=ROLLING_SUMMARY_MAX_TOKENS
+                temperature=rolling_temp,
+                max_tokens=rolling_max_tok
             )
             await self._emit_rolling_tokens(
                 llm_result.tokens,
@@ -1077,23 +1086,26 @@ class AnalysisPipeline:
 
         # 5. 程序侧硬截断 + 归档
         # 5a. paradigm_layers 截断
+        max_paradigms = max(1, int(getattr(self.config.analysis, "rolling_max_paradigm_layers", 5) or 5))
         pl = new_json.get("paradigm_layers", [])
-        if len(pl) > 5:  # 范式层上限
-            new_json["paradigm_layers"] = pl[-5:]
+        if len(pl) > max_paradigms:
+            new_json["paradigm_layers"] = pl[-max_paradigms:]
 
         # 5b. recent_momentum 归档检测
+        archive_trigger = max(1, int(getattr(self.config.analysis, "rolling_archive_trigger_count", ROLLING_ARCHIVE_TRIGGER_COUNT) or ROLLING_ARCHIVE_TRIGGER_COUNT))
+        momentum_win = max(1, int(getattr(self.config.analysis, "rolling_momentum_window", ROLLING_MOMENTUM_WINDOW) or ROLLING_MOMENTUM_WINDOW))
         momentum = new_json.get("recent_momentum", [])
         should_archive = False
-        if len(momentum) >= ROLLING_ARCHIVE_TRIGGER_COUNT:
+        if len(momentum) >= archive_trigger:
             should_archive = True
-            logger.info(f"recent_momentum 条目数({len(momentum)})达到归档触发阈值({ROLLING_ARCHIVE_TRIGGER_COUNT})")
+            logger.info(f"recent_momentum 条目数({len(momentum)})达到归档触发阈值({archive_trigger})")
         else:
             # 跨度检测：提取首尾章号
             first_ch = _extract_chapter_number(momentum[0]) if momentum else None
             last_ch = _extract_chapter_number(momentum[-1]) if momentum else None
-            if first_ch and last_ch and (last_ch - first_ch) >= ROLLING_MOMENTUM_WINDOW:
+            if first_ch and last_ch and (last_ch - first_ch) >= momentum_win:
                 should_archive = True
-                logger.info(f"recent_momentum 跨度({first_ch}-{last_ch})超过归档窗口({ROLLING_MOMENTUM_WINDOW})")
+                logger.info(f"recent_momentum 跨度({first_ch}-{last_ch})超过归档窗口({momentum_win})")
 
         if should_archive and len(momentum) >= 3:
             try:
@@ -1124,7 +1136,7 @@ class AnalysisPipeline:
             new_json["global_milestones"] = new_milestones
 
         # 5e. 硬截断 active_causal_chains
-        max_chains = 5  # 因果链条目上限
+        max_chains = max(1, int(getattr(self.config.analysis, "rolling_max_causal_chains", 5) or 5))
         if len(new_json.get("active_causal_chains", [])) > max_chains:
             new_json["active_causal_chains"] = new_json["active_causal_chains"][-max_chains:]
 
@@ -1208,8 +1220,9 @@ class AnalysisPipeline:
 
         # 与全链路其它 LLM 调用一致，走带温度退火 + 退避重试的 chat_with_retry，
         # 避免单次失败直接丢弃势头归档（归档是热点路径上的关键节点）。
+        archive_max_tok = max(1, int(getattr(self.config.analysis, "rolling_archive_max_tokens", 100) or 100))
         llm_result = await rolling_client.chat_with_retry(
-            messages, max_tokens=100
+            messages, max_tokens=archive_max_tok
         )
         await self._emit_rolling_tokens(llm_result.tokens)
         if llm_result.success and llm_result.content and llm_result.content.strip():
@@ -1251,8 +1264,11 @@ class AnalysisPipeline:
             {"role": "user", "content": STRUCTURED_ROLLING_USER_TEMPLATE.format(chapters=chapters_text)}
         ]
 
+        rolling_temp = float(getattr(self.config.analysis, "rolling_summary_temperature", ROLLING_SUMMARY_TEMPERATURE))
+        raw_rolling_max_tok = int(getattr(self.config.analysis, "rolling_summary_max_tokens", 0) or 0)
+        rolling_max_tok = raw_rolling_max_tok if raw_rolling_max_tok > 0 else ROLLING_SUMMARY_MAX_TOKENS
         llm_result = await rolling_client.chat(
-            messages, temperature=ROLLING_SUMMARY_TEMPERATURE, max_tokens=ROLLING_SUMMARY_MAX_TOKENS
+            messages, temperature=rolling_temp, max_tokens=rolling_max_tok
         )
         await self._emit_rolling_tokens(llm_result.tokens)
 
@@ -1296,10 +1312,13 @@ class AnalysisPipeline:
             {"role": "user", "content": STRUCTURED_ROLLING_USER_TEMPLATE.format(chapters=chapters_text)}
         ]
 
+        rolling_temp = float(getattr(self.config.analysis, "rolling_summary_temperature", ROLLING_SUMMARY_TEMPERATURE))
+        raw_rolling_max_tok = int(getattr(self.config.analysis, "rolling_summary_max_tokens", 0) or 0)
+        rolling_max_tok = raw_rolling_max_tok if raw_rolling_max_tok > 0 else ROLLING_SUMMARY_MAX_TOKENS
         llm_result = await rolling_client.chat(
             messages,
-            temperature=ROLLING_SUMMARY_TEMPERATURE,
-            max_tokens=ROLLING_SUMMARY_MAX_TOKENS
+            temperature=rolling_temp,
+            max_tokens=rolling_max_tok
         )
         await self._emit_rolling_tokens(llm_result.tokens)
 

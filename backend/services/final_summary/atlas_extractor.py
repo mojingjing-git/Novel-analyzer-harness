@@ -53,8 +53,11 @@ VALID_TREE_NODE_TYPES = frozenset({"world", "region", "faction", "landmark"})
 def build_deterministic_anchors(
     output_dir: Path,
     vol_ranges: List[Tuple[int, int, int]],
+    *,
+    max_characters: int = 60,
+    max_locations: int = 50,
 ) -> Dict[str, str]:
-    """从 chapter_*_result.json 确定性预统计 Top-60 人物与 Top-50 地点锚点。"""
+    """从 chapter_*_result.json 确定性预统计 Top-N 人物与地点锚点。"""
     char_stats: Dict[str, Dict[str, Any]] = {}
     loc_stats: Dict[str, Dict[str, Any]] = {}
     all_chapters: List[int] = []
@@ -118,11 +121,13 @@ def build_deterministic_anchors(
             if tp:
                 ls["types"][tp] += 1
 
+    char_cap = max(1, int(max_characters or 60))
+    loc_cap = max(1, int(max_locations or 50))
     top_chars = sorted(
         char_stats.items(),
         key=lambda kv: (len(kv[1]["chapters"]), kv[1]["event_count"]),
         reverse=True,
-    )[:60]
+    )[:char_cap]
     char_lines = []
     for name, st in top_chars:
         chs = sorted(st["chapters"])
@@ -137,7 +142,7 @@ def build_deterministic_anchors(
         loc_stats.items(),
         key=lambda kv: len(kv[1]["chapters"]),
         reverse=True,
-    )[:50]
+    )[:loc_cap]
     loc_lines = []
     for lname, ls in top_locs:
         chs = sorted(ls["chapters"])
@@ -154,9 +159,11 @@ def build_deterministic_anchors(
     )
     vol_header = "【分卷章节范围】\n" + ("；".join(vol_lines) if vol_lines else "无") + f"\n全书章号范围：{ch_span}\n\n"
 
+    char_cap = max(1, int(max_characters or 60))
+    loc_cap = max(1, int(max_locations or 50))
     return {
-        "char_anchor": vol_header + "【高频原始人物 Top-60】\n" + ("\n".join(char_lines) if char_lines else "（无）"),
-        "world_anchor": vol_header + "【高频原始地点 Top-50】\n" + ("\n".join(loc_lines) if loc_lines else "（无）"),
+        "char_anchor": vol_header + f"【高频原始人物 Top-{char_cap}】\n" + ("\n".join(char_lines) if char_lines else "（无）"),
+        "world_anchor": vol_header + f"【高频原始地点 Top-{loc_cap}】\n" + ("\n".join(loc_lines) if loc_lines else "（无）"),
     }
 
 
@@ -165,16 +172,20 @@ def compute_atlas_fingerprint(
     volume_summaries: List[str],
     model: str,
     provider: str,
+    *,
+    extra_overrides: Optional[Dict[str, Any]] = None,
 ) -> str:
     """计算全书图谱内容与模型失效指纹。"""
     vol_hash = hashlib.sha256("\n".join(volume_summaries or []).encode("utf-8")).hexdigest()[:16]
-    payload = {
+    payload: Dict[str, Any] = {
         "schema_version": STORY_ATLAS_SCHEMA_VERSION,
         "stage1_fp": stage1_fp or "",
         "vol_hash": vol_hash,
         "model": str(model or ""),
         "provider": str(provider or "auto"),
     }
+    if extra_overrides:
+        payload["tuning"] = dict(extra_overrides)
     return hashlib.sha256(
         json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
     ).hexdigest()[:16]

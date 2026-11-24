@@ -107,7 +107,7 @@ def _recheck_progress_message(summary: dict) -> str:
     if stage == "u1_route":
         return f"伏笔复检 V3：全书双向路由（已调用 {summary.get('calls', 0)} 次）{rem_suffix}"
     if stage == "u3_hop":
-        return f"伏笔复检 V3：第 {summary.get('hop', 1)}/3 跳深挖核查（已调用 {summary.get('calls', 0)} 次）{rem_suffix}"
+        return f"伏笔复检 V3：第 {summary.get('hop', 1)}/{summary.get('max_hops', 3)} 跳深挖核查（已调用 {summary.get('calls', 0)} 次）{rem_suffix}"
     if stage == "u4_audit":
         return f"伏笔复检 V3：四防对称外科终审（已调用 {summary.get('calls', 0)} 次）{rem_suffix}"
     if stage == "u5_repair":

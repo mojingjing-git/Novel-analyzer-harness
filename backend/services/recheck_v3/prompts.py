@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 DEFAULT_V3_BATCH_SIZE = 8
 DEFAULT_V3_COMPACT_BATCH_SIZE = 4
 DEFAULT_V3_CONCURRENCY = 8
@@ -18,6 +20,99 @@ U1_COMPACT_ROUTE_Q_BATCH = 40
 
 WIDE_CHAPTER_CHARS = 6800
 COMPACT_CHAPTER_CHARS = 2800
+
+
+@dataclass(frozen=True)
+class V3RecheckOptions:
+    """V3 复检引擎运行时调优参数（0 表示按 compact/wide 挡位自动解析默认值）。"""
+
+    batch_size: int = 0
+    pool_max_chars: int = 0
+    prompt_hard_cap_chars: int = 0
+    u1_superchunk_chars: int = 0
+    u1_split_batch_size: int = 0
+    u1_route_q_batch: int = 0
+    chapter_chars: int = 0
+    max_post_windows: int = 0
+    max_pre_windows: int = 1
+    hop2_new_cap: int = 0
+    hop3_new_cap: int = 0
+    max_hops: int = 3
+    max_audit_windows: int = 0
+    pre_lookback_units: int = 45
+    nms_cluster_radius: int = 3
+    nms_max_per_cluster: int = 2
+
+    def resolve(self, *, compact_mode: bool, explicit_batch_size: int | None = None) -> dict[str, int]:
+        pool_max = (
+            int(self.pool_max_chars)
+            if self.pool_max_chars > 0
+            else (DEFAULT_V3_COMPACT_POOL_MAX_CHARS if compact_mode else DEFAULT_V3_POOL_MAX_CHARS)
+        )
+        hard_cap = (
+            int(self.prompt_hard_cap_chars)
+            if self.prompt_hard_cap_chars > 0
+            else (
+                max(V3_PROMPT_HARD_CAP_CHARS, pool_max + 15_000)
+                if self.pool_max_chars > 0
+                else V3_PROMPT_HARD_CAP_CHARS
+            )
+        )
+        u1_sc = (
+            int(self.u1_superchunk_chars)
+            if self.u1_superchunk_chars > 0
+            else (U1_COMPACT_SUPERCHUNK_TARGET_CHARS if compact_mode else U1_SUPERCHUNK_TARGET_CHARS)
+        )
+        has_custom_budget = self.pool_max_chars > 0 or self.prompt_hard_cap_chars > 0 or self.u1_superchunk_chars > 0
+        route_cap = (
+            max(30_000, min(max(pool_max, u1_sc + 15_000), max(30_000, hard_cap - 10_000)))
+            if has_custom_budget
+            else (50_000 if compact_mode else DEFAULT_V3_POOL_MAX_CHARS)
+        )
+        bs = (
+            max(1, int(explicit_batch_size))
+            if explicit_batch_size is not None
+            else (
+                int(self.batch_size)
+                if self.batch_size > 0
+                else (DEFAULT_V3_COMPACT_BATCH_SIZE if compact_mode else DEFAULT_V3_BATCH_SIZE)
+            )
+        )
+        return {
+            "batch_size": bs,
+            "pool_max_chars": pool_max,
+            "prompt_hard_cap_chars": max(hard_cap, pool_max + 1500),
+            "route_prompt_cap": route_cap,
+            "u1_superchunk_chars": u1_sc,
+            "u1_split_batch_size": (
+                int(self.u1_split_batch_size)
+                if self.u1_split_batch_size > 0
+                else (U1_COMPACT_SPLIT_BATCH_SIZE if compact_mode else U1_SPLIT_BATCH_SIZE)
+            ),
+            "u1_route_q_batch": (
+                int(self.u1_route_q_batch)
+                if self.u1_route_q_batch > 0
+                else (U1_COMPACT_ROUTE_Q_BATCH if compact_mode else U1_ROUTE_Q_BATCH)
+            ),
+            "chapter_chars": (
+                int(self.chapter_chars)
+                if self.chapter_chars > 0
+                else (COMPACT_CHAPTER_CHARS if compact_mode else WIDE_CHAPTER_CHARS)
+            ),
+            "max_post_windows": (
+                int(self.max_post_windows) if self.max_post_windows > 0 else (4 if compact_mode else 5)
+            ),
+            "max_pre_windows": max(0, int(self.max_pre_windows)),
+            "hop2_new_cap": int(self.hop2_new_cap) if self.hop2_new_cap > 0 else (3 if compact_mode else 4),
+            "hop3_new_cap": int(self.hop3_new_cap) if self.hop3_new_cap > 0 else (2 if compact_mode else 3),
+            "max_hops": max(1, int(self.max_hops)),
+            "max_audit_windows": (
+                int(self.max_audit_windows) if self.max_audit_windows > 0 else (6 if compact_mode else 8)
+            ),
+            "pre_lookback_units": max(0, int(self.pre_lookback_units)),
+            "nms_cluster_radius": max(0, int(self.nms_cluster_radius)),
+            "nms_max_per_cluster": max(1, int(self.nms_max_per_cluster)),
+        }
 
 ALLOWED_V3_TIERS = (
     "RESOLVED_EXPLICIT",

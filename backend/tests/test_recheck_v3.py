@@ -1268,8 +1268,107 @@ def test_recheck_v3_package_layering_and_code_snapshot() -> None:
     for sym in (
         "WIDE_CHAPTER_CHARS",
         "COMPACT_CHAPTER_CHARS",
+        "V3RecheckOptions",
         "run_recheck_v3",
         "verify_evidence_chain_v3",
         "apply_v3_verdict_to_item",
     ):
         assert hasattr(rv3, sym)
+
+
+def test_recheck_v3_options_tuning_and_u1_cache_invalidation(tmp_path: Path) -> None:
+    """自定义 V3RecheckOptions 应覆盖阈值、写入 v3_tuning 并随调优改动使 U1 断点缓存失效。"""
+    from backend.services.recheck_v3 import V3RecheckOptions
+
+    chapters = {
+        1: "第一章 起\n沈砚在古井旁拾得半枚青铜钥匙。",
+        2: "第二章 承\n掌柜认出那枚钥匙。",
+        3: "第三章 转\n钥匙终于打开密室铜锁。",
+    }
+    labels = {i: f"第 {i} 回" for i in range(1, 4)}
+    it = _make_item(
+        "fs_opt_1",
+        desc="青铜钥匙的用途",
+        question="青铜钥匙打开了什么？",
+        anchor_quote="沈砚在古井旁拾得半枚青铜钥匙。",
+        anchor_chapter=1,
+        entity_key="青铜钥匙",
+    )
+
+    split_calls = 0
+
+    async def _model(prompt: str) -> str:
+        nonlocal split_calls
+        if "待拆解条目：" in prompt:
+            split_calls += 1
+            return json.dumps([{
+                "fs_id": "fs_opt_1",
+                "core_question": "青铜钥匙打开了什么",
+                "bonus_aspects": "",
+                "setup_event_anchor": "拾得青铜钥匙",
+                "needs_pre_setup_backref": False,
+                "key_entities": ["青铜钥匙"],
+            }], ensure_ascii=False)
+        if "你是零人工长篇小说伏笔深度核查侦探" in prompt:
+            return json.dumps([{
+                "fs_id": "fs_opt_1",
+                "verdict": "UNRESOLVED",
+                "unresolved_type": "OPEN_PLOT_THREAD",
+                "confidence": "medium",
+                "answer": "尚未揭示",
+                "evidence_chain": [],
+                "follow_up": {"next_hint": "密室", "target_units": [3]},
+            }], ensure_ascii=False)
+        return "[]"
+
+    out1 = asyncio.run(run_recheck_v3(
+        [it],
+        chapters=chapters,
+        call_model=_model,
+        output_dir=tmp_path,
+        display_labels=labels,
+        options=V3RecheckOptions(
+            max_hops=1,
+            pre_lookback_units=2,
+            pool_max_chars=4000,
+            u1_split_batch_size=1,
+        ),
+    ))
+    assert split_calls == 1
+    assert out1.coverage["v3_options"] == {"gray_u4": False, "mid_single_hop": False}
+    assert out1.coverage["v3_tuning"]["max_hops"] == 1
+    assert out1.coverage["v3_tuning"]["pre_lookback_units"] == 2
+    assert out1.coverage["v3_tuning"]["pool_max_chars"] == 4000
+    assert out1.audit_routes["fs_opt_1"]["hops_used"] == 1
+
+    # 参数不变重跑应命中 U1 缓存（不重复调用 u1_split）
+    asyncio.run(run_recheck_v3(
+        [it],
+        chapters=chapters,
+        call_model=_model,
+        output_dir=tmp_path,
+        display_labels=labels,
+        options=V3RecheckOptions(
+            max_hops=1,
+            pre_lookback_units=2,
+            pool_max_chars=4000,
+            u1_split_batch_size=1,
+        ),
+    ))
+    assert split_calls == 1
+
+    # 更改 u1_split_batch_size 应改变 index_fp 并使 U1 缓存失效
+    asyncio.run(run_recheck_v3(
+        [it],
+        chapters=chapters,
+        call_model=_model,
+        output_dir=tmp_path,
+        display_labels=labels,
+        options=V3RecheckOptions(
+            max_hops=1,
+            pre_lookback_units=2,
+            pool_max_chars=4000,
+            u1_split_batch_size=2,
+        ),
+    ))
+    assert split_calls == 2

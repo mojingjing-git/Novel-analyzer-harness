@@ -512,3 +512,29 @@ def test_recheck_resolution_gates():
 
     v_no_counter = _parse({"counter_search": {"performed": False, "checked_evidence_ids": [], "counter_quotes": []}})
     assert v_no_counter.verdict == INSUFFICIENT and v_no_counter.reason == REASON_NO_COUNTER_SEARCH
+
+
+async def test_recheck_v2_honors_window_radius_max_windows_and_zero_retry_rounds():
+    """run_recheck_v2 应遵循传入的 window_radius、max_windows 与 retry_rounds=0（不触发额外重试）。"""
+    chapters = {
+        1: "第一章 起\n方醒打开铜匣，里面只有一张旧契。",
+        5: "第五章 揭秘\n掌柜指着铜匣里的旧契道出全部来历。",
+    }
+    calls = 0
+
+    async def bad_model(_prompt: str) -> str:
+        nonlocal calls
+        calls += 1
+        return "not-json-at-all"
+
+    outcome = await run_recheck_v2(
+        [_item("fs_r0", "方醒打开铜匣，里面只有一张旧契。")],
+        chapters=chapters,
+        call_model=bad_model,
+        window_radius=120,
+        max_windows=1,
+        retry_rounds=0,
+    )
+    assert calls == 1
+    assert outcome.calls == 1
+    assert outcome.coverage["not_checked"] >= 1

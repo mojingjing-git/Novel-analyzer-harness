@@ -43,6 +43,8 @@ from .constants import (
     MAX_PACING_TRACKER, MAX_FORESIGHT_NETWORK,
     MAX_WORLD_BUILDING, MAX_VERIFIED_FACTS,
     MAX_LONG_TERM_ARCS, MAX_THEMATIC_ELEMENTS,
+    MAX_KB_CHARACTER_STATES, MAX_KB_CHARACTER_RELATIONSHIPS,
+    ROLLING_MOMENTUM_WINDOW, ROLLING_ARCHIVE_TRIGGER_COUNT,
     FORESHADOW_CATEGORY_DEFS,
     DEFAULT_FORESHADOW_MIN_IMPORTANCE,
     DEFAULT_FORESHADOW_MIN_CONFIDENCE,
@@ -141,6 +143,15 @@ class APIConfig:
     summary_thinking_mode: dict = field(default_factory=dict)  # 最终总结专用思考控制；空=跟随 thinking_mode
     provider: str = "auto"       # 协议格式：auto=自动检测 / openai=OpenAI兼容 / anthropic=Anthropic /v1/messages
     streaming_enabled: bool = True  # true=流式 chat_stream_with_retry / false=回退 chat_with_retry
+    # 请求重试等待与熔断细节（默认值保持历史运行行为）
+    temp_retry_wait_base: int = 3
+    rate_limit_wait_base: int = 30
+    rate_limit_wait_cap: int = 120
+    rate_limit_min_backoff_retries: int = 3
+    backoff_wait_cap: int = 60
+    hard_timeout_margin: int = 30
+    moderation_short_circuit_hits: int = 2
+    breaker_open_after: int = 1
 
 
 @dataclass
@@ -177,18 +188,41 @@ class AnalysisConfig:
     max_foreshadow_catalog_mid: int = DEFAULT_MAX_FORESHADOW_CATALOG_MID
     batch_summary_min_words: int = DEFAULT_BATCH_SUMMARY_MIN_WORDS
     final_report_min_words: int = DEFAULT_FINAL_REPORT_MIN_WORDS
-    # 最终报告卷摘要压缩：拼接总字符超过阈值时做轻量分层压缩（首尾各 1 组保留全文，中间组截断到 1/2）
+    # 最终报告卷摘要压缩：拼接总字符超过阈值时做轻量分层压缩（首尾各 1 组保留全文，中间组按比例截断）
     volume_compress_threshold: int = DEFAULT_VOLUME_COMPRESS_THRESHOLD
     volume_compress_group: int = DEFAULT_VOLUME_COMPRESS_GROUP
+    volume_compress_ratio: float = 0.5
     rolling_early_chapters: int = ROLLING_EARLY_CHAPTERS
+    rolling_update_interval: int = 0
+    rolling_summary_max_tokens: int = 0
+    rolling_summary_max_retries: int = 1
+    rolling_summary_temperature: float = 0.2
     rolling_max_milestones: int = ROLLING_MAX_MILESTONES
     rolling_max_momentum: int = ROLLING_MAX_MOMENTUM
+    rolling_momentum_window: int = ROLLING_MOMENTUM_WINDOW
+    rolling_archive_trigger_count: int = ROLLING_ARCHIVE_TRIGGER_COUNT
+    rolling_max_paradigm_layers: int = 5
+    rolling_max_causal_chains: int = 5
+    rolling_archive_max_tokens: int = 100
     checkpoint_interval: int = DEFAULT_CHECKPOINT_INTERVAL  # 每 N 批自动落盘，0=只在结束时落盘
+    failed_block_retry_rounds: int = 3
     auto_archive: bool = False  # 队列分析完成后自动归档整个小说目录到 分析结果/
     # 队列完成后自动总结
     auto_summary: bool = False        # 队列全部书分析完成后，逐本自动执行最终总结
     summary_concurrency: int = 0      # 最终总结并发数（0=跟随主并发 analysis.concurrency，>0 显式覆盖）
     summary_batch_size: int = 30      # 最终总结每批章节数
+    # 伏笔总表与图谱 / 风格预算
+    dormant_chapter_threshold: int = 200
+    foreshadow_min_clue_chars: int = 15
+    foreshadow_dedup_keyword_overlap: int = 2
+    foreshadow_dedup_similarity: float = 0.6
+    atlas_max_tokens: int = 32768
+    atlas_max_characters: int = 60
+    atlas_max_locations: int = 50
+    style_sample_chapters: int = 6
+    style_sample_chars: int = 1500
+    style_max_tokens: int = 20000
+    style_temperature: float = 0.3
     # 伏笔复检（V3 / V2）：锚点采集与复检预算
     anchor_quote_enabled: bool = True        # 逐章采集 anchor_quote（V2 需要；V3 可兼容空锚点）
     anchor_min_chars: int = 6                # 锚点最短字数；太短的长句子里必然命中
@@ -200,8 +234,29 @@ class AnalysisConfig:
     recheck_concurrency: int = 0
     #: 复检引擎版本："v3"=多跳深挖与四防对称终审（默认）；"v2"=单跳严格核对
     recheck_version: str = "v3"
-    #: V2 复检的批大小（recheck_version="v2" 时生效）
+    #: V3 复检上下文模式与共享池 / 多跳深挖调优（0 表示按挡位默认值解析）
+    recheck_v3_mode: str = "auto"
+    recheck_v3_batch_size: int = 0
+    recheck_v3_pool_max_chars: int = 0
+    recheck_v3_prompt_hard_cap_chars: int = 0
+    recheck_v3_u1_superchunk_chars: int = 0
+    recheck_v3_u1_split_batch_size: int = 0
+    recheck_v3_u1_route_q_batch: int = 0
+    recheck_v3_chapter_chars: int = 0
+    recheck_v3_max_post_windows: int = 0
+    recheck_v3_max_pre_windows: int = 1
+    recheck_v3_hop2_new_cap: int = 0
+    recheck_v3_hop3_new_cap: int = 0
+    recheck_v3_max_hops: int = 3
+    recheck_v3_max_audit_windows: int = 0
+    recheck_v3_pre_lookback_units: int = 45
+    recheck_v3_nms_cluster_radius: int = 3
+    recheck_v3_nms_max_per_cluster: int = 2
+    #: V2 复检参数（recheck_version="v2" 时生效）
     recheck_v2_batch_size: int = 6
+    recheck_v2_window_radius: int = 400
+    recheck_v2_max_windows: int = 3
+    recheck_v2_retry_rounds: int = 2
     #: V3 灰区终审开关：False=默认跳过 U4 直接单阶段裁决+U5（省约 33% token）；True=灰区追加 U4 严审
     recheck_v3_gray_u4: bool = False
     #: V3 支线单跳省钱开关：True 时中重要度伏笔缩窗至 3 个并跳过 Hop-2/3，高重要度保留 5 窗 3 跳
@@ -243,6 +298,8 @@ class AnalysisConfig:
     max_verified_facts: int = MAX_VERIFIED_FACTS
     max_long_term_arcs: int = MAX_LONG_TERM_ARCS
     max_thematic_elements: int = MAX_THEMATIC_ELEMENTS
+    max_kb_character_states: int = MAX_KB_CHARACTER_STATES
+    max_kb_character_relationships: int = MAX_KB_CHARACTER_RELATIONSHIPS
 
 
 @dataclass
@@ -301,6 +358,18 @@ class AppConfig:
             ver = str(analysis_data.get('recheck_version') or '').strip().lower()
             analysis_data['recheck_version'] = ver if ver in ('v3', 'v2') else 'v3'
 
+        if 'recheck_v3_mode' in analysis_data:
+            mode_val = str(analysis_data.get('recheck_v3_mode') or '').strip().lower()
+            analysis_data['recheck_v3_mode'] = mode_val if mode_val in ('auto', 'wide', 'compact') else 'auto'
+
+        coerced_analysis = _coerce_fields(AnalysisConfig, analysis_data)
+        if 'encoding_priority' in coerced_analysis:
+            cleaned_enc = [str(x).strip() for x in coerced_analysis['encoding_priority'] if str(x).strip()]
+            if cleaned_enc:
+                coerced_analysis['encoding_priority'] = cleaned_enc
+            else:
+                coerced_analysis.pop('encoding_priority', None)
+
         # 兼容旧配置：thinking_mode 必须是 dict，字符串则清空回默认值
         tm = api_data.get('thinking_mode')
         if tm is not None and not isinstance(tm, dict):
@@ -315,18 +384,32 @@ class AppConfig:
         if not str(api_data.get('model', '')).strip():
             api_data.pop('model', None)
 
+        raw_wd = data.get('working_directory')
+        if isinstance(raw_wd, str):
+            norm_wd = raw_wd.strip() or None
+        else:
+            norm_wd = None
+
+        raw_kf = data.get('knowledge_file')
+        norm_kf = raw_kf.strip() if isinstance(raw_kf, str) and raw_kf.strip() else KNOWLEDGE_FILE_NAME
+
+        raw_ws = data.get('workspace_dir')
+        norm_ws = raw_ws.strip() if isinstance(raw_ws, str) and raw_ws.strip() else 'workspace'
+
         return cls(
             api=APIConfig(**_coerce_fields(APIConfig, api_data)),
-            analysis=AnalysisConfig(**_coerce_fields(AnalysisConfig, analysis_data)),
+            analysis=AnalysisConfig(**coerced_analysis),
             gui=GUIConfig(**_coerce_fields(GUIConfig, gui_data)),
-            working_directory=data.get('working_directory'),
-            knowledge_file=data.get('knowledge_file', KNOWLEDGE_FILE_NAME),
-            workspace_dir=data.get('workspace_dir', 'workspace'),
+            working_directory=norm_wd,
+            knowledge_file=norm_kf,
+            workspace_dir=norm_ws,
         )
 
 
 def validate_settings_payload(data: Any) -> list[dict]:
-    """对 PUT/PATCH /api/settings 的载荷做严格类型与数值范围校验，返回 FastAPI 风格错误列表。"""
+    """基于 schema.CONFIG_FIELD_SPECS 对 PUT/PATCH /api/settings 载荷做类型与范围校验。"""
+    from .schema import SPEC_BY_PATH
+
     if not isinstance(data, dict):
         return [{"loc": ["body"], "msg": "配置请求体必须为对象"}]
 
@@ -371,6 +454,20 @@ def validate_settings_payload(data: Any) -> list[dict]:
             return val.strip().lower() in ("true", "false", "1", "0", "yes", "no", "on", "off")
         return False
 
+    # 顶层标量路径字段校验
+    if "working_directory" in data:
+        wd = data["working_directory"]
+        if wd is not None and not isinstance(wd, str):
+            _add_err(["body", "working_directory"], "必须为字符串或 null")
+    if "workspace_dir" in data:
+        ws = data["workspace_dir"]
+        if not isinstance(ws, str) or not ws.strip():
+            _add_err(["body", "workspace_dir"], "必须为非空字符串")
+    if "knowledge_file" in data:
+        kf = data["knowledge_file"]
+        if not isinstance(kf, str) or not kf.strip() or ".." in Path(kf.strip()).parts:
+            _add_err(["body", "knowledge_file"], "必须为不含路径回退的非空文件名")
+
     section_defs = (("api", APIConfig), ("analysis", AnalysisConfig), ("gui", GUIConfig))
     for sec, dc_cls in section_defs:
         if sec not in data or data[sec] is None:
@@ -384,66 +481,64 @@ def validate_settings_payload(data: Any) -> list[dict]:
                 continue
             val = sec_data[f.name]
             ftype = f.type
+            type_ok = True
             if ftype is bool:
                 if not _is_valid_bool(val):
                     _add_err(["body", sec, f.name], "必须为布尔值")
+                    type_ok = False
             elif ftype is int:
                 iv = _parse_int(val)
                 if iv is None:
                     _add_err(["body", sec, f.name], "必须为整数")
+                    type_ok = False
                 else:
                     parsed_nums[(sec, f.name)] = float(iv)
             elif ftype is float:
                 fv = _parse_float(val)
                 if fv is None:
                     _add_err(["body", sec, f.name], "必须为有效数字")
+                    type_ok = False
                 else:
                     parsed_nums[(sec, f.name)] = fv
             elif ftype is str:
                 if not isinstance(val, str):
                     _add_err(["body", sec, f.name], "必须为字符串")
+                    type_ok = False
             elif ftype is dict:
                 if not isinstance(val, dict):
                     _add_err(["body", sec, f.name], "必须为对象")
+                    type_ok = False
             elif ftype is List[str]:
                 if not (isinstance(val, list) and all(isinstance(x, str) for x in val)):
                     _add_err(["body", sec, f.name], "必须为字符串数组")
+                    type_ok = False
 
-    api_data = data.get("api")
-    if isinstance(api_data, dict):
-        if "base_url" in api_data and isinstance(api_data["base_url"], str):
-            url = api_data["base_url"].strip()
-            if url and not url.startswith(("http://", "https://")):
-                _add_err(["body", "api", "base_url"], "必须以 http:// 或 https:// 开头")
-        for pos_key in ("max_tokens", "timeout", "summary_timeout"):
-            if ("api", pos_key) in parsed_nums and parsed_nums[("api", pos_key)] <= 0:
-                _add_err(["body", "api", pos_key], "必须大于 0")
-        if ("api", "temperature") in parsed_nums:
-            t = parsed_nums[("api", "temperature")]
-            if t < 0.0 or t > 2.0:
-                _add_err(["body", "api", "temperature"], "必须在 0 到 2 之间")
-        if ("api", "temperature_step") in parsed_nums and parsed_nums[("api", "temperature_step")] < 0.0:
-            _add_err(["body", "api", "temperature_step"], "不能小于 0")
-        if ("api", "temperature_max_retries") in parsed_nums and parsed_nums[("api", "temperature_max_retries")] < 1:
-            _add_err(["body", "api", "temperature_max_retries"], "必须 >= 1")
-        if ("api", "backoff_max_retries") in parsed_nums and parsed_nums[("api", "backoff_max_retries")] < 0:
-            _add_err(["body", "api", "backoff_max_retries"], "不能小于 0")
+            if not type_ok:
+                continue
 
-    analysis_data = data.get("analysis")
-    if isinstance(analysis_data, dict):
-        for gte1_key in (
-            "concurrency", "block_size",
-            "summary_batch_size", "recheck_max_calls", "recheck_v2_batch_size",
-        ):
-            if ("analysis", gte1_key) in parsed_nums and parsed_nums[("analysis", gte1_key)] < 1:
-                _add_err(["body", "analysis", gte1_key], "必须 >= 1")
-        for gte0_key in ("summary_concurrency", "recheck_concurrency", "recheck_timeout", "checkpoint_interval"):
-            if ("analysis", gte0_key) in parsed_nums and parsed_nums[("analysis", gte0_key)] < 0:
-                _add_err(["body", "analysis", gte0_key], "不能小于 0")
-        if "recheck_version" in analysis_data and isinstance(analysis_data["recheck_version"], str):
-            rv = analysis_data["recheck_version"].strip().lower()
-            if rv and rv not in ("v3", "v2"):
-                _add_err(["body", "analysis", "recheck_version"], "只支持 v3 或 v2")
+            spec = SPEC_BY_PATH.get(f"{sec}.{f.name}")
+            if spec is None:
+                continue
+            if spec.is_url and isinstance(val, str):
+                url = val.strip()
+                if url and not url.startswith(("http://", "https://")):
+                    _add_err(["body", sec, f.name], "必须以 http:// 或 https:// 开头")
+            if spec.choices and isinstance(val, str):
+                sval = val.strip()
+                norm_val = sval.lower() if f.name in ("recheck_version", "recheck_v3_mode", "provider", "recheck_provider") else sval
+                if sval and norm_val not in spec.choices:
+                    _add_err(["body", sec, f.name], f"不支持的选项 {val!r}，可选: {', '.join(c for c in spec.choices if c)}")
+            if (sec, f.name) in parsed_nums:
+                num = parsed_nums[(sec, f.name)]
+                if spec.min_val is not None and num < spec.min_val:
+                    min_disp = int(spec.min_val) if float(spec.min_val).is_integer() else spec.min_val
+                    _add_err(["body", sec, f.name], f"必须 >= {min_disp}")
+                elif spec.max_val is not None and num > spec.max_val:
+                    max_disp = int(spec.max_val) if float(spec.max_val).is_integer() else spec.max_val
+                    _add_err(["body", sec, f.name], f"必须 <= {max_disp}")
+            if f.name == "encoding_priority" and isinstance(val, list):
+                if not val or any(not x.strip() for x in val):
+                    _add_err(["body", sec, f.name], "编码优先级列表不能为空且不能含空白项")
 
     return errors
 
@@ -460,14 +555,20 @@ class ConfigManager:
         # config.json 解析失败标志：置位期间 save() 拒绝写入，
         # 防止内存默认配置（空 api_key）原子覆盖掉仍可手工修复的原文件
         self._load_failed = False
-        # 标记当前 api_key 是否来自环境变量：True 时 save() 不回写磁盘（防明文落盘）
+        # 标记当前 api_key 是否来自环境变量：True 时 save() 保留原磁盘 api_key（防明文 env key 落盘或抹掉既有配置）
         self._api_key_from_env = False
+        self._disk_api_key = ""
         self._loaded_once = False
 
     def load(self) -> AppConfig:
         """从文件加载配置"""
         if not self.config_path.exists():
             self._loaded_once = True
+            self._disk_api_key = ""
+            env_key = os.environ.get("LLM_API_KEY") or os.environ.get("MINIMAX_API_KEY")
+            self._api_key_from_env = bool(env_key)
+            if env_key:
+                self.config.api.api_key = env_key
             return self.config
 
         try:
@@ -475,6 +576,7 @@ class ConfigManager:
             with open(self.config_path, 'r', encoding='utf-8-sig') as f:
                 data = json.load(f)
             self.config = AppConfig.from_dict(data)
+            self._disk_api_key = self.config.api.api_key
             # 成功解析即解除拒绝状态：修复后的文件在下次 load()/重启后可正常保存
             self._load_failed = False
             self._loaded_once = True
@@ -524,9 +626,8 @@ class ConfigManager:
         try:
             data = self.config.to_dict()
             if self._api_key_from_env:
-                # env 来源的 key 不回写磁盘：load() 时 env 仍会覆盖，行为一致，
-                # 但避免明文 key 因一次 PUT /api/settings 落盘
-                data["api"]["api_key"] = ""
+                # env 来源的 key 不回写磁盘，同时保留原有磁盘 api_key 避免被环境变量静默清空
+                data["api"]["api_key"] = self._disk_api_key
             # 配置必须原子写：直接 open('w') 截断写，在并发保存或写一半崩溃时会破坏 config.json，
             # 下次启动 load() 抛 JSONDecodeError 导致 API Key/模型全部丢失（回退默认配置）。
             # 因此用 safe_save_json（临时文件 + os.replace 原子替换），与队列状态/章节结果一致。
@@ -560,9 +661,12 @@ class ConfigManager:
         if was_env_key:
             if isinstance(api_patch, dict) and "api_key" in api_patch and api_patch["api_key"] != prev_key:
                 self._api_key_from_env = False
+                self._disk_api_key = new_cfg.api.api_key
             else:
                 self._api_key_from_env = True
                 new_cfg.api.api_key = prev_key
+        elif isinstance(api_patch, dict) and "api_key" in api_patch:
+            self._disk_api_key = new_cfg.api.api_key
 
         if not self.save(new_cfg):
             return None

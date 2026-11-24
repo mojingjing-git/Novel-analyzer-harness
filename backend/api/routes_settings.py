@@ -34,6 +34,14 @@ async def get_presets() -> dict:
     return {"presets": API_PRESETS}
 
 
+@router.get("/schema")
+async def get_settings_schema() -> dict:
+    """返回全量配置字段元信息、分组、默认值与校验约束"""
+    from backend.config.schema import get_config_schema
+
+    return get_config_schema()
+
+
 @router.get("/models")
 async def get_models() -> dict:
     """从 API 获取可用模型列表"""

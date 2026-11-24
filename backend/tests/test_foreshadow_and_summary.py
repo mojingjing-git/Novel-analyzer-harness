@@ -924,3 +924,54 @@ async def test_ledger_apply_human_override_and_recheck_skip():
     assert v2_out.coverage["candidates_total"] == 0
     assert reopened.status == "active"
     assert reopened.source_type == "human_override"
+
+
+def test_promoted_summary_style_dormant_and_atlas_tunables(tmp_path):
+    """休眠阈值、卷压缩比例、文风采样长度与图谱断点指纹附加调优参数应生效。"""
+    from backend.config.settings import AnalysisConfig
+    from backend.core.style_analyzer import build_semantic_prompt
+    from backend.services.final_summary.atlas_extractor import compute_atlas_fingerprint
+
+    ledger = ForeshadowLedger(
+        items=[
+            ForeshadowItem(
+                id="fs_d1",
+                description="短周期休眠测试",
+                first_seen_chapter=1,
+                first_seen_batch=1,
+                last_seen_chapter=5,
+                last_seen_batch=1,
+                status="active",
+            )
+        ]
+    )
+    ledger.reconcile_and_update(batch_idx=2, current_chapter=20, dormant_threshold=DORMANT_CHAPTER_THRESHOLD)
+    assert ledger.items[0].status == "active"
+    ledger.reconcile_and_update(batch_idx=3, current_chapter=20, dormant_threshold=10)
+    assert ledger.items[0].status == "dormant"
+
+    long_sample = "测" * 500
+    prompt_short = build_semantic_prompt({}, [(1, long_sample)], "测试书", sample_chars=250)
+    assert ("测" * 250) in prompt_short
+    assert ("测" * 251) not in prompt_short
+
+    fp_base = compute_atlas_fingerprint("s1", ["第一卷"], "m1", "auto")
+    fp_tuned = compute_atlas_fingerprint(
+        "s1", ["第一卷"], "m1", "auto", extra_overrides={"atlas_max_characters": 99}
+    )
+    assert fp_base != fp_tuned
+
+    out_dir = tmp_path / "out_compress"
+    out_dir.mkdir(parents=True)
+    cfg = AppConfig(
+        analysis=AnalysisConfig(
+            volume_compress_threshold=100,
+            volume_compress_group=1,
+            volume_compress_ratio=0.3,
+        ),
+        working_directory=str(tmp_path),
+    )
+    runner = FinalSummaryRunner(config=cfg, output_dir=out_dir, start_chapter=1, end_chapter=3)
+    compressed = runner._compress_volume_summaries(["A" * 200, "B" * 200, "C" * 200])
+    assert ("B" * 60) in compressed
+    assert ("B" * 61) not in compressed

@@ -30,14 +30,21 @@ def _build_balanced_superchunks(
     block_tuples: Sequence[tuple[int, int, str]],
     *,
     compact_mode: bool = False,
+    target_chars: int | None = None,
+    prompt_hard_cap_chars: int = V3_PROMPT_HARD_CAP_CHARS,
 ) -> list[dict[str, Any]]:
     """按字符预算将事件块序列均衡切分为超块，防止超长书越过上下文悬崖。"""
     if not block_tuples:
         return []
-    target_chars = U1_COMPACT_SUPERCHUNK_TARGET_CHARS if compact_mode else U1_SUPERCHUNK_TARGET_CHARS
-    hard_cap = max(target_chars, V3_PROMPT_HARD_CAP_CHARS - 20_000)
+    resolved_target = (
+        int(target_chars)
+        if (target_chars is not None and int(target_chars) > 0)
+        else (U1_COMPACT_SUPERCHUNK_TARGET_CHARS if compact_mode else U1_SUPERCHUNK_TARGET_CHARS)
+    )
+    cap_base = int(prompt_hard_cap_chars) if int(prompt_hard_cap_chars or 0) > 0 else V3_PROMPT_HARD_CAP_CHARS
+    hard_cap = max(resolved_target, cap_base - 20_000)
     tot_chars = sum(len(b[2]) for b in block_tuples)
-    target_chunks = max(1, math.ceil(tot_chars / max(1, target_chars)))
+    target_chunks = max(1, math.ceil(tot_chars / max(1, resolved_target)))
     target = tot_chars / target_chunks
 
     grouped: list[list[tuple[int, int, str]]] = []
@@ -166,6 +173,7 @@ def _pack_bins_overlap_pool(
     max_chars: int,
     max_chapter_chars: int = WIDE_CHAPTER_CHARS,
     prompt_overhead_chars: int = 5000,
+    prompt_hard_cap_chars: int = V3_PROMPT_HARD_CAP_CHARS,
 ) -> list[list[tuple[dict[str, Any], list[int], list[int]]]]:
     """按候选章节重叠度贪心装箱，同时约束单批条数 <= max_k 与预估 prompt <= max_chars。"""
     raw_unit_chars: dict[int, int] = {
@@ -187,7 +195,8 @@ def _pack_bins_overlap_pool(
 
     rem = list(entries)
     bins: list[list[tuple[dict[str, Any], list[int], list[int]]]] = []
-    safe_cap = min(max_chars, V3_PROMPT_HARD_CAP_CHARS - 1500) - prompt_overhead_chars
+    cap_base = int(prompt_hard_cap_chars) if int(prompt_hard_cap_chars or 0) > 0 else V3_PROMPT_HARD_CAP_CHARS
+    safe_cap = max(8_000, min(max_chars, cap_base - 1500) - prompt_overhead_chars)
 
     while rem:
         cur = rem.pop(0)
@@ -237,6 +246,8 @@ def _render_detective_card_pool(
     pre_u: Sequence[int],
     hop: int,
     prev: Mapping[str, Any] | None = None,
+    *,
+    max_hops: int = 3,
 ) -> str:
     su = int(x["setup_unit"])
     sa_off = x.get("setup_after_offset")
@@ -250,7 +261,7 @@ def _render_detective_card_pool(
             f"\n【上一轮已引用】：{json.dumps(prev.get('evidence_chain') or [], ensure_ascii=False)}"
         )
     return (
-        f"#### fs_id={x['fs_id']}（第 {hop}/3 跳）\n"
+        f"#### fs_id={x['fs_id']}（第 {hop}/{max_hops} 跳）\n"
         f"【核心主问(core_question)】：{pk['core_question']}\n"
         f"【可免责次要支线(bonus_aspects，未写出不得判 UNRESOLVED)】：{pk['bonus_aspects'] or '无'}\n"
         f"【设问事件锚点(设问章 {bound_note})】：{pk['setup_event_anchor']}\n"
@@ -294,6 +305,7 @@ def _inherit_cross_pool_units(
     *,
     max_chapter_chars: int = WIDE_CHAPTER_CHARS,
     unit_noun: str = "文件",
+    pre_lookback_units: int = 45,
 ) -> int:
     """将模型合法引用的同池章节继受为该条目的允许单元，供 U5 确定性校验放行。"""
     if not pool_units or not res_row:
@@ -331,7 +343,7 @@ def _inherit_cross_pool_units(
                         st["selected_post"].insert(0, cu)
                     st["segments"][cu] = seg
                     inherited += 1
-        elif needs_backref and max(1, su_item - 45) <= cu < su_item:
+        elif needs_backref and max(1, su_item - pre_lookback_units) <= cu < su_item:
             if cu not in st["allowed_pre"]:
                 seg = format_unit_segment(
                     chapters,
@@ -507,6 +519,7 @@ def verify_evidence_chain_v3(
     allowed_pre_units: Mapping[int, str],
     setup_after_offset: int | None,
     needs_pre_setup_backref: bool,
+    pre_lookback_units: int = 45,
 ) -> tuple[list[dict[str, Any]], bool, str]:
     """V3 确定性原文子串与防复述校验门禁（支持合法前置因果单元）。"""
     anchor_quote = _normalize_for_match(str(getattr(item, "anchor_quote", "") or ""))
@@ -563,7 +576,7 @@ def verify_evidence_chain_v3(
 
         if matched_u < setup_unit:
             is_allowed_pre = (matched_u in allowed_pre_units) or (
-                needs_pre_setup_backref and matched_u >= max(1, setup_unit - 45)
+                needs_pre_setup_backref and matched_u >= max(1, setup_unit - pre_lookback_units)
             )
             if not is_allowed_pre:
                 rejected_reasons.append(f"before_setup_unit_{matched_u}<{setup_unit}")

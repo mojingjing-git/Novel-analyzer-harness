@@ -521,3 +521,19 @@ def test_book_ledger_review_endpoint_and_ranking_overlay(tmp_path, monkeypatch):
     assert verdict_row["ledger_status"] == "resolved"
     assert verdict_row["ledger_source_type"] == "human_override"
     assert verdict_row["ledger_resolved_chapter"] == 18
+
+
+def test_settings_schema_endpoint(monkeypatch):
+    """GET /api/settings/schema 应返回完整的 131 字段、11 分组全量配置元模型。"""
+    monkeypatch.delenv(_ENV_VAR, raising=False)
+    client = TestClient(app)
+    resp = client.get("/api/settings/schema")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total_fields"] == 131
+    assert len(body["fields"]) == 131
+    assert len(body["groups"]) == 11
+    paths = {f["path"] for f in body["fields"]}
+    assert "api.breaker_open_after" in paths
+    assert "analysis.recheck_v3_mode" in paths
+    assert "analysis.recheck_v3_pool_max_chars" in paths

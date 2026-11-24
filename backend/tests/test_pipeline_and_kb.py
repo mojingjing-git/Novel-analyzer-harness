@@ -357,3 +357,59 @@ async def test_pipeline_stops_immediately_on_account_breaker(tmp_path, monkeypat
     assert "401" in summary["account_trip_reason"]
     assert analyzed_blocks == [1]
     assert list((work_dir / "output").glob("chapter_*_failed.json")) == []
+
+
+async def test_prompt_builder_honors_rolling_max_momentum_and_pipeline_kb_limits(tmp_path, monkeypatch):
+    """PromptBuilder 应按 rolling_max_momentum 裁剪势头列表，pipeline 运行期应配置正确的 kb_limits。"""
+    from backend.core.analyzer import NovelAnalyzer
+    from backend.core.prompt_builder import PromptBuilder
+    from backend.models.analysis_result import CrossBlock
+    from backend.models.knowledge import KnowledgeBase
+
+    kb = KnowledgeBase()
+    kb.rolling_structured = {
+        "recent_momentum": [f"势头项_{i}" for i in range(1, 21)],
+    }
+    pb = PromptBuilder(rolling_max_momentum=3)
+    msgs = pb.build_messages("当前章节正文", 5, kb)
+    combined = "\n".join(m["content"] for m in msgs)
+    assert "势头项_18" in combined
+    assert "势头项_20" in combined
+    assert "势头项_17" not in combined
+
+    blocks_dir = tmp_path / "blocks"
+    blocks_dir.mkdir()
+    (blocks_dir / "0001.txt").write_text("第一章 测试正文", encoding="utf-8")
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+    cfg = AppConfig(
+        api=APIConfig(api_key="k", base_url="http://127.0.0.1:9999/v1", model="m"),
+        analysis=AnalysisConfig(
+            concurrency=1,
+            block_size=1,
+            max_kb_character_states=77,
+            max_kb_character_relationships=88,
+            rolling_update_interval=3,
+            rolling_max_momentum=6,
+        ),
+        working_directory=str(work_dir),
+    )
+
+    async def fake_analyze(self, block_id, content, kb_arg, block_size=1, book_id=""):
+        return AnalysisResult(chapter_number=block_id, cross_block=CrossBlock(summary="测试")), (10, 5), {
+            "retries": 0,
+            "failed_tokens": 0,
+            "usage_status": "OK",
+            "cached_tokens": 0,
+        }
+
+    monkeypatch.setattr(NovelAnalyzer, "analyze_chapter", fake_analyze)
+
+    analyzer = NovelAnalyzer(cfg)
+    assert analyzer.prompt_builder.rolling_max_momentum == 6
+
+    pipeline = AnalysisPipeline(config=cfg, directory=blocks_dir, knowledge_file=tmp_path / "kb.json")
+    await pipeline.run()
+    assert pipeline.state is not None
+    assert pipeline.state._kb_limits["max_kb_character_states"] == 77
+    assert pipeline.state._kb_limits["max_kb_character_relationships"] == 88

@@ -89,6 +89,7 @@ class NovelAnalyzer:
         self.prompt_builder = PromptBuilder(
             max_arc_length=config.analysis.max_arc_length,
             timeline_truncate=config.analysis.timeline_truncate,
+            rolling_max_momentum=getattr(config.analysis, "rolling_max_momentum", 15),
             **dataclasses.asdict(limits),
         )
         self._is_stopped = False
