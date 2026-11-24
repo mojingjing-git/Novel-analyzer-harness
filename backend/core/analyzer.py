@@ -100,6 +100,17 @@ class NovelAnalyzer:
         self.llm_client.request_stop()
         logger.info("分析已请求停止")
 
+    @property
+    def breaker_tripped(self) -> bool:
+        """底层 LLM 客户端账户级熔断器是否已跳闸。"""
+        return bool(getattr(self.llm_client, "breaker_tripped", False))
+
+    @property
+    def breaker_reason(self) -> str:
+        """底层 LLM 客户端账户级熔断原因。"""
+        reason = getattr(self.llm_client, "breaker_reason", "")
+        return reason if isinstance(reason, str) else ""
+
     def get_token_stats(self) -> dict:
         """获取Token使用统计"""
         return self.llm_client.get_stats()

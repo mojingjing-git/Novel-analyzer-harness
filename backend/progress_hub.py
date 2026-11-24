@@ -10,6 +10,7 @@ PipelineStatus 常量 + payload 契约 + 工厂函数）；本文件只是广播
 """
 
 import asyncio
+from collections import deque
 import logging
 import queue as thread_queue
 import time
@@ -25,6 +26,82 @@ from .ws_events import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _message_rank(message: Dict[str, Any]) -> int:
+    """消费端分级驱逐优先级（数字越小越先被淘汰）：0=token_delta，1=log，2=关键状态事件。"""
+    t = message.get("type")
+    if t == WSType.TOKEN_DELTA:
+        return 0
+    if t == WSType.LOG:
+        return 1
+    return 2
+
+
+class _PriorityEvictingQueue:
+    """保留严格 FIFO 出队语义的最坏 O(1) 分级驱逐队列。
+
+    数据结构：
+    - `_items`: 有序字典 ``{seq: (rank, item)}``，按严格递增的 ``seq`` 保持整体 FIFO。
+    - `_buckets`: 三个优先级桶（各为 ``deque[int]``），每个桶内 ``seq`` 同样单调递增。
+    - `_not_empty`: 单个 ``asyncio.Event``，免疫 ``asyncio.wait_for`` 25 秒心跳取消导致的丢消息/丢唤醒。
+    """
+
+    def __init__(self, maxsize: int = 1000) -> None:
+        self.maxsize = max(1, int(maxsize))
+        self._items: Dict[int, tuple[int, Dict[str, Any]]] = {}
+        self._buckets: tuple[deque[int], deque[int], deque[int]] = (deque(), deque(), deque())
+        self._seq = 0
+        self._not_empty = asyncio.Event()
+
+    def qsize(self) -> int:
+        return len(self._items)
+
+    def empty(self) -> bool:
+        return not self._items
+
+    def full(self) -> bool:
+        return len(self._items) >= self.maxsize
+
+    def _enqueue(self, rank: int, item: Dict[str, Any]) -> None:
+        seq = self._seq
+        self._seq += 1
+        self._items[seq] = (rank, item)
+        self._buckets[rank].append(seq)
+        self._not_empty.set()
+
+    def put_nowait(self, item: Dict[str, Any]) -> None:
+        if len(self._items) >= self.maxsize:
+            raise asyncio.QueueFull
+        self._enqueue(_message_rank(item), item)
+
+    def put_evicting(self, item: Dict[str, Any]) -> None:
+        """满载时 O(1) 驱逐最低非空优先级桶队首；若当前全是更高优先级事件则直接丢弃低优先级新消息。"""
+        new_rank = _message_rank(item)
+        if len(self._items) >= self.maxsize:
+            evict_rank = next((r for r in (0, 1, 2) if self._buckets[r]), None)
+            if evict_rank is not None:
+                if evict_rank > new_rank:
+                    return
+                victim_seq = self._buckets[evict_rank].popleft()
+                self._items.pop(victim_seq, None)
+        self._enqueue(new_rank, item)
+
+    def get_nowait(self) -> Dict[str, Any]:
+        if not self._items:
+            raise asyncio.QueueEmpty
+        head_seq = next(iter(self._items))
+        rank, item = self._items.pop(head_seq)
+        # 不变式：head_seq 是全局现存最小 seq，因此在同优先级桶中也必位于队首
+        self._buckets[rank].popleft()
+        if not self._items:
+            self._not_empty.clear()
+        return item
+
+    async def get(self) -> Dict[str, Any]:
+        while not self._items:
+            await self._not_empty.wait()
+        return self.get_nowait()
 
 
 class ThrottledBroadcaster:
@@ -77,59 +154,34 @@ class ProgressHub:
 
     def __init__(self) -> None:
         # 每个连接持有一个独立队列，publish 时向所有队列投递
-        self._queues: Set[asyncio.Queue] = set()
+        self._queues: Set[_PriorityEvictingQueue] = set()
         self._lock = asyncio.Lock()
         # 流式 token 增量广播节流器
         self._token_throttler = ThrottledBroadcaster(self)
 
-    async def subscribe(self) -> asyncio.Queue:
-        """新连接订阅，返回其专属消息队列"""
-        q: asyncio.Queue = asyncio.Queue(maxsize=1000)
+    async def subscribe(self) -> _PriorityEvictingQueue:
+        """新连接订阅，返回其专属分级驱逐队列"""
+        q = _PriorityEvictingQueue(maxsize=1000)
         async with self._lock:
             self._queues.add(q)
         logger.debug("WS 订阅者接入，当前 %d 个", len(self._queues))
         return q
 
-    async def unsubscribe(self, q: asyncio.Queue) -> None:
+    async def unsubscribe(self, q: _PriorityEvictingQueue) -> None:
         """连接断开时注销队列"""
         async with self._lock:
             self._queues.discard(q)
         logger.debug("WS 订阅者断开，当前 %d 个", len(self._queues))
 
     async def publish(self, message: Dict[str, Any]) -> None:
-        """向所有订阅者广播一条消息"""
+        """向所有订阅者广播一条消息（慢消费者走 O(1) 分级驱逐，不丢关键事件）。"""
         async with self._lock:
             targets = list(self._queues)
         for q in targets:
             try:
-                q.put_nowait(message)
-            except asyncio.QueueFull:
-                # 慢消费者：分级驱逐而非无脑丢最旧——token_delta 高频可再生先丢，
-                # log 次之；block_start/block_done/progress 等低频关键事件保住
-                # （前端车道记账靠它们配对，丢一条 = 永久僵尸车道）
-                try:
-                    items = []
-                    while True:  # 排空队列（QueueFull 时必有积压）
-                        items.append(q.get_nowait())
-                except asyncio.QueueEmpty:
-                    pass
-
-                def _droppable_rank(m: Dict[str, Any]) -> int:
-                    t = m.get("type")
-                    if t == WSType.TOKEN_DELTA:
-                        return 0
-                    if t == WSType.LOG:
-                        return 1
-                    return 2
-
-                try:
-                    evict_idx = min(range(len(items)), key=lambda i: _droppable_rank(items[i]))
-                    del items[evict_idx]
-                    for m in items:
-                        q.put_nowait(m)
-                    q.put_nowait(message)
-                except Exception:
-                    pass  # 驱逐兜底失败不阻塞发布方
+                q.put_evicting(message)
+            except Exception:
+                pass  # 驱逐兜底失败不阻塞发布方
 
 
     # ---- 便捷方法 ----

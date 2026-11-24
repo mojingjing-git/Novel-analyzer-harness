@@ -401,3 +401,40 @@ def test_spa_static_files_fallback(tmp_path):
     assert client.get("/assets/missing-chunk.js").status_code == 404
     assert client.get("/api/missing").status_code == 404
     assert client.get("/favicon.ico").status_code == 404
+
+
+async def test_priority_evicting_queue_fifo_and_cancel_safety():
+    """分级驱逐队列满载按最低优先级 O(1) 淘汰，保留严格 FIFO 与 wait_for 超时取消安全。"""
+    from backend.progress_hub import _PriorityEvictingQueue
+    from backend.ws_events import WSType
+
+    q = _PriorityEvictingQueue(maxsize=3)
+    m_prog1 = {"type": WSType.PROGRESS, "id": 1}
+    m_log1 = {"type": WSType.LOG, "id": 2}
+    m_tok1 = {"type": WSType.TOKEN_DELTA, "id": 3}
+    m_prog2 = {"type": WSType.PROGRESS, "id": 4}
+    m_tok2 = {"type": WSType.TOKEN_DELTA, "id": 5}
+
+    q.put_evicting(m_prog1)
+    q.put_evicting(m_log1)
+    q.put_evicting(m_tok1)
+    # 满载放入高优消息：应驱逐最低优的 m_tok1，剩余按入队序严格 FIFO
+    q.put_evicting(m_prog2)
+    assert [q.get_nowait()["id"] for _ in range(3)] == [1, 2, 4]
+
+    # 队列全为 rank 2 时，新进 rank 0（token_delta）直接丢弃，不驱逐关键状态事件
+    for idx in (10, 11, 12):
+        q.put_evicting({"type": WSType.PROGRESS, "id": idx})
+    q.put_evicting(m_tok2)
+    assert [q.get_nowait()["id"] for _ in range(3)] == [10, 11, 12]
+
+    # wait_for 超时取消后，后续入队仍能正确唤醒并读取
+    try:
+        await asyncio.wait_for(q.get(), timeout=0.02)
+        assert False, "应超时抛出 TimeoutError"
+    except asyncio.TimeoutError:
+        pass
+
+    q.put_evicting({"type": WSType.STATE_CHANGE, "id": 99})
+    got = await asyncio.wait_for(q.get(), timeout=0.2)
+    assert got["id"] == 99

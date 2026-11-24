@@ -31,7 +31,7 @@ from .llm_client import LLMClient
 from .memory_state import MemoryState
 from ..core.moderation import is_moderation_error, is_moderation_message
 from ..core.error_taxonomy import ErrorClass, classify_message
-from .error_types import ErrorVerdict, ErrorClass as VerdictErrorClass
+from .error_types import ErrorScope, ErrorVerdict, ErrorClass as VerdictErrorClass
 from ..ws_events import PipelineStatus
 from ..utils.export_utils import export_summary_report
 from ..utils.json_utils import extract_json_from_text, safe_parse_json
@@ -235,6 +235,9 @@ class AnalysisPipeline:
         # AUTH/BILLING/CONTEXT_LENGTH/BAD_REQUEST 类失败确定性不可自愈，补跑轮剔除不重试。
         # 审核类除外——skip_moderation_blocked=False 时用户明确要求补跑审核块
         self._fatal_blocks: dict = {}
+        # 账户级熔断状态：欠费/认证失败首次结构化命中即停整场分析并透传给队列服务停队
+        self._account_tripped: bool = False
+        self._account_trip_reason: str = ""
 
     async def _emit(self, payload: dict) -> None:
         """发进度"""
@@ -282,6 +285,8 @@ class AnalysisPipeline:
         """
         total_analyzed = 0
         self._fatal_blocks.clear()  # 断点续跑/复用实例时防止上一轮的 fatal 登记残留
+        self._account_tripped = False
+        self._account_trip_reason = ""
 
         logger.info(f"开始分析任务（并发数={self.config.analysis.concurrency}）: {self.directory}")
 
@@ -383,7 +388,9 @@ class AnalysisPipeline:
             # 不能在此直接 return：否则会跳过最终 KB 合并/保存（knowledge.json 不刷新）
             valid_block_ids = {b[0] for b in blocks}
             await state.flush_to_disk(output_dir)
-            final_kb = await asyncio.to_thread(KnowledgeBaseManager.merge_results, output_dir)
+            final_kb = await asyncio.to_thread(
+                KnowledgeBaseManager.merge_results, output_dir, kb_limits=kb_limits
+            )
             await asyncio.to_thread(KnowledgeBaseManager(self.knowledge_file).save, final_kb)
             logger.info(f"最终知识库已保存: {self.knowledge_file}")
             # 全量已完成：同样重生成汇总报告（保持与正常路径一致）
@@ -403,6 +410,8 @@ class AnalysisPipeline:
                 "errors": [f"失败{len(failed_chapters)}块"] if failed_chapters else [],
                 "failed_chapters": failed_chapters,
                 "skipped_chapters": skipped_chapters,
+                "account_tripped": False,
+                "account_trip_reason": "",
             }
 
         # 5. 初始化分析引擎
@@ -470,6 +479,8 @@ class AnalysisPipeline:
                 new_last = await self._update_rolling_summary(
                     rolling_client, output_dir, _rolling_state["last_chapter"],
                     completed_block_ids, state)
+                if self._handle_rolling_breaker(rolling_client):
+                    return
                 _rolling_state["last_chapter"] = new_last
                 await self._emit({
                     "chapter": 0, "status": PipelineStatus.ROLLING_UPDATED,
@@ -477,6 +488,7 @@ class AnalysisPipeline:
                     "message": f"全书主线摘要已更新（纳入到第{new_last}章）"
                 })
             except Exception as e:
+                self._handle_rolling_breaker(rolling_client)
                 logger.error(f"后台 rolling 更新异常: {e}")
             finally:
                 _rolling_done.set()
@@ -525,6 +537,9 @@ class AnalysisPipeline:
 
         for fut in asyncio.as_completed(tasks):
             if self._stop_requested:
+                close_coro = getattr(fut, "close", None)
+                if callable(close_coro):
+                    close_coro()
                 break
             try:
                 block_id, block_chs, success, elapsed, ch_tokens, result, retry_info, skipped = await fut
@@ -536,6 +551,8 @@ class AnalysisPipeline:
                     completed_count=completed_count, elapsed=elapsed,
                     ch_tokens=ch_tokens, result=result, retry_info=retry_info,
                 )
+                if self._stop_requested:
+                    break
             except Exception as e:
                 error_msg = f"块分析异常: {e}"
                 logger.error(error_msg, exc_info=True)
@@ -566,10 +583,12 @@ class AnalysisPipeline:
             if state.should_checkpoint(batch_idx - 1):
                 await state.flush_to_disk(output_dir)
 
-        # 取消未完成任务（stop 时）
+        # 取消未完成任务并等待清理（确保所有 worker 的 finally 释放 _inflight_blocks）
         for t in tasks:
             if not t.done():
                 t.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
         # 流式循环结束，等最后一轮 rolling 完成
         await _rolling_done.wait()
 
@@ -577,6 +596,7 @@ class AnalysisPipeline:
         valid_block_ids = {b[0] for b in blocks}
 
         # 7c. 失败块自动补跑（最多3轮，每轮串行逐个重试以确保KB正确）
+        _actually_retried_succeeded: set[int] = set()
         for retry_round in range(3):
             if self._stop_requested:
                 break
@@ -594,19 +614,24 @@ class AnalysisPipeline:
                 if self._stop_requested:
                     break
                 state._failed_chapters.pop(block_id, None)
-                _, completed_count, _, _, _ = await self.analyze_block_with_progress(
+                ok_retry, completed_count, _, _, _ = await self.analyze_block_with_progress(
                     block_id=block_id, block_chs=None, block_size=block_size,
                     total=total, label="补跑",
                     progress_count=completed_count, completed_count=completed_count,
                     emit_start=True,
                 )
+                if ok_retry:
+                    _actually_retried_succeeded.add(block_id)
 
-        # 补跑成功后更新 rolling summary（失败只告警，绝不阻断收尾落盘）
+        # 补跑成功后更新 rolling summary（包含低章号补跑块；失败只告警，绝不阻断收尾落盘）
         if not self._stop_requested:
-            retried_block_ids = [
-                bid for bid, _ in blocks
-                if bid in valid_block_ids and bid > _rolling_state["last_chapter"] and bid in state.results
-            ]
+            retried_block_ids = sorted(
+                {
+                    bid for bid, _ in blocks
+                    if bid in valid_block_ids and bid > _rolling_state["last_chapter"] and bid in state.results
+                }
+                | _actually_retried_succeeded
+            )
             if retried_block_ids:
                 logger.info(f"补跑完成后更新 rolling summary: {len(retried_block_ids)}个块")
                 await self._safe_post_retry_rolling_update(
@@ -632,7 +657,9 @@ class AnalysisPipeline:
 
         # 9. 脚本合并所有结果生成最终KB（纯 CPU/IO，走线程池）
         logger.info("开始脚本合并所有章节结果...")
-        final_kb = await asyncio.to_thread(KnowledgeBaseManager.merge_results, output_dir)
+        final_kb = await asyncio.to_thread(
+            KnowledgeBaseManager.merge_results, output_dir, kb_limits=kb_limits
+        )
         await asyncio.to_thread(KnowledgeBaseManager(self.knowledge_file).save, final_kb)
         logger.info(f"最终知识库已保存: {self.knowledge_file}")
 
@@ -661,7 +688,9 @@ class AnalysisPipeline:
             "total_analyzed": total_analyzed,
             "errors": [f"失败{len(failed_chapters)}块"] if failed_chapters else [],
             "failed_chapters": failed_chapters,
-            "skipped_chapters": skipped_chapters
+            "skipped_chapters": skipped_chapters,
+            "account_tripped": self._account_tripped,
+            "account_trip_reason": self._account_trip_reason,
         }
 
     def inflight_blocks(self) -> list:
@@ -730,19 +759,41 @@ class AnalysisPipeline:
                 state.add_skipped(block_id, "内容审核拦截")
                 logger.warning(f"块{block_id}内容审核拦截，跳过（重试1次后仍拦截）")
                 return False, elapsed, ch_tokens, None, retry_info
+
+            # 账户级熔断判定（严格使用 `is True` 守卫，防单测 MagicMock 真值误触发）
+            tripped_by_breaker = getattr(analyzer, "breaker_tripped", False) is True
+            _verdict_dict = (retry_info or {}).get("verdict")
+            _structured = ErrorVerdict.from_dict(_verdict_dict) if isinstance(_verdict_dict, dict) else None
+            tripped_by_verdict = (
+                _structured is not None
+                and _structured.is_permanent
+                and _structured.scope == ErrorScope.ACCOUNT_GLOBAL
+            )
+            if tripped_by_breaker or tripped_by_verdict:
+                raw_reason = getattr(analyzer, "breaker_reason", "")
+                reason_text = (
+                    raw_reason.strip()
+                    if isinstance(raw_reason, str) and raw_reason.strip()
+                    else (err_text[:120] if err_text else "账户级永久错误（认证失败或余额不足）")
+                )
+                self._account_tripped = True
+                if not self._account_trip_reason:
+                    self._account_trip_reason = reason_text
+                retry_info["account_tripped"] = True
+                self.stop()
+                logger.error(f"块{block_id}触发账户级熔断，已立即停止流水线: {reason_text}")
+                return False, elapsed, ch_tokens, None, retry_info
+
+            # 停止或熔断短路取消的在途块不记入失败落盘，以便下次断点续跑自然重跑
+            if self._stop_requested or err_text == "用户请求停止" or err_text.startswith("熔断："):
+                logger.info(f"块{block_id}因停止/熔断中止，不写入失败标记")
+                return False, elapsed, ch_tokens, None, retry_info
+
             # 致命错误登记：stop 类错误重试成功率恒为零，
             # 补跑轮据此剔除。审核类不登记（见 __init__ 注释）；err_text 为空/UNKNOWN 保守不登记。
             # **结构化优先、文本兜底**。
-            #  - 有 verdict（analyzer 从 llm_result.verdict 透传）→ 用 ErrorVerdict.is_permanent
-            #    判定（= structured 且 action=stop），billing / context_length 这类才真正登记，
-            #    补跑轮不再对它们重复烧钱。
-            #  - 无 verdict → 回退 classify_message(err_text) 文本通道；但文本通道经
-            #    resolve_action 施加上限（action 永不为 stop），故 is_permanent 恒 False，
-            #    兜底路径不会误登记——纯文本永远不能触发永久熔断。
-            _verdict_dict = (retry_info or {}).get("verdict")
             _fatal_value = None
-            if isinstance(_verdict_dict, dict):
-                _structured = ErrorVerdict.from_dict(_verdict_dict)
+            if _structured is not None:
                 if _structured.is_permanent:
                     _fatal_value = _structured.cls.value
             else:
@@ -965,16 +1016,25 @@ class AnalysisPipeline:
         has_structured = bool(rolling_data.get("rolling_structured"))
         if not has_structured and max_chapter >= self._rolling_early:
             await self._generate_early_summary(rolling_client, output_dir, rolling_data, state)
+            if self._handle_rolling_breaker(rolling_client):
+                return last_chapter
 
         # 3a. 检测旧格式降级（_legacy_text），触发重新初始化
         rs = rolling_data.get("rolling_structured") or {}
         if rs.get("_legacy_text"):
             logger.info("检测到旧格式降级，触发重新初始化...")
             await self._reinitialize_structured_rolling(rolling_client, output_dir, rolling_data, state)
+            if self._handle_rolling_breaker(rolling_client):
+                return last_chapter
 
         # 4. 增量更新结构化 JSON
         old_structured = rolling_data.get("rolling_structured", {})
         new_chapters_text = self._format_chapters_for_rolling(new_results)
+        if batch_block_ids and any(bid <= last_chapter for bid in batch_block_ids):
+            new_chapters_text = (
+                "【注：本批含历史补跑章节，仅补充里程碑与因果链，不要将 current_context 倒退为历史章进度】\n\n"
+                + new_chapters_text
+            )
 
         messages = [
             {"role": "system", "content": STRUCTURED_ROLLING_SYSTEM_PROMPT},
@@ -998,6 +1058,8 @@ class AnalysisPipeline:
                 model=self.config.api.model,
                 cached_tokens=getattr(llm_result, "cached_tokens", 0) or 0,
             )
+            if self._handle_rolling_breaker(rolling_client):
+                return last_chapter
             if llm_result.success and llm_result.content and llm_result.content.strip():
                 raw = extract_json_from_text(llm_result.content)
                 if raw:
@@ -1091,6 +1153,23 @@ class AnalysisPipeline:
                     f"势头条目{len(new_json.get('recent_momentum', []))}条）")
         return max_chapter
 
+    def _handle_rolling_breaker(self, rolling_client: LLMClient) -> bool:
+        """若 rolling 客户端触发账户级熔断，记录原因并停止流水线。"""
+        if getattr(rolling_client, "breaker_tripped", False) is not True:
+            return False
+        raw_reason = getattr(rolling_client, "breaker_reason", "")
+        reason_text = (
+            raw_reason.strip()
+            if isinstance(raw_reason, str) and raw_reason.strip()
+            else "滚动总结触发账户级永久错误"
+        )
+        self._account_tripped = True
+        if not self._account_trip_reason:
+            self._account_trip_reason = reason_text
+        self.stop()
+        logger.error(f"滚动总结触发账户级熔断，已停止流水线: {reason_text}")
+        return True
+
     async def _safe_post_retry_rolling_update(self, rolling_client, output_dir,
                                               _rolling_state, retried_block_ids,
                                               state, completed_count, total) -> None:
@@ -1100,15 +1179,19 @@ class AnalysisPipeline:
         最终 flush / 最终 KB 合并 / 汇总报告全部跳过，整场已成功的分析被
         service 层标记为 failed。此处失败只告警，不影响收尾。"""
         try:
-            _rolling_state["last_chapter"] = await self._update_rolling_summary(
+            new_last = await self._update_rolling_summary(
                 rolling_client, output_dir, _rolling_state["last_chapter"],
                 retried_block_ids, state)
+            if self._handle_rolling_breaker(rolling_client):
+                return
+            _rolling_state["last_chapter"] = new_last
             await self._emit({
                 "chapter": 0, "status": PipelineStatus.ROLLING_UPDATED,
                 "progress": completed_count, "total": total,
                 "message": "[补跑后] 全书主线摘要已更新"
             })
         except Exception as e:
+            self._handle_rolling_breaker(rolling_client)
             logger.error(f"补跑后 rolling 更新失败（不影响分析收尾落盘）: {e}", exc_info=True)
 
     async def _archive_momentum_to_milestone(self, rolling_client: LLMClient,

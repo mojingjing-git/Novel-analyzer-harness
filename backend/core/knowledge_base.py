@@ -21,6 +21,7 @@ from ..config.constants import (
     MAX_WORLD_BUILDING,
     MAX_VERIFIED_FACTS, MAX_LONG_TERM_ARCS,
     MAX_THEMATIC_ELEMENTS,
+    MAX_KB_CHARACTER_STATES, MAX_KB_CHARACTER_RELATIONSHIPS,
     ROLLING_FILE_NAME,
 )
 
@@ -289,42 +290,49 @@ class KnowledgeBaseManager:
         return {}
 
     @staticmethod
-    def merge_results(output_dir: Path) -> KnowledgeBase:
+    def merge_results(output_dir: Path, kb_limits: Optional[dict] = None) -> KnowledgeBase:
         """
         脚本合并所有 chapter_*_result.json 生成最终KB（无LLM调用）。
-        等同于 build_temp_knowledge 但会裁剪无限增长字段。
+        等同于 build_temp_knowledge 但按配置上限裁剪所有列表与字典字段。
         注意：对缓存KB的深拷贝操作，避免 _trim_kb 污染缓存。
         """
         kb = KnowledgeBaseManager.build_temp_knowledge(output_dir)
         # 深拷贝，避免 _trim_kb 原地修改缓存中的KB对象
         kb_copy = KnowledgeBase.from_dict(kb.to_dict())
-        KnowledgeBaseManager._trim_kb(kb_copy)
+        KnowledgeBaseManager._trim_kb(kb_copy, kb_limits=kb_limits)
         return kb_copy
 
     @staticmethod
-    def _trim_kb(kb: KnowledgeBase):
-        """裁剪无限增长字段，防止 knowledge.json 膨胀"""
-        kb.world_building = kb.world_building[-MAX_WORLD_BUILDING:]
-        kb.verified_facts = kb.verified_facts[-MAX_VERIFIED_FACTS:]
-        kb.long_term_arcs = kb.long_term_arcs[-MAX_LONG_TERM_ARCS:]
-        kb.thematic_elements = kb.thematic_elements[-MAX_THEMATIC_ELEMENTS:]
-        kb.foreshadowing_network = kb.foreshadowing_network[-MAX_FORESIGHT_NETWORK:]
+    def _trim_kb(kb: KnowledgeBase, kb_limits: Optional[dict] = None) -> None:
+        """统一裁剪所有列表与字典字段（优先读配置值，回退默认值常量），防止 knowledge.json 膨胀。"""
+        L = kb_limits or {}
+        kb.recent_summaries = kb.recent_summaries[-L.get('max_recent_summaries', MAX_RECENT_SUMMARIES):]
+        kb.compressed_arcs = kb.compressed_arcs[-L.get('max_compressed_arcs', MAX_COMPRESSED_ARCS):]
+        kb.world_building = kb.world_building[-L.get('max_world_building', MAX_WORLD_BUILDING):]
+        kb.verified_facts = kb.verified_facts[-L.get('max_verified_facts', MAX_VERIFIED_FACTS):]
+        kb.long_term_arcs = kb.long_term_arcs[-L.get('max_long_term_arcs', MAX_LONG_TERM_ARCS):]
+        kb.thematic_elements = kb.thematic_elements[-L.get('max_thematic_elements', MAX_THEMATIC_ELEMENTS):]
+        kb.foreshadowing_network = kb.foreshadowing_network[-L.get('max_foreshadow_network', MAX_FORESIGHT_NETWORK):]
+        max_cs = int(L.get('max_kb_character_states', MAX_KB_CHARACTER_STATES) or MAX_KB_CHARACTER_STATES)
+        if max_cs > 0 and len(kb.character_states) > max_cs:
+            kb.character_states = dict(list(kb.character_states.items())[-max_cs:])
+        max_cr = int(L.get('max_kb_character_relationships', MAX_KB_CHARACTER_RELATIONSHIPS) or MAX_KB_CHARACTER_RELATIONSHIPS)
+        if max_cr > 0 and len(kb.character_relationships) > max_cr:
+            kb.character_relationships = dict(list(kb.character_relationships.items())[-max_cr:])
 
     @staticmethod
     def _merge_analysis_results(results: List[AnalysisResult]) -> KnowledgeBase:
-        """将多个章节的AnalysisResult合并为KnowledgeBase（纯脚本操作）"""
+        """将多个章节的AnalysisResult合并为KnowledgeBase（纯脚本操作；不早裁，由 merge_results 统一裁剪）"""
         kb = KnowledgeBase()
 
         results.sort(key=lambda r: r.chapter_number)
 
-        # recent_summaries: 按章号排序取最后5条
+        # recent_summaries: 按章号排序追加
         for r in results:
             if r.cross_block.summary:
                 kb.recent_summaries.append(r.cross_block.summary)
-        if len(kb.recent_summaries) > MAX_RECENT_SUMMARIES:
-            kb.recent_summaries = kb.recent_summaries[-MAX_RECENT_SUMMARIES:]
 
-        # compressed_arcs: 按章号排序append，上限50条
+        # compressed_arcs: 按章号排序追加
         for r in results:
             timeline = r.updated_knowledge.timeline
             if timeline:
@@ -333,8 +341,6 @@ class KnowledgeBaseManager:
                 else:
                     timeline = str(timeline)
                 kb.compressed_arcs.append(timeline)
-        if len(kb.compressed_arcs) > MAX_COMPRESSED_ARCS:
-            kb.compressed_arcs = kb.compressed_arcs[-MAX_COMPRESSED_ARCS:]
 
         # verified_facts: 从 core_events.event 派生
         seen_facts = set()
@@ -360,13 +366,14 @@ class KnowledgeBaseManager:
                     seen_world.add(w)
                     kb.world_building.append(w)
 
-        # character_states: 从 character_arcs 派生，每角色取最后出现的 surface_action
+        # character_states: 从 character_arcs 派生，pop+重插维持最近活跃在尾部
         for r in results:
             for arc in r.character_arcs:
                 if arc.name and arc.surface_action:
+                    kb.character_states.pop(arc.name, None)
                     kb.character_states[arc.name] = arc.surface_action
 
-        # character_relationships: 从同章角色配对推导（配对 key 按名字排序归一化）
+        # character_relationships: 从同章角色配对推导，pop+重插维持最近活跃在尾部
         for r in results:
             arcs_in_ch = [a for a in r.character_arcs if a.name]
             for i, a1 in enumerate(arcs_in_ch):
@@ -374,6 +381,7 @@ class KnowledgeBaseManager:
                     first, second = (a1, a2) if a1.name <= a2.name else (a2, a1)
                     pair_key = f"{first.name}-{second.name}"
                     desc = f"{first.change_delta}；{second.change_delta}"
+                    kb.character_relationships.pop(pair_key, None)
                     kb.character_relationships[pair_key] = desc
 
         # thematic_elements: 精确去重append
@@ -446,6 +454,7 @@ class KnowledgeBaseManager:
 
             for arc in r.character_arcs:
                 if arc.name and arc.surface_action:
+                    kb.character_states.pop(arc.name, None)
                     kb.character_states[arc.name] = arc.surface_action
 
             arcs_in_ch = [a for a in r.character_arcs if a.name]
@@ -454,6 +463,7 @@ class KnowledgeBaseManager:
                     first, second = (a1, a2) if a1.name <= a2.name else (a2, a1)
                     pair_key = f"{first.name}-{second.name}"
                     desc = f"{first.change_delta}；{second.change_delta}"
+                    kb.character_relationships.pop(pair_key, None)
                     kb.character_relationships[pair_key] = desc
 
             for t in r.long_context_insights.thematic_elements:
@@ -468,15 +478,6 @@ class KnowledgeBaseManager:
 
             if timeline:
                 kb.story_timeline = timeline
-
-        # 裁剪
-        kb.recent_summaries = kb.recent_summaries[-MAX_RECENT_SUMMARIES:]
-        kb.compressed_arcs = kb.compressed_arcs[-MAX_COMPRESSED_ARCS:]
-        kb.verified_facts = kb.verified_facts[-MAX_VERIFIED_FACTS:]
-        kb.long_term_arcs = kb.long_term_arcs[-MAX_LONG_TERM_ARCS:]
-        kb.world_building = kb.world_building[-MAX_WORLD_BUILDING:]
-        kb.thematic_elements = kb.thematic_elements[-MAX_THEMATIC_ELEMENTS:]
-        kb.foreshadowing_network = kb.foreshadowing_network[-MAX_FORESIGHT_NETWORK:]
 
         logger.info(f"增量合并完成: +{len(new_results)}章")
         return kb

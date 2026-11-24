@@ -18,7 +18,9 @@ from ..models.knowledge import KnowledgeBase
 from ..config.constants import (
     MAX_COMPRESSED_ARCS, MAX_RECENT_SUMMARIES,
     MAX_FORESIGHT_NETWORK, MAX_WORLD_BUILDING, MAX_VERIFIED_FACTS,
-    MAX_LONG_TERM_ARCS, MAX_THEMATIC_ELEMENTS, ROLLING_FILE_NAME,
+    MAX_LONG_TERM_ARCS, MAX_THEMATIC_ELEMENTS,
+    MAX_KB_CHARACTER_STATES, MAX_KB_CHARACTER_RELATIONSHIPS,
+    ROLLING_FILE_NAME,
 )
 from ..utils.json_utils import safe_save_json, safe_load_json
 
@@ -49,6 +51,10 @@ class MemoryState:
         # 增量 KB 已合并的最大章号：并发完成乱序时，仅章号 >= 此值的合并更新
         # timeline/story_timeline/recent_summaries（防低章号结果倒灌覆盖"当前进度"）
         self._kb_last_chapter: int = 0
+        # 角色状态 / 关系单调水位表（只增不减）：仅允许 >= 水位章号的结果覆写对应键，
+        # 即使该角色从 dict 中被容量裁剪淘汰，水位记录仍保留以防低章号迟到结果回灌复活。
+        self._char_state_chapter: Dict[str, int] = {}
+        self._char_rel_chapter: Dict[str, int] = {}
         # 知识库限制（来自配置，默认回退到常量）
         self._kb_limits = kb_limits or {}
 
@@ -286,6 +292,11 @@ class MemoryState:
         # 注意：本函数在 pipeline 启动期经 to_thread 调用，此时尚无并发 worker，
         # 不存在与 add_result/merge 的竞争，故不取 asyncio 锁（asyncio.Lock 不支持
         # 线程内同步使用；若未来并发调用需改为线程安全方案）
+        self._char_state_chapter.clear()
+        self._char_rel_chapter.clear()
+        self._kb_last_chapter = 0
+        self._snapshot_cache_limit = None
+        self._snapshot_cache_kb = None
         if restored > 0:
             sorted_results = [self.results[ch] for ch in sorted(self.results.keys())]
             self.kb = KnowledgeBase()
@@ -353,6 +364,8 @@ class MemoryState:
             result, self.kb,
             self._seen_facts, self._seen_world, self._seen_themes, self._seen_arcs,
             update_timeline=in_order,
+            char_state_chapter=self._char_state_chapter,
+            char_rel_chapter=self._char_rel_chapter,
         )
         if in_order:
             self._kb_last_chapter = result.chapter_number
@@ -367,11 +380,15 @@ class MemoryState:
         seen_themes: Set[str],
         seen_arcs: Set[str],
         update_timeline: bool = True,
+        char_state_chapter: Optional[Dict[str, int]] = None,
+        char_rel_chapter: Optional[Dict[str, int]] = None,
     ) -> None:
         """将单个 result 合并到指定 kb（纯函数，无副作用）。
 
         update_timeline=False：乱序迟到的低章号结果，跳过 timeline/story_timeline/
         recent_summaries 等"进度类"字段（合并方已保证传入列表有序时保持 True）。
+        char_state_chapter / char_rel_chapter 仅在主 KB 合并时传入，用于防止低章号
+        乱序/补跑结果覆写高章号已建立的状态与关系；同时通过 pop + 重插维护最近活跃在尾部。
         """
         if update_timeline and result.cross_block.summary:
             kb.recent_summaries.append(result.cross_block.summary)
@@ -401,7 +418,11 @@ class MemoryState:
 
         for arc in result.character_arcs:
             if arc.name and arc.surface_action:
-                kb.character_states[arc.name] = arc.surface_action
+                if char_state_chapter is None or result.chapter_number >= char_state_chapter.get(arc.name, -1):
+                    kb.character_states.pop(arc.name, None)
+                    kb.character_states[arc.name] = arc.surface_action
+                    if char_state_chapter is not None:
+                        char_state_chapter[arc.name] = result.chapter_number
 
         arcs_in_ch = [a for a in result.character_arcs if a.name]
         for i, a1 in enumerate(arcs_in_ch):
@@ -409,7 +430,11 @@ class MemoryState:
                 first, second = (a1, a2) if a1.name <= a2.name else (a2, a1)
                 pair_key = f"{first.name}-{second.name}"
                 desc = f"{first.change_delta}；{second.change_delta}"
-                kb.character_relationships[pair_key] = desc
+                if char_rel_chapter is None or result.chapter_number >= char_rel_chapter.get(pair_key, -1):
+                    kb.character_relationships.pop(pair_key, None)
+                    kb.character_relationships[pair_key] = desc
+                    if char_rel_chapter is not None:
+                        char_rel_chapter[pair_key] = result.chapter_number
 
         for t in result.long_context_insights.thematic_elements:
             if t not in seen_themes:
@@ -425,7 +450,11 @@ class MemoryState:
             kb.story_timeline = timeline
 
     def _trim_kb(self, kb: KnowledgeBase) -> None:
-        """裁剪 KB 各字段到上限（优先使用配置值，回退到常量）"""
+        """裁剪 KB 各字段到上限（优先使用配置值，回退到常量）。
+
+        仅裁剪传入的 kb 实例本身，绝不删减 self._char_state_chapter / self._char_rel_chapter
+        水位表，既保证线程池快照安全，也防止被裁角色在低章号迟到结果到达时复活。
+        """
         L = self._kb_limits
         kb.recent_summaries = kb.recent_summaries[-L.get('max_recent_summaries', MAX_RECENT_SUMMARIES):]
         kb.compressed_arcs = kb.compressed_arcs[-L.get('max_compressed_arcs', MAX_COMPRESSED_ARCS):]
@@ -434,6 +463,12 @@ class MemoryState:
         kb.world_building = kb.world_building[-L.get('max_world_building', MAX_WORLD_BUILDING):]
         kb.thematic_elements = kb.thematic_elements[-L.get('max_thematic_elements', MAX_THEMATIC_ELEMENTS):]
         kb.foreshadowing_network = kb.foreshadowing_network[-L.get('max_foreshadow_network', MAX_FORESIGHT_NETWORK):]
+        max_cs = int(L.get('max_kb_character_states', MAX_KB_CHARACTER_STATES) or MAX_KB_CHARACTER_STATES)
+        if max_cs > 0 and len(kb.character_states) > max_cs:
+            kb.character_states = dict(list(kb.character_states.items())[-max_cs:])
+        max_cr = int(L.get('max_kb_character_relationships', MAX_KB_CHARACTER_RELATIONSHIPS) or MAX_KB_CHARACTER_RELATIONSHIPS)
+        if max_cr > 0 and len(kb.character_relationships) > max_cr:
+            kb.character_relationships = dict(list(kb.character_relationships.items())[-max_cr:])
 
     def _extend_kb(self, kb: KnowledgeBase, new_results: List[AnalysisResult]) -> None:
         """将新结果增量合并进已有 KB（快照扩展用；须在 _snapshot_lock 内调用）。

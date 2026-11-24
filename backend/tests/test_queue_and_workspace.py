@@ -104,3 +104,97 @@ def test_usage_ledger_persistence_and_routes(tmp_path, monkeypatch):
     assert client.post("/api/analysis/usage/clear").status_code == 403
     assert client.post("/api/analysis/usage/clear", headers={"X-Session-Token": "secret-token"}).status_code == 200
     assert led2.snapshot()["per_model"] == {}
+
+
+async def test_queue_pauses_on_account_breaker(tmp_path, monkeypatch):
+    """队列首本书触发账户熔断时应保持 pending + 脱敏理由并挂起整条队列与自动总结。"""
+    from backend.config.settings import AnalysisConfig, APIConfig, AppConfig
+    from backend.services import queue_service as qs_mod
+    from backend.ws_events import WSState
+
+    svc = AnalysisService.__new__(AnalysisService)
+    svc.queue = QueueManager()
+    b1 = QueueItem(name="第一本书", blocks_dir=tmp_path / "b1" / "blocks", workspace_dir=tmp_path / "b1", total_chapters=2)
+    b2 = QueueItem(name="第二本书", blocks_dir=tmp_path / "b2" / "blocks", workspace_dir=tmp_path / "b2", total_chapters=2)
+    svc.queue.add_item(b1)
+    svc.queue.add_item(b2)
+    svc.queue._current_index = 0
+    svc._runner_task = None
+    svc._pipeline = None
+    svc._stop_requested = False
+    svc._account_tripped_reason = ""
+    svc._seen_characters = set()
+    from backend.services.analysis_stats import AnalysisStats
+    svc.stats = AnalysisStats()
+
+    cfg = AppConfig(
+        api=APIConfig(api_key="sk-1234567890abcdef", model="test-model"),
+        analysis=AnalysisConfig(auto_summary=True),
+        working_directory=str(tmp_path),
+    )
+    svc.config_manager = SimpleNamespace(load=lambda: cfg)
+
+    async def fake_check_api(_cfg):
+        return True
+
+    monkeypatch.setattr(svc.queue, "check_api", fake_check_api)
+    monkeypatch.setattr(svc.queue, "validate_item", lambda _it: True)
+    monkeypatch.setattr(svc.queue, "save_state", lambda _p: None)
+    monkeypatch.setattr(svc, "_persist_book_token_stats", lambda *_a, **_kw: None)
+    monkeypatch.setattr(svc, "_archive_item", lambda *_a, **_kw: None)
+
+    state_events = []
+
+    class FakeHub:
+        async def log(self, msg, level="info"):
+            pass
+
+        async def state_change(self, state, detail=""):
+            state_events.append((state, detail))
+
+    monkeypatch.setattr(qs_mod, "get_hub", lambda: FakeHub())
+
+    pipeline_runs = []
+
+    class FakePipeline:
+        def __init__(self, **kwargs):
+            pass
+
+        async def run(self):
+            pipeline_runs.append(1)
+            return {
+                "total_analyzed": 0,
+                "failed_chapters": [],
+                "skipped_chapters": [],
+                "stopped": True,
+                "account_tripped": True,
+                "account_trip_reason": "401 Unauthorized: api key sk-1234567890abcdef12345678",
+            }
+
+        def stop(self):
+            pass
+
+    monkeypatch.setattr(qs_mod, "AnalysisPipeline", FakePipeline)
+
+    summary_calls = []
+
+    class FakeSummary:
+        is_running = False
+
+        def start(self, *args, **kwargs):
+            summary_calls.append(args)
+
+    monkeypatch.setattr(summary_service, "get_summary_service", lambda: FakeSummary())
+
+    await svc._run_queue()
+
+    assert len(pipeline_runs) == 1
+    assert b1.status == "pending"
+    assert "账户熔断已停队" in b1.error_message
+    assert "sk-1234567890abcdef12345678" not in b1.error_message
+    assert b2.status == "pending"
+    assert svc.queue.get_current() is b1
+    assert svc.queue._current_index == 0
+    assert summary_calls == []
+    assert state_events[-1][0] == WSState.STOPPED
+    assert "账户熔断停队" in state_events[-1][1]

@@ -409,6 +409,21 @@ class LLMClient:
         self._breaker = Breaker()
         self._tripped_verdict: Optional[ErrorVerdict] = None  # 触发跳闸的那次判定，短路回包复用
 
+    @property
+    def breaker_tripped(self) -> bool:
+        """账户级熔断器是否已跳闸。"""
+        return not self._breaker.allows()
+
+    @property
+    def breaker_reason(self) -> str:
+        """账户级熔断跳闸原因。"""
+        return self._breaker.reason
+
+    @property
+    def tripped_verdict(self) -> Optional[ErrorVerdict]:
+        """触发账户级熔断的那次结构化判定。"""
+        return self._tripped_verdict
+
     def request_stop(self):
         """请求停止：让正在进行的 chat_with_retry 重试链在下一检查点退出，
         并立即取消当前进行中的 API 请求（不等超时）"""

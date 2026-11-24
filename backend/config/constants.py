@@ -345,6 +345,8 @@ MAX_WORLD_BUILDING = 200        # world_building 最大条目
 MAX_VERIFIED_FACTS = 200        # verified_facts 最大条目
 MAX_LONG_TERM_ARCS = 200        # long_term_arcs 最大条目
 MAX_THEMATIC_ELEMENTS = 100     # thematic_elements 最大条目
+MAX_KB_CHARACTER_STATES = 200   # character_states 持久化上限（按最近活跃保留）
+MAX_KB_CHARACTER_RELATIONSHIPS = 300  # character_relationships 持久化上限（按最近活跃保留）
 # i18n 接口预留：仅作为 future i18n 的接口字段
 # 当前不影响任何 UI 行为；未来 i18n 启用时此字段驱动 vue-i18n locale 选择
 DEFAULT_LANGUAGE = "zh-CN"

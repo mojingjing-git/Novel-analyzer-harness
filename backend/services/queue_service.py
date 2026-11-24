@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any, Literal
 
 from ..config.settings import AppConfig, ConfigManager
+from ..core.llm_failure_logger import redact
 from ..core.pipeline import AnalysisPipeline
 from ..progress_hub import get_hub
 from .analysis_stats import AnalysisStats
@@ -43,6 +44,7 @@ class AnalysisService:
         self._runner_task: Optional[asyncio.Task] = None
         self._pipeline: Optional[AnalysisPipeline] = None
         self._stop_requested = False
+        self._account_tripped_reason: str = ""
         # 一次分析会话的 token/耗时累计（分类统计/每章记录/重试成本/KV 命中），
         # 生命周期 = start 重置 → finally 冻结（实现见 analysis_stats.py）
         self.stats = AnalysisStats()
@@ -165,6 +167,7 @@ class AnalysisService:
             logger.warning("无法启动分析: %s", blocker)
             return False
         self._stop_requested = False
+        self._account_tripped_reason = ""
         # 重置"已见人物"集合，避免上一本书的人物污染新书首次登场判定
         # （AnalysisService 是进程级单例，__init__ 只跑一次）
         self._seen_characters = set()
@@ -220,7 +223,11 @@ class AnalysisService:
             # 收尾
             self.save_queue()
             if self._stop_requested:
-                await hub.state_change(WSState.STOPPED, "分析已停止")
+                tripped_reason = getattr(self, "_account_tripped_reason", "")
+                if tripped_reason:
+                    await hub.state_change(WSState.STOPPED, f"账户熔断停队：{tripped_reason}")
+                else:
+                    await hub.state_change(WSState.STOPPED, "分析已停止")
             else:
                 # 队列全部完成且开启 auto_summary 时，
                 # 对已完成的书逐本串行执行最终总结（单本失败记录日志继续下一本；
@@ -284,6 +291,7 @@ class AnalysisService:
         knowledge_file = item.workspace_dir / config.knowledge_file
 
         item.status = "running"
+        item.error_message = ""
         item.block_size = max(1, config.analysis.block_size)
         item.start_time = time.time()
         self.save_queue()
@@ -308,7 +316,18 @@ class AnalysisService:
 
         try:
             result = await self._pipeline.run()
-            if result.get("stopped"):
+            if result.get("account_tripped"):
+                raw_reason = str(result.get("account_trip_reason") or "账户认证失败或余额不足")
+                safe_reason = redact(raw_reason)
+                item.status = "pending"
+                item.error_message = f"账户熔断已停队：{safe_reason}"
+                self._account_tripped_reason = safe_reason
+                self._stop_requested = True
+                await hub.log(
+                    f"检测到账户级永久错误（{safe_reason}），已自动挂起分析队列，请检查 API Key 或余额后重试",
+                    level="error",
+                )
+            elif result.get("stopped"):
                 item.status = "pending"  # 停止的书保持可续跑
                 await hub.log(f"《{item.name}》分析已停止（可续跑）", level="warn")
             elif result.get("failed_chapters"):

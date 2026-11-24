@@ -187,3 +187,173 @@ async def test_block_size_append_chapters_reanalyzes_tail_block(tmp_path, monkey
     assert analyzed_calls == [5]
     tail_data2 = json.loads((out_dir / "chapter_5_result.json").read_text(encoding="utf-8"))
     assert tail_data2["source_chapters"] == [5, 6, 7]
+
+
+def test_memory_state_out_of_order_and_dict_trim(tmp_path):
+    """乱序块不得覆盖更新的实体/关系状态；字典裁剪保尾且保留单调水位线并在恢复时重置。"""
+    from backend.models.analysis_result import CharacterArc
+
+    state = MemoryState(
+        kb_limits={
+            "max_kb_character_states": 2,
+            "max_kb_character_relationships": 2,
+        }
+    )
+
+    state._merge_one(AnalysisResult(
+        chapter_number=2,
+        character_arcs=[
+            CharacterArc(name="老A", surface_action="路过集市", change_delta="初见"),
+            CharacterArc(name="老B", surface_action="守门", change_delta="放行"),
+        ],
+    ))
+    state._merge_one(AnalysisResult(
+        chapter_number=10,
+        character_arcs=[
+            CharacterArc(name="主A", surface_action="已是宗门长老", change_delta="结盟"),
+            CharacterArc(name="主B", surface_action="执事", change_delta="同路"),
+        ],
+    ))
+    # 乱序历史块不得覆盖第 10 章的更新状态与关系
+    state._merge_one(AnalysisResult(
+        chapter_number=5,
+        character_arcs=[
+            CharacterArc(name="主A", surface_action="外门弟子", change_delta="五章敌对"),
+            CharacterArc(name="主B", surface_action="外门杂役", change_delta="五章陌生"),
+        ],
+    ))
+    assert state.kb.character_states["主A"] == "已是宗门长老"
+    assert state.kb.character_relationships["主A-主B"] == "结盟；同路"
+
+    # 插入更新章节的新人物，再于更大章号复现 主A/主B，应 pop+重插至字典尾部避免被最先淘汰
+    state._merge_one(AnalysisResult(
+        chapter_number=11,
+        character_arcs=[
+            CharacterArc(name="新A", surface_action="新出场", change_delta="初入山门"),
+            CharacterArc(name="新B", surface_action="师弟", change_delta="同行"),
+        ],
+    ))
+    state._merge_one(AnalysisResult(
+        chapter_number=12,
+        character_arcs=[
+            CharacterArc(name="主A", surface_action="已是宗门大长老", change_delta="生死之交"),
+            CharacterArc(name="主B", surface_action="副宗主", change_delta="共担风雨"),
+        ],
+    ))
+
+    state._trim_kb(state.kb)
+    assert list(state.kb.character_states.keys()) == ["主A", "主B"]
+    assert list(state.kb.character_relationships.keys()) == ["新A-新B", "主A-主B"]
+    # 字典虽已裁剪掉 老A / 老A-老B，但其单调水位线仍在，后续乱序低章号不能复活/覆盖
+    assert state._char_state_chapter["老A"] == 2
+    assert state._char_rel_chapter["老A-老B"] == 2
+
+    out_dir = tmp_path / "output"
+    out_dir.mkdir()
+    (out_dir / "chapter_3_result.json").write_text(
+        json.dumps(
+            AnalysisResult(
+                chapter_number=3,
+                character_arcs=[
+                    CharacterArc(name="林A", surface_action="闭关", change_delta="突破"),
+                    CharacterArc(name="林B", surface_action="护法", change_delta="守护"),
+                ],
+            ).to_dict(),
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    state._restore_from_disk_sync(out_dir, block_size=1)
+    assert "老A" not in state._char_state_chapter
+    assert "老A-老B" not in state._char_rel_chapter
+    assert state._char_state_chapter["林A"] == 3
+    assert state._kb_last_chapter == 3
+
+
+def test_kb_manager_merge_results_respects_custom_kb_limits(tmp_path):
+    """merge_results 不应早熟硬截断列表，并应统一按 kb_limits 裁剪列表与字典。"""
+    from backend.models.analysis_result import CharacterArc, UpdatedKnowledge
+
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    for ch in range(1, 5):
+        r = AnalysisResult(
+            chapter_number=ch,
+            updated_knowledge=UpdatedKnowledge(
+                world_building=[f"设定_{ch}_{k}" for k in range(3)],
+            ),
+            character_arcs=[
+                CharacterArc(name=f"B角色_{ch}", surface_action=f"状态_{ch}", change_delta=f"变_{ch}"),
+                CharacterArc(name="A主角", surface_action=f"主态_{ch}", change_delta=f"主变_{ch}"),
+            ],
+        )
+        (out_dir / f"chapter_{ch}_result.json").write_text(
+            json.dumps(r.to_dict(), ensure_ascii=False), encoding="utf-8"
+        )
+
+    # 12 条世界观设定在放宽上限时不得被旧式硬编码早熟切掉；字典严格保尾裁剪
+    kb_wide = KnowledgeBaseManager.merge_results(
+        out_dir,
+        kb_limits={
+            "max_world_building": 12,
+            "max_kb_character_states": 2,
+            "max_kb_character_relationships": 2,
+        },
+    )
+    assert len(kb_wide.world_building) == 12
+    assert list(kb_wide.character_states.keys()) == ["B角色_4", "A主角"]
+    assert list(kb_wide.character_relationships.keys()) == ["A主角-B角色_3", "A主角-B角色_4"]
+
+
+async def test_pipeline_stops_immediately_on_account_breaker(tmp_path, monkeypatch):
+    """账户级熔断触发后流水线应立即中止，不写 failed 落盘并上浮 account_tripped。"""
+    from backend.common.error_types import Confidence, ErrorClass, ErrorScope, ErrorVerdict, SourceChannel
+    from backend.core.analyzer import NovelAnalyzer
+
+    blocks_dir = tmp_path / "blocks"
+    blocks_dir.mkdir()
+    for i in range(1, 4):
+        (blocks_dir / f"{i:04d}.txt").write_text(f"第{i}章 测试正文 {i}", encoding="utf-8")
+
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+    cfg = AppConfig(
+        api=APIConfig(api_key="sk-test-secret-123456", base_url="http://127.0.0.1:9999/v1", model="test-model"),
+        analysis=AnalysisConfig(concurrency=1, checkpoint_interval=10, block_size=1),
+        working_directory=str(work_dir),
+    )
+
+    verdict = ErrorVerdict(
+        cls=ErrorClass.AUTH,
+        confidence=Confidence.STRUCTURED,
+        source_channel=SourceChannel.SDK_ATTRIBUTE,
+        http_status=401,
+        action="stop",
+        scope=ErrorScope.ACCOUNT_GLOBAL,
+        message="Invalid API Key sk-test-secret-123456",
+    )
+
+    analyzed_blocks = []
+
+    async def fake_analyze(self, block_id, content, kb, block_size=1, book_id=""):
+        analyzed_blocks.append(block_id)
+        self.llm_client._breaker_observe(False, verdict, "401 Invalid API Key sk-test-secret-123456")
+        return None, (0, 0), {
+            "retries": 0,
+            "failed_tokens": 0,
+            "usage_status": "UNKNOWN",
+            "cached_tokens": 0,
+            "error": "401 Invalid API Key sk-test-secret-123456",
+            "verdict": verdict.to_dict(),
+        }
+
+    monkeypatch.setattr(NovelAnalyzer, "analyze_chapter", fake_analyze)
+
+    pipeline = AnalysisPipeline(config=cfg, directory=blocks_dir, knowledge_file=tmp_path / "kb.json")
+    summary = await pipeline.run()
+
+    assert summary["account_tripped"] is True
+    assert summary["stopped"] is True
+    assert "401" in summary["account_trip_reason"]
+    assert analyzed_blocks == [1]
+    assert list((work_dir / "output").glob("chapter_*_failed.json")) == []
