@@ -36,6 +36,7 @@ for _key in ("NO_PROXY", "no_proxy"):
 os.environ.pop("ALL_PROXY", None)
 os.environ.pop("all_proxy", None)
 
+from backend.config.paths import runtime_path  # noqa: E402
 from backend.config.settings import ConfigManager  # noqa: E402
 from backend.core.llm_client import LLMClient  # noqa: E402
 from backend.core.text_units import build_display_labels, load_blocks_as_files  # noqa: E402
@@ -82,7 +83,7 @@ async def main() -> int:
           f"question={(getattr(item, 'question', '') or '')[:40]}")
     print()
 
-    cfg = ConfigManager(ROOT / "config.json").load()
+    cfg = ConfigManager(runtime_path("config.json")).load()
     api = replace(
         cfg.api,
         base_url=args.base_url,

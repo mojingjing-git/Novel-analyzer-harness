@@ -6,7 +6,7 @@ QUESTIONED→quality=questioned + needs_review（status/source_type 不动）。
 
 用法示例（先 50 条校准，再全量）：
   python -u scripts/run_recheck_audit.py \
-    --ledger "workspace/《大奉打更人》/output/foreshadow_ledger.json" \
+    --ledger "runtime/workspace/《大奉打更人》/output/foreshadow_ledger.json" \
     --blocks .tmp_stage0_recheck/book/blocks \
     --base-url http://127.0.0.1:3425/v1 --recheck-model codex/gpt-6-luna \
     --reasoning-effort low --max-calls 130 --batch-size 6 --limit 50
@@ -38,6 +38,7 @@ sys.path.insert(0, str(ROOT))
 for _k in ("NO_PROXY", "no_proxy"):
     os.environ[_k] = "localhost,127.0.0.1"
 
+from backend.config.paths import runtime_path  # noqa: E402
 from backend.config.settings import ConfigManager  # noqa: E402
 from backend.core.llm_client import LLMClient  # noqa: E402
 from backend.core.text_units import build_display_labels, load_blocks_as_files  # noqa: E402
@@ -73,7 +74,7 @@ async def main() -> int:
     ap.add_argument("--dry-run", action="store_true", help="只统计资格与七栏，不发调用")
     args = ap.parse_args()
 
-    cfg = ConfigManager(ROOT / "config.json").load()
+    cfg = ConfigManager(runtime_path("config.json")).load()
     ledger_path = Path(args.ledger)
     ledger = ForeshadowLedger.load(ledger_path)
 

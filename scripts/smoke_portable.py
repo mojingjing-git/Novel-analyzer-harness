@@ -59,24 +59,31 @@ def main() -> int:
         except Exception as exc:
             checks.append(("首页返回 HTML", False, repr(exc)))
 
-        for path, key in (("/api/vnext/books", "books"), ("/api/vnext/queue", "entries")):
-            try:
-                status, body = _get(base + path)
-                payload = json.loads(body.decode("utf-8"))
-                ok = status == 200 and key in payload
-                checks.append((path + " 返回合法 JSON 且含 " + key, ok,
-                               str(status) + " " + str(list(payload)[:4])))
-            except Exception as exc:
-                checks.append((path + " 返回合法 JSON 且含 " + key, False, repr(exc)))
+        try:
+            status, body = _get(base + "/api/health")
+            payload = json.loads(body.decode("utf-8"))
+            ok = status == 200 and "status" in payload and payload.get("app") == "novel-analyzer-web"
+            checks.append(("/api/health 返回有效服务状态", ok, str(status) + " " + str(payload.get("status"))))
+        except Exception as exc:
+            checks.append(("/api/health 返回有效服务状态", False, repr(exc)))
 
         try:
-            status, body = _get(base + "/api/vnext/books")
+            status, body = _get(base + "/api/queue")
             payload = json.loads(body.decode("utf-8"))
-            checks.append(("空工作区列出 0 本书（不报错）",
-                           status == 200 and payload.get("books") == [],
-                           "books=" + str(payload.get("books"))))
+            ok = status == 200 and isinstance(payload, dict) and "items" in payload and "queue" in payload
+            checks.append(("/api/queue 返回合法 JSON 且含 items/queue", ok,
+                           str(status) + " " + str(list(payload)[:4])))
         except Exception as exc:
-            checks.append(("空工作区列出 0 本书（不报错）", False, repr(exc)))
+            checks.append(("/api/queue 返回合法 JSON 且含 items/queue", False, repr(exc)))
+
+        try:
+            status, body = _get(base + "/api/books")
+            payload = json.loads(body.decode("utf-8"))
+            checks.append(("空工作区 /api/books 返回 0 本书（list 且不报错）",
+                           status == 200 and isinstance(payload, list) and payload == [],
+                           "books=" + repr(payload)))
+        except Exception as exc:
+            checks.append(("空工作区 /api/books 返回 0 本书（list 且不报错）", False, repr(exc)))
     finally:
         proc.terminate()
         try:

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
+from types import SimpleNamespace
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -11,6 +12,8 @@ from backend.api import routes_analysis
 from backend.api.auth import _ENV_VAR
 from backend.services.pipeline_events import _compute_eta, _format_eta
 from backend.services.queue_manager import QueueItem, QueueManager
+from backend.services.queue_service import AnalysisService
+from backend.services import summary_service
 from backend.services.usage_ledger import UsageLedger
 
 
@@ -37,6 +40,30 @@ def test_queue_item_and_manager():
     cur.status = "running"
     nxt = qm.advance()
     assert a.status == "done" and nxt is not None and nxt.name == "C"
+
+
+def test_start_analysis_reports_summary_conflict(monkeypatch):
+    service = AnalysisService.__new__(AnalysisService)
+    service._runner_task = None
+    service.queue = QueueManager()
+    service.queue.add_item(QueueItem(name="待分析", blocks_dir=Path("blocks"), workspace_dir=Path("workspace")))
+    summary = SimpleNamespace(is_running=True)
+    monkeypatch.setattr(routes_analysis, "get_service", lambda: service)
+    monkeypatch.setattr(summary_service, "get_summary_service", lambda: summary)
+    app = FastAPI()
+    app.include_router(routes_analysis.router)
+    client = TestClient(app)
+
+    response = client.post("/api/analysis/start")
+    assert response.status_code == 409
+    assert "最终总结正在运行" in response.json()["detail"]
+    assert service._runner_task is None
+
+    summary.is_running = False
+    service.queue.items[0].status = "done"
+    response = client.post("/api/analysis/start")
+    assert response.status_code == 400
+    assert response.json()["detail"] == "队列为空或已全部完成"
 
 
 def test_eta_formatting_and_computation():

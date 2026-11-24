@@ -57,11 +57,32 @@ function inlineFormat(text: string): string {
   return text
 }
 
-/** 渲染 Markdown 文本为 HTML 字符串 */
-export function renderMarkdown(text: string): string {
-  if (!text) return ''
+export interface MarkdownHeading {
+  id: string
+  level: number
+  text: string
+}
+
+/** 剥离标题中的行内 Markdown 语法，供目录显示 */
+function stripInlineMarkdown(text: string): string {
+  return text
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1')
+    .replace(/\*\*([^*\n]+)\*\*/g, '$1')
+    .replace(/__([^_\n]+)__/g, '$1')
+    .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1$2')
+    .replace(/(^|[^_])_([^_\n]+)_/g, '$1$2')
+    .replace(/~~([^~\n]+)~~/g, '$1')
+    .trim()
+}
+
+/** 渲染 Markdown 并提取 h1-h3 目录锚点 */
+export function renderMarkdownWithToc(text: string): { html: string; headings: MarkdownHeading[] } {
+  if (!text) return { html: '', headings: [] }
   const lines = text.replace(/\r\n/g, '\n').split('\n')
   const out: string[] = []
+  const headings: MarkdownHeading[] = []
+  let headingSeq = 0
   let i = 0
 
   while (i < lines.length) {
@@ -96,7 +117,7 @@ export function renderMarkdown(text: string): string {
       const tbody = '<tbody>' + bodyLines.map(
         row => '<tr>' + row.map(c => `<td>${inlineFormat(c)}</td>`).join('') + '</tr>'
       ).join('') + '</tbody>'
-      out.push(`<table class="md-table">${thead}${tbody}</table>`)
+      out.push(`<div class="md-table-wrap"><table class="md-table">${thead}${tbody}</table></div>`)
       continue
     }
 
@@ -104,7 +125,13 @@ export function renderMarkdown(text: string): string {
     const hMatch = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line)
     if (hMatch) {
       const level = hMatch[1].length
-      out.push(`<h${level} class="md-h${level}">${inlineFormat(hMatch[2])}</h${level}>`)
+      if (level <= 3) {
+        const id = `md-h-${++headingSeq}`
+        headings.push({ id, level, text: stripInlineMarkdown(hMatch[2]) })
+        out.push(`<h${level} id="${id}" class="md-h${level}">${inlineFormat(hMatch[2])}</h${level}>`)
+      } else {
+        out.push(`<h${level} class="md-h${level}">${inlineFormat(hMatch[2])}</h${level}>`)
+      }
       i++
       continue
     }
@@ -173,5 +200,10 @@ export function renderMarkdown(text: string): string {
     out.push(`<p class="md-p">${inlineFormat(paraLines.join('\n')).replace(/\n/g, '<br/>')}</p>`)
   }
 
-  return out.join('\n')
+  return { html: out.join('\n'), headings }
+}
+
+/** 渲染 Markdown 文本为 HTML 字符串 */
+export function renderMarkdown(text: string): string {
+  return renderMarkdownWithToc(text).html
 }

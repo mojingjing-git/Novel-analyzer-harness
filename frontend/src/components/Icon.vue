@@ -47,6 +47,8 @@ const ICONS: Record<string, string> = {
   graph: '<circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><line x1="8" y1="7" x2="11" y2="16"/><line x1="16" y1="7" x2="13" y2="16"/><line x1="8" y1="6" x2="16" y2="6"/>',
   // 地图 - 定位针
   map: '<path d="M12 22s-8-7-8-13a8 8 0 0 1 16 0c0 6-8 13-8 13z"/><circle cx="12" cy="9" r="2.5"/>',
+  // 世界舞台 - 地球经纬线
+  world: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14.5 14.5 0 0 1 0 18"/><path d="M12 3a14.5 14.5 0 0 0 0 18"/>',
   // 通用图标
   search: '<circle cx="11" cy="11" r="7"/><line x1="16" y1="16" x2="21" y2="21"/>',
   play: '<polygon points="6 4 20 12 6 20 6 4"/>',
@@ -88,6 +90,7 @@ const FILLED_ICONS: Record<string, string> = {
   stats: '<line x1="4" y1="20" x2="20" y2="20" stroke-width="2"/><rect x="6" y="13" width="3" height="7" fill="currentColor" stroke="none"/><rect x="11" y="9" width="3" height="11" fill="currentColor" stroke="none"/><rect x="16" y="5" width="3" height="15" fill="currentColor" stroke="none"/>',
   timeline: '<circle cx="12" cy="12" r="9" fill="currentColor" stroke="none"/><polyline points="12 7 12 12 15 14" stroke="var(--win-layer, #fff)" stroke-width="2" stroke-linecap="round"/>',
   map: '<path d="M12 22s-8-7-8-13a8 8 0 0 1 16 0c0 6-8 13-8 13z" fill="currentColor" stroke="none"/><circle cx="12" cy="9" r="2.5" fill="var(--win-layer, #fff)" stroke="none"/>',
+  world: '<circle cx="12" cy="12" r="9" fill="currentColor" stroke="none"/><path d="M3.5 12h17" stroke="var(--win-layer, #fff)" stroke-width="1.6" fill="none"/><path d="M12 3a14 14 0 0 1 0 18" stroke="var(--win-layer, #fff)" stroke-width="1.6" fill="none"/><path d="M12 3a14 14 0 0 0 0 18" stroke="var(--win-layer, #fff)" stroke-width="1.6" fill="none"/>',
   stop: '<rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor" stroke="none"/>',
   play: '<polygon points="6 4 20 12 6 20 6 4" fill="currentColor" stroke="none"/>',
 }

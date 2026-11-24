@@ -13,7 +13,7 @@
 
 ## 三条硬约束
 
-1. **绝不触发 ``difflib``**。``vnext/resolution.py`` 的 ``locate_quote`` 在找不到时会回退到
+1. **绝不触发 ``difflib``**。``services/recheck_resolution.py`` 的 ``locate_quote`` 在找不到时会回退到
    ``core/citations.py:174`` 的 ``difflib.SequenceMatcher``，那是 $O(N\\cdot M)$——
    拿 435 万字符的全书去跑，单次就能卡住几十秒到几分钟。本模块只做**纯字面匹配**
    （``str.find``，Boyer-Moore-Horspool，C 实现）。
@@ -94,7 +94,7 @@ def load_blocks_as_files(blocks_dir: Path) -> tuple[dict[int, str], list[str]]:
 def find_literal(text: str, needle: str) -> int | None:
     """纯字面定位：找不到就是找不到，**不做模糊回退**。
 
-    这里必须与 ``vnext.resolution.locate_quote`` 分道扬镳——后者找不到时会
+    这里必须与 ``recheck_resolution.locate_quote`` 分道扬镳——后者找不到时会
     回退 ``difflib``，在全书规模上不可用。
     """
     if not text or not needle:

@@ -1,10 +1,15 @@
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, inject } from 'vue'
+import { routerKey } from 'vue-router'
+import ToggleSwitch from '../components/ToggleSwitch.vue'
 import { api, type SplitterPreview } from '../api/client'
 import {
   baseName, splitterStatusText, appendFileUnique, rollbackProcessing,
   groupChaptersByVolume, type SplitterFileItem,
 } from '../utils/splitterView'
+
+const router = inject(routerKey, null)
+const queueBusy = ref(false)
 
 type FileItem = SplitterFileItem
 const statusText = splitterStatusText
@@ -155,12 +160,25 @@ const groupedChapters = computed(() => {
   if (!preview.value) return []
   return groupChaptersByVolume(preview.value.chapters)
 })
+
+async function scanAndGoToQueue() {
+  if (queueBusy.value) return
+  queueBusy.value = true
+  errorMsg.value = ''
+  try {
+    await api.scanWorkspace()
+    await router?.push('/')
+  } catch (e) {
+    errorMsg.value = '加入队列失败: ' + (e as Error).message
+  } finally {
+    queueBusy.value = false
+  }
+}
 </script>
 
 <template>
-  <div class="space-y-6 max-w-3xl">
+  <div class="space-y-6 max-w-5xl">
     <h2 class="section-title">小说切分</h2>
-    <p class="section-subtitle">自动识别卷/章/回/节、番外、序章等结构，支持广告清理、去重与超大章拆分 · 可一次选择多本批量切分</p>
 
     <div v-if="errorMsg" class="glass-tinted-red px-4 py-2 rounded text-sm">{{ errorMsg }}</div>
 
@@ -179,7 +197,7 @@ const groupedChapters = computed(() => {
       </div>
 
       <div v-if="!files.length" class="text-sm py-6 text-center" style="color: var(--win-text-disabled)">
-        尚未添加小说。点击「添加文件」可一次选择多本 txt，每本将切分到 workspace/书名/blocks/。
+        尚未添加文件
       </div>
 
       <div v-else class="space-y-2">
@@ -209,54 +227,48 @@ const groupedChapters = computed(() => {
       </div>
     </div>
 
-    <!-- 切分模式 -->
-    <div class="glass-card p-4 space-y-3">
-      <h3 class="card-head">切分模式</h3>
-      <div class="seg">
-        <button :class="{ active: opts.mode === 'auto' }" @click="opts.mode = 'auto'">自动检测</button>
-        <button :class="{ active: opts.mode === 'custom' }" @click="opts.mode = 'custom'">自定义正则</button>
+    <!-- 切分配置（合并切分模式与选项） -->
+    <div class="glass-card p-4 space-y-4">
+      <div class="space-y-3">
+        <h3 class="card-head">切分配置</h3>
+        <div class="seg">
+          <button :class="{ active: opts.mode === 'auto' }" @click="opts.mode = 'auto'">自动检测</button>
+          <button :class="{ active: opts.mode === 'custom' }" @click="opts.mode = 'custom'">自定义正则</button>
+        </div>
+        <div v-if="opts.mode === 'custom'" class="flex items-center gap-2">
+          <label class="w-20 text-sm" style="color: var(--win-text-secondary)">章节正则:</label>
+          <input v-model="opts.pattern" class="glass-input flex-1 font-mono text-xs" />
+        </div>
+        <p v-if="preview" class="text-xs" style="color: var(--win-text-secondary)">
+          {{ previewTitle }} 检测到的正则：<code class="font-mono">{{ preview.pattern_name }}</code>
+          <span class="opacity-60"> — {{ preview.detected_pattern }}</span>
+        </p>
       </div>
-      <div v-if="opts.mode === 'custom'" class="flex items-center gap-2">
-        <label class="w-20 text-sm" style="color: var(--win-text-secondary)">章节正则:</label>
-        <input v-model="opts.pattern" class="glass-input flex-1 font-mono text-xs" />
-      </div>
-      <p v-else class="text-xs" style="color: var(--win-text-disabled)">
-        自动扫描正文前 800 行，对多套候选正则打分，选出本书最优匹配（支持 第X章/回/节、序章/楔子/番外/尾声、英文 Chapter、数字编号等）
-      </p>
-      <p v-if="preview" class="text-xs" style="color: var(--win-text-secondary)">
-        {{ previewTitle }} 检测到的正则：<code class="font-mono">{{ preview.pattern_name }}</code>
-        <span class="opacity-60"> — {{ preview.detected_pattern }}</span>
-      </p>
-    </div>
 
-    <!-- 选项 -->
-    <div class="glass-card p-4 space-y-3">
-      <h3 class="card-head">切分选项</h3>
-      <div class="opt-row">
-        <span class="text-sm" style="color: var(--win-text-secondary)">识别卷 / 部 / 篇层级</span>
-        <label class="switch"><input type="checkbox" v-model="opts.use_volume" /><span class="slider"></span></label>
-      </div>
-      <div class="opt-row">
-        <span class="text-sm" style="color: var(--win-text-secondary)">清理广告 / 水印行</span>
-        <label class="switch"><input type="checkbox" v-model="opts.remove_ads" /><span class="slider"></span></label>
-      </div>
-      <div class="opt-row">
-        <span class="text-sm" style="color: var(--win-text-secondary)">最小字数（短于此值跳过）</span>
-        <input v-model.number="opts.min_words" type="number" min="0" class="glass-input w-28" />
-      </div>
-      <div class="opt-row" :style="{ opacity: opts.min_words > 0 ? 1 : 0.45 }">
-        <span class="text-sm" style="color: var(--win-text-secondary)">
-          合并短章到下一章
-          <span class="opacity-60" v-if="opts.min_words === 0">（需设置最小字数）</span>
-        </span>
-        <label class="switch">
-          <input type="checkbox" v-model="opts.merge_tiny" :disabled="opts.min_words === 0" />
-          <span class="slider"></span>
-        </label>
-      </div>
-      <div class="opt-row">
-        <span class="text-sm" style="color: var(--win-text-secondary)">最大字数（超出自动拆分，0=不拆）</span>
-        <input v-model.number="opts.max_words" type="number" min="0" class="glass-input w-28" />
+      <div class="pt-3 space-y-3" style="border-top: 1px solid var(--win-stroke)">
+        <div class="opt-row">
+          <span class="text-sm" style="color: var(--win-text-secondary)">识别卷 / 部 / 篇层级</span>
+          <ToggleSwitch v-model="opts.use_volume" />
+        </div>
+        <div class="opt-row">
+          <span class="text-sm" style="color: var(--win-text-secondary)">清理广告 / 水印行</span>
+          <ToggleSwitch v-model="opts.remove_ads" />
+        </div>
+        <div class="opt-row">
+          <span class="text-sm" style="color: var(--win-text-secondary)">最小字数（短于此值跳过）</span>
+          <input v-model.number="opts.min_words" type="number" min="0" class="glass-input w-28" />
+        </div>
+        <div class="opt-row">
+          <span class="text-sm" style="color: var(--win-text-secondary)">
+            合并短章到下一章
+            <span class="opacity-60" v-if="opts.min_words === 0">（需设置最小字数）</span>
+          </span>
+          <ToggleSwitch v-model="opts.merge_tiny" :disabled="opts.min_words === 0" />
+        </div>
+        <div class="opt-row">
+          <span class="text-sm" style="color: var(--win-text-secondary)">最大字数（超出自动拆分，0=不拆）</span>
+          <input v-model.number="opts.max_words" type="number" min="0" class="glass-input w-28" />
+        </div>
       </div>
     </div>
 
@@ -271,7 +283,16 @@ const groupedChapters = computed(() => {
 
     <!-- 批量结果 -->
     <div v-if="batchResult" class="glass-card p-4 space-y-2">
-      <h3 class="card-head">批量结果</h3>
+      <div class="flex items-center justify-between gap-2 flex-wrap">
+        <h3 class="card-head">批量结果</h3>
+        <button
+          v-if="batchResult.success > 0"
+          type="button"
+          :disabled="queueBusy"
+          @click="scanAndGoToQueue"
+          class="glass-button glass-button-primary text-xs"
+        >{{ queueBusy ? '正在加入队列…' : '加入分析队列并前往' }}</button>
+      </div>
       <div class="text-sm">
         共 {{ batchResult.total }} 本 —
         成功 <b style="color: var(--win-success)">{{ batchResult.success }}</b> ·
@@ -377,22 +398,6 @@ const groupedChapters = computed(() => {
   color: var(--win-text-primary);
   box-shadow: var(--win-shadow-control);
 }
-/* Win11 ToggleSwitch：40×20，滑块 12px，开启态强调色 */
-.switch { position: relative; display: inline-block; width: 40px; height: 20px; flex: none; }
-.switch input { opacity: 0; width: 0; height: 0; }
-.slider {
-  position: absolute; inset: 0; cursor: pointer;
-  background: var(--win-text-disabled);
-  border-radius: 999px; transition: background var(--win-duration-fast) var(--win-ease);
-}
-.slider:before {
-  content: ''; position: absolute; height: 12px; width: 12px; left: 4px; top: 4px;
-  background: #fff; border-radius: 50%; transition: transform var(--win-duration-fast) var(--win-ease);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-}
-.switch input:checked + .slider { background: var(--win-accent); }
-.switch input:checked + .slider:before { transform: translateX(20px); }
-.switch input:disabled + .slider { opacity: 0.45; cursor: not-allowed; }
 .volume-row td { font-size: 11px; letter-spacing: 0.02em; }
 .text-tertiary { color: var(--win-text-disabled); }
 /* 文件状态色（走系统色 token，亮暗主题自适应） */

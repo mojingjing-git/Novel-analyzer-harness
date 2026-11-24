@@ -2,15 +2,17 @@
 JSON聚合工具
 将所有章节的分析JSON结果汇总到单一文件中，支持多种聚合模式
 """
+import hashlib
 import json
 import re
 import logging
+import threading
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 
 from ..models.analysis_result import AnalysisResult
-from ..utils.json_utils import safe_save_json
+from ..utils.json_utils import safe_load_json, safe_save_json
 from ..utils.text_utils import is_text_duplicate
 
 logger = logging.getLogger(__name__)
@@ -22,6 +24,36 @@ CHAR_NAME_SUFFIXES = (
     '(主角)', '(配角)', '(已故)', '(重要)', '(次要)',
     '(女主)', '(男主)', '(反派)', '(龙套)'
 )
+_CHAR_SPLIT_RE = re.compile(r"[,，、;；]+")
+
+_AGG_CACHE_SCHEMA_VERSION = 2
+_AGG_REQUIRED_FILES = (
+    "novel_analysis_aggregated.json",
+    "core_events_aggregated.json",
+    "character_arcs_aggregated.json",
+    "foreshadowing_aggregated.json",
+    "character_tracking_aggregated.json",
+    "world_building_aggregated.json",
+    "unresolved_questions_aggregated.json",
+    "new_leads_aggregated.json",
+    "long_term_arcs_aggregated.json",
+    "plot_holes_aggregated.json",
+    "long_context_insights_aggregated.json",
+)
+_AGG_LOCKS_GUARD = threading.Lock()
+_AGG_LOCKS: Dict[str, threading.Lock] = {}
+
+
+def get_agg_lock(output_dir: Path) -> threading.Lock:
+    """按书目输出目录返回进程内单飞锁，避免并发全盘重扫与 Excel 写竞争。"""
+    key = str(Path(output_dir).resolve()).lower()
+    with _AGG_LOCKS_GUARD:
+        lock = _AGG_LOCKS.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _AGG_LOCKS[key] = lock
+        return lock
+
 
 def _normalize_char_name(name: str) -> str:
     """归一化角色名：去除常见括号标注后缀，用于dict key去重"""
@@ -32,6 +64,20 @@ def _normalize_char_name(name: str) -> str:
             if base:
                 return base
     return name
+
+
+def split_character_names(raw: Any) -> List[str]:
+    """统一人物名切分（支持 list/逗号/中文逗号/顿号/分号，并剥离括号身份标注）。"""
+    if raw is None:
+        return []
+    parts = raw if isinstance(raw, list) else [raw]
+    out: List[str] = []
+    for item in parts:
+        for piece in _CHAR_SPLIT_RE.split(str(item)):
+            cleaned = _normalize_char_name(piece)
+            if cleaned:
+                out.append(cleaned)
+    return out
 
 
 class JSONAggregator:
@@ -297,15 +343,10 @@ class JSONAggregator:
 
         for result in self.results:
             for event in result.core_events:
-                raw_chars = event.characters
-                if isinstance(raw_chars, list):
-                    raw_chars = ", ".join(str(c) for c in raw_chars)
-                chars = [c.strip() for c in str(raw_chars).replace("，", ",").split(',') if c.strip()]
-                for char in chars:
-                    key = _normalize_char_name(char)
+                for key in split_character_names(event.characters):
                     if key not in character_map:
                         character_map[key] = {
-                            "name": char,
+                            "name": key,
                             "chapters": [],
                             "events": [],
                             "character_arcs": [],
@@ -313,10 +354,6 @@ class JSONAggregator:
                             "first_appearance": None,
                             "total_events": 0
                         }
-                    else:
-                        # 用更短的名字版本作为展示名
-                        if len(char) < len(character_map[key]["name"]):
-                            character_map[key]["name"] = char
                     
                     # 记录首次出现
                     if character_map[key]["first_appearance"] is None:
@@ -727,11 +764,7 @@ class JSONAggregator:
         all_characters = set()
         for result in self.results:
             for event in result.core_events:
-                raw_chars = event.characters
-                if isinstance(raw_chars, list):
-                    raw_chars = ", ".join(str(c) for c in raw_chars)
-                chars = [c.strip() for c in str(raw_chars).replace("，", ",").split(',') if c.strip()]
-                all_characters.update(chars)
+                all_characters.update(split_character_names(event.characters))
 
         return {
             "total_chapters": len(self.results),
@@ -815,3 +848,44 @@ def aggregate_novel_analysis(
         include_raw=include_raw,
         should_stop=should_stop
     )
+
+
+def ensure_aggregated_cache(output_dir: Path) -> Path:
+    """按章节结果指纹透明按需生成并缓存全部聚合 JSON 到 output_dir/aggregated。
+
+    进程内使用按书单飞锁避免并发 GET 重复扫盘或 Excel 写冲突。
+    """
+    out_path = Path(output_dir)
+    aggregated_dir = out_path / "aggregated"
+    fp_path = aggregated_dir / "_fingerprint.json"
+
+    with get_agg_lock(out_path):
+        aggregator = JSONAggregator(out_path)
+        chapter_files = aggregator.discover_json_files()
+        parts: List[str] = []
+        for p in chapter_files:
+            try:
+                st = p.stat()
+                parts.append(f"{p.name}:{st.st_mtime_ns}:{st.st_size}")
+            except OSError:
+                parts.append(f"{p.name}:missing")
+        fp = hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()[:16] if parts else "empty"
+
+        cached_meta = safe_load_json(fp_path) if fp_path.exists() else None
+        if (
+            isinstance(cached_meta, dict)
+            and cached_meta.get("schema_version") == _AGG_CACHE_SCHEMA_VERSION
+            and cached_meta.get("fingerprint") == fp
+            and all((aggregated_dir / fname).exists() for fname in _AGG_REQUIRED_FILES)
+        ):
+            return aggregated_dir
+
+        aggregated_dir.mkdir(parents=True, exist_ok=True)
+        aggregator.load_all_chapters()
+        aggregator.aggregate_full_output(output_dir=aggregated_dir, include_raw=False)
+        safe_save_json(
+            {"schema_version": _AGG_CACHE_SCHEMA_VERSION, "fingerprint": fp},
+            fp_path,
+            ensure_ascii=False,
+        )
+        return aggregated_dir

@@ -48,6 +48,7 @@ from backend.common.c_claim_audit_gate import (  # noqa: E402,F401
     norm,
     sample_fingerprint,
 )
+from backend.config.paths import runtime_path  # noqa: E402
 from backend.config.settings import ConfigManager  # noqa: E402
 from backend.core.llm_client import LLMClient  # noqa: E402
 
@@ -143,7 +144,7 @@ async def run_evaluate(args) -> int:
     if args.prepare_only:
         print(f"冻结考卷：{prepared}（未调用模型）")
         return 0
-    cfg = ConfigManager(ROOT / "config.json").load()
+    cfg = ConfigManager(runtime_path("config.json")).load()
     api = cfg.api
     from dataclasses import replace as dc_replace
 
@@ -228,7 +229,7 @@ async def run_evaluate(args) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser(description="打捞结果自动验收器 v1")
     ap.add_argument("--exam", required=True, help="考卷 json（评测模式）")
-    ap.add_argument("--output-dir", default="workspace/《道诡异仙》/output")
+    ap.add_argument("--output-dir", default="runtime/workspace/《道诡异仙》/output")
     ap.add_argument("--blocks", help="原文块目录；旧考卷chapter必须对应文件序号")
     ap.add_argument("--prepare-only", action="store_true", help="仅冻结输入与证据，不调用模型")
     ap.add_argument("--claim-audit", action="store_true", help="试验性逐断言证据契约；改变输入指纹，需重新复核标签")

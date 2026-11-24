@@ -9,6 +9,7 @@ save_queue 不在此层——其调用点都在 AnalysisService 方法里。
 import time
 from typing import List, Optional
 
+from ..utils.aggregate_utils import split_character_names
 from ..ws_events import (
     PipelineStatus,
     block_done_event, block_start_event, discovery_event,
@@ -53,9 +54,8 @@ def _extract_discovery(result: Optional[dict], seen_characters: set) -> Optional
         chars_str = ev.get("characters", "")
         if not chars_str:
             continue
-        for name in str(chars_str).replace("、", ",").split(","):
-            name = name.strip()
-            if not name or len(name) < 2 or len(name) > 8:
+        for name in split_character_names(chars_str):
+            if len(name) < 2 or len(name) > 8:
                 continue
             if name in _DISCOVERY_STOP_WORDS:
                 continue

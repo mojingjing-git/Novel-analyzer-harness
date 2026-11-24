@@ -203,14 +203,15 @@ export interface AppConfigDto {
     auto_summary: boolean
     summary_concurrency: number
     summary_batch_size: number
-    foreshadow_recheck_batch_size: number
     anchor_quote_enabled: boolean
     anchor_min_chars: number
     recheck_max_calls: number
     recheck_max_tokens: number
     recheck_concurrency: number
-    recheck_v2_enabled: boolean
+    recheck_version?: string
     recheck_v2_batch_size: number
+    recheck_v3_gray_u4?: boolean
+    recheck_v3_mid_single_hop?: boolean
     recheck_model: string
     recheck_base_url: string
     recheck_api_key: string
@@ -229,11 +230,6 @@ export interface AppConfigDto {
     max_thematic_elements: number
     volume_compress_threshold: number
     volume_compress_group: number
-    enable_b_trace?: boolean
-    fix_b4_flow_and_storage?: boolean
-    fix_b2_evidence_and_recheck?: boolean
-    enable_c_on_demand_audit?: boolean
-    enable_anchor_b_plus_rule?: boolean
   }
   gui: {
     language?: string  // i18n 接口预留
@@ -257,15 +253,140 @@ export interface WorkspaceArchive {
   file_count: number
   total_size: number
   dir_mtime: number
+  has_blocks?: boolean
+  blocks_count?: number
 }
 
 export interface BookInfo {
   id: string
   name: string
-  source: 'workspace' | 'archive'
+  source?: 'workspace' | 'archive'
   total_chapters: number
   has_report?: boolean
   has_aggregated?: boolean
+  has_atlas?: boolean
+}
+
+export interface StyleProfileDto {
+  book_id: string
+  exists: boolean
+  statistical: Record<string, number> | null
+  semantic: Record<string, string> | null
+  sample_chapters: number[]
+}
+
+export interface AtlasArcMilestone {
+  chapter_range: string
+  milestone: string
+}
+
+export interface AtlasCharacter {
+  canonical_name: string
+  aliases: string[]
+  faction: string
+  role_tier: 'protagonist' | 'major_ally' | 'major_antagonist' | 'key_support' | 'hidden_power' | string
+  first_chapter: number
+  identity_summary: string
+  arc_milestones: AtlasArcMilestone[]
+}
+
+export interface AtlasRelationship {
+  source: string
+  target: string
+  relation_tag: string
+  category: 'ally' | 'hostile' | 'mentor' | 'romance' | 'faction' | 'complex' | string
+  evolution: string
+  evidence_chapters: number[]
+}
+
+export interface AtlasStage {
+  stage_no: number
+  title: string
+  start_chapter: number
+  end_chapter: number
+  world_realm: string
+  primary_location: string
+  key_sub_locations: string[]
+  active_factions: string[]
+  core_conflict: string
+  map_switch_reason: string
+}
+
+export interface AtlasTreeNode {
+  name: string
+  node_type: 'world' | 'region' | 'faction' | 'landmark' | string
+  summary: string
+  children: AtlasTreeNode[]
+}
+
+export interface StoryAtlasDto {
+  book_id: string
+  exists: boolean
+  schema_version: number
+  generated_at: string
+  model: string
+  characters: AtlasCharacter[]
+  relationships: AtlasRelationship[]
+  stages: AtlasStage[]
+  world_tree: AtlasTreeNode[]
+}
+
+export interface CharacterListItem {
+  name: string
+  aliases?: string[]
+  faction?: string
+  role_tier?: string
+  identity_summary?: string
+  in_atlas?: boolean
+  first_appearance?: number | null
+  total_events: number
+  chapters_count: number
+}
+
+export interface CharacterSemanticRel {
+  peer: string
+  direction: 'out' | 'in' | string
+  relation_tag: string
+  category: string
+  evolution: string
+  evidence_chapters: number[]
+}
+
+export interface CharacterCardData {
+  name: string
+  first_appearance: number | null
+  chapters: number[]
+  total_events: number
+  aliases?: string[]
+  faction?: string
+  role_tier?: string
+  identity_summary?: string
+  arc_milestones?: AtlasArcMilestone[]
+  semantic_relationships?: CharacterSemanticRel[]
+  arcs: { chapter: number; surface_action: string; inner_motivation: string; change_delta: string; driver: string }[]
+  events: { chapter: number; event: string; function?: string }[]
+  states: Record<string, string>
+  relationships: Record<string, { event_count: number; first_encounter: number }>
+}
+
+export interface SummaryInflightLane {
+  id: number
+  label: string
+  phase: string
+  started_at: number
+}
+
+export interface RecheckLiveProgress {
+  engine?: string
+  stage: string
+  hop?: number
+  stage_done: number
+  stage_total: number
+  remaining: number
+  items_total?: number
+  checked?: number
+  calls?: number
+  unit?: string
 }
 
 export interface SummaryStatus {
@@ -274,31 +395,17 @@ export interface SummaryStatus {
   phase: string
   batches_done: number
   total_batches: number
+  summary_done?: number
+  recon_done?: number
   error: string
   started_at: number
   finished_at: number
+  concurrency?: number
+  inflight_lanes?: SummaryInflightLane[]
   token_stats: Record<string, TokenCategory>
+  recheck_progress?: RecheckLiveProgress | null
   /** 带证据复检（V2）的账：status/coverage/verdicts_file；未跑过为空对象 */
   recheck?: Record<string, unknown>
-}
-
-export interface LocationNormalizationStatus {
-  running: boolean
-  book_id: string
-  phase: string
-  batches_done: number
-  total_batches: number
-  error: string
-  started_at: number
-  finished_at: number
-  token_stats: Record<string, unknown>
-}
-
-export interface MapDataResponse {
-  book_id: string
-  locations: unknown[]
-  relationships: unknown[]
-  needs_normalization: boolean
 }
 
 export interface SplitterPreview {
@@ -325,19 +432,6 @@ export interface SplitterOption {
   strip_whitespace?: boolean
 }
 
-export interface GraphNode {
-  id: string
-  name: string
-  event_count: number
-  chapters?: number[]
-}
-
-export interface GraphEdge {
-  source: string
-  target: string
-  weight: number
-}
-
 export interface ForeshadowRankItem {
   id: string
   description: string
@@ -352,6 +446,50 @@ export interface ForeshadowRankItem {
   evidence_chapters: number[]
   resolution: string | null
   resolved_chapter: number | null
+  needs_review?: boolean
+  resolution_quality?: string
+}
+
+export interface RecheckEvidenceDto {
+  unit_id: number
+  offset?: number
+  quote: string
+  role?: string
+}
+
+export interface RecheckVerdictItemDto {
+  id: string
+  candidate_id: string
+  verdict: string
+  tier: string
+  unresolved_type: string
+  answer: string
+  quote: string
+  reason: string
+  applied: string
+  resolved_chapter: string
+  hops_used: number
+  evidence_chain: RecheckEvidenceDto[]
+  gate_demoted: boolean
+  gate_reason: string
+  repaired: boolean
+  description: string
+  question: string
+  first_seen_chapter: number | null
+  importance: string
+}
+
+export interface RecheckVerdictsResponse {
+  book_id: string
+  exists: boolean
+  engine: string
+  status: string
+  status_reason: string
+  model: string
+  generated_at: string
+  coverage: Record<string, unknown>
+  candidates_total: number
+  verdicts: RecheckVerdictItemDto[]
 }
 
 /**
@@ -438,7 +576,13 @@ export const api = {
   // 设置
   getSettings: () => request<AppConfigDto>('/api/settings'),
   putSettings: (config: Partial<AppConfigDto>) =>
-    request<{ ok: boolean }>('/api/settings', { method: 'PUT', body: JSON.stringify(config) }),
+    request<AppConfigDto>('/api/settings', { method: 'PUT', body: JSON.stringify(config) }),
+  patchSettings: (patch: {
+    api?: Partial<AppConfigDto['api']>
+    analysis?: Partial<AppConfigDto['analysis']>
+    gui?: Partial<AppConfigDto['gui']>
+  }) =>
+    request<AppConfigDto>('/api/settings', { method: 'PATCH', body: JSON.stringify(patch) }),
   getPresets: () => request<{ presets: Record<string, { base_url: string; api_key: string; model: string }> }>('/api/settings/presets'),
   getModels: () => request<{ models: string[] }>('/api/settings/models'),
   previewModels: (params: { base_url?: string; api_key?: string; provider?: string }) =>
@@ -484,44 +628,21 @@ export const api = {
   getLatestChapter: (book_id: string) =>
     request<{ book_id: string; latest: number }>(`/api/books/${seg(book_id)}/latest_chapter`),
   getBookReport: (book_id: string) => request<{ book_id: string; report: string }>(`/api/books/${seg(book_id)}/report`),
+  getStyleProfile: (book_id: string) => request<StyleProfileDto>(`/api/books/${seg(book_id)}/style_profile`),
+  getRecheckVerdicts: (book_id: string) => request<RecheckVerdictsResponse>(`/api/books/${seg(book_id)}/recheck_verdicts`),
   getBookCharacters: (book_id: string) =>
-    request<{ book_id: string; characters: unknown[] }>(`/api/books/${seg(book_id)}/characters`),
+    request<{ book_id: string; characters: CharacterListItem[] }>(`/api/books/${seg(book_id)}/characters`, { timeoutMs: 120_000 }),
   getCharacterCard: (book_id: string, name: string) =>
-    request<{ book_id: string; character: unknown }>(`/api/books/${seg(book_id)}/characters/${seg(name)}`),
+    request<{ book_id: string; character: CharacterCardData }>(`/api/books/${seg(book_id)}/characters/${seg(name)}`),
 
   // 最终总结
-  startSummary: (book_id: string, start_chapter: number, end_chapter: number, batch_size: number, concurrency: number) =>
+  startSummary: (book_id: string, start_chapter: number, end_chapter: number, batch_size: number = 0, concurrency: number = 0) =>
     request<{ ok: boolean }>('/api/summary/start', {
       method: 'POST',
       body: JSON.stringify({ book_id, start_chapter, end_chapter, batch_size, concurrency }),
     }),
   stopSummary: () => request<{ ok: boolean }>('/api/summary/stop', { method: 'POST' }),
   summaryStatus: () => request<SummaryStatus>('/api/summary/status'),
-
-  startLocationNormalization: (book_id: string) =>
-    request<{ ok: boolean }>('/api/location-normalization/start', {
-      method: 'POST',
-      body: JSON.stringify({ book_id }),
-    }),
-  stopLocationNormalization: () =>
-    request<{ ok: boolean }>('/api/location-normalization/stop', { method: 'POST' }),
-  locationNormalizationStatus: () =>
-    request<LocationNormalizationStatus>('/api/location-normalization/status'),
-  getLocationNormalizationResult: (book_id: string) =>
-    request<{
-      exists: boolean
-      normalized_at?: string
-      location_count?: number
-      spatial_count?: number
-    }>(`/api/location-normalization/result/${seg(book_id)}`),
-
-  // 风格分析
-  startStyle: (book_id: string, use_llm: boolean, limit: number) =>
-    request<{ ok: boolean }>('/api/style/start', { method: 'POST', body: JSON.stringify({ book_id, use_llm, limit }) }),
-  styleStatus: () => request<{ running: boolean; phase: string; error: string }>('/api/style/status'),
-  stopStyle: () => request<{ ok: boolean }>('/api/style/stop', { method: 'POST' }),
-  getStyleResult: (book_id: string) =>
-    request<{ book_id: string; content: string }>(`/api/style/result/${seg(book_id)}`),
 
   // 切分
   previewSplit: (body: Record<string, unknown>) =>
@@ -557,6 +678,12 @@ export const api = {
   archiveNovel: (name: string) => request<{ ok: boolean }>('/api/workspace/archive', { method: 'POST', body: JSON.stringify({ novel_name: name }) }),
   archiveAll: () => request<{ ok: boolean; archived: number }>('/api/workspace/archive_all', { method: 'POST' }),
   deleteArchive: (name: string) => request<{ ok: boolean }>('/api/workspace/delete_archive', { method: 'POST', body: JSON.stringify({ archive_name: name }) }),
+  restoreArchiveBlocks: (archive_name: string, target_name: string = '') =>
+    request<{ ok: boolean; novel_name: string; blocks_count: number }>('/api/workspace/restore_blocks', {
+      method: 'POST',
+      body: JSON.stringify({ archive_name, target_name }),
+      timeoutMs: 120_000,
+    }),
 
   // Prompt
   promptPreview: (book_id: string, max_chars: number = 0, chapter: number = 1) =>
@@ -565,6 +692,7 @@ export const api = {
 
   // 可视化
   getTimeline: (book_id: string) => request<{ events: unknown[]; foreshadows: unknown[]; category_map_loaded?: boolean }>(`/api/viz/timeline/${seg(book_id)}`),
+  getAtlas: (book_id: string) => request<StoryAtlasDto>(`/api/viz/atlas/${seg(book_id)}`),
   getForeshadowRanking: (book_id: string) => request<{
     book_id: string
     total: number
@@ -578,40 +706,13 @@ export const api = {
     min_importance: string
     min_confidence: string
   }>('/api/foreshadow/categories'),
-  getGraph: (book_id: string, params?: {
-    chapter_start?: number
-    chapter_end?: number
-    min_edge_weight?: number
-    max_nodes?: number
-    min_node_count?: number
-  }) => {
-    const query = params
-      ? '?' + Object.entries(params)
-          .filter(([, v]) => v !== undefined && v !== null)
-          .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
-          .join('&')
-      : ''
-    return request<{
-      nodes: GraphNode[]
-      edges: GraphEdge[]
-      total_characters: number
-      total_edges: number
-      filtered: Record<string, unknown>
-      chapter_range: { min: number; max: number }
-    }>(`/api/viz/graph/${seg(book_id)}${query}`)
-  },
-  getMap: (book_id: string) => request<{ locations: unknown[]; relationships: unknown[] }>(`/api/viz/map/${seg(book_id)}`),
 
-  // 聚合
-  runAggregate: (book_id: string, include_raw: boolean) =>
-    request<{ ok: boolean; files: Record<string, string> }>('/api/aggregate/run', { method: 'POST', body: JSON.stringify({ book_id, include_raw }),
-    timeoutMs: 300_000 }),
-  getAggregateFiles: (book_id: string) =>
-    request<{ files: { name: string; size_kb: number }[] }>(`/api/aggregate/${seg(book_id)}/files`),
-  getAggregateFile: (book_id: string, name: string) =>
-    request<{ content: unknown; is_json: boolean }>(`/api/aggregate/${seg(book_id)}/file/${seg(name)}`),
+  // 聚合导出（后端自动触发指纹缓存）
   exportAggregateExcel: (book_id: string) =>
-    request<{ ok: boolean; path: string }>(`/api/aggregate/${seg(book_id)}/excel`, { method: 'POST' }),
+    request<{ ok: boolean; path: string }>(`/api/aggregate/${seg(book_id)}/excel`, {
+      method: 'POST',
+      timeoutMs: 300_000,
+    }),
 
   // 下载运行日志。受保护端点且返回 text/plain——不复用 request()
   // 的 JSON 解析契约（其对 200 + 非 JSON 显式抛错），独立 fetch + blob。

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { nextTick, onBeforeUnmount, onMounted, ref, useId } from 'vue'
+
 defineProps<{
   title?: string
   message: string
@@ -12,21 +14,61 @@ const emit = defineEmits<{
   cancel: []
 }>()
 
+const titleId = useId()
+const messageId = useId()
+const card = ref<HTMLElement | null>(null)
+const cancelButton = ref<HTMLButtonElement | null>(null)
+const confirmButton = ref<HTMLButtonElement | null>(null)
+let trigger: HTMLElement | null = null
+
+onMounted(() => {
+  const active = document.activeElement
+  if (active instanceof HTMLElement && active !== document.body) trigger = active
+  cancelButton.value?.focus()
+})
+
+onBeforeUnmount(() => {
+  const active = document.activeElement
+  if (!trigger || !card.value?.contains(active)) return
+  void nextTick(() => {
+    if (document.activeElement === document.body && trigger?.isConnected) trigger.focus()
+  })
+})
+
 function onConfirm() { emit('confirm') }
 function onCancel() { emit('cancel') }
+
+function cycleFocus(event: KeyboardEvent) {
+  const active = document.activeElement
+  if (active === cancelButton.value) confirmButton.value?.focus()
+  else if (active === confirmButton.value) cancelButton.value?.focus()
+  else (event.shiftKey ? confirmButton : cancelButton).value?.focus()
+}
 </script>
 
 <template>
   <Transition name="modal">
-    <div class="confirm-mask" @click.self="onCancel">
-      <div class="confirm-card glass-elevated">
+    <div class="confirm-mask" @mousedown.self.prevent @click.self="onCancel">
+      <div
+        ref="card"
+        class="confirm-card glass-elevated"
+        role="dialog"
+        aria-modal="true"
+        :aria-labelledby="title ? titleId : undefined"
+        :aria-label="title ? undefined : '确认操作'"
+        :aria-describedby="messageId"
+        @keydown.esc.stop.prevent="onCancel"
+        @keydown.tab.prevent="cycleFocus"
+      >
         <div class="confirm-body">
-          <h3 v-if="title" class="confirm-title">{{ title }}</h3>
-          <p class="confirm-message">{{ message }}</p>
+          <h3 v-if="title" :id="titleId" class="confirm-title">{{ title }}</h3>
+          <p :id="messageId" class="confirm-message">{{ message }}</p>
         </div>
         <div class="confirm-actions">
-          <button @click="onCancel" class="glass-button">{{ cancelText || '取消' }}</button>
+          <button ref="cancelButton" type="button" @click="onCancel" class="glass-button">{{ cancelText || '取消' }}</button>
           <button
+            ref="confirmButton"
+            type="button"
             @click="onConfirm"
             :class="danger ? 'glass-button glass-button-danger' : 'glass-button glass-button-primary'"
           >{{ confirmText || '确认' }}</button>

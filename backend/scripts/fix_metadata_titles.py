@@ -10,12 +10,13 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from backend.config.paths import get_runtime_dir
 from backend.services.final_summary import (
     _looks_valid_book_name,
     _clean_book_name,
 )
 
-WORKSPACE = PROJECT_ROOT / "workspace"
+WORKSPACE = get_runtime_dir() / "workspace"
 
 
 def fix_metadata(metadata_path: Path) -> bool:

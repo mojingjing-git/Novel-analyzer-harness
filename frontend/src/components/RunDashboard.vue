@@ -2,15 +2,17 @@
 /**
  * RunDashboard 运行中实时仪表盘
  *
- * 容器组件：聚合指标（含 sparkline）+ LaneView + DiscoveryFeed
- * 数据源：父组件传入
- * 聚合卡的"本会话输入/输出"取 token_delta 真实累计
+ * 容器组件：聚合 KPI（4 卡）+ 60 秒 1s 平滑总吞吐面积图 + 并发车道（微卡网格）+ 发现流
+ * 设计对齐 Win11 Fluent：中性层叠表面、单一系统蓝强调、平滑曲线与连续计数缓动
  */
 
 import { computed } from 'vue'
 import CountUp from './CountUp.vue'
 import LaneView from './LaneView.vue'
 import DiscoveryFeed from './DiscoveryFeed.vue'
+import ThroughputChart from './ThroughputChart.vue'
+import { type SessionTokenStatsResponse } from '../api/client'
+import { fmt, fmtPercent, formatSessionCost } from '../utils/queueFeed'
 
 export interface ActiveBlock {
   range: string
@@ -37,18 +39,27 @@ const props = withDefaults(defineProps<{
   concurrency?: number
   /** 进度 */
   progress?: { current: number; total: number; eta: string }
+  /** 每块章数（>1 时展示章节换算） */
+  blockSize?: number
   /** 本会话 token 统计（input / output） */
   sessionTokens?: { input: number; output: number } | null
+  /** 会话合并附加指标（缓存命中 / 命中率 / 总消耗 / 费用） */
+  sessionMeta?: {
+    cached: number
+    hitRate: number
+    total: number
+    cost?: SessionTokenStatsResponse['cost'] | null
+    costTooltip?: string
+  } | null
   /** 活跃块 */
   activeBlocks?: Map<number, ActiveBlock>
   /** 已完成块（最近 N 个用于车道占位） */
   finishedBlocks?: Map<number, FinishedBlock>
   /** 块级 token 累计（车道进度条 + 卡死预警 + 思考态感知） */
   tokenByBlock?: Map<number, { outputTokens: number; lastTokenAt: number; isThinking?: boolean }>
-  /** 30 点速率 sparkline */
+  /** 60 秒等距平滑总吞吐历史 */
   rateHistory?: number[]
-  /** 所有活跃 block 的聚合速率（tok/s）：rateHistory 只保留单个 block 的瞬时速率，
-   * 4 路并发时拿它显示会得到单 block 速率而非系统总吞吐。 */
+  /** 所有活跃 block 的聚合速率（tok/s） */
   aggregateRate?: number
   /** 卡死预警阈值（秒） */
   stallWarnSec?: number
@@ -58,7 +69,9 @@ const props = withDefaults(defineProps<{
   running: false,
   concurrency: 4,
   progress: () => ({ current: 0, total: 0, eta: '' }),
+  blockSize: 1,
   sessionTokens: null,
+  sessionMeta: null,
   activeBlocks: () => new Map(),
   finishedBlocks: () => new Map(),
   tokenByBlock: () => new Map(),
@@ -76,90 +89,69 @@ const inputTokens = computed(() => props.sessionTokens?.input ?? 0)
 const outputTokens = computed(() => props.sessionTokens?.output ?? 0)
 const completed = computed(() => props.progress?.current ?? 0)
 const total = computed(() => props.progress?.total ?? 0)
-const eta = computed(() => props.progress?.eta ?? '—')
-// 当前显示用 aggregateRate（所有活跃 block 聚合），
-// rateHistory 仍驱动 sparkline 历史曲线
-const currentRate = computed(() => {
-  if (props.aggregateRate !== undefined && props.aggregateRate > 0) {
-    return props.aggregateRate
-  }
-  const h = props.rateHistory
-  return h.length > 0 ? h[h.length - 1] : 0
+const progressPct = computed(() => {
+  if (!total.value || total.value <= 0) return 0
+  return Math.min(100, Math.round((completed.value / total.value) * 100))
 })
+const eta = computed(() => props.progress?.eta?.trim() || '—')
 
 function fmtNum(n: number): string {
   if (n >= 10000) return `${(n / 1000).toFixed(1)}k`
-  // Math.round 去掉 CountUp 动画中间帧的浮点：
-  // CountUp 在 t<1 时 display = from + delta * eased（浮点），
-  // String() 会直接输出 "12.999759744828719" 这种 18 位小数
   return String(Math.round(n))
 }
-
-// Sparkline polyline points（手写 SVG，30 点；不引入 d3-shape）
-const sparklinePoints = computed(() => {
-  const h = props.rateHistory
-  if (h.length === 0) return ''
-  const w = 200, hh = 28, n = 30
-  const max = Math.max(...h, 1)
-  return h.slice(-n).map((v, i) => {
-    const x = (i / (n - 1)) * w
-    const y = hh - (v / max) * hh
-    return `${x.toFixed(1)},${y.toFixed(1)}`
-  }).join(' ')
-})
 </script>
 
 <template>
   <div class="glass-card run-dashboard">
-    <!-- ① 聚合指标行（4 卡） -->
+    <!-- ① 聚合指标行（4 卡，窄容器 2×2，宽容器 4×1） -->
     <div class="rd-aggregate">
       <div class="rd-card">
         <div class="rd-label">已完成</div>
         <div class="rd-value">
           <CountUp :value="completed" :format="fmtNum" />
           <span class="rd-suffix">/ {{ fmtNum(total) }}</span>
+          <span v-if="blockSize > 1 && total > 0" class="rd-suffix">({{ completed * blockSize }}/{{ total * blockSize }}章)</span>
+        </div>
+        <div v-if="total > 0" class="rd-progress-track">
+          <div class="rd-progress-fill" :style="{ width: `${progressPct}%` }" />
         </div>
       </div>
       <div class="rd-card">
         <div class="rd-label">ETA</div>
-        <div class="rd-value rd-eta">{{ eta }}</div>
+        <div class="rd-value rd-eta" :title="eta">{{ eta }}</div>
       </div>
       <div class="rd-card">
         <div class="rd-label">本会话输入</div>
         <div class="rd-value">
-          <CountUp :value="inputTokens" :format="fmtNum" />
+          <CountUp :value="inputTokens" :format="fmtNum" :duration="850" />
           <span class="rd-suffix">tok</span>
         </div>
       </div>
       <div class="rd-card">
         <div class="rd-label">本会话输出</div>
         <div class="rd-value">
-          <CountUp :value="outputTokens" :format="fmtNum" />
+          <CountUp :value="outputTokens" :format="fmtNum" :duration="850" />
           <span class="rd-suffix">tok</span>
         </div>
       </div>
     </div>
 
-    <!-- ② 实时速率 sparkline（30 点手写 polyline） -->
-    <div class="rd-sparkline">
-      <div class="rd-sparkline-head">
-        <span class="rd-label">实时输出速率</span>
-        <span class="rd-rate-value">{{ currentRate.toFixed(0) }} tok/s</span>
-      </div>
-      <svg :width="200" :height="28" class="rd-sparkline-svg" v-if="rateHistory.length > 1">
-        <polyline
-          :points="sparklinePoints"
-          fill="none"
-          stroke="var(--win-accent, #4f46e5)"
-          stroke-width="1.5"
-          stroke-linejoin="round"
-          stroke-linecap="round"
-        />
-      </svg>
-      <div v-else class="rd-sparkline-empty">尚无数据</div>
+    <!-- ①b 合并的会话附加统计（缓存命中 / 命中率 / 总消耗 / 费用） -->
+    <div v-if="sessionMeta && (sessionMeta.total > 0 || sessionMeta.cached > 0 || sessionMeta.cost)" class="rd-session-meta">
+      <span>命中缓存 <b>{{ fmt(sessionMeta.cached) }}</b></span>
+      <span>命中率 <b>{{ fmtPercent(sessionMeta.hitRate) }}</b></span>
+      <span>总消耗 <b>{{ fmt(sessionMeta.total) }}</b></span>
+      <span v-if="sessionMeta.cost" :title="sessionMeta.costTooltip || undefined">费用 <b>{{ formatSessionCost(sessionMeta.cost) }}</b></span>
     </div>
 
-    <!-- ③ 并发车道（进度条 + 卡死预警） -->
+    <!-- ② 系统总输出吞吐面积图（过去 60 秒，1 秒等距平滑采样） -->
+    <ThroughputChart
+      :rate-history="rateHistory"
+      :aggregate-rate="aggregateRate"
+      :running="running"
+    />
+
+    <!-- ③ 并发车道（微卡网格 + 卡死预警） -->
     <LaneView
       :concurrency="concurrency"
       :active-blocks="activeBlocks"
@@ -175,82 +167,96 @@ const sparklinePoints = computed(() => {
 </template>
 
 <style scoped>
-/* 根节点带 .glass-card，套用 main.css 的 Win11 卡片基类（背景/边框/圆角/阴影）
-   内边距由本组件自己控制：glass-card 本身无 padding，避免与子组件的内部布局冲突 */
 .run-dashboard {
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   gap: 12px;
   padding: 16px;
+  min-width: 0;
   min-height: 0;
   overflow-y: auto;
 }
 .rd-aggregate {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
+@container (min-width: 500px) {
+  .rd-aggregate {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
 .rd-card {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   padding: 10px 12px;
   border-radius: var(--win-radius-control);
   background: var(--win-control-alt);
   border: 1px solid var(--win-stroke);
 }
 .rd-label {
-  font-size: 10px;
-  color: var(--win-text-tertiary);
+  font-size: 11px;
+  color: var(--win-text-muted);
   margin-bottom: 2px;
 }
 .rd-value {
   display: flex;
   align-items: baseline;
   gap: 4px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 18px;
   font-weight: 600;
   color: var(--win-text-primary);
   font-variant-numeric: tabular-nums;
 }
 .rd-eta {
+  display: block;
   font-size: 14px;
   font-weight: 500;
   font-family: ui-monospace, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .rd-suffix {
   font-size: 11px;
-  color: var(--win-text-tertiary);
+  color: var(--win-text-muted);
   font-weight: 400;
 }
-.rd-sparkline {
-  padding: 8px 12px;
+.rd-progress-track {
+  width: 100%;
+  height: 3px;
+  margin-top: 4px;
+  border-radius: var(--win-radius-pill);
+  background: var(--win-stroke);
+  overflow: hidden;
+}
+.rd-progress-fill {
+  height: 100%;
+  border-radius: var(--win-radius-pill);
+  background: var(--win-accent);
+  transition: width 600ms var(--win-ease);
+}
+.rd-session-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  padding: 6px 10px;
   border-radius: var(--win-radius-control);
   background: var(--win-control-alt);
-  border: 1px solid var(--win-stroke);
-}
-.rd-sparkline-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin-bottom: 4px;
-}
-/* 数值起点钉在卡片宽 75% 处（不再贴最右），与下方曲线的重心位置呼应 */
-.rd-sparkline-head .rd-label {
-  flex: 0 0 75%;
-}
-.rd-rate-value {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--win-accent, #4f46e5);
+  font-size: 11.5px;
+  color: var(--win-text-secondary);
   font-variant-numeric: tabular-nums;
 }
-.rd-sparkline-svg {
-  display: block;
-  width: 100%;
-  height: 28px;
-}
-.rd-sparkline-empty {
-  font-size: 11px;
-  color: var(--win-text-tertiary);
-  text-align: center;
-  padding: 6px 0;
+.rd-session-meta b {
+  color: var(--win-text-primary);
+  font-weight: 500;
 }
 </style>

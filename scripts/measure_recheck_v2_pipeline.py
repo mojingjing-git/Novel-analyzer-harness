@@ -24,6 +24,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from backend.common.proxy_env import sanitize_proxy_env  # noqa: E402
+from backend.config.paths import runtime_path  # noqa: E402
 from backend.config.settings import ConfigManager  # noqa: E402
 from backend.core.anchor import entity_key_for  # noqa: E402
 from backend.core.text_units import build_display_labels, load_blocks_as_files  # noqa: E402
@@ -168,9 +170,7 @@ async def main() -> int:
     args = ap.parse_args()
 
     try:
-        import pytest_isolation
-
-        pytest_isolation.sanitize_proxy_env()
+        sanitize_proxy_env()
         # sanitize 只把 `[::1]` 规范化成 `::1`，但 httpx 解析 `::1` 仍会抛
         # `Invalid port ':1]'`；这些脚本都打本机网关，直接把代理变量清空最省事。
         import os
@@ -183,7 +183,7 @@ async def main() -> int:
     except Exception as exc:
         print(f"代理净化跳过：{exc}", file=sys.stderr)
 
-    cfg = ConfigManager(ROOT / "config.json").load()
+    cfg = ConfigManager(runtime_path("config.json")).load()
     if args.base_url:
         cfg.api.base_url = args.base_url
     if "minimaxi.com" in (cfg.api.base_url or ""):

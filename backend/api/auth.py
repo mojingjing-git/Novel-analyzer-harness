@@ -26,10 +26,9 @@ def require_session_token(
     - 环境变量已设置 + token 不匹配 → 403
     - 失败模式：使用 hmac.compare_digest 防时序攻击
 
-    注意：桌面端零摩擦依赖前端 client.ts 在所有 fetch
-    拦截加 X-Session-Token header。**当前实现仅保护后端，桌面端
-    pywebview 调受保护端点会被 403**——这是已知折中，前端改动
-    尚未落地。
+    说明：桌面端由前端 `api/client.ts` 与 `api/sessionToken.ts` 在所有请求中
+    自动注入 `X-Session-Token` header（通过 pywebview js_api 获取），开发模式
+    未设置环境变量时直接放行。
     """
     expected = os.environ.get(_ENV_VAR)
     if not expected:

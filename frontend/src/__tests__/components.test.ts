@@ -3,7 +3,7 @@
  * 覆盖 DiscoveryFeed、LaneView、RunDashboard、BookSelector、ChapterDetailPanel、useLogStore。
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { nextTick } from 'vue'
+import { defineComponent, nextTick, ref } from 'vue'
 import { mount } from '@vue/test-utils'
 
 vi.mock('../api/client', () => ({
@@ -19,8 +19,10 @@ import DiscoveryFeed from '../components/DiscoveryFeed.vue'
 import LaneView from '../components/LaneView.vue'
 import RunDashboard, { type DiscoveryItem } from '../components/RunDashboard.vue'
 import CountUp from '../components/CountUp.vue'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
 import BookSelector from '../components/BookSelector.vue'
 import ChapterDetailPanel from '../components/ChapterDetailPanel.vue'
+import { resetSelectedBookForTest } from '../composables/useSelectedBook'
 
 const mockedApi = vi.mocked(api)
 const settle = () => vi.advanceTimersByTimeAsync(0)
@@ -77,6 +79,7 @@ describe('LaneView', () => {
     let rows = wrapper.findAll('.lane-row')
     expect(rows).toHaveLength(3)
     expect(rows[0].classes()).toContain('lane-running')
+    expect(rows[0].find('.lane-state').text()).toBe('等待首字')
     expect(rows[2].classes()).toContain('lane-empty')
 
     await wrapper.setProps({
@@ -115,28 +118,61 @@ describe('LaneView', () => {
       },
     })
     expect(thinkingWrapper.find('.lane-row').classes()).toContain('lane-thinking')
-    expect(thinkingWrapper.find('.lane-state').text()).toBe('🧠')
-    expect(thinkingWrapper.find('.lane-tok').text()).toContain('思考 500tok')
+    expect(thinkingWrapper.find('.lane-state').text()).toBe('思考')
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(thinkingWrapper.find('.lane-tok').text()).toContain('思考 500 tok')
 
     await thinkingWrapper.setProps({
       tokenByBlock: new Map([[1, { outputTokens: 800, lastTokenAt: now - 100, isThinking: false }]]),
     })
     expect(thinkingWrapper.find('.lane-row').classes()).not.toContain('lane-thinking')
-    expect(thinkingWrapper.find('.lane-tok').text()).toBe('800tok')
+    expect(thinkingWrapper.find('.lane-state').text()).toBe('输出')
+    // 线性 950ms 动画中途应处于 500..800 之间
+    await vi.advanceTimersByTimeAsync(475)
+    const midMatch = thinkingWrapper.find('.lane-tok').text().match(/(\d+)\s+tok/)
+    expect(midMatch).not.toBeNull()
+    const midVal = Number(midMatch![1])
+    expect(midVal).toBeGreaterThan(500)
+    expect(midVal).toBeLessThan(800)
+
+    await vi.advanceTimersByTimeAsync(600)
+    expect(thinkingWrapper.find('.lane-tok').text()).toBe('800 tok')
+
+    // 同一物理槽位切换为新 blockId 时通过 :key 重新挂载，不应从 800 倒数
+    await thinkingWrapper.setProps({
+      activeBlocks: new Map([[2, { range: '第5-8章', startedAt: now }]]),
+      tokenByBlock: new Map([[2, { outputTokens: 120, lastTokenAt: now, isThinking: false }]]),
+    })
+    const switchedInitial = Number(thinkingWrapper.find('.lane-tok').text().match(/(\d+)\s+tok/)?.[1] ?? -1)
+    expect(switchedInitial).toBeLessThanOrEqual(120)
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(thinkingWrapper.find('.lane-tok').text()).toBe('120 tok')
+    thinkingWrapper.unmount()
+
+    // 空闲时收起空槽，显示单行提示
+    const idleWrapper = mount(LaneView, {
+      props: {
+        concurrency: 5,
+        activeBlocks: new Map(),
+        finishedBlocks: new Map(),
+      },
+    })
+    expect(idleWrapper.find('.lane-idle').exists()).toBe(true)
+    expect(idleWrapper.findAll('.lane-row')).toHaveLength(0)
   })
 })
 
 describe('RunDashboard', () => {
-  it('渲染 4 张聚合卡、CountUp 数值取整、aggregateRate 优先级与 select-block 透传', async () => {
+  it('渲染 4 张聚合卡、CountUp 数值取整、平滑吞吐图与 select-block 透传', async () => {
     const active = new Map([[3, { range: '第9-12章', startedAt: 100 }]])
     const wrapper = mount(RunDashboard, {
       props: {
         running: true,
         concurrency: 2,
         activeBlocks: active,
-        progress: { current: 12.999, total: 100, eta: '5m30s' },
+        progress: { current: 12.999, total: 100, eta: '' },
         sessionTokens: { input: 12345, output: 6789 },
-        rateHistory: [10, 11],
+        rateHistory: [10, 44],
         aggregateRate: 44,
       },
     })
@@ -145,15 +181,69 @@ describe('RunDashboard', () => {
     expect(cards).toHaveLength(4)
     expect(cards[0].text()).toContain('13')
     expect(cards[0].text()).not.toContain('12.999')
-    expect(cards[1].text()).toContain('5m30s')
+    expect(cards[1].text()).toContain('—')
 
     const countUps = wrapper.findAllComponents(CountUp)
     expect(countUps[1].props('value')).toBe(12345)
     expect(countUps[2].props('value')).toBe(6789)
     expect(wrapper.find('.rd-rate-value').text()).toContain('44')
 
+    const svg = wrapper.find('.rd-sparkline-svg')
+    expect(svg.exists()).toBe(true)
+    expect(svg.attributes('viewBox')).toBe('0 0 400 56')
+    expect(svg.findAll('path')).toHaveLength(2)
+    expect(wrapper.text()).not.toContain('刻度上限')
+    expect(wrapper.findAll('.rd-log-label').map((n) => n.text())).toEqual(['100', '10', '0'])
+
     await wrapper.find('.lane-row').trigger('click')
     expect(wrapper.emitted('select-block')).toEqual([[3]])
+
+    await wrapper.setProps({ running: false, activeBlocks: new Map(), aggregateRate: 0 })
+    expect(wrapper.find('.rd-rate-value').text()).toBe('0 tok/s')
+    expect(wrapper.find('.rd-sparkline-svg').exists()).toBe(true)
+    wrapper.unmount()
+  })
+})
+
+describe('ConfirmDialog', () => {
+  it('转移焦点、限制 Tab 循环并在 Escape 取消后归还焦点', async () => {
+    const wrapper = mount(defineComponent({
+      components: { ConfirmDialog },
+      setup: () => ({ open: ref(false) }),
+      template: `
+        <button type="button" @click="open = true">打开</button>
+        <ConfirmDialog v-if="open" title="删除小说" message="移入回收站" @cancel="open = false" />
+      `,
+    }), { attachTo: document.body })
+    try {
+      const trigger = wrapper.get('button')
+      trigger.element.focus()
+      await trigger.trigger('click')
+      const dialog = wrapper.get('[role="dialog"]')
+      const [cancel, confirm] = dialog.findAll('button')
+      expect(document.activeElement).toBe(cancel.element)
+      expect(dialog.attributes('aria-labelledby')).toBe(dialog.get('h3').attributes('id'))
+      await cancel.trigger('keydown', { key: 'Tab', shiftKey: true })
+      expect(document.activeElement).toBe(confirm.element)
+      await confirm.trigger('keydown', { key: 'Tab' })
+      expect(document.activeElement).toBe(cancel.element)
+      await cancel.trigger('keydown', { key: 'Escape' })
+      await nextTick()
+      expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+      expect(document.activeElement).toBe(trigger.element)
+
+      await trigger.trigger('click')
+      const backdrop = wrapper.get('.confirm-mask')
+      const press = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+      backdrop.element.dispatchEvent(press)
+      expect(press.defaultPrevented).toBe(true)
+      await backdrop.trigger('click')
+      await nextTick()
+      expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+      expect(document.activeElement).toBe(trigger.element)
+    } finally {
+      wrapper.unmount()
+    }
   })
 })
 
@@ -168,6 +258,8 @@ describe('BookSelector & ChapterDetailPanel', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     vi.clearAllMocks()
+    window.localStorage.clear()
+    resetSelectedBookForTest()
     mockedApi.listBooks.mockResolvedValue(books)
     mockedApi.getLatestChapter.mockResolvedValue({ book_id: 'A', latest: 12 })
     mockedApi.getChapterResult.mockResolvedValue({
@@ -196,6 +288,42 @@ describe('BookSelector & ChapterDetailPanel', () => {
     await wrapper.findAll('button')[0].trigger('click')
     await settle()
     expect(mockedApi.listBooks).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+
+  it('BookSelector：跨实例全局持久化、不存在书目清理、手动刷新不回退 ?book= 且 syncGlobal=false 隔离', async () => {
+    // 1. 首个实例选中 B，跨实例挂载应自动恢复 B
+    const w1 = mount(BookSelector, { props: { modelValue: '' } })
+    await settle()
+    await w1.find('select').setValue('B')
+    w1.unmount()
+
+    const w2 = mount(BookSelector, { props: { modelValue: '' } })
+    await settle()
+    expect(w2.emitted('update:modelValue')![0]).toEqual(['B'])
+    w2.unmount()
+
+    // 2. 书目不存在时自动清理脏 ID，不向父级发射失效书名
+    mockedApi.listBooks.mockResolvedValueOnce([books[0]])
+    const w3 = mount(BookSelector, { props: { modelValue: '' } })
+    await settle()
+    expect(w3.emitted('update:modelValue')).toBeUndefined()
+    expect(window.localStorage.getItem('novel-analyzer-selected-book')).toBeNull()
+    w3.unmount()
+
+    // 3. 手动点刷新不再重吃 ?book= 覆盖当前空白；syncGlobal=false 不污染全局
+    window.history.replaceState({}, '', '/?book=B')
+    const isolated = mount(BookSelector, { props: { modelValue: '', syncGlobal: false } })
+    await settle()
+    expect(isolated.emitted('update:modelValue')![0]).toEqual(['B'])
+    expect(window.localStorage.getItem('novel-analyzer-selected-book')).toBeNull()
+    await isolated.find('select').setValue('A')
+    expect(window.localStorage.getItem('novel-analyzer-selected-book')).toBeNull()
+    await isolated.setProps({ modelValue: '' })
+    await isolated.findAll('button')[0].trigger('click')
+    await settle()
+    expect(isolated.emitted('update:modelValue')!.filter((e) => e[0] === 'B')).toHaveLength(1)
+    isolated.unmount()
   })
 
   it('ChapterDetailPanel：自动加载最新章、requestSeq 切书竞态守卫、章号钳位与 60s 空闲回退', async () => {
@@ -225,6 +353,35 @@ describe('BookSelector & ChapterDetailPanel', () => {
     await vi.advanceTimersByTimeAsync(60_000)
     expect((wrapper.emitted('update:chapter') ?? []).length).toBe(baseCount + 1)
     expect(wrapper.emitted('update:chapter')!.at(-1)).toEqual([0])
+  })
+
+  it('ChapterDetailPanel & ChapterValue：隐藏内部元数据字段并映射嵌套中文标签', async () => {
+    mockedApi.getChapterResult.mockResolvedValue({
+      book_id: 'A',
+      chapter: 5,
+      data: {
+        chapter_number: 5,
+        block_size: 4,
+        source_chapters: [5, 6, 7],
+        anchor_stats: { total: 1, located: 1, missing: 0 },
+        core_events: [{ id: 1, event: '突破', characters: '张三', function: '升级', importance: '高' }],
+        character_arcs: [{ name: '张三', surface_action: '出关', inner_motivation: '复仇', change_delta: '提升', driver: '信念' }],
+        foreshadowing: [{ clue: '玉佩', type: '伏笔', implication: '身世', confidence: '高', importance: '中', question: '何人所留', answer_criteria: '说明来历', lead: false }],
+      },
+    })
+
+    const wrapper = mount(ChapterDetailPanel, { props: { bookId: '', chapter: 5 } })
+    await wrapper.setProps({ bookId: 'A' })
+    await settle()
+    const text = wrapper.text()
+    expect(text).not.toContain('anchor_stats')
+    expect(text).not.toContain('source_chapters')
+    expect(text).toContain('重要度')
+    expect(text).toContain('变化幅度')
+    expect(text).toContain('驱动因素')
+    expect(text).toContain('待解问题')
+    expect(text).toContain('回收判据')
+    expect(text).toContain('纯线索')
   })
 })
 

@@ -4,7 +4,7 @@
 用法：
     python scripts/run_tests.py                 # 跑后端 pytest + 前端 vitest
     python scripts/run_tests.py --no-frontend   # 仅跑后端 pytest
-    python scripts/run_tests.py -k vnext        # 透传参数给 pytest
+    python scripts/run_tests.py -k recheck      # 透传参数给 pytest
 """
 
 from __future__ import annotations
@@ -33,6 +33,16 @@ def _run_frontend() -> int:
     return proc.returncode
 
 
+def _cacheprovider_disabled(extra: list[str]) -> bool:
+    tokens = [*extra, *os.environ.get("PYTEST_ADDOPTS", "").split()]
+    for i, tok in enumerate(tokens):
+        if tok == "-pno:cacheprovider" or "no:cacheprovider" in tok:
+            return True
+        if tok == "-p" and i + 1 < len(tokens) and "no:cacheprovider" in tokens[i + 1]:
+            return True
+    return False
+
+
 def main(argv: list[str] | None = None) -> int:
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -59,7 +69,11 @@ def main(argv: list[str] | None = None) -> int:
             extra.append(token)
 
     target_paths = paths if paths else [str(BACKEND_TESTS)]
-    cmd = [sys.executable, "-m", "pytest", "-c", str(INIFILE), *target_paths, *extra]
+    cache_args: list[str] = []
+    if not _cacheprovider_disabled(extra):
+        cache_dir = ROOT / "runtime" / ".pytest_cache"
+        cache_args = ["-o", f"cache_dir={cache_dir}"]
+    cmd = [sys.executable, "-m", "pytest", "-c", str(INIFILE), *cache_args, *target_paths, *extra]
     env = dict(os.environ)
     env.setdefault("PYTHONIOENCODING", "utf-8")
 

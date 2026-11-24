@@ -6,7 +6,6 @@ GET/PUT /api/queue、POST /api/queue/scan、队列项操作
 
 import asyncio
 import logging
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
@@ -14,15 +13,13 @@ from pydantic import BaseModel
 
 from backend.api.auth import require_session_token
 from backend.core.model_catalog import calc_model_cost, get_catalog_version
-from backend.services.queue_manager import QueueItem
+from backend.services.queue_manager import CONFIG_FILE, QueueItem
 from backend.services.queue_service import get_service
 from backend.services import workspace_service
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["analysis"])
-
-_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 def _estimate_session_cost(
@@ -90,11 +87,14 @@ def _estimate_session_cost(
 @router.post("/analysis/start")
 async def start_analysis() -> dict:
     service = get_service()
-    if service.is_running:
+    if service.start():
+        return {"ok": True}
+    blocker = service.start_blocker()
+    if blocker == "analysis_running":
         raise HTTPException(status_code=409, detail="分析已在运行中")
-    if not service.start():
-        raise HTTPException(status_code=400, detail="队列为空或已全部完成")
-    return {"ok": True}
+    if blocker == "summary_running":
+        raise HTTPException(status_code=409, detail="最终总结正在运行，请在总结结束后再启动分析")
+    raise HTTPException(status_code=400, detail="队列为空或已全部完成")
 
 
 @router.post("/analysis/stop")
@@ -129,7 +129,7 @@ async def analysis_token_stats_session() -> dict:
     try:
         from backend.config.settings import ConfigManager
 
-        cfg = ConfigManager(_ROOT / "config.json").load()
+        cfg = ConfigManager(CONFIG_FILE).load()
         resp["cost"] = _estimate_session_cost(
             analysis,
             summary,
@@ -291,62 +291,6 @@ async def clear_queue() -> dict:
     service.queue.clear()
     service.save_queue()
     return service.status()
-
-
-# ==================== 风格分析 ====================
-
-class StyleStartRequest(BaseModel):
-    book_id: str
-    use_llm: bool = True
-    limit: int = 50
-
-
-@router.post("/style/start")
-async def start_style(req: StyleStartRequest) -> dict:
-    """启动风格分析"""
-    from backend.services import style_service
-    try:
-        ok = await style_service.start_style_analysis(req.book_id, req.use_llm, req.limit)
-        if not ok:
-            raise HTTPException(status_code=409, detail="风格分析已在运行中")
-        return {"ok": True}
-    except (KeyError, ValueError) as e:
-        raise HTTPException(status_code=422, detail=str(e))
-
-
-@router.get("/style/status")
-async def style_status() -> dict:
-    """获取风格分析状态"""
-    from backend.services import style_service
-    return style_service.status()
-
-
-@router.post("/style/stop")
-async def stop_style() -> dict:
-    """停止风格分析"""
-    from backend.services import style_service
-    if not style_service.stop_style_analysis():
-        raise HTTPException(status_code=400, detail="没有正在运行的风格分析")
-    return {"ok": True}
-
-
-@router.get("/style/result/{book_id}")
-async def get_style_result(book_id: str) -> dict:
-    """获取风格分析 style.md 内容"""
-    from backend.services import book_service
-    output_dir = book_service.get_output_dir(book_id)
-    if output_dir is None:
-        raise HTTPException(status_code=404, detail=f"书目不存在: {book_id}")
-    style_path = output_dir.parent / "style.md"
-    if not style_path.exists():
-        style_path = output_dir / "style.md"
-    if not style_path.exists():
-        raise HTTPException(status_code=404, detail="风格分析结果不存在")
-    try:
-        content = style_path.read_text(encoding="utf-8")
-        return {"book_id": book_id, "content": content}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"读取失败: {e}")
 
 
 # ==================== 日志下载 ====================

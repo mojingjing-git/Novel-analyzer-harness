@@ -4,11 +4,13 @@
 
 ## 日志文件
 
+源码模式下以下运行日志均位于 `runtime/` 目录（便携 EXE 模式下位于 EXE 同级目录）：
+
 | 文件 | 大小策略 | 内容 |
 |---|---|---|
-| `analyzer.log` | `RotatingFileHandler` (10MB × 3) | 主日志：LLM 调用 / token / 流程 / 错误 |
-| `api_failures.log` | `RotatingFileHandler` (10MB × 3) | LLM 调用失败明细（温度 / 错误类型 / 等待时长，每行一条 JSON 便于 `jq` / `grep`） |
-| `crash.log` | `RotatingFileHandler` (10MB × 3) | 桌面端未捕获异常 / pywebview 原生报错（stderr 走 logging 体系，无句柄共享冲突） |
+| `runtime/analyzer.log` | `RotatingFileHandler` (10MB × 3) | 主日志：LLM 调用 / token / 流程 / 错误 |
+| `runtime/api_failures.log` | `RotatingFileHandler` (10MB × 3) | LLM 调用失败明细（温度 / 错误类型 / 等待时长，每行一条 JSON 便于 `jq` / `grep`） |
+| `runtime/crash.log` | `RotatingFileHandler` (10MB × 3) | 桌面端未捕获异常 / pywebview 原生报错（stderr 走 logging 体系，无句柄共享冲突） |
 | `%LOCALAPPDATA%\NovelAnalyzer\run.log` | 不在工程内 | 桌面启动诊断 |
 | `%LOCALAPPDATA%\NovelAnalyzer\build.log` | 不在工程内 | 前端构建诊断 |
 
@@ -49,8 +51,8 @@ cat api_failures.log | jq -r '"\(.wait_seconds)\t\(.error_type)"' | sort -rn | h
 Web 前端的代码在 `frontend/src/`，开发模式 Vite HMR 应该实时生效。如果不生效：
 
 1. **确认是在开发模式**：检查启动方式，`run_desktop.bat` 启动的是生产构建，HMR 不会生效
-2. **重新构建生产**：跑 `build_frontend.bat` 重新生成 `frontend/dist/`
-3. **重启桌面端**：`run_desktop.bat` 会把 dist 加载到本地运行时副本，dist 变了需要重启
+2. **重新构建生产**：跑 `desktop\build_frontend.bat` 重新生成 `frontend/dist/`
+3. **重启桌面端**：`run_desktop.bat` 会从共享盘路径加载构建后的 `dist/` 并启用本地后端副本，dist 变了需要重启
 4. **后端配置字段变了**：新加 dataclass 字段后必须重启后端进程，前端才能拿到新 schema
 
 ### 桌面端启动报"端口被占用"
@@ -58,24 +60,24 @@ Web 前端的代码在 `frontend/src/`，开发模式 Vite HMR 应该实时生�
 `run_desktop.bat` 启动时 uvicorn 找空闲端口（8000-8099），如果全部被占：
 
 1. 关掉占用端口的旧进程：`netstat -ano | findstr :8000` → `taskkill /PID <pid>`
-2. 或修改 `desktop.py` 的 `PORT_RANGE`
+2. 或修改 `desktop/desktop.py` 的 `_find_free_port` 逻辑
 3. 或强制指定端口启动 dev 模式后用浏览器访问
 
 ### 队列状态异常
 
-队列状态持久化在 `queue_state.json`，如果出现"卡在运行中"等异常状态：
+队列状态持久化在 `runtime/queue_state.json`，如果出现"卡在运行中"等异常状态：
 
 1. **重启进程**：进程级互斥锁会释放，队列回到空闲
-2. **手动清状态**：删除 `queue_state.json`（会丢未保存的状态）
+2. **手动清状态**：删除 `runtime/queue_state.json`（会丢未保存的状态）
 3. **检查重置端点**：`POST /api/queue/reset_item` 重置单项
 
 ### 工作区路径中文 / 网络盘异常
 
 `pywebview` + WebView2 在中文路径 / 网络盘上有渲染限制。详见 [architecture.md](./architecture.md) 的"桌面端双目录方案"：
 
-- 启动时复制到本地副本（`%LOCALAPPDATA%\NovelAnalyzer\runtime\`）
-- 设 `NOVEL_ROOT` 指回原共享盘
-- 分析结果仍写到原位置
+- 启动时复制到本地副本（`%LOCALAPPDATA%\NovelAnalyzer\app\`）
+- 设 `NOVEL_ROOT` 与 `NOVEL_RUNTIME_DIR` 指回原共享盘及 `runtime/` 目录
+- 分析结果仍写到原位置 `runtime/workspace/`
 
 如果复制失败，看 `%LOCALAPPDATA%\NovelAnalyzer\run.log` 的 traceback。
 

@@ -11,9 +11,9 @@ Layer B（验证，audit 型统一协议）：来源块原文 + resolution 指�
 
 用法（pilot）：
   python -u scripts/run_salvage.py \
-    --ledger "workspace/《道诡异仙》/output/foreshadow_ledger.json" \
-    --output-dir "workspace/《道诡异仙》/output" \
-    --blocks "workspace/《道诡异仙》/blocks" \
+    --ledger "runtime/workspace/《道诡异仙》/output/foreshadow_ledger.json" \
+    --output-dir "runtime/workspace/《道诡异仙》/output" \
+    --blocks "runtime/workspace/《道诡异仙》/blocks" \
     --mode pilot --sample 38 --seed 42 \
     --base-url http://127.0.0.1:3425/v1 --recheck-model minimax-cn/MiniMax-M3.1-Flash
 """
@@ -37,6 +37,7 @@ for _k in ("NO_PROXY", "no_proxy"):
     os.environ[_k] = "localhost,127.0.0.1"
 
 from backend.common.closure import validate_prereg_row, closing_satisfied, validate_branch_hits
+from backend.config.paths import runtime_path  # noqa: E402
 from backend.config.settings import ConfigManager  # noqa: E402
 from backend.core.llm_client import LLMClient  # noqa: E402
 from backend.services.recheck_v2 import (  # noqa: E402
@@ -833,7 +834,7 @@ async def main() -> int:
     args = ap.parse_args()
     # 切正账是人工流程（§2.4：diff 报告 → 人工确认 → 备份 → 原子替换），不提供命令行直写
 
-    cfg = ConfigManager(ROOT / "config.json").load()
+    cfg = ConfigManager(runtime_path("config.json")).load()
     ledger_path = Path(args.ledger)
     blocks_dir = Path(args.blocks)
     if not blocks_dir.is_absolute():

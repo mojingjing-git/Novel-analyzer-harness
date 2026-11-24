@@ -327,7 +327,9 @@ def safe_save_json(data: Any, file_path: Path, ensure_ascii: bool = False) -> bo
     Returns:
         是否成功
     """
+    temp_path: Optional[Path] = None
     try:
+        file_path.parent.mkdir(parents=True, exist_ok=True)
         # 固定 .tmp 名在两线程同存同一目标时共用一个临时文件，
         # 内容交错或 Windows 下 replace 撞句柄 PermissionError；进程内唯一名消除该类竞态。
         # （代价：进程硬崩可能残留随机名 tmp，属可接受权衡）
@@ -354,7 +356,7 @@ def safe_save_json(data: Any, file_path: Path, ensure_ascii: bool = False) -> bo
         logger.error(f"保存JSON失败: {e}")
         # 清理临时文件
         try:
-            if temp_path.exists():
+            if temp_path is not None and temp_path.exists():
                 temp_path.unlink()
         except Exception:
             pass

@@ -24,7 +24,7 @@ from ..config.settings import APIConfig
 from ..core.moderation import (
     mark_moderation, is_moderation_message, is_moderation_error,
 )
-from ..common.llm_signals import (  # noqa: F401  （兼容导出：vnext 经 common 引用，1.x 历史路径不变）
+from ..common.llm_signals import (  # noqa: F401  （兼容导出：权威实现在 common）
     moderation_hit_from_exception,
 )
 from .error_taxonomy import (

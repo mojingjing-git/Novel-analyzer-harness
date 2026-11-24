@@ -1,17 +1,19 @@
-// 最终总结阶段 → 合成 LaneView 兼容事件
-// 把 summary_progress WS 消息翻译成 activeBlocks/finishedBlocks 操作，
-// 让 LaneView 用同一组件显示总结阶段的 LLM 调用（分卷/复检/风格/报告）。
+// 最终总结阶段 → LaneView 车道状态管理
+// 支持两类消息驱动：
+// 1. 真实并发槽打点事件：lane_start / lane_done（后端获得并发槽后真实入槽、释放前离槽）
+// 2. 兼容回退（real_lanes 未开启时的旧消息格式）：由 phase / batch_done 合成阶段块
 //
-// 设计：不引入后端改动。summary 阶段的 batch_done/batch_failed 已通过 hub 广播，
-// 只是没喂给 LaneView。本文件在 frontend 这层补上合成块的生命周期。
-//
-// 合成 id 范围（避开分析阶段 1-10000 的章节 id）：
-//   batch 阶段  : 900001-900999  (卷分析并发批)
-//   recheck 阶段: 910001-910999  (伏笔复检批)
-//   style 阶段  : 920001         (单次 LLM)
-//   report 阶段 : 930001         (单次 LLM)
+// 车道 ID 区间（避开分析阶段 1-10000 章节 ID）：
+//   900001-900999 : 分卷摘要（summary_phase_1）
+//   905001-905999 : 伏笔调和（summary_phase_1_recon）
+//   910001-919999 : 伏笔复检（summary_phase_2）
+//   920001        : 写作风格分析（summary_phase_3）
+//   930001-930003 : 最终报告 / 人物图谱 / 世界图谱（summary_phase_4）
 
 import type { WSSummaryProgressPayload } from '../api/useProgressSocket'
+import type { SummaryInflightLane } from '../api/client'
+
+const SUMMARY_FINISHED_MAX = 50
 
 export interface SummaryLaneBlock {
   range: string
@@ -21,6 +23,54 @@ export interface SummaryLaneBlock {
 export type SummaryLaneBlocks = Map<number, SummaryLaneBlock>
 
 export type SummaryLaneFinished = Map<number, { ok: boolean; range: string }>
+
+function trimFinished(finished: SummaryLaneFinished) {
+  while (finished.size > SUMMARY_FINISHED_MAX) {
+    const firstKey = finished.keys().next().value
+    if (firstKey === undefined) break
+    finished.delete(firstKey)
+  }
+}
+
+function belongsToPhase(laneId: number, phase: string): boolean {
+  if (phase === 'batch') return (laneId >= 900000 && laneId < 910000) || laneId === 920001
+  if (phase === 'recheck') return laneId >= 910000 && laneId < 920000
+  if (phase === 'style') return laneId === 920001
+  if (phase === 'report') return laneId >= 930000
+  return false
+}
+
+/**
+ * 用后端 /api/summary/status 的 inflight_lanes 快照对账在途总结车道。
+ * 无变化时返回原 Map 引用，避免多余渲染。
+ */
+export function reconcileSummaryLanes(
+  active: SummaryLaneBlocks,
+  inflight: SummaryInflightLane[] | undefined,
+): SummaryLaneBlocks {
+  const list = Array.isArray(inflight) ? inflight : []
+  const next: SummaryLaneBlocks = new Map()
+  for (const lane of list) {
+    const id = Number(lane?.id ?? 0)
+    if (id <= 0) continue
+    next.set(id, {
+      range: String(lane.label || `任务 #${id}`),
+      startedAt: Math.round(Number(lane.started_at || 0) * 1000),
+    })
+  }
+  if (next.size === active.size) {
+    let same = true
+    for (const [id, info] of next) {
+      const old = active.get(id)
+      if (!old || old.range !== info.range || old.startedAt !== info.startedAt) {
+        same = false
+        break
+      }
+    }
+    if (same) return active
+  }
+  return next
+}
 
 /**
  * 处理一条 summary_progress 事件，更新 active/finished Maps。
@@ -36,9 +86,61 @@ export function applySummaryProgress(
   const totalBatches = Number(p.total_batches ?? 0)
   const batchIdx = Number(p.batch ?? 0)
 
-  // 阶段开始：上一阶段残留的合成块（如果有）移到 finished 让用户看到 ✓，
-  // 然后合成新阶段块
+  // 真实并发槽入槽
+  if (ptype === 'lane_start') {
+    const laneId = Number(p.lane_id ?? 0)
+    if (laneId > 0) {
+      const next = new Map(active)
+      const nextFinished = new Map(finished)
+      nextFinished.delete(laneId)
+      const tsMs = p.ts ? Math.round(Number(p.ts) * 1000) : Date.now()
+      next.set(laneId, {
+        range: String(p.label ?? `任务 #${laneId}`),
+        startedAt: tsMs,
+      })
+      return { changed: true, newActive: next, newFinished: nextFinished }
+    }
+    return { changed: false, newActive: active, newFinished: finished }
+  }
+
+  // 真实并发槽离槽
+  if (ptype === 'lane_done') {
+    const laneId = Number(p.lane_id ?? 0)
+    if (laneId > 0) {
+      const next = new Map(active)
+      const prev = next.get(laneId)
+      next.delete(laneId)
+      const nextFinished = new Map(finished)
+      nextFinished.delete(laneId)
+      nextFinished.set(laneId, {
+        ok: p.ok !== false,
+        range: String(p.label ?? prev?.range ?? `任务 #${laneId}`),
+      })
+      trimFinished(nextFinished)
+      return { changed: true, newActive: next, newFinished: nextFinished }
+    }
+    return { changed: false, newActive: active, newFinished: finished }
+  }
+
+  // 阶段切换
   if (ptype === 'phase' && (phase === 'batch' || phase === 'recheck' || phase === 'style' || phase === 'report')) {
+    if (p.real_lanes) {
+      // 真实车道模式下仅清理上一阶段的残留条目，避免跨阶段僵尸块残留；实际车道由 lane_start/lane_done 驱动
+      let moved = false
+      const next = new Map(active)
+      const nextFinished = new Map(finished)
+      for (const [id, info] of next) {
+        if (id >= 900000 && !belongsToPhase(id, phase)) {
+          nextFinished.set(id, { ok: true, range: info.range })
+          next.delete(id)
+          moved = true
+        }
+      }
+      if (!moved) return { changed: false, newActive: active, newFinished: finished }
+      trimFinished(nextFinished)
+      return { changed: true, newActive: next, newFinished: nextFinished }
+    }
+
     const now = Date.now()
     const next = new Map(active)
     const nextFinished = new Map(finished)
@@ -62,30 +164,30 @@ export function applySummaryProgress(
     } else if (phase === 'report') {
       next.set(930001, { range: '生成全书脉络报告', startedAt: now })
     }
+    trimFinished(nextFinished)
     return { changed: true, newActive: next, newFinished: nextFinished }
   }
 
-  // 单批完成/失败：把对应合成块从 active 移到 finished
+  // 兼容旧版 batch_done / batch_failed（real_lanes 下若未对应合成块则无动作）
   if (ptype === 'batch_done' || ptype === 'batch_failed') {
     if (batchIdx > 0) {
-      // batch 阶段用 900000+id（其他阶段没 batch_done 事件，id 不会冲突）
       const blockId = 900000 + batchIdx
       if (active.has(blockId)) {
         const next = new Map(active)
         const nextFinished = new Map(finished)
         next.delete(blockId)
-        // range 补 total_batches 后缀（"卷3/12"），没传 total_batches 时退化为 "卷3"
         const totalLabel = totalBatches > 0 ? `${batchIdx}/${totalBatches}` : `${batchIdx}`
         nextFinished.set(blockId, {
           ok: ptype === 'batch_done',
           range: `卷${totalLabel}`,
         })
+        trimFinished(nextFinished)
         return { changed: true, newActive: next, newFinished: nextFinished }
       }
     }
   }
 
-  // 整个总结完成：style/report 等单次 LLM 没 batch_done，兜底标 done
+  // 整个总结完成：兜底标 done
   if (ptype === 'complete') {
     if (active.size > 0) {
       const next = new Map(active)
@@ -96,13 +198,12 @@ export function applySummaryProgress(
           next.delete(id)
         }
       }
+      trimFinished(nextFinished)
       return { changed: true, newActive: next, newFinished: nextFinished }
     }
   }
 
-  // 用户主动停止：后端只发 {"type": "status", "message": "已停止"}，
-  // 不会发 complete。残留的合成块会一直留在 active 转圈（elapsed 一直涨），
-  // 整行"运行中"但实际 LLM 已经停了。这里把 ≥900000 的活动块以 ok=false 移到 finished。
+  // 用户主动停止：把残留 ≥900000 活动块标为中断
   if (ptype === 'status' && typeof p.message === 'string' && p.message.includes('已停止')) {
     if (active.size > 0) {
       const next = new Map(active)
@@ -113,6 +214,7 @@ export function applySummaryProgress(
           next.delete(id)
         }
       }
+      trimFinished(nextFinished)
       return { changed: true, newActive: next, newFinished: nextFinished }
     }
   }

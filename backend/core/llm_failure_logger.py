@@ -7,11 +7,15 @@
 
 import json
 import logging
+import os
 import re
 import threading
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from typing import Optional, Union
+
+from ..config.paths import ensure_runtime_dir
 
 logger = logging.getLogger(__name__)
 
@@ -49,8 +53,12 @@ def redact(text: str) -> str:
 class FailureLogger:
     """失败日志记录器 - 专门记录API调用失败的详细信息（线程安全）"""
 
-    def __init__(self, log_file: str = "api_failures.log"):
-        self.log_file = Path(log_file)
+    def __init__(self, log_file: Optional[Union[str, Path]] = None):
+        if log_file is None:
+            self.log_file = ensure_runtime_dir() / "api_failures.log"
+        else:
+            self.log_file = Path(log_file)
+            self.log_file.parent.mkdir(parents=True, exist_ok=True)
         self.failures = []
         self._lock = threading.Lock()
         self._logger = self._build_logger()
@@ -60,8 +68,10 @@ class FailureLogger:
         flog = logging.getLogger("api_failures")
         flog.setLevel(logging.INFO)
         flog.propagate = False
+        target = os.path.normcase(os.path.abspath(str(self.log_file)))
         if not any(
-            getattr(h, "baseFilename", "") == str(self.log_file)
+            getattr(h, "baseFilename", "")
+            and os.path.normcase(os.path.abspath(getattr(h, "baseFilename", ""))) == target
             for h in flog.handlers
         ):
             rfh = RotatingFileHandler(

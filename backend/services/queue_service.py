@@ -10,7 +10,7 @@ import logging
 import shutil
 import time
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Literal
 
 from ..config.settings import AppConfig, ConfigManager
 from ..core.pipeline import AnalysisPipeline
@@ -144,22 +144,25 @@ class AnalysisService:
         return added
 
     # ---- 控制 ----
-    def start(self) -> bool:
-        """启动队列分析（已在运行/队列空/总结运行中则返回 False）"""
+    def start_blocker(self) -> Literal["analysis_running", "summary_running", "queue_finished"] | None:
         if self.is_running:
-            logger.warning("分析已在运行中")
-            return False
-        # 双向互斥：总结运行期间启动分析会并发读写 output/，总结读到半成品数据
-        # （summary_service.start 已拦分析中启动总结，此处补反向护栏）
+            return "analysis_running"
+        # 总结运行时需要独占分析产物。
         try:
-            from .summary_service import get_summary_service as get_summary
-            if get_summary().is_running:
-                logger.warning("总结任务运行中，不能启动分析")
-                return False
+            from .summary_service import get_summary_service
+            if get_summary_service().is_running:
+                return "summary_running"
         except Exception:
-            pass
-        if self.queue.is_empty or self.queue.is_finished:
-            logger.warning("队列为空或已全部完成")
+            logger.debug("无法读取总结运行状态", exc_info=True)
+        if self.queue.is_finished:
+            return "queue_finished"
+        return None
+
+    def start(self) -> bool:
+        """队列未被阻塞时启动分析。"""
+        blocker = self.start_blocker()
+        if blocker:
+            logger.warning("无法启动分析: %s", blocker)
             return False
         self._stop_requested = False
         # 重置"已见人物"集合，避免上一本书的人物污染新书首次登场判定
@@ -222,8 +225,9 @@ class AnalysisService:
                 # 队列全部完成且开启 auto_summary 时，
                 # 对已完成的书逐本串行执行最终总结（单本失败记录日志继续下一本；
                 # 期间用户可通过既有 /api/summary/stop 停止）
-                if config.analysis.auto_summary:
-                    await self._auto_summary_done_books(config)
+                latest_cfg = self.config_manager.load()
+                if latest_cfg.analysis.auto_summary:
+                    await self._auto_summary_done_books(latest_cfg)
                 # 自动总结期间用户可能已停止——此时不得广播“队列全部完成”
                 if self._stop_requested:
                     await hub.state_change(WSState.STOPPED, "分析已停止（总结阶段中止）")
@@ -247,7 +251,7 @@ class AnalysisService:
         await hub.log(f"队列完成，自动总结 {len(done_books)} 本书...")
         summary = get_summary()
         batch_size = max(5, config.analysis.summary_batch_size)
-        concurrency = max(1, config.analysis.summary_concurrency)
+        concurrency = max(1, config.analysis.summary_concurrency or config.analysis.concurrency)
         for book_id in done_books:
             if self._stop_requested:
                 await hub.log("自动总结已停止（用户停止）", level="warn")

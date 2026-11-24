@@ -38,7 +38,7 @@ export interface FeedDiscoveryItem {
 }
 
 export const FINISHED_BLOCKS_MAX = 50
-export const RATE_HISTORY_MAX = 30
+export const RATE_HISTORY_MAX = 60
 export const DISCOVERIES_MAX = 200
 
 // ============ block_start / block_done：车道生命周期 ============
@@ -97,10 +97,15 @@ export interface BlockTokenInfo {
   isThinking?: boolean
 }
 
+/** 是否属于最终总结阶段的流式 token_delta */
+export function isSummaryTokenDelta(p: WSTokenDeltaPayload): boolean {
+  return Boolean(p.context && p.context.startsWith('summary_phase_'))
+}
+
 /**
  * 转换 token_delta 的 blockId：
  * - context="analysis": 直接使用 unit_idx 章节号
- * - context="summary_phase_*": 映射到 900000+ 合成车道 ID，与 summaryLanes.ts 契约对齐
+ * - context="summary_phase_*": 映射到 900000+ 总结车道 ID，与 summaryLanes.ts 契约对齐
  */
 export function resolvePayloadBlockId(p: WSTokenDeltaPayload): number {
   const context = p.context ?? 'analysis'
@@ -112,6 +117,9 @@ export function resolvePayloadBlockId(p: WSTokenDeltaPayload): number {
   if (context === 'summary_phase_1') {
     return 900000 + (rawIdx > 0 ? rawIdx : 1)
   }
+  if (context === 'summary_phase_1_recon') {
+    return 905000 + (rawIdx > 0 ? rawIdx : 1)
+  }
   if (context === 'summary_phase_2') {
     return 910000 + (rawIdx > 0 ? rawIdx : 1)
   }
@@ -119,12 +127,34 @@ export function resolvePayloadBlockId(p: WSTokenDeltaPayload): number {
     return 920001
   }
   if (context === 'summary_phase_4') {
-    return 930001
+    return 930000 + (rawIdx > 0 ? rawIdx : 1)
   }
   return rawIdx
 }
 
-/** 实时 token 增量 → 块级累计（取最大非相加）+ per-block 最新速率 + 全局 sparkline 历史 */
+/** 向非响应式缓冲区写入单条 token_delta（供 1 秒统一批提交前收集最新状态） */
+export function upsertTokenDeltaBuffer(
+  tokenBuf: Map<number, BlockTokenInfo>,
+  rateBuf: Map<number, number>,
+  p: WSTokenDeltaPayload,
+  nowMs: number,
+): void {
+  const d = p.delta
+  const blockId = resolvePayloadBlockId(p)
+  if (blockId < 0) return
+  const outTokens = Number(d.output_tokens ?? 0)
+  const rate = Number(d.rate_tokens_per_sec ?? 0)
+  const isThinking = Boolean(d.is_thinking)
+  const prev = tokenBuf.get(blockId)
+  tokenBuf.set(blockId, {
+    outputTokens: Math.max(prev?.outputTokens ?? 0, outTokens),
+    lastTokenAt: nowMs,
+    isThinking,
+  })
+  rateBuf.set(blockId, rate)
+}
+
+/** 实时 token 增量 → 块级累计（取最大非相加）+ per-block 最新速率；速率历史改由 1 秒采样生成 */
 export function applyTokenDelta(
   tokenByBlock: Map<number, BlockTokenInfo>,
   rateByBlock: Map<number, number>,
@@ -132,27 +162,122 @@ export function applyTokenDelta(
   p: WSTokenDeltaPayload,
   nowMs: number,
 ): { tokenByBlock: Map<number, BlockTokenInfo>; rateByBlock: Map<number, number>; rateHistory: number[] } {
-  const d = p.delta
-  const blockId = resolvePayloadBlockId(p)
-  const outTokens = Number(d.output_tokens ?? 0)
-  const rate = Number(d.rate_tokens_per_sec ?? 0)
-  const isThinking = Boolean(d.is_thinking)
   const nextTokens = new Map(tokenByBlock)
   const nextRate = new Map(rateByBlock)
-  if (blockId >= 0) {
-    const cur = nextTokens.get(blockId) || { outputTokens: 0, lastTokenAt: 0 }
-    cur.outputTokens = Math.max(cur.outputTokens, outTokens)  // 累计取最大
-    cur.lastTokenAt = nowMs
-    cur.isThinking = isThinking
-    nextTokens.set(blockId, cur)
-    // 注意：rate 可能 < 0 / = 0（停止 / 出错），也照更新以反映"该 block 当前不输出"
-    nextRate.set(blockId, rate)
+  upsertTokenDeltaBuffer(nextTokens, nextRate, p, nowMs)
+  return { tokenByBlock: nextTokens, rateByBlock: nextRate, rateHistory }
+}
+
+/** 1 秒定时采样全系统汇总吞吐：轻度 EMA 平滑（alpha=0.35）并保留最近 maxLen 个点 */
+export function sampleRateHistory(
+  history: number[],
+  aggregateRateValue: number,
+  alpha = 0.35,
+  maxLen = RATE_HISTORY_MAX,
+): number[] {
+  const raw = Number.isFinite(aggregateRateValue) ? Math.max(0, aggregateRateValue) : 0
+  if (history.length === 0) return [raw]
+  const prev = history[history.length - 1]
+  const next = prev * (1 - alpha) + raw * alpha
+  return [...history, next].slice(-maxLen)
+}
+
+/** 阶梯化图表刻度上限（避免 Y 轴随瞬时微小波动剧烈跳变） */
+export function calcChartCeiling(values: number[]): number {
+  const peak = values.reduce((m, v) => (Number.isFinite(v) && v > m ? v : m), 0)
+  if (peak <= 50) return 50
+  if (peak <= 100) return 100
+  if (peak <= 250) return Math.ceil(peak / 50) * 50
+  if (peak <= 1000) return Math.ceil(peak / 100) * 100
+  return Math.ceil(peak / 250) * 250
+}
+
+export interface LogScaleTick {
+  value: number
+  label: string
+  y: number
+  yPct: number
+}
+
+/** 对数坐标刻度上限（10 的幂次：100 / 1000 / 10000 / ...） */
+export function calcLogChartCeiling(values: number[]): number {
+  const peak = values.reduce((m, v) => (Number.isFinite(v) && v > m ? v : m), 0)
+  if (peak <= 100) return 100
+  if (peak <= 1000) return 1000
+  if (peak <= 10000) return 10000
+  return Math.pow(10, Math.ceil(Math.log10(peak)))
+}
+
+/** 将速率值映射为图表 SVG 纵坐标（支持线性与 log10(1 + v) 对数映射） */
+export function mapRateToChartY(
+  value: number,
+  ceiling: number,
+  height: number,
+  scale: 'linear' | 'log' = 'linear',
+): number {
+  const safeCeil = Math.max(ceiling, 1)
+  const usableH = Math.max(height - 5, 1)
+  const val = Number.isFinite(value) ? Math.max(0, value) : 0
+  const ratio = scale === 'log'
+    ? Math.min(1, Math.log10(1 + val) / Math.log10(1 + safeCeil))
+    : Math.min(1, val / safeCeil)
+  return Math.max(2, Math.min(height - 2, height - 2 - ratio * usableH))
+}
+
+export interface SmoothChartPoint {
+  x: number
+  y: number
+  value: number
+}
+
+/** 根据等距时间点序列生成三次贝塞尔平滑路径与面积闭合路径 */
+export function buildSmoothAreaPaths(
+  values: number[],
+  width: number,
+  height: number,
+  ceiling: number,
+  scale: 'linear' | 'log' = 'linear',
+): { line: string; area: string; points: SmoothChartPoint[] } {
+  if (values.length < 2 || width <= 0 || height <= 0) {
+    return { line: '', area: '', points: [] }
   }
-  let nextHistory = rateHistory
-  if (rate > 0) {
-    nextHistory = [...rateHistory, rate].slice(-RATE_HISTORY_MAX)
+  const safeCeil = Math.max(ceiling, 1)
+  const points: SmoothChartPoint[] = values.map((v, i) => {
+    const val = Number.isFinite(v) ? Math.max(0, v) : 0
+    const x = (i / (values.length - 1)) * width
+    const y = mapRateToChartY(val, safeCeil, height, scale)
+    return { x, y, value: val }
+  })
+
+  let line = `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i]
+    const p1 = points[i + 1]
+    const cx = ((p0.x + p1.x) / 2).toFixed(1)
+    line += ` C ${cx} ${p0.y.toFixed(1)}, ${cx} ${p1.y.toFixed(1)}, ${p1.x.toFixed(1)} ${p1.y.toFixed(1)}`
   }
-  return { tokenByBlock: nextTokens, rateByBlock: nextRate, rateHistory: nextHistory }
+  const area = `${line} L ${width.toFixed(1)} ${height.toFixed(1)} L 0 ${height.toFixed(1)} Z`
+  return { line, area, points }
+}
+
+/** 生成对数 Y 轴刻度尺条目（自上而下最多 4 档） */
+export function buildLogScaleTicks(ceiling: number, height: number): LogScaleTick[] {
+  const safeCeil = Math.max(ceiling, 100)
+  const tickValues = safeCeil <= 100
+    ? [100, 10, 0]
+    : safeCeil <= 1000
+      ? [1000, 100, 10, 0]
+      : [safeCeil, safeCeil / 10, safeCeil / 100, 0]
+  return tickValues.map((v) => {
+    const label = v >= 1000 ? `${v / 1000}k` : String(v)
+    const y = mapRateToChartY(v, safeCeil, height, 'log')
+    return {
+      value: v,
+      label,
+      y,
+      yPct: (y / height) * 100,
+    }
+  })
 }
 
 // ============ discovery：发现流 append-only ============

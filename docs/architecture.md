@@ -7,59 +7,35 @@
 ## 目录结构
 
 ```
-├── desktop.py                    # pywebview 桌面入口（本地运行时副本 + NOVEL_ROOT 双目录）
+├── desktop/                      # pywebview 桌面入口、PyInstaller 打包与首次启动模板
 ├── backend/
-│   ├── app.py                    # FastAPI 应用工厂（路由挂载 / 静态托管 / 日志 / 健康检查）
+│   ├── app.py                    # FastAPI 应用工厂（路由挂载 / SPAStaticFiles 静态托管 / 日志 / 健康检查）
 │   ├── main.py                   # 后端启动器
 │   ├── ws_events.py              # WebSocket 消息协议的唯一权威定义
 │   ├── progress_hub.py           # WebSocket 广播中枢（节流 + 慢消费者驱逐）
-│   ├── api/                      # 12 个路由模块 + auth.py + ws.py（默认挂载 11 组；
-│   │                             #   routes_vnext 默认冻结；业务编排在 services，规则由 test_smoke.py 守护）
-│   ├── common/                   # 两层引擎共用的纯逻辑语义层：错误分类（error_types /
+│   ├── api/                      # 10 个路由模块 + auth.py + ws.py（业务编排在 services，规则由 test_smoke.py 守护）
+│   ├── common/                   # 共用纯逻辑语义层：错误分类（error_types /
 │   │                             #   error_taxonomy）、审核标记（moderation）、LLM 错误信号
-│   │                             #   （llm_signals）及 B/C 追踪/审核/溯源等（19 个模块，只依赖标准库，禁止引用 core/services/vnext）
-│   ├── core/                     # 1.x 引擎（23 个模块）：分析流水线、LLM 客户端、知识库等
+│   │                             #   （llm_signals）、复检请求日志（recheck_request_log）、
+│   │                             #   代理净化（proxy_env）等（10 个模块，只依赖标准库，禁止引用 core/services）
+│   ├── core/                     # 核心引擎（23 个模块）：分析流水线、LLM 客户端、知识库、风格提取等
 │   │                             #   （error_types / error_taxonomy / moderation 是 common 的兼容转发层）
-│   ├── services/                 # 19 个模块：编排层（队列、总结、风格、切分、可视化、用量账本…）
-│   ├── vnext/                    # 24 个模块：vnext 数据空间（当前冻结，仅 resolution.py 供 recheck_v2 复用）
-│   ├── config/                   # constants.py（默认值与常量）/ settings.py（dataclass）/ presets.py
+│   ├── services/                 # 16 个单文件模块 + final_summary/ 四层无环子包（8 个内部模块）：编排层（队列、总结、切分、可视化、复检与裁决、用量账本…）
+│   ├── config/                   # constants.py（默认值与常量）/ paths.py（路径真源）/ settings.py / presets.py
 │   ├── models/                   # AnalysisResult / KnowledgeBase
-│   ├── utils/                    # JSON 解析、聚合、Excel、角色卡、账本、文本工具
-│   └── tests/                    # 19 个领域测试文件 + fixtures 语料
+│   ├── utils/                    # JSON 解析、按需聚合缓存、Excel、角色卡、账本、文本工具
+│   └── tests/                    # 14 个领域测试文件 + conftest / pytest_isolation / pytest_ssl_cache + fixtures 语料
 ├── frontend/
 │   └── src/
-│       ├── pages/                # 12 个页面
-│       ├── components/           # 13 个组件
-│       ├── composables/          # 4 个组合式函数
-│       ├── api/                  # client.ts（60 个方法）/ sessionToken.ts / useProgressSocket.ts
+│       ├── pages/                # 9 个主页面（旧入口保留带参重定向）
+│       ├── components/           # 14 个组件
+│       ├── composables/          # 5 个组合式函数（含 useSelectedBook）
+│       ├── api/                  # client.ts / sessionToken.ts / useProgressSocket.ts
 │       ├── utils/                # 9 个工具模块
 │       └── router.ts
-├── scripts/                      # 测试、打捞验收、基线测量脚本（B/C 实验脚本收纳在 experiments/bc/）
-├── config.json                   # 运行配置（密钥不入库）
-├── queue_state.json              # 队列状态持久化
-└── desktop.spec / build_exe.bat  # PyInstaller 打包
+├── scripts/                      # 测试、打捞验收与基线测量脚本
+└── runtime/                      # 源码模式统一运行目录（.gitignore 忽略：config.json / queue_state.json / usage_state.json / workspace/ / logs）
 ```
-
-## 两套数据空间
-
-项目里同时存在两套数据模型，互不引用：
-
-- **1.x 数据层**：`workspace/{书名}/` 下的 `blocks/` + `output/`，由 `backend/core` 与
-  `backend/services` 读写。分析流水线、最终总结、风格分析、可视化都跑在这套上。
-- **vnext 数据空间**：`workspace_vnext/{book_id}/` 下的 `source/`、`blocks/`、
-  `results/`、`ledger/`、`derived/`、`cache/`，由 `backend/vnext` 读写。当前处于冻结状态：
-  `/api/vnext/*` HTTP 路由默认不挂载（需设置环境变量 `NOVEL_ENABLE_VNEXT_ROUTES=1` 启用），
-  生产链路仅复用 `backend/vnext/resolution.py` 的复检裁决核。
-  分层规则（由 `backend/tests/test_smoke.py` 守护）：
-  - vnext 禁止反向 import `backend.core` / `backend.services`；共享语义放
-    `backend/common`（只依赖标准库），vnext 与 core 都从它取用。
-  - 两类已声明的转发垫片豁免：`vnext/citations.py`（转发 core.citations）、
-    `vnext/prompt_limits.py`（转发 core.prompt_limits）——纯转发无实现，权威在
-    core，旧 import 路径靠它们兼容。
-  - vnext 自有数据件（fingerprint / consistency / results / tasks / registry /
-    resolution）不向 1.x 收割，其价值在整套装好后的原子发布语义。
-
-vnext 的语义契约见 [data-contract-vnext.md](./data-contract-vnext.md)。
 
 ## 数据流全景
 
@@ -71,12 +47,11 @@ flowchart LR
   Pipeline --> MS["memory_state"]
   MS --> Output["output/chapter_N_result.json"]
   Output --> Summary["final_summary.run（4 阶段）"]
-  Summary --> Report["final_summary_report.md"]
-  Output --> Agg["aggregate_utils"]
+  Summary --> Report["final_summary_report.md + story_atlas.json"]
+  Output --> Agg["aggregate_utils（按指纹按需缓存）"]
   Output --> Style["style_analyzer"]
   Output --> Excel["excel_export"]
-  Output --> Loc["location_normalizer"]
-  Agg --> VizPages["时间线 / 关系图 / 地图"]
+  Agg --> VizPages["人物谱系 / 世界舞台 / 时间线"]
 ```
 
 ## 章节分析流水线（`backend/core/pipeline.py`）
@@ -199,7 +174,7 @@ schema 版本号随分类表一起管理。`FORESHADOW_CATEGORY_TEXT` 是前端�
 休眠判定：连续 15 批未出现且跨度不少于 200 章。reconciliation 逐批判定回收，
 全书复检兜底。
 
-## 最终总结（`backend/services/final_summary.py`）
+## 最终总结（`backend/services/final_summary/`）
 
 四个阶段：
 
@@ -213,13 +188,27 @@ flowchart LR
 
 | 阶段 | 内容 | 调用量 | 断点 |
 |---|---|---|---|
-| 1/4 | 每批两次调用：Markdown 卷摘要 + JSON 回收判定 | `ceil(块数 / summary_batch_size)` × 2 | 卷摘要完成即落盘；调和失败只补调和 |
-| 2/4 | 全书伏笔复检 | `ceil(活跃伏笔数 / foreshadow_recheck_batch_size)`，受 `recheck_max_calls` 预算约束 | 每批完成立即落盘账本，重启只复检剩余 active |
-| 3/4 | 风格分析：统计指标 + LLM 8 维语义 | 1 | 重跑成本低 |
-| 4/4 | 汇总成最终报告 | 1 | 单次调用 |
+| 1/4 | 每批两次调用：Markdown 卷摘要 + JSON 回收判定 | `ceil(块数 / summary_batch_size)` × 2 | 卷摘要校验通过（拦截拒答与缺正文回复）后落盘，断点加载同步校验；调和失败只补调和；全批完成落 `stage1_ledger_baseline.json` 干净账本基线 |
+| 2/4 | 全书伏笔复检 | 默认 V3 共享证据池单阶段引擎（受 `recheck_max_calls` 预算约束）；可选切换 V2 引擎或启用灰区 U4、支线单跳开关 | 完整 `COMPLETED` 落 `stage2_recheck_state.json`（指纹含引擎开关），重跑跳过已核对轮次；中断保留进程内账本 |
+| 3/4 | 风格分析：统计指标 + LLM 8 维语义 | 1 | 有效结果落 `style_profile.json`（按正文集合与模型指纹失效） |
+| 4/4 | 汇总成最终报告（Markdown 结构化表格 + 内化文风叙事）并并发提取全书语义图谱 `story_atlas.json` | 1 + 2（图谱） | 报告直落盘；图谱按 `char_atlas_fp` / `world_atlas_fp` 双子指纹独立缓存，异常降级不阻塞主报告 |
 
-断点目录是 `output/final_summary_checkpoint/`，包含 `volume_{idx}.md`、`recon_{idx}.json`
-与 `manifest.json`。
+最终总结实现拆分为 4 层无环子包 `backend/services/final_summary/`：`prompts.py`、`parsers.py` 与 `atlas_extractor.py`（Layer 1 纯常量、解析与图谱清洗函数）→ `catalog_mixin.py`、`checkpoint_mixin.py`、`recheck_mixin.py`（Layer 2 职责内聚 Mixin）→ `runner.py`（Layer 3 `FinalSummaryRunner` 主执行器）→ `__init__.py`（Layer 4 门面导出）。
+
+断点目录是 `output/final_summary_checkpoint/`，包含 `volume_{idx}.md`、`recon_{idx}.json`、`manifest.json`、`stage1_ledger_baseline.json`、`stage2_recheck_state.json`、`style_profile.json` 与 `recheck_v3_u1_cache.json`；详细裁决记录写入 `output/recheck_verdicts.json`。
+
+### 伏笔复检引擎（V3 / V2）
+
+阶段 2/4 由 `recheck_version` 选择带证据复检引擎（`"v3"` 默认 / `"v2"` 可选）：
+
+- **V3 共享证据池多跳引擎（默认，`backend/services/recheck_v3.py`）**：
+  - **均衡超块与双向路由（U1）**：按作品篇幅将章节事件摘要均衡切分为受上下文预算约束的超块，批量拆解核心问题与次要支线（`50` 条/批，紧凑模式 `25` 条/批），抽取并合并实体别名词典后执行双向路由。
+  - **严格前置门控、共享证据池与跨池继受（U2 / U3 / U5）**：每条伏笔默认选取至多 `5` 个设伏后原文窗口（超长单章自动双窗采样），严格仅在 `needs_pre_setup_backref` 为真时附带 `1` 个设伏前因果回指窗；批内按章节重合度装箱并使用去重【共享正文证据池】执行单阶段核查与终审，保留至多 `3` 跳深挖追踪，支持同池章节跨题继受；确定性校验层核对逐字引文锚点并触发单轮精确修复，且在落账时优先选择设伏后兑现章写入 `resolved_chapter`。
+  - **可选审检与省费开关**：`recheck_v3_gray_u4`（默认 `false`）开启后对多跳、非高置信或争议条目追加一轮灰区共享池 U4 终审；`recheck_v3_mid_single_hop`（默认 `false`）开启后中重要度条目在 U2 缩减至 `3` 个后文窗并跳过二三跳（高重要度条目保留全窗多跳）。
+  - **四态分层裁决与账本回写**：判定结果归类为 `RESOLVED_EXPLICIT`、`RESOLVED_IMPLICIT`、`PARTIALLY_RESOLVED` 或 `UNRESOLVED`（细分 `ATMOSPHERIC_HOOK` 与 `UNFILLED_PIT`）；其中未解条目会清除阶段 1 留下的未证实暂挂标记，确保长期未回收的伏笔能按账本规则正常进入 `dormant`。
+  - **无硬编码通用化**：基于语料统计自动识别主角与超高频词作为过滤停用词，支持正篇/番外标签识别与译名间隔号实体分词。
+- **V2 批量窗口引擎（可选，`backend/services/recheck_v2.py`）**：基于关键词检索局部原文窗口并按批核对，裁决逻辑由 `backend/services/recheck_resolution.py` 提供。
+  - 裁决关键设计：**模型只给原话，位置由程序算**。模型回包里的 `supporting_span` 不是必需字段，程序用引文去原文定位并写出 `located_span`；引文在原文中找不到或多处命中时，按既定规则降级为 `INVALID`，而不是让模型自己报坐标。
 
 总结可以用独立的模型与思考模式（`summary_model` / `summary_thinking_mode`），空值跟随
 全局设置——思考型模型在大提示词上延迟高，换快模型是常见做法。
@@ -230,35 +219,15 @@ flowchart LR
 - **最终总结**：卷摘要与调和结果独立落盘；中断后只补缺的调和；复检阶段每批落盘账本，
   已回收的伏笔不重复付费。
 
-## vnext 复检链路
-
-vnext 的复检走 `backend/vnext/` 这一组模块，与 1.x 的复检是两套实现：
-
-| 环节 | 模块 | 职责 |
-|---|---|---|
-| 规划 | `recheck_plan.py` | 复检计划与覆盖汇总 |
-| 取材 | `context.py` | 把"全书"换成几段诚实的原文窗口 |
-| 证据 | `resolution.py` | 原文证据校验与全自动裁决，把模型答复变成程序可判定的状态 |
-| 执行 | `runner.py` | 规划 → 预算 → 裁决 → 账本 → 落盘 |
-| 预算 | `budget.py` | 请求前预留、失败按实扣、未开始可退 |
-| 熔断 | `breaker.py` | 只有"整个账号都不行"才停止派发 |
-| 账本 | `tasks.py` | 可判定、可重放、可复用的任务账本 |
-
-裁决的关键设计：**模型只给原话，位置由程序算**。模型回包里的 `supporting_span` 不是
-必需字段，程序用引文去原文定位并写出 `located_span`；引文在原文中找不到或多处命中时，
-按既定规则降级为 `INVALID`，而不是让模型自己报坐标。
-
 ## WebSocket 进度协议
 
 `/ws/progress` 是唯一的推送通道，消息线格式统一为 `{"type": ..., "payload": {...}}`，
 `ping` 心跳不带 payload（服务端 25 秒一次）。协议常量集中在 `backend/ws_events.py`，
 是前后端共同的唯一来源；前端镜像定义在 `frontend/src/api/useProgressSocket.ts`。
 
-消息类型 11 种：`log`、`progress`、`block_start`、`block_done`、`discovery`、
-`token_stats`、`token_delta`、`state_change`、`summary_progress`、
-`location_normalization_progress`、`ping`。
-状态机取值 12 种：`idle`、`running`、`stopped`、`done`、`summary_*` 与
-`location_normalization_*` 各 4 种。
+消息类型 10 种：`log`、`progress`、`block_start`、`block_done`、`discovery`、
+`token_stats`、`token_delta`、`state_change`、`summary_progress`、`ping`。
+状态机取值 8 种：`idle`、`running`、`stopped`、`done` 与 `summary_*` 4 种。
 
 连接时校验 `Origin`，只允许 localhost / 127.0.0.1（含空 Origin）。
 
@@ -266,9 +235,9 @@ vnext 的复检走 `backend/vnext/` 这一组模块，与 1.x 的复检是两套
 
 `pywebview` + WebView2 在中文路径、网络盘上有渲染限制。解决方案：
 
-1. 启动时把工程复制到本地运行时副本（`%LOCALAPPDATA%\NovelAnalyzer\runtime\`）
-2. 设 `NOVEL_ROOT` 环境变量指回原共享盘，分析结果仍写到原位置
-3. WebView2 在本地副本里加载 `dist/`
+1. 启动时将 `backend/` 与 `desktop/desktop.py` 复制到本地运行时副本（`%LOCALAPPDATA%\NovelAnalyzer\app\`）
+2. 由启动脚本传入 `NOVEL_ROOT`（指向仓库根加载 `frontend/dist/` 与模板）及 `NOVEL_RUNTIME_DIR`（指向 `runtime/` 存放运行配置、工作区与日志）
+3. WebView2 从本地磁盘副本加载后端与界面，分析结果仍写回源码仓库 `runtime/` 目录
 
 ## 开发模式
 

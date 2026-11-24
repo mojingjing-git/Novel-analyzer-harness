@@ -21,7 +21,7 @@ class SummaryStartRequest(BaseModel):
     book_id: str
     start_chapter: int = 1
     end_chapter: int = 0
-    batch_size: int = 10
+    batch_size: int = 0
     concurrency: int = 0
 
 
@@ -38,7 +38,7 @@ async def start_summary(req: SummaryStartRequest) -> dict:
             book_id=req.book_id,
             start_chapter=req.start_chapter,
             end_chapter=req.end_chapter if req.end_chapter > 0 else 999999,
-            batch_size=req.batch_size,
+            batch_size=req.batch_size if req.batch_size > 0 else None,
             concurrency=req.concurrency if req.concurrency > 0 else None,
         )
         return {"ok": True}

@@ -25,13 +25,12 @@ class WSType(StrEnum):
     TOKEN_DELTA = "token_delta"
     STATE_CHANGE = "state_change"
     SUMMARY_PROGRESS = "summary_progress"
-    LOCATION_NORMALIZATION_PROGRESS = "location_normalization_progress"
     # 心跳：唯一不带 payload 的消息
     PING = "ping"
 
 
 class WSState(StrEnum):
-    """state_change 消息的 state 取值全集（分析 / 总结 / 归一化三个域）"""
+    """state_change 消息的 state 取值全集（分析 / 总结两个域）"""
 
     IDLE = "idle"
     RUNNING = "running"
@@ -41,10 +40,6 @@ class WSState(StrEnum):
     SUMMARY_STOPPED = "summary_stopped"
     SUMMARY_DONE = "summary_done"
     SUMMARY_FAILED = "summary_failed"
-    LOCATION_NORMALIZATION_RUNNING = "location_normalization_running"
-    LOCATION_NORMALIZATION_DONE = "location_normalization_done"
-    LOCATION_NORMALIZATION_STOPPED = "location_normalization_stopped"
-    LOCATION_NORMALIZATION_FAILED = "location_normalization_failed"
 
 
 class PipelineStatus(StrEnum):
@@ -75,11 +70,12 @@ class PipelineStatus(StrEnum):
 # TokenDeltaPayload:     {context: str, session_id: str, unit_idx: int,
 #                         delta: {...}, timestamp: float}
 # StateChangePayload:    {state: WSState, detail: str}
-# SummaryProgressPayload / LocationNormalizationProgressPayload：
-#     宽松 Dict（final_summary / location_normalizer 透传 + book_id/batches_done 注入），
+# SummaryProgressPayload：
+#     宽松 Dict（final_summary 透传 + book_id/batches_done 注入），
 #     子类型见 final_summary._emit_progress：status / phase / batch_done /
-#     batch_failed / ledger_updated / complete；前端只读 type/phase/total_batches/
-#     batch/message/batches_done。
+#     batch_failed / lane_start / lane_done / ledger_updated / complete；
+#     前端读 type/phase/total_batches/batch/message/batches_done 及
+#     lane_id/label/ok/concurrency/real_lanes/ts。
 
 
 def log_event(level: str, text: str, source: str = "business", category: str = "") -> Dict[str, Any]:

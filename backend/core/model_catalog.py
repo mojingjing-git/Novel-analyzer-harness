@@ -18,13 +18,29 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from ..config.paths import get_runtime_dir
+
 logger = logging.getLogger(__name__)
 
 # 文件路径定义
 _BASE_DIR = Path(__file__).resolve().parent.parent
 BUNDLED_PATH = _BASE_DIR / "data" / "models_dev.json"
-USER_DATA_DIR = Path("data")
-USER_CUSTOM_PATH = USER_DATA_DIR / "models_dev.json"
+_INITIAL_USER_DATA_DIR = get_runtime_dir() / "data"
+_INITIAL_USER_CUSTOM_PATH = _INITIAL_USER_DATA_DIR / "models_dev.json"
+USER_DATA_DIR = _INITIAL_USER_DATA_DIR
+USER_CUSTOM_PATH = _INITIAL_USER_CUSTOM_PATH
+
+
+def _resolve_user_data_dir() -> Path:
+    if USER_DATA_DIR != _INITIAL_USER_DATA_DIR:
+        return USER_DATA_DIR
+    return get_runtime_dir() / "data"
+
+
+def _resolve_user_custom_path() -> Path:
+    if USER_CUSTOM_PATH != _INITIAL_USER_CUSTOM_PATH:
+        return USER_CUSTOM_PATH
+    return _resolve_user_data_dir() / "models_dev.json"
 
 # 极端容灾保底（当内置底包被意外误删或损坏时，核心主流模型仍可精准识别）
 _FALLBACK_CATALOG: Dict[str, Any] = {
@@ -136,9 +152,10 @@ def load_model_catalog(force_reload: bool = False) -> Dict[str, Any]:
     if _CATALOG_CACHE is not None and not force_reload:
         return _CATALOG_CACHE
 
+    user_custom_path = _resolve_user_custom_path()
     target_path = None
-    if USER_CUSTOM_PATH.is_file():
-        target_path = USER_CUSTOM_PATH
+    if user_custom_path.is_file():
+        target_path = user_custom_path
     elif BUNDLED_PATH.is_file():
         target_path = BUNDLED_PATH
 
@@ -245,9 +262,10 @@ def sync_models_from_remote(url: str = "https://models.dev/api.json", timeout: i
         raw_data = json.loads(resp.read().decode("utf-8"))
 
     curated = build_curated_specs(raw_data)
-    USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    user_custom_path = _resolve_user_custom_path()
+    user_custom_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with open(USER_CUSTOM_PATH, "w", encoding="utf-8") as f:
+    with open(user_custom_path, "w", encoding="utf-8") as f:
         json.dump(curated, f, ensure_ascii=False, indent=2)
 
     _CATALOG_CACHE = curated.get("models", {})

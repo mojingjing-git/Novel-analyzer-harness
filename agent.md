@@ -16,7 +16,7 @@
 - **后端**：FastAPI（异步），Python 3.11+
 - **桌面壳**：pywebview + WebView2（Windows）
 - **LLM 兼容**：任何 OpenAI 兼容 API（10 个厂商预设），以及 Anthropic 协议
-- **测试**：后端 19 个领域测试文件（`backend/tests/`），前端 4 个聚合测试文件（`frontend/src/__tests__/`），统一由 `python scripts/run_tests.py` 运行（见 [docs/testing.md](./docs/testing.md)）。
+- **测试**：后端 14 个领域测试文件（`backend/tests/`），前端 5 个测试文件（`frontend/src/__tests__/`），统一由 `python scripts/run_tests.py` 运行（见 [docs/testing.md](./docs/testing.md)）。
   数量以 `pytest --collect-only -q` 与 `npm run test` 实时为准
 
 
@@ -26,13 +26,13 @@
 
 ```
 .
-├── backend/                      # FastAPI 后端（生产代码 126 个 .py）
-│   ├── app.py                    # FastAPI 工厂（CORS、静态托管、路由注册、lifespan 工作区扫描）
+├── backend/                      # FastAPI 后端（生产代码 96 个 .py）
+│   ├── app.py                    # FastAPI 工厂（CORS、SPAStaticFiles 静态托管、路由注册、lifespan 工作区扫描）
 │   ├── main.py                   # 后端启动器（127.0.0.1:8000）
-│   ├── ws_events.py              # WS 协议权威定义（WSType 11 种 / WSState 12 种 / PipelineStatus + payload 契约）
-│   ├── progress_hub.py           # 进度广播中枢（分级驱逐慢消费者 + token_delta 150ms 节流 + log 转发）
-│   ├── common/                   # 两层引擎共用纯逻辑层（19 个模块：错误分类 / 审核 / 关闭条件 / B 追踪 / C 审计 / 溯源缓存；只依赖标准库）
-│   ├── core/                     # 1.x 引擎（23 个模块；error_types / error_taxonomy / moderation 为 common 的兼容转发层）
+│   ├── ws_events.py              # WS 协议权威定义（WSType 10 种 / WSState 8 种 / PipelineStatus + payload 契约）
+│   ├── progress_hub.py           # 进度广播中枢（分级驱逐慢消费者 + token_delta 250ms 节流 + log 转发）
+│   ├── common/                   # 共用纯逻辑层（10 个模块：错误分类 / 审核 / 关闭条件 / LLM 错误信号 / 复检请求日志 / proxy_env；只依赖标准库）
+│   ├── core/                     # 核心引擎（23 个模块；error_types / error_taxonomy / moderation 为 common 的兼容转发层）
 │   │   ├── pipeline.py           # 主分析流水线（预热 / 并发 / checkpoint / 滚动总结 / 失败补跑）
 │   │   ├── analyzer.py           # 单章分析引擎（LLM 调用 + 校验回调 + 知识库更新）
 │   │   ├── llm_client.py         # LLM 客户端（OpenAI/Anthropic 双协议 + 温度退火与指数退避 + 流式/非流式）
@@ -51,66 +51,37 @@
 │   │   ├── evidence.py           # 本地证据取材：把"全书"换成几段原文窗口
 │   │   ├── file_processor.py     # 章节文件扫描与编码读取
 │   │   └── moderation.py         # 内容审核拦截识别
-│   ├── services/                 # 19 个模块
+│   ├── services/                 # 16 个单文件模块 + final_summary/ 4 层无环子包
 │   │   ├── queue_service.py      # 分析运行编排（AnalysisService 单例）
-│   │   ├── queue_manager.py      # 队列状态机与持久化
+│   │   ├── queue_manager.py      # 队列状态机、扫描、模型预检与持久化
 │   │   ├── analysis_stats.py     # 会话统计累加
 │   │   ├── pipeline_events.py    # WS 事件翻译层
-│   │   ├── final_summary.py      # 最终总结（4 阶段 + 伏笔账本 + 断点续跑）
-│   │   ├── recheck_v2.py         # 带证据的伏笔复检（默认开启）
+│   │   ├── final_summary/        # 最终总结四层子包（prompts / parsers / atlas_extractor -> catalog_mixin / checkpoint_mixin / recheck_mixin -> runner -> __init__）
+│   │   ├── recheck_v3.py         # 带证据的伏笔复检 V3 多跳证据链（默认）
+│   │   ├── recheck_v2.py         # 带证据的伏笔复检 V2 批量核对
+│   │   ├── recheck_resolution.py # 原文证据校验与全自动裁决核
 │   │   ├── splitter_service.py   # 切分引擎（18 条章正则 + 5 条卷正则 + 去重/合并/拆分）
 │   │   ├── workspace_service.py  # 工作区与归档管理
 │   │   ├── book_service.py       # 书名 → 目录映射
 │   │   ├── summary_service.py    # 总结任务生命周期
-│   │   ├── style_service.py      # 风格分析任务生命周期
-│   │   ├── location_normalization_service.py  # 地点归一化编排
-│   │   ├── location_normalizer.py  # 地点与空间关系归一化
 │   │   ├── usage_ledger.py       # 持久用量账本（usage_state.json）
-│   │   ├── viz_service.py        # 可视化数据聚合
-│   │   └── vnext_service.py      # vnext 服务门面
-│   ├── vnext/                    # 24 个模块：vnext 数据空间（当前冻结，仅 resolution.py 供 recheck_v2 复用）
-│   │   ├── constants.py          # 格式标识 / 版本 / 文件名常量 / 错误码
-│   │   ├── project.py            # 建项目、目录约定、提交清单
-│   │   ├── analyzer.py           # 单块分析
-│   │   ├── blocks.py             # 块规划与失效判定
-│   │   ├── results.py            # 块结果落盘与新鲜度判定
-│   │   ├── knowledge.py          # 知识快照（排他上界）
-│   │   ├── prompt_view.py        # 提示词视图：把知识库裁成窗口
-│   │   ├── prompt_limits.py      # 提示词上下文的 9 项统一上限
-│   │   ├── context.py            # 复检取材
-│   │   ├── foreshadow.py         # 稳定伏笔实体与截止点候选视图
-│   │   ├── recheck_plan.py       # 复检规划与覆盖汇总
-│   │   ├── resolution.py         # 原文证据校验与全自动裁决
-│   │   ├── graph.py              # 图谱边（共现与语义关系分表）
-│   │   ├── citations.py          # 引用校验转发层
-│   │   ├── runner.py             # 复检执行入口
-│   │   ├── tasks.py              # 任务账本
-│   │   ├── queue.py              # vnext 队列状态与恢复
-│   │   ├── registry.py           # 书目发现与索引
-│   │   ├── budget.py             # 调用预算
-│   │   ├── breaker.py            # 账户级熔断（当前无调用方）
-│   │   ├── concurrency.py        # 交互保护
-│   │   ├── consistency.py        # 写入一致性
-│   │   ├── fingerprint.py        # 身份与指纹判据
-│   │   ├── rolling.py            # 有序 rolling 与缺口恢复
-│   │   └── artifacts.py          # 产物读写（格式门禁 + 原子写）
-│   ├── api/                      # 12 个路由模块 + auth + ws（默认挂载 11 组 / 67 端点；routes_vnext 默认冻结）
-│   │   ├── routes_analysis.py    # 分析控制、队列、风格、日志
-│   │   ├── routes_books.py       # 书目与结果查询
+│   │   └── viz_service.py        # 可视化与全书图谱只读视图
+│   ├── api/                      # 10 个路由模块 + auth + ws
+│   │   ├── routes_analysis.py    # 分析控制、队列、日志
+│   │   ├── routes_books.py       # 书目与结果查询（含 style_profile / 人物谱系）
 │   │   ├── routes_summary.py     # 总结控制
-│   │   ├── routes_viz.py         # 可视化
+│   │   ├── routes_viz.py         # 可视化（时间线 / 全书语义图谱 atlas）
 │   │   ├── routes_workspace.py   # 工作区与归档
 │   │   ├── routes_splitter.py    # 切分
-│   │   ├── routes_aggregate.py   # 聚合与 Excel
+│   │   ├── routes_aggregate.py   # 聚合缓存与 Excel
 │   │   ├── routes_foreshadow.py  # 伏笔分类元数据
-│   │   ├── routes_location_normalization.py  # 地点归一化
 │   │   ├── routes_prompt.py      # 提示词预览
 │   │   ├── routes_settings.py    # 配置读写 / 预设 / 模型探测
-│   │   ├── routes_vnext.py       # vnext 数据空间（默认冻结，NOVEL_ENABLE_VNEXT_ROUTES=1 启用）
 │   │   ├── auth.py               # X-Session-Token 鉴权
 │   │   └── ws.py                 # WebSocket /ws/progress（25s 心跳 + Origin 白名单）
 │   ├── config/
 │   │   ├── constants.py          # 全部硬编码默认值 + 50 类伏笔定义（7 组）
+│   │   ├── paths.py              # 代码根 / 资源根 / runtime 运行目录解析真源
 │   │   ├── settings.py           # APIConfig / AnalysisConfig / GUIConfig / AppConfig + ConfigManager
 │   │   └── presets.py            # 厂商预设
 │   ├── models/
@@ -118,46 +89,51 @@
 │   │   └── knowledge.py          # KnowledgeBase 跨章记忆
 │   ├── utils/
 │   │   ├── json_utils.py         # JSON 提取 + 9 步容错解析 + 原子保存
-│   │   ├── aggregate_utils.py    # 聚合（10 类分类文件 + 1 个全量）
+│   │   ├── aggregate_utils.py    # 按需指纹聚合缓存（10 类分类文件 + 1 个全量）
 │   │   ├── foreshadow_ledger.py  # 伏笔账本状态机
-│   │   ├── character_card_generator.py  # 角色卡生成
+│   │   ├── character_card_generator.py  # 人物谱系与别名归并角色卡生成
 │   │   ├── excel_export.py       # Excel 导出
 │   │   ├── export_utils.py       # Markdown 导出
 │   │   ├── text_utils.py         # 编码检测 / 文本工具
 │   │   └── docx_extract.py       # DOCX 正文抽取（纯标准库）
-│   └── tests/                    # 19 个领域测试文件 + fixtures 语料
-├── frontend/src/                 # Vue 3 + TypeScript（含 __tests__/ 下 4 个聚合测试文件）
-│   ├── pages/                    # 12 个页面（router.ts）
+│   └── tests/                    # 14 个领域测试文件 + conftest / pytest_isolation / pytest_ssl_cache + fixtures 语料
+├── frontend/src/                 # Vue 3 + TypeScript（含 __tests__/ 下 5 个聚合测试文件）
+│   ├── pages/                    # 9 个主页面（router.ts）
 │   │   ├── QueuePage.vue         # 分析队列
-│   │   ├── SettingsPage.vue      # 设置
-│   │   ├── CharacterCardPage.vue # 角色卡
-│   │   ├── SummaryPage.vue       # 最终总结
+│   │   ├── SettingsPage.vue      # 设置（API/模型调用与并发/策略/高级区 3 大纯配置分组）
+│   │   ├── CharacterCardPage.vue # 人物谱系（ECharts 关系网 + 别名检索 + 角色卡）
+│   │   ├── SummaryPage.vue       # 最终总结（含文风量化栏与 Excel 导出）
 │   │   ├── SplitterPage.vue      # 小说切分
 │   │   ├── WorkspacePage.vue     # 工作区与归档
-│   │   ├── PromptPreviewPage.vue # 提示词预览
-│   │   ├── StylePage.vue         # 风格分析
-│   │   ├── StatsPage.vue         # 统计面板
-│   │   ├── TimelinePage.vue      # 时间线
-│   │   ├── GraphPage.vue         # 关系图
-│   │   └── MapPage.vue           # 地图
-│   ├── components/               # 13 个（AppLayout / BookSelector / ChapterDetailPanel /
+│   │   ├── WorldStagePage.vue    # 世界舞台（换地图阶段流 + 多世界树）
+│   │   ├── StatsPage.vue         # 统计与诊断（累计账本 / 会话 / 历史 / 日志 / Prompt 预览）
+│   │   └── TimelinePage.vue      # 时间线
+│   ├── components/               # 14 个（AppLayout / BookSelector / ChapterDetailPanel /
 │   │                             #   ChapterValue / ConfirmDialog / CountUp / DiscoveryFeed /
 │   │                             #   Icon / LaneView / LogConsole / ProgressBar / RunDashboard /
-│   │                             #   ToggleSwitch）
-│   ├── composables/              # useLocale / useLogStore / useRipple / vTooltip
-│   ├── api/                      # client.ts（60 个方法）/ sessionToken.ts / useProgressSocket.ts
+│   │                             #   ThroughputChart / ToggleSwitch）
+│   ├── composables/              # useLocale / useLogStore / useRipple / useSelectedBook / vTooltip
+│   ├── api/                      # client.ts / sessionToken.ts / useProgressSocket.ts
 │   ├── utils/                    # 9 个纯函数模块（laneRegistry / markdown / queueFeed /
 │   │                             #   settingsForm / splitterView / summaryLanes /
 │   │                             #   summaryProgress / theme / workspaceView）
-│   ├── router.ts                 # 1 个根布局 + 12 条子路由
+│   ├── router.ts                 # 1 个根布局 + 9 条主路由 + 4 条兼容重定向
 │   └── main.css                  # Win11 Fluent 设计系统（--win-* 变量）
-├── desktop.py                    # pywebview 桌面入口（单实例锁 + 窗口控制 + 崩溃诊断）
-├── scripts/                      # 测试、打捞验收与测量脚本（B/C 实验脚本收纳在 experiments/bc/）
-├── pytest_ssl_cache.py           # pytest SSL context 缓存插件（加速 httpx 客户端创建）
-├── pytest_isolation.py           # pytest 会话级隔离原语（cwd/NOVEL_ROOT 双隔离 + 代理净化）
+├── desktop/                      # 桌面入口与打包资产
+│   ├── desktop.py                # pywebview 桌面入口（单实例锁 + 窗口控制 + 崩溃诊断）
+│   ├── desktop.spec              # PyInstaller 单文件打包配置
+│   ├── build_exe.bat             # 单文件 EXE 打包脚本
+│   ├── build_frontend.bat        # 前端本地构建并回写 dist 脚本
+│   ├── config.example.json       # 默认配置模板
+│   └── _welcome_workspace.md     # 工作区首次启动欢迎页模板
+├── runtime/                      # 源码模式统一运行目录（.gitignore 忽略：config.json / workspace / logs / state）
+├── scripts/                      # 测试、打捞验收与测量脚本
 ├── docs/                         # 文档（见 docs/README.md）
 ├── agent.md                      # 本文件
 ├── README.md                     # 项目说明
+├── pytest.ini                    # pytest 根配置
+├── run_desktop.bat               # Windows 桌面端启动入口
+├── run_dev.bat                   # Windows 开发模式启动入口
 └── requirements.txt              # Python 依赖
 ```
 
@@ -175,7 +151,7 @@
 | pywebview | 桌面 WebView2 壳 |
 | openpyxl | Excel 导出（懒加载） |
 | json5 / json_repair | JSON 容错解析 |
-| pytest | 默认收集 `backend/tests/`（19 个领域测试文件）；数量以 `pytest --collect-only -q` 为准 |
+| pytest | 默认收集 `backend/tests/`（14 个领域测试文件）；数量以 `pytest --collect-only -q` 为准 |
 
 ### 前端
 | 组件 | 版本/说明 |
@@ -204,18 +180,15 @@
   → output/rolling_summary.json
   → 最终保存（merge_results → 裁剪 → 写盘）
       ↓
-  → final_summary（4 阶段总结，与归一化解耦）
+  → final_summary（4 阶段总结与语义图谱）
       → 分卷摘要 + 伏笔调和
       → 全书伏笔复检
       → 风格分析
-      → 最终报告
-  → final_summary_report.md
+      → 最终报告 + 语义图谱并发提取
+  → final_summary_report.md + output/story_atlas.json
   → aggregate_utils → output/*_aggregated.json（10 类分类 + 1 个全量）
   → style_analyzer → style.md
   → excel_export → analysis_data.xlsx
-  → 归一化（独立路径，只服务地图）
-      → 地点并发归一化 → 空间关系并发归一化 → 机械去重
-  → output/locations_normalized.json + spatial_relationships_normalized.json
 ```
 
 ### 4.2 分析流水线（pipeline.py）
@@ -307,7 +280,7 @@ self._flushed_chapters: Set[int]           # 已落盘的章号集合
 - `_kb_last_chapter` 跟踪最大已合并章号
 - 低章号迟到结果只合并非进度内容（事实/角色/世界等），跳过 timeline/recent_summaries
 
-### 4.7 最终总结（final_summary.py）
+### 4.7 最终总结（backend/services/final_summary/）
 
 **4 阶段：**
 1. **分卷摘要 + 伏笔调和**（每批两次 LLM 调用）：
@@ -373,7 +346,7 @@ self._flushed_chapters: Set[int]           # 已落盘的章号集合
 | `file_processor.py` | 章节文件扫描、编码探测与读取 |
 | `moderation.py` | 内容审核拦截识别（provider 无关） |
 
-### 5.2 服务层（backend/services/，19 个模块）
+### 5.2 服务层（backend/services/，16 个单文件模块 + final_summary/ 子包）
 
 | 模块 | 职责 |
 |---|---|
@@ -381,60 +354,47 @@ self._flushed_chapters: Set[int]           # 已落盘的章号集合
 | `queue_manager.py` | 队列状态机、扫描、模型预检与持久化 |
 | `analysis_stats.py` | 会话统计累加（token、每章记录、重试成本） |
 | `pipeline_events.py` | WS 事件翻译层：流水线回调 → 广播消息 |
-| `final_summary.py` | 最终总结四阶段、伏笔账本与断点续跑 |
-| `recheck_v2.py` | 带证据的伏笔复检（默认关闭，由 `recheck_v2_enabled` 控制） |
+| `final_summary/` | 最终总结四层子包（`prompts` / `parsers` / `atlas_extractor` / `catalog_mixin` / `checkpoint_mixin` / `recheck_mixin` / `runner`）与三阶段断点续跑 |
+| `recheck_v3.py` | 带证据的伏笔复检 V3 多跳证据链引擎（默认） |
+| `recheck_v2.py` | 带证据的伏笔复检 V2 批量核对引擎（可选） |
+| `recheck_resolution.py` | 原文证据校验与全自动裁决核 |
 | `splitter_service.py` | 切分引擎：18 条章节正则 + 5 条卷正则，去重 / 合并 / 超章拆分 / 书名推断 |
 | `workspace_service.py` | 工作区与归档管理 |
-| `book_service.py` | 书名 → `workspace/{书名}/` 目录映射 |
+| `book_service.py` | 书名 → `workspace/{书名}/` 目录映射与风格画像读取 |
 | `summary_service.py` | 总结任务生命周期 |
-| `style_service.py` | 风格分析任务生命周期 |
-| `location_normalization_service.py` | 地点归一化任务编排 |
-| `location_normalizer.py` | 地点与空间关系归一化实现 |
-| `viz_service.py` | 可视化数据聚合（时间线 / 关系图 / 地图） |
-| `vnext_service.py` | vnext 服务门面 |
+| `viz_service.py` | 可视化数据聚合（时间线与全书语义图谱只读视图） |
 
 ### 5.3 工具层（backend/utils/，8 个模块）
 
 | 模块 | 职责 |
 |---|---|
 | `json_utils.py` | JSON 提取、9 步容错解析、原子保存 |
-| `aggregate_utils.py` | 聚合：10 类分类文件 + 1 个全量 |
+| `aggregate_utils.py` | 按需指纹聚合缓存（`ensure_aggregated_cache`：10 类分类文件 + 1 个全量） |
 | `foreshadow_ledger.py` | 伏笔账本状态机 |
-| `character_card_generator.py` | 角色卡生成 |
+| `character_card_generator.py` | 人物谱系与别名归并角色卡生成 |
 | `excel_export.py` | Excel 导出 |
 | `export_utils.py` | Markdown 导出 |
 | `text_utils.py` | 编码检测与文本工具 |
 | `docx_extract.py` | DOCX 正文抽取（纯标准库） |
 
-### 5.4 API 层（backend/api/，12 个路由模块 + auth + ws）
+### 5.4 API 层（backend/api/，10 个路由模块 + auth + ws）
 
-共 67 个默认挂载的 REST 端点（全部挂在 `/api` 前缀下，另 `routes_vnext` 9 个端点默认冻结，需 `NOVEL_ENABLE_VNEXT_ROUTES=1` 启用），端点清单见 [docs/api.md](./docs/api.md)。
+全部挂载在 `/api` 前缀下，端点清单见 [docs/api.md](./docs/api.md)。
 
 | 模块 | 职责 |
 |---|---|
-| `routes_analysis.py` | 分析控制、队列、风格分析、日志下载 |
-| `routes_books.py` | 书目与结果查询 |
+| `routes_analysis.py` | 分析控制、队列、日志下载 |
+| `routes_books.py` | 书目、风格画像、人物谱系与结果查询 |
 | `routes_summary.py` | 总结控制 |
-| `routes_viz.py` | 可视化 |
+| `routes_viz.py` | 可视化（时间线 / 全书语义图谱 `atlas`） |
 | `routes_workspace.py` | 工作区与归档 |
 | `routes_splitter.py` | 切分 |
-| `routes_aggregate.py` | 聚合与 Excel |
+| `routes_aggregate.py` | 聚合缓存与 Excel |
 | `routes_foreshadow.py` | 伏笔分类元数据 |
-| `routes_location_normalization.py` | 地点归一化 |
 | `routes_prompt.py` | 提示词预览 |
 | `routes_settings.py` | 配置读写、预设、模型探测 |
-| `routes_vnext.py` | vnext 数据空间（默认冻结，设 `NOVEL_ENABLE_VNEXT_ROUTES=1` 启用） |
 | `auth.py` | `X-Session-Token` 鉴权依赖 |
 | `ws.py` | `/ws/progress`：Origin 白名单 + 25 秒心跳 |
-
-### 5.5 vnext 数据层（backend/vnext/，24 个模块）
-
-vnext 是与 1.x 并存的第二套数据模型，目录与语义见
-[docs/data-contract-vnext.md](./docs/data-contract-vnext.md)。`backend/vnext/__init__.py`
-禁止反向 import 旧数据层。
-
-当前 vnext **处于冻结状态**（`/api/vnext/*` 默认不挂载，仅 `backend/vnext/resolution.py` 供 `recheck_v2` 复用；`run_analysis` 仅被测试调用），因此 vnext 里已实现的机制不能算作 1.x 缺陷已修，
-见 [docs/issues.md](./docs/issues.md)。
 
 ---
 
@@ -444,7 +404,7 @@ vnext 是与 1.x 并存的第二套数据模型，目录与语义见
 
 | 文件 | 职责 |
 |---|---|
-| `api/client.ts` | REST 客户端，60 个方法 + TypeScript DTO + 统一 `X-Session-Token` 注入 |
+| `api/client.ts` | REST 客户端与 TypeScript DTO + 统一 `X-Session-Token` 注入 |
 | `api/sessionToken.ts` | 会话 token 单例（pywebview js_api 获取） |
 | `api/useProgressSocket.ts` | WebSocket 单例连接 + 协议镜像类型（与 `backend/ws_events.py` 对应） |
 
@@ -452,35 +412,32 @@ vnext 是与 1.x 并存的第二套数据模型，目录与语义见
 
 没有独立的 store 目录：全局日志状态放在 `composables/useLogStore.ts`，其余状态由各页面
 的 `ref` / `computed` 管理。`composables/` 下另有 `useLocale.ts`、`useRipple.ts`、
-`vTooltip.ts`。
+`useSelectedBook.ts`、`vTooltip.ts`。
 
 ### 6.3 设计系统（main.css）
 
 Win11 Fluent 风格，颜色 / 圆角 / 阴影 / 间距统一走 `--win-*` 变量，禁用 iOS 硬编码色值
 与 `backdrop-filter`。
 
-### 6.4 页面（12 个）
+### 6.4 页面（9 个主页面）
 
 | 页面 | 职责 |
 |---|---|
 | `QueuePage.vue` | 分析队列：书籍队列、启停分析、进度车道、token 统计、日志下载 |
-| `SettingsPage.vue` | 设置：API / 分析参数、预设、模型探测、思考参数探测、伏笔保留类别 |
-| `CharacterCardPage.vue` | 角色列表与角色卡详情 |
-| `SummaryPage.vue` | 总结启停、阶段进度、最终报告、聚合文件浏览与 Excel 导出 |
+| `SettingsPage.vue` | 设置：API / 模型调用与并发 / 流程策略 / 高级参数与伏笔保留类别（3 大纯配置分组） |
+| `CharacterCardPage.vue` | 人物谱系：核心关系网、别名检索与归并角色卡详情 |
+| `SummaryPage.vue` | 最终总结：总结启停、阶段进度、风格量化概览、全书脉络报告与一键导出 Excel |
 | `SplitterPage.vue` | 切分预览、批量切分、书名推断 |
-| `WorkspacePage.vue` | 工作区与归档列表、归档与删除 |
-| `PromptPreviewPage.vue` | 查看某章的 system + user 提示词与长度统计 |
-| `StylePage.vue` | 风格分析启停与结果查看 |
-| `StatsPage.vue` | 会话与全书 token 统计 |
+| `WorkspacePage.vue` | 工作区与归档列表、切分还原、归档与删除 |
+| `WorldStagePage.vue` | 世界舞台：主线换地图阶段流与 ECharts 多世界层级拓扑树 |
+| `StatsPage.vue` | 统计与诊断：跨进程累计账本、会话统计、按书历史、实时日志与 Prompt 预览 |
 | `TimelinePage.vue` | 时间线与伏笔分类排名 |
-| `GraphPage.vue` | 关系图（章区间、边权、节点数过滤） |
-| `MapPage.vue` | 地点地图与地点归一化启停 |
 
-### 6.5 组件（13 个）
+### 6.5 组件（14 个）
 
 `AppLayout.vue`（根布局）、`BookSelector.vue`、`ChapterDetailPanel.vue`、
 `ChapterValue.vue`、`ConfirmDialog.vue`、`CountUp.vue`、`DiscoveryFeed.vue`、`Icon.vue`、
-`LaneView.vue`、`LogConsole.vue`、`ProgressBar.vue`、`RunDashboard.vue`、`ToggleSwitch.vue`。
+`LaneView.vue`、`LogConsole.vue`、`ProgressBar.vue`、`RunDashboard.vue`、`ThroughputChart.vue`、`ToggleSwitch.vue`。
 
 ### 6.6 前端关键模式
 
@@ -529,9 +486,9 @@ python scripts/run_tests.py                 # 全仓验证（后端 pytest + 前
 python scripts/run_tests.py --no-frontend   # 仅跑后端测试（约 4~5 秒）
 python scripts/run_tests.py backend/tests/test_smoke.py --no-frontend
 python scripts/run_tests.py --no-frontend -- -k recheck
-# （测试全程运行在 cwd/NOVEL_ROOT 双隔离的会话临时根：根目录 conftest.py + pytest_isolation.py
-#   在任何 backend.* import 前生效，真实 config.json/queue_state.json/日志/workspace 零写入；
-#   守卫见 backend/tests/test_smoke.py。不要在测试里依赖真实工作区数据。）
+# （测试全程运行在 cwd/NOVEL_ROOT/NOVEL_RUNTIME_DIR 隔离的会话临时根：backend/tests/conftest.py +
+#   backend/tests/pytest_isolation.py 在任何业务 backend.* import 前生效，真实 runtime/ 配置/日志/workspace
+#   零写入；守卫见 backend/tests/test_smoke.py。不要在测试里依赖真实工作区数据。）
 
 # 对齐 CI 的无缓存单进程全量校验
 python -m pytest -p no:cacheprovider -o addopts=""
@@ -554,17 +511,18 @@ npm run build
 
 ### 桌面运行
 
-- Windows 下直接运行 `run_desktop.bat`
-- 前端构建产物由 `build_frontend.bat` 生成到 `frontend/dist`
-- `desktop.py`：pywebview 启动 → uvicorn 后台线程 → 端口发现 → UTF-8 编码修复
+- Windows 下直接运行根目录 `run_desktop.bat`
+- 前端构建产物由 `desktop/build_frontend.bat` 生成到 `frontend/dist`
+- `desktop/desktop.py`：pywebview 启动 → uvicorn 后台线程 → 端口发现 → UTF-8 编码修复
+- 源码模式所有用户配置、日志与工作区统一落盘在 `runtime/`；打包 EXE 模式落于 EXE 同级目录
 
 ---
 
 ## 9. 硬性约束（必须遵守）
 
 ### 9.1 密钥与数据安全
-- `config.json` 含真实 API Key，**禁止提交、打印、写入日志或纳入任何输出**
-- `config.json`、`queue_state.json`、`usage_state*.json`、`workspace/`、`*.log`、`app.lock`、`.bak_*` 均已被 `.gitignore` 忽略
+- `runtime/config.json` 含真实 API Key，**禁止提交、打印、写入日志或纳入任何输出**
+- `/runtime/` 以及 `config.json`、`queue_state.json`、`usage_state*.json`、`*.log`、`app.lock`、`.bak_*` 均已被 `.gitignore` 忽略
 - 所有可能含 key 的错误日志**必须过 `redact()`**（`llm_failure_logger.redact`）。两重防御：
   1. `FailureLogger.record_failure` 入口对 `error_message` 自动 redact
   2. `app.py` 的 `_SensitiveFieldsFilter` 对所有落 `analyzer.log` 的 record 二次过滤
@@ -655,8 +613,7 @@ mypy backend/
    组件级 `component.button.start`、`component.modal.confirm`；公共 `common.loading`、
    `common.cancel`、`common.confirm`
 3. `useLocale()` 必须在 setup 上下文调用（vue-i18n 的 inject 限制）
-4. 持久化语言需要扩 `routes_settings.py` 的 `is_running` 护栏——它当前只挡 analysis，
-   而设置写入会影响 summary / style / location_normalization 服务
+4. 持久化语言需要扩 `routes_settings.py` 的 `is_running` 护栏——它当前主要拦截分析与总结冲突，设置写入同样需要避开 `summary` 运行期间
 5. `useLocale()` 对 `zh_CN` 这类下划线写法不会拒，加来源校验时需要覆盖
 
 ---
@@ -687,4 +644,3 @@ splitter 内部有两条平行的书名推断路径：
 - 旧考卷可用验收器 `--prepare-only --blocks <目录>` 离线冻结。具体协议与用法见 `docs/自动验收器.md`。
 - `backend/common/claim_evidence.py` 提供可选的逐断言证据契约（验收器 `--claim-audit`）；只核对声明一致性与定位，不把模型判断当真值。
 - `backend/common/claim_evidence_v2.py` 提供固定答案片段与正交限定维度（`--claim-contract claims_v2`）；与第一版共用引文定位，仍为默认关闭的试验模式。
-- `backend/common/evaluation_corpus.py` / `scripts/experiments/bc/bc_corpus.py` 按整本作品冻结抽样和曝光记录；B原文盲读与C候选审计分开，见 `docs/跨作品BC评测.md`。

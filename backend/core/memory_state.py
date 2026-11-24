@@ -233,11 +233,23 @@ class MemoryState:
         留下半截/空的 chapter_N_result.json；恢复时 json.load 抛异常，该章被误判为损坏。）"""
         safe_save_json(data, filepath, ensure_ascii=False)
 
-    async def restore_from_disk(self, output_dir: Path, block_size: Optional[int] = None) -> int:
+    async def restore_from_disk(
+        self,
+        output_dir: Path,
+        block_size: Optional[int] = None,
+        expected_blocks: Optional[Dict[int, List[int]]] = None,
+    ) -> int:
         """从 output_dir 恢复结果到内存（阻塞 IO 走线程池，避免事件循环卡顿）"""
-        return await asyncio.to_thread(self._restore_from_disk_sync, output_dir, block_size)
+        return await asyncio.to_thread(
+            self._restore_from_disk_sync, output_dir, block_size, expected_blocks
+        )
 
-    def _restore_from_disk_sync(self, output_dir: Path, block_size: Optional[int]) -> int:
+    def _restore_from_disk_sync(
+        self,
+        output_dir: Path,
+        block_size: Optional[int],
+        expected_blocks: Optional[Dict[int, List[int]]] = None,
+    ) -> int:
         """同步恢复实现（原 restore_from_disk 主体：纯文件 IO，无 await）"""
         import glob as glob_mod
         pattern = str(output_dir / "chapter_*_result.json")
@@ -258,6 +270,12 @@ class MemoryState:
                 with open(filepath, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                 result = AnalysisResult.from_dict(data)
+                if expected_blocks is not None and ch_num in expected_blocks:
+                    if result.source_chapters and result.source_chapters != list(expected_blocks[ch_num]):
+                        logger.info(
+                            f"块 {ch_num} 包含章节已变化 ({result.source_chapters} -> {expected_blocks[ch_num]})，需重新分析"
+                        )
+                        continue
                 self.results[ch_num] = result
                 self._flushed_chapters.add(ch_num)
                 restored += 1

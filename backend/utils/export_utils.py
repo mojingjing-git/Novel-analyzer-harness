@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import List
 
 from ..models.analysis_result import AnalysisResult
+from .aggregate_utils import split_character_names
 
 
 def _format_chapter_list(chapter_nums: List[int]) -> str:
@@ -63,11 +64,7 @@ def export_summary_report(all_results: List[AnalysisResult], output_dir: Path) -
     character_appearances = {}
     for result in all_results:
         for event in result.core_events:
-            raw_chars = event.characters
-            if isinstance(raw_chars, list):
-                raw_chars = ", ".join(str(c) for c in raw_chars)
-            chars = [c.strip() for c in str(raw_chars).replace("，", ",").split(',') if c.strip()]
-            for char in chars:
+            for char in split_character_names(event.characters):
                 if char not in character_appearances:
                     character_appearances[char] = []
                 character_appearances[char].append(result.chapter_number)

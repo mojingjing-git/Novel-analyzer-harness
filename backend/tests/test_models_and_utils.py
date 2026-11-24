@@ -197,9 +197,8 @@ def test_aggregator_and_char_suffix_normalization(tmp_path):
     tracking = json.loads((out_dir / "character_tracking_aggregated.json").read_text(encoding="utf-8"))
     assert "张三" in tracking and "张三（主角）" not in tracking
 
-    graph = viz_service.graph_data(out_dir)
-    node_ids = {n["id"] for n in graph["nodes"]}
-    assert "张三" in node_ids
+    from backend.utils.aggregate_utils import split_character_names
+    assert split_character_names("张三、李四（主角），王五") == ["张三", "李四", "王五"]
 
     # 角色卡生成器
     gen = CharacterCardGenerator(out_dir)
@@ -223,3 +222,29 @@ def test_aggregator_and_char_suffix_normalization(tmp_path):
     (empty_dir / "unrecognized.json").write_text("{}", encoding="utf-8")
     with pytest.raises(ValueError, match="可识别"):
         export_aggregated_to_excel(empty_dir, tmp_path / "b.xlsx")
+
+
+def test_style_limit_and_character_card_logging(tmp_path, caplog, capsys):
+    from backend.core.style_analyzer import compute_book_stats
+
+    blocks_dir = tmp_path / "blocks"
+    blocks_dir.mkdir()
+    for ch in range(1, 7):
+        (blocks_dir / f"{ch:04d}.txt").write_text(
+            f"第{ch}章 「他说什么？」方醒缓缓点头，抬手揭开了桌上的那只青铜古匣，目光沉静如水。\n",
+            encoding="utf-8",
+        )
+
+    agg, samples = compute_book_stats(blocks_dir, limit=3)
+    assert agg["chapter_count"] == 3
+    assert all(ch <= 3 for ch, _ in samples)
+
+    bad_dir = tmp_path / "bad_agg"
+    bad_dir.mkdir()
+    (bad_dir / "character_tracking_aggregated.json").write_text("{not-json", encoding="utf-8")
+    gen = CharacterCardGenerator(bad_dir)
+    with caplog.at_level("WARNING"):
+        ok = gen.load_aggregated_data()
+    assert ok is False
+    assert capsys.readouterr().out == ""
+    assert any("加载聚合数据失败" in rec.message for rec in caplog.records)

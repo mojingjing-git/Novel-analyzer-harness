@@ -17,7 +17,7 @@
   --color-system-gray: var(--win-text-secondary);
   --color-text-primary: var(--win-text-primary);
   --color-text-secondary: var(--win-text-secondary);
-  --color-text-tertiary: var(--win-text-disabled);
+  --color-text-tertiary: var(--win-text-muted);
 }
 
 /* ============================================================
@@ -43,17 +43,27 @@
   --win-accent-hover: #005A9E;
   --win-accent-pressed: #004E8C;
   --win-accent-soft: rgba(0, 103, 192, 0.08);
+  --win-accent-fill: #0067C0;
+  --win-accent-fill-hover: #005A9E;
+  --win-accent-fill-pressed: #004E8C;
+  --win-accent-fg: #FFFFFF;
 
   /* 文本 */
   --win-text-primary: rgba(0, 0, 0, 1);
-  --win-text-secondary: rgba(0, 0, 0, 0.6);
-  --win-text-disabled: rgba(0, 0, 0, 0.36);
+  --win-text-secondary: rgba(0, 0, 0, 0.66);
+  --win-text-muted: rgba(0, 0, 0, 0.56);
+  --win-text-disabled: rgba(0, 0, 0, 0.42);
 
   /* 功能色 */
   --win-success: #0F7B0F;
   --win-success-bg: rgba(15, 123, 15, 0.08);
+  --win-success-fg: #FFFFFF;
   --win-danger: #C42B1C;
   --win-danger-bg: rgba(196, 43, 28, 0.08);
+  --win-danger-fill: #C42B1C;
+  --win-danger-fill-hover: #AD2417;
+  --win-danger-fill-pressed: #961E13;
+  --win-danger-fg: #FFFFFF;
   --win-warning: #9D5D00;
   --win-warning-bg: rgba(157, 93, 0, 0.08);
   --win-info: #0067C0;
@@ -68,7 +78,7 @@
   /* 阴影（Win11：低透明度大范围弥散，安静层次） */
   --win-shadow-layer: 0 1px 2px rgba(0, 0, 0, 0.04);
   --win-shadow-control: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --win-shadow-card: 0 4px 16px rgba(0, 0, 0, 0.06);
+  --win-shadow-card: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03);
   --win-shadow-tooltip: 0 8px 24px rgba(0, 0, 0, 0.10);
   --win-shadow-flyout: 0 16px 40px rgba(0, 0, 0, 0.12);
   --win-shadow-dialog: 0 32px 64px rgba(0, 0, 0, 0.16);
@@ -113,15 +123,25 @@ html.dark {
   --win-accent-hover: #4CC2FF;
   --win-accent-pressed: #38B8FF;
   --win-accent-soft: rgba(96, 205, 255, 0.10);
+  --win-accent-fill: #60CDFF;
+  --win-accent-fill-hover: #4CC2FF;
+  --win-accent-fill-pressed: #38B8FF;
+  --win-accent-fg: #0A141D;
 
   --win-text-primary: rgba(255, 255, 255, 1);
-  --win-text-secondary: rgba(255, 255, 255, 0.7);
-  --win-text-disabled: rgba(255, 255, 255, 0.4);
+  --win-text-secondary: rgba(255, 255, 255, 0.78);
+  --win-text-muted: rgba(255, 255, 255, 0.64);
+  --win-text-disabled: rgba(255, 255, 255, 0.48);
 
   --win-success: #6CCB5F;
   --win-success-bg: rgba(108, 203, 95, 0.12);
+  --win-success-fg: #0B1A0B;
   --win-danger: #FF99A4;
   --win-danger-bg: rgba(255, 153, 164, 0.12);
+  --win-danger-fill: #C42B1C;
+  --win-danger-fill-hover: #D63A2B;
+  --win-danger-fill-pressed: #A42316;
+  --win-danger-fg: #FFFFFF;
   --win-warning: #FCE100;
   --win-warning-bg: rgba(252, 225, 0, 0.12);
   --win-info: #60CDFF;
@@ -129,7 +149,7 @@ html.dark {
 
   --win-shadow-layer: 0 1px 2px rgba(0, 0, 0, 0.18);
   --win-shadow-control: 0 1px 2px rgba(0, 0, 0, 0.2);
-  --win-shadow-card: 0 4px 16px rgba(0, 0, 0, 0.18);
+  --win-shadow-card: 0 1px 3px rgba(0, 0, 0, 0.22);
   --win-shadow-tooltip: 0 8px 24px rgba(0, 0, 0, 0.28);
   --win-shadow-flyout: 0 16px 40px rgba(0, 0, 0, 0.32);
   --win-shadow-dialog: 0 32px 64px rgba(0, 0, 0, 0.4);
@@ -291,10 +311,44 @@ html.dark ::-webkit-scrollbar-thumb:hover {
   overflow: hidden;
 }
 
+/* 允许无层基类在显式叠加 Tailwind 滚动工具类时恢复滚动，不被无层 overflow: hidden 压死 */
+.glass-card.overflow-auto,
+.glass-panel.overflow-auto,
+.glass-elevated.overflow-auto {
+  overflow: auto;
+}
+.glass-card.overflow-y-auto,
+.glass-panel.overflow-y-auto,
+.glass-elevated.overflow-y-auto {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.glass-card.overflow-x-auto,
+.glass-panel.overflow-x-auto,
+.glass-elevated.overflow-x-auto {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
 /* 控件次级背景 */
 .glass-subtle {
   background: var(--win-control-alt);
   border-radius: var(--win-radius-container);
+}
+
+/* 卡片内部次级区块（仅细描边，无叠加阴影） */
+.glass-inset {
+  background: var(--win-control-alt);
+  border: 1px solid var(--win-stroke);
+  border-radius: var(--win-radius-control);
+}
+
+/* 嵌套卡片压平，防止边框与阴影叠加削弱层级 */
+.glass-card .glass-card,
+.glass-card .glass-panel,
+.glass-card .glass-stat {
+  box-shadow: none;
+  background: var(--win-control-alt);
 }
 
 /* ============================================================
@@ -346,32 +400,35 @@ html.dark ::-webkit-scrollbar-thumb:hover {
 
 /* 主按钮 */
 .glass-button-primary {
-  background: var(--win-accent);
+  background: var(--win-accent-fill);
   border-color: transparent;
-  color: #FFFFFF;
+  color: var(--win-accent-fg);
+  font-weight: 500;
 }
 .glass-button-primary:hover:not(:disabled) {
-  background: var(--win-accent-hover);
+  background: var(--win-accent-fill-hover);
   border-color: transparent;
 }
 .glass-button-primary:active:not(:disabled) {
-  background: var(--win-accent-pressed);
+  background: var(--win-accent-fill-pressed);
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.16);
   transform: scale(0.97);
 }
 
 /* 危险按钮 */
 .glass-button-danger {
-  background: var(--win-danger);
+  background: var(--win-danger-fill);
   border-color: transparent;
-  color: #FFFFFF;
+  color: var(--win-danger-fg);
   font-weight: 500;
 }
 .glass-button-danger:hover:not(:disabled) {
-  filter: brightness(0.92);
+  background: var(--win-danger-fill-hover);
+  border-color: transparent;
 }
 .glass-button-danger:active:not(:disabled) {
-  filter: brightness(0.84);
+  background: var(--win-danger-fill-pressed);
+  border-color: transparent;
   transform: scale(0.97);
 }
 
@@ -405,9 +462,10 @@ html.dark ::-webkit-scrollbar-thumb:hover {
   transform: scale(0.97);
 }
 .glass-pill.is-active {
-  background: var(--win-accent);
+  background: var(--win-accent-fill);
   border-color: transparent;
-  color: #FFFFFF;
+  color: var(--win-accent-fg);
+  font-weight: 500;
 }
 
 /* ============================================================
@@ -520,6 +578,8 @@ html.dark ::-webkit-scrollbar-thumb:hover {
 
 .glass-input {
   height: 32px;
+  min-width: 0;
+  max-width: 100%;
   padding: 0 12px;
   border-radius: var(--win-radius-control);
   background: var(--win-control-alt);
@@ -547,6 +607,8 @@ html.dark ::-webkit-scrollbar-thumb:hover {
 
 .glass-select {
   height: 32px;
+  min-width: 0;
+  max-width: 100%;
   padding: 0 32px 0 12px;
   border-radius: var(--win-radius-control);
   background-color: var(--win-control-alt);
@@ -566,6 +628,9 @@ html.dark ::-webkit-scrollbar-thumb:hover {
     background-color var(--win-duration-fast) var(--win-ease),
     border-color var(--win-duration-fast) var(--win-ease),
     box-shadow var(--win-duration-fast) var(--win-ease);
+}
+html.dark .glass-select {
+  background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3.5 5L6 7.5 8.5 5' fill='none' stroke='%23C8C8C8' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 .glass-select:hover {
   border-color: var(--win-stroke-strong);
@@ -660,7 +725,7 @@ html.dark ::-webkit-scrollbar-thumb:hover {
   background: var(--win-layer);
   border: 1px solid var(--win-stroke);
   border-radius: var(--win-radius-container);
-  box-shadow: var(--win-shadow-card);
+  box-shadow: var(--win-shadow-layer);
   /* padding 14px 改 16px，对齐 4 倍数网格 */
   padding: 16px;
   position: relative;
@@ -912,7 +977,8 @@ html.dark ::-webkit-scrollbar-thumb:hover {
   color: var(--win-text-secondary);
 }
 .md-content .md-hr { border: 0; border-top: 1px solid var(--win-stroke); margin: 1.5em 0; }
-.md-content .md-table { border-collapse: collapse; width: 100%; margin: 0.8em 0; font-size: 13px; }
+.md-content .md-table-wrap { overflow-x: auto; max-width: 100%; margin: 0.8em 0; }
+.md-content .md-table { border-collapse: collapse; width: 100%; font-size: 13px; }
 .md-content .md-table th, .md-content .md-table td {
   border: 1px solid var(--win-stroke);
   padding: 6px 10px;

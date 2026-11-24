@@ -72,6 +72,11 @@ describe('api client', () => {
     const headers = init.headers as Record<string, string>
     expect(headers['X-Session-Token']).toBe('sec-token')
     expect(headers['Content-Type']).toBe('application/json')
+
+    await api.patchSettings({ analysis: { summary_batch_size: 20 } })
+    const [patchUrl, patchInit] = fetchMock.mock.calls[1]
+    expect(patchUrl).toBe('/api/settings')
+    expect(patchInit.method).toBe('PATCH')
   })
 
   it('非 2xx 展开 FastAPI detail 字符串并保留 422 校验数组 detail', async () => {

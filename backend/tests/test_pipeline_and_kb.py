@@ -130,3 +130,60 @@ async def test_pipeline_inflight_and_callbacks():
         assert m2["payload"]["range"] == "ch5-ch8" and item.completed_chapters == 5
     finally:
         await hub.unsubscribe(q)
+
+
+async def test_block_size_append_chapters_reanalyzes_tail_block(tmp_path, monkeypatch):
+    from backend.services.queue_manager import QueueManager
+
+    blocks_dir = tmp_path / "blocks"
+    blocks_dir.mkdir(parents=True)
+    for ch in range(1, 6):
+        (blocks_dir / f"{ch:04d}.txt").write_text(f"第{ch}章 内容", encoding="utf-8")
+
+    analyzed_calls: list[int] = []
+
+    async def fake_analyze(self, block_id, content, kb, block_size=1, book_id=""):
+        analyzed_calls.append(block_id)
+        return (
+            AnalysisResult(chapter_number=block_id, block_size=block_size),
+            (10, 20),
+            {"retries": 0, "failed_tokens": 0, "usage_status": "KNOWN"},
+        )
+
+    monkeypatch.setattr("backend.core.pipeline.NovelAnalyzer.analyze_chapter", fake_analyze)
+
+    cfg = AppConfig(
+        api=APIConfig(base_url="https://test.com", api_key="test", model="test"),
+        analysis=AnalysisConfig(concurrency=1, block_size=4, encoding_priority=["utf-8"], checkpoint_interval=10),
+        working_directory=str(tmp_path),
+    )
+    p1 = AnalysisPipeline(config=cfg, directory=blocks_dir, knowledge_file=tmp_path / "kb.json")
+    await p1.run()
+    assert analyzed_calls == [1, 5]
+
+    out_dir = tmp_path / "output"
+    tail_data = json.loads((out_dir / "chapter_5_result.json").read_text(encoding="utf-8"))
+    assert tail_data["block_size"] == 4
+    assert tail_data["source_chapters"] == [5]
+
+    # 验证 AnalysisResult.from_dict 保留 lead 字段
+    parsed = AnalysisResult.from_dict({"chapter_number": 1, "foreshadowing": [{"clue": "c", "lead": True}]})
+    assert parsed.foreshadowing[0].lead is True
+
+    # 追加第 6、7 章后，队列进度与断点续跑都应识别尾块 5 需要重跑
+    (blocks_dir / "0006.txt").write_text("第6章 新内容", encoding="utf-8")
+    (blocks_dir / "0007.txt").write_text("第7章 新内容", encoding="utf-8")
+
+    qm = QueueManager()
+    qitem = QueueItem(name="追更测试", blocks_dir=blocks_dir, workspace_dir=tmp_path, block_size=4, total_chapters=5, completed_chapters=2, status="done")
+    qm.add_item(qitem)
+    assert qm.infer_progress(qitem) == 1
+    qm.add_item(QueueItem(name="追更测试", blocks_dir=blocks_dir, workspace_dir=tmp_path, block_size=4, total_chapters=7, completed_chapters=1))
+    assert qitem.total_chapters == 7 and qitem.status == "pending"
+
+    analyzed_calls.clear()
+    p2 = AnalysisPipeline(config=cfg, directory=blocks_dir, knowledge_file=tmp_path / "kb.json")
+    await p2.run()
+    assert analyzed_calls == [5]
+    tail_data2 = json.loads((out_dir / "chapter_5_result.json").read_text(encoding="utf-8"))
+    assert tail_data2["source_chapters"] == [5, 6, 7]

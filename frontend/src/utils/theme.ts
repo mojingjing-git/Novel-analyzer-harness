@@ -8,14 +8,18 @@
  */
 export interface ThemeColors {
   accent: string
+  accentSoft: string
   success: string
   warning: string
+  danger: string
+  info: string
   /** 分割线/边框（--win-stroke） */
   strokeStrong: string
   /** 内容层/卡片底色（--win-layer），tooltip 等浮层用 */
   layer: string
   textPrimary: string
   textSecondary: string
+  textMuted: string
   textDisabled: string
 }
 
@@ -24,13 +28,17 @@ export function themeColors(): ThemeColors {
   const v = (name: string, fallback: string) => cs.getPropertyValue(name).trim() || fallback
   return {
     accent: v('--win-accent', '#0067C0'),
+    accentSoft: v('--win-accent-soft', 'rgba(0, 103, 192, 0.08)'),
     success: v('--win-success', '#0F7B0F'),
     warning: v('--win-warning', '#9D5D00'),
+    danger: v('--win-danger', '#C42B1C'),
+    info: v('--win-info', '#0067C0'),
     strokeStrong: v('--win-stroke', '#E5E5E5'),
     layer: v('--win-layer', '#FFFFFF'),
     textPrimary: v('--win-text-primary', 'rgba(0, 0, 0, 1)'),
-    textSecondary: v('--win-text-secondary', 'rgba(0, 0, 0, 0.6)'),
-    textDisabled: v('--win-text-disabled', 'rgba(0, 0, 0, 0.36)'),
+    textSecondary: v('--win-text-secondary', 'rgba(0, 0, 0, 0.66)'),
+    textMuted: v('--win-text-muted', 'rgba(0, 0, 0, 0.56)'),
+    textDisabled: v('--win-text-disabled', 'rgba(0, 0, 0, 0.42)'),
   }
 }
 

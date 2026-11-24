@@ -162,7 +162,9 @@ class EvidenceIndex:
         （交集必含全部真命中，无漏报），再逐段 ``term in text`` 验证。
         索引未构建（小语料、或未达预构建阈值）：逐段扫——几百 KB 的语料本就是微秒级。
         """
-        if not self._gram.built:
+        if not term:
+            return frozenset()
+        if not self._gram.built or len(term) < 2:
             return frozenset(ch for ch, text in self._chapters.items() if term in text)
         if len(term) == 2:
             return frozenset(

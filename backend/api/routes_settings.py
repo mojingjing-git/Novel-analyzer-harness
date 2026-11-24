@@ -10,7 +10,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from backend.config.settings import AppConfig
+from backend.config.settings import AppConfig, validate_settings_payload
 from backend.config.presets import API_PRESETS
 from backend.services.queue_service import get_service
 
@@ -139,6 +139,37 @@ async def sync_models() -> dict:
         return {"success": False, "error": str(e)}
 
 
+_ALLOWED_SUMMARY_PATCH = {
+    "api": {"summary_model", "summary_thinking_mode"},
+    "analysis": {"summary_batch_size", "summary_concurrency"},
+}
+
+
+def _is_summary_only_patch(data: dict) -> bool:
+    if not isinstance(data, dict) or not data:
+        return False
+    has_field = False
+    for sec, sec_val in data.items():
+        if sec not in _ALLOWED_SUMMARY_PATCH or not isinstance(sec_val, dict):
+            return False
+        allowed_keys = _ALLOWED_SUMMARY_PATCH[sec]
+        for k in sec_val:
+            if k not in allowed_keys:
+                return False
+            has_field = True
+    return has_field
+
+
+def _running_task_conflict(*, allow_during_analysis: bool = False) -> Optional[str]:
+    from backend.services.summary_service import get_summary_service
+
+    if not allow_during_analysis and get_service().is_running:
+        return "分析运行中，不能修改配置"
+    if get_summary_service().is_running:
+        return "最终总结运行中，不能修改配置"
+    return None
+
+
 @router.get("")
 async def get_settings() -> dict:
     service = get_service()
@@ -149,12 +180,16 @@ async def get_settings() -> dict:
 @router.put("")
 async def put_settings(data: dict) -> dict:
     service = get_service()
-    if service.is_running:
-        raise HTTPException(status_code=409, detail="分析运行中，不能修改配置")
+    conflict = _running_task_conflict(allow_during_analysis=False)
+    if conflict:
+        raise HTTPException(status_code=409, detail=conflict)
+    errors = validate_settings_payload(data)
+    if errors:
+        raise HTTPException(status_code=422, detail=errors)
     try:
         config = AppConfig.from_dict(data)
     except Exception as e:
-        raise HTTPException(status_code=422, detail=f"配置格式无效: {e}")
+        raise HTTPException(status_code=422, detail=[{"loc": ["body"], "msg": f"配置格式无效: {e}"}])
     if not service.config_manager.save(config):
         # save() 拒绝通常意味着 config.json 解析失败待手工修复（_load_failed 置位），
         # 用 409 + 可操作文案替代笼统的 500，避免用户反复重试无效
@@ -162,3 +197,21 @@ async def put_settings(data: dict) -> dict:
                             detail="配置未能写入：config.json 可能解析失败待修复，"
                                    "请手工修复该文件后重试（详见日志）")
     return config.to_dict()
+
+
+@router.patch("")
+async def patch_settings(data: dict) -> dict:
+    service = get_service()
+    conflict = _running_task_conflict(allow_during_analysis=_is_summary_only_patch(data))
+    if conflict:
+        raise HTTPException(status_code=409, detail=conflict)
+    errors = validate_settings_payload(data)
+    if errors:
+        raise HTTPException(status_code=422, detail=errors)
+    updated = service.config_manager.patch(data)
+    if updated is None:
+        raise HTTPException(
+            status_code=409,
+            detail="配置未能写入：config.json 可能解析失败待修复，请手工修复该文件后重试（详见日志）",
+        )
+    return updated.to_dict()

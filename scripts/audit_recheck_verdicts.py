@@ -18,7 +18,7 @@
 
 用法：
     python scripts/audit_recheck_verdicts.py --verdicts docs/data/verdicts-dfm-full.json \
-        --book "workspace/《大奉打更人》" --out docs/data/audit-dfm-full.json
+        --book "runtime/workspace/《大奉打更人》" --out docs/data/audit-dfm-full.json
     # 加 --blind-model codex/gpt-6-luna 才会真的调模型
 """
 
@@ -162,6 +162,7 @@ def _parse_json_reply(text: str) -> dict:
 
 
 async def _audit(verdicts, items, chapters, blind_model: str, limit: int, concurrency: int):
+    from backend.config.paths import runtime_path
     from backend.core.evidence import EvidenceIndex
     from backend.config.settings import ConfigManager
     from backend.core.llm_client import LLMClient
@@ -173,7 +174,7 @@ async def _audit(verdicts, items, chapters, blind_model: str, limit: int, concur
 
     client = None
     if blind_model:
-        cfg = ConfigManager(ROOT / "config.json").load()
+        cfg = ConfigManager(runtime_path("config.json")).load()
         cfg.api.base_url = "http://127.0.0.1:3425/v1"
         cfg.api.model = blind_model
         cfg.api.max_tokens = 4000

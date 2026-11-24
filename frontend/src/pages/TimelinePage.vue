@@ -33,9 +33,15 @@ const events = ref<TimelineEvent[]>([])
 const foreshadows = ref<Foreshadow[]>([])
 const ranking = ref<ForeshadowRankItem[]>([])
 const minImportance = ref<'低' | '中' | '高'>('低')
+const rankingStatusFilter = ref<'all' | 'active' | 'resolved' | 'dormant'>('all')
+
+const filteredRanking = computed(() => {
+  if (rankingStatusFilter.value === 'all') return ranking.value
+  return ranking.value.filter(item => item.status === rankingStatusFilter.value)
+})
 
 const categories = ref<CategoryDef[]>([])
-const selectedCategories = ref<Set<string>>(new Set())
+const selectedCategories = ref<Set<string> | null>(null)
 const showCategoryFilter = ref(false)
 
 const importanceRank: Record<string, number> = { 低: 0, 中: 1, 高: 2 }
@@ -44,40 +50,74 @@ onMounted(async () => {
   try {
     const res = await api.getForeshadowCategories()
     categories.value = res.defs
-    // 默认全选（与 config.analysis.foreshadow_kept_categories 一致）
-    selectedCategories.value = new Set(res.kept.length ? res.kept : res.defs.map(d => d.name))
+    if (res.defs.length) {
+      selectedCategories.value = new Set(res.kept ?? res.defs.map(d => d.name))
+    }
   } catch (e) { console.error('加载伏笔分类失败', e) }
 })
 
-// 请求序号：快速切书时丢弃过期响应，防止 A 书慢返回覆盖 B 书时间线
+const timelineLoading = ref(false)
+const timelineError = ref('')
+const rankingLoading = ref(false)
+const rankingError = ref('')
+const rankingMissing = ref('')
 let timelineSeq = 0
+let rankingSeq = 0
 
-watch(bookId, async () => {
+async function loadTimeline() {
+  const id = bookId.value
   const seq = ++timelineSeq
-  if (!bookId.value) { events.value = []; foreshadows.value = []; ranking.value = []; return }
+  events.value = []
+  foreshadows.value = []
+  timelineError.value = ''
+  timelineLoading.value = Boolean(id)
+  if (!id) return
   try {
-    const res = await api.getTimeline(bookId.value)
-    if (seq !== timelineSeq) return   // 已切到别的书：丢弃过期响应
+    const res = await api.getTimeline(id)
+    if (seq !== timelineSeq) return
     events.value = res.events as TimelineEvent[]
     foreshadows.value = res.foreshadows as Foreshadow[]
-    // 排行数据（可能 404，静默处理）
-    try {
-      const rankRes = await api.getForeshadowRanking(bookId.value)
-      if (seq !== timelineSeq) return
-      ranking.value = rankRes.ranking
-    } catch {
-      if (seq !== timelineSeq) return
-      ranking.value = []  // 账本不存在，排行为空
-    }
-  } catch (e) {
-    if (seq !== timelineSeq) return
-    // 切书失败必须清空：否则残留上一本书的数据被误当成当前书
-    events.value = []
-    foreshadows.value = []
-    ranking.value = []
-    console.error('加载时间线失败，已清空:', e)
+  } catch (error) {
+    if (seq === timelineSeq) timelineError.value = (error as Error).message || '无法读取时间线'
+  } finally {
+    if (seq === timelineSeq) timelineLoading.value = false
   }
+}
+
+async function loadRanking() {
+  const id = bookId.value
+  const seq = ++rankingSeq
+  ranking.value = []
+  rankingError.value = ''
+  rankingMissing.value = ''
+  rankingLoading.value = Boolean(id)
+  if (!id) return
+  try {
+    const res = await api.getForeshadowRanking(id)
+    if (seq === rankingSeq) ranking.value = res.ranking
+  } catch (error) {
+    if (seq !== rankingSeq) return
+    const err = error as Error & { status?: number }
+    if (err.status === 404) rankingMissing.value = err.message || '该书暂无伏笔排行'
+    else rankingError.value = err.message || '无法读取伏笔排行'
+  } finally {
+    if (seq === rankingSeq) rankingLoading.value = false
+  }
+}
+
+watch(bookId, () => {
+  rankingStatusFilter.value = 'all'
+  void loadTimeline()
+  void loadRanking()
 })
+
+const viewLoading = computed(() => mode.value === 'ranking' ? rankingLoading.value : timelineLoading.value)
+const viewError = computed(() => mode.value === 'ranking' ? rankingError.value : timelineError.value)
+
+function retryCurrentView() {
+  if (mode.value === 'ranking') void loadRanking()
+  else void loadTimeline()
+}
 
 const filteredEvents = computed(() =>
   events.value.filter(ev => (importanceRank[ev.importance ?? '中'] ?? 0) >= importanceRank[minImportance.value]),
@@ -86,7 +126,7 @@ const filteredEvents = computed(() =>
 const filteredForeshadows = computed(() =>
   foreshadows.value.filter(fs => {
     if ((importanceRank[fs.importance ?? '中'] ?? 0) < importanceRank[minImportance.value]) return false
-    if (selectedCategories.value.size === 0) return true
+    if (selectedCategories.value === null) return true
     const cat = fs.category || '其他'
     return selectedCategories.value.has(cat)
   }),
@@ -161,7 +201,7 @@ const categoryStats = computed(() => {
 
 <template>
   <div class="space-y-6">
-    <h2 class="section-title">时间线</h2>
+    <h2 class="section-title">事件与伏笔</h2>
     <BookSelector v-model="bookId" />
     <div v-if="bookId" class="flex gap-2 flex-wrap items-center">
       <button @click="mode = 'events'" class="glass-pill" :class="{ 'is-active': mode === 'events' }">事件时间线 ({{ filteredEvents.length }})</button>
@@ -179,9 +219,25 @@ const categoryStats = computed(() => {
           @click="showCategoryFilter = !showCategoryFilter"
           class="glass-pill"
           :class="{ 'is-active': showCategoryFilter }"
-          :title="'按伏笔分类筛选（已选 ' + selectedCategories.size + '/' + categories.length + '）'"
-        >分类筛选 ({{ selectedCategories.size }})</button>
+          :disabled="!categories.length"
+          :title="categories.length ? '按伏笔分类筛选（已选 ' + (selectedCategories?.size ?? 0) + '/' + categories.length + '）' : '分类列表不可用时显示全部分类'"
+        >分类筛选<span v-if="selectedCategories"> ({{ selectedCategories.size }})</span></button>
       </template>
+      <div v-else class="flex items-center gap-1.5 ml-2 flex-wrap">
+        <button
+          v-for="opt in [
+            { key: 'all', label: '全部' },
+            { key: 'active', label: '活跃' },
+            { key: 'resolved', label: '已回收' },
+            { key: 'dormant', label: '休眠' },
+          ]"
+          :key="opt.key"
+          type="button"
+          class="glass-pill text-xs"
+          :class="{ 'is-active': rankingStatusFilter === opt.key }"
+          @click="rankingStatusFilter = opt.key as 'all' | 'active' | 'resolved' | 'dormant'"
+        >{{ opt.label }}</button>
+      </div>
     </div>
     <div
       v-if="mode === 'foreshadows' && showCategoryFilter && categories.length"
@@ -200,7 +256,7 @@ const categoryStats = computed(() => {
           :key="cat.name"
           @click="toggleCategory(cat.name)"
           class="glass-pill text-xs"
-          :class="{ 'is-active': selectedCategories.has(cat.name) }"
+          :class="{ 'is-active': selectedCategories?.has(cat.name) }"
           :title="cat.description"
         >
           {{ cat.name }}<span v-if="categoryStats.has(cat.name)" class="opacity-60 ml-1">({{ categoryStats.get(cat.name) }})</span>
@@ -208,24 +264,43 @@ const categoryStats = computed(() => {
       </div>
     </div>
     <div v-if="!bookId" class="glass-card p-8 text-center text-sm" style="color: var(--win-text-disabled)">请选择书目</div>
+    <div v-else-if="viewLoading" class="glass-card p-8 text-center text-sm" role="status">
+      {{ mode === 'ranking' ? '正在加载伏笔排行…' : '正在加载时间线…' }}
+    </div>
+    <div v-else-if="viewError" class="glass-card p-8 text-center text-sm space-y-3">
+      <p role="alert">{{ mode === 'ranking' ? '伏笔排行加载失败' : '时间线加载失败' }}：{{ viewError }}</p>
+      <button type="button" class="glass-button" @click="retryCurrentView">重试</button>
+    </div>
     <div v-else-if="mode === 'ranking'" class="space-y-2">
       <div v-if="ranking.length === 0" class="glass-card p-8 text-center text-sm" style="color: var(--win-text-disabled)">
-        暂无排行数据，请先运行最终总结
+        {{ rankingMissing || '暂无排行数据' }}
       </div>
-      <div v-for="(item, idx) in ranking" :key="item.id" class="tl-card">
+      <div v-else-if="filteredRanking.length === 0" class="glass-card p-8 text-center text-sm" style="color: var(--win-text-disabled)">
+        当前状态筛选下暂无伏笔
+      </div>
+      <div v-for="(item, idx) in filteredRanking" :key="item.id" class="tl-card">
         <div class="flex items-start gap-3">
-          <span class="text-xs font-medium mt-0.5 shrink-0" style="color: var(--win-text-disabled)">#{{ idx + 1 }}</span>
-          <div class="flex-1">
+          <span class="text-xs font-medium mt-0.5 shrink-0" style="color: var(--win-text-muted)">#{{ idx + 1 }}</span>
+          <div class="flex-1 space-y-1">
             <p style="color: var(--win-text-primary)">{{ item.description }}</p>
-            <div class="mt-1.5 text-xs flex gap-3 flex-wrap items-center" style="color: var(--win-text-secondary)">
+            <div class="text-xs flex gap-3 flex-wrap items-center" style="color: var(--win-text-secondary)">
               <span>分数: <strong>{{ item.composite_score }}</strong></span>
               <span>跨度: ch{{ item.first_seen_chapter }}→ch{{ item.last_seen_chapter }} ({{ item.span }}章)</span>
               <span>检测: {{ item.evidence_count }}次</span>
               <span v-if="item.status === 'active'" class="status-tag badge-blue" style="font-size: 11px">活跃</span>
               <span v-else-if="item.status === 'resolved'" class="status-tag badge-green" style="font-size: 11px">已回收</span>
               <span v-else-if="item.status === 'dormant'" class="status-tag badge-gray" style="font-size: 11px">休眠</span>
+              <span v-if="item.resolved_chapter != null && item.resolved_chapter > 0" style="color: var(--win-success)">
+                回收于第{{ item.resolved_chapter }}章
+              </span>
+              <span v-if="item.resolution_quality === 'verified'" class="status-tag badge-green" style="font-size: 11px">证据已核实</span>
+              <span v-else-if="item.resolution_quality === 'questioned'" class="status-tag badge-orange" style="font-size: 11px">证据存疑</span>
+              <span v-if="item.needs_review" class="status-tag badge-orange" style="font-size: 11px">建议复审</span>
               <span v-if="item.evidence_count <= 1 && item.span === 0" class="status-tag badge-orange" style="font-size: 11px">⚠️ 仅检测1次</span>
             </div>
+            <p v-if="item.resolution" class="text-xs" style="color: var(--win-text-secondary)">
+              回收说明：{{ item.resolution }}
+            </p>
           </div>
           <div class="shrink-0 flex flex-col items-end gap-1">
             <span class="glass-badge" :class="importanceBadge[item.importance] || 'badge-gray'">{{ item.importance }}</span>
@@ -237,7 +312,9 @@ const categoryStats = computed(() => {
         </div>
       </div>
     </div>
-    <div v-else-if="chapters.length === 0" class="glass-card p-8 text-center text-sm" style="color: var(--win-text-disabled)">暂无数据</div>
+    <div v-else-if="chapters.length === 0" class="glass-card p-8 text-center text-sm" style="color: var(--win-text-disabled)">
+      {{ mode === 'foreshadows' && selectedCategories?.size === 0 ? '未选择伏笔分类' : '暂无符合当前条件的数据' }}
+    </div>
     <div v-else class="space-y-3">
       <div v-for="[ch, group] in chapters" :key="ch" class="flex gap-3">
         <div class="shrink-0 w-16 text-right">
@@ -247,7 +324,7 @@ const categoryStats = computed(() => {
           <template v-if="mode === 'events'">
             <div v-for="(ev, idx) in group.events" :key="idx" class="tl-card">
               <div class="flex items-start gap-2">
-                <span class="text-xs mt-0.5" style="color: var(--win-text-disabled)">#{{ idx + 1 }}</span>
+                <span class="text-xs mt-0.5" style="color: var(--win-text-muted)">#{{ idx + 1 }}</span>
                 <div class="flex-1">
                   <p style="color: var(--win-text-primary)">{{ ev.event }}</p>
                   <div class="flex gap-3 mt-1 text-xs" style="color: var(--win-text-secondary)">

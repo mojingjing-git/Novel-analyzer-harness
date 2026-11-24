@@ -16,8 +16,11 @@ const props = withDefaults(defineProps<{
   format?: (n: number) => string
   /** 动画时长（毫秒），默认 600 */
   duration?: number
+  /** 缓动曲线：easeOut（KPI 卡片）或 linear（1 秒采样连续数字） */
+  easing?: 'easeOut' | 'linear'
 }>(), {
   duration: 600,
+  easing: 'easeOut',
   format: (n: number) => String(Math.round(n)),
 })
 
@@ -39,9 +42,9 @@ function animate(from: number, to: number) {
   const delta = to - from
 
   const tick = (now: number) => {
-    const t = Math.min(1, (now - start) / props.duration)
-    // ease-out cubic：曲线 1 - (1-t)^3
-    const eased = 1 - Math.pow(1 - t, 3)
+    const rawT = props.duration > 0 ? (now - start) / props.duration : 1
+    const t = Math.max(0, Math.min(1, rawT))
+    const eased = props.easing === 'linear' ? t : 1 - Math.pow(1 - t, 3)
     display.value = from + delta * eased
     if (t < 1) {
       rafId = requestAnimationFrame(tick)
@@ -53,9 +56,9 @@ function animate(from: number, to: number) {
   rafId = requestAnimationFrame(tick)
 }
 
-// 监听值变化驱动动画
-watch(() => props.value, (newVal, oldVal) => {
-  animate(oldVal, newVal)
+// 监听值变化驱动动画：从当前中间帧 display.value 连续过渡，避免 1 秒批量提交时回跳闪断
+watch(() => props.value, (newVal) => {
+  animate(display.value, newVal)
 })
 
 onMounted(() => {

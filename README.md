@@ -11,7 +11,7 @@ Novel Analyzer 是一个本地运行的长篇中文小说分析工具。它读�
 - 切分 txt / docx：识别常见章节和卷格式，清理广告，输出 blocks/
 - 逐章分析：提取事件、人物变化、伏笔、地点等信息
 - 全书总结：生成最终报告、伏笔审计、写作风格分析
-- 可视化：时间线、角色关系图、地点地图、角色卡
+- 可视化：时间线、人物谱系、世界舞台、角色卡
 - 导出：聚合 JSON 和 Excel
 - 断点续跑：分析中断后可从已完成部分继续
 - 桌面模式：Windows 下可双击 run_desktop.bat 启动
@@ -34,7 +34,7 @@ npm install
 npm run build
 ```
 
-或直接双击 `build_frontend.bat`（在本地磁盘构建后自动把 dist 同步回共享盘，规避 esbuild 网络盘限制）。
+或直接双击 `desktop\build_frontend.bat`（在本地磁盘构建后自动把 dist 同步回共享盘，规避 esbuild 网络盘限制）。
 
 ## 配置
 
@@ -42,7 +42,7 @@ npm run build
 
 API Key 也支持环境变量 `LLM_API_KEY` / `MINIMAX_API_KEY` 注入，优先级高于配置文件。
 
-工作区默认在仓库根目录下 `workspace/`，可通过环境变量 `NOVEL_ROOT` 改到其他位置（桌面端网络盘场景必须用）。配置项的完整清单与默认值见 [docs/configuration.md](./docs/configuration.md)。
+源码模式下运行数据与工作区默认集中在仓库 `runtime/` 目录（`runtime/config.json`、`runtime/workspace/`）；可通过环境变量 `NOVEL_RUNTIME_DIR`（或外置数据目录的 `NOVEL_ROOT`）改到其他位置，桌面端网络盘本地副本启动由启动脚本自动设置。打包后的单文件 `novel-analyzer.exe` 保持绿色便携策略，数据直接生成于 EXE 同级目录。配置项的完整清单与默认值见 [docs/configuration.md](./docs/configuration.md)。
 
 ## 使用
 
@@ -68,7 +68,7 @@ cd frontend && npm run dev                                 # 前端 http://local
 1. 小说切分页：导入 txt 或 docx，自动识别章节和卷，清理广告，批量切分到 `workspace/《书名》/blocks/`
 2. 分析队列页：扫描工作区入队，开始分析（实时进度 / 日志 / token 统计）
 3. 最终总结页：选书，跑 4 阶段总结（卷摘要、伏笔调和、风格分析、最终报告），看报告、审计、伏笔账本
-4. 可视化页：时间线、关系图、地图、角色卡
+4. 可视化页：人物谱系、世界舞台、事件与伏笔（时间线与排行）
 5. 统计面板：token 消耗、缓存命中率、重试成本
 
 ### 关键产物
@@ -103,7 +103,7 @@ cd frontend && npm run dev                                 # 前端 http://local
 | `foreshadow_audit.md` | 伏笔审计报告 |
 | `foreshadow_ledger.json` | 伏笔账本 |
 | `style.md` | 写作风格分析 |
-| `locations_normalized.json` / `spatial_relationships_normalized.json` | 地点与空间关系归一化结果 |
+| `story_atlas.json` | 全书语义图谱（核心人物关系网、换地图阶段流与多世界树） |
 | `token_stats.json` / `summary_token_stats.json` | 分析侧 / 总结侧 token 统计 |
 | `final_summary_checkpoint/` | 总结断点 |
 
@@ -120,7 +120,6 @@ cd frontend && npm run dev                                 # 前端 http://local
 | [docs/testing.md](./docs/testing.md) | 轻量测试体系与统一运行入口 |
 | [docs/troubleshooting.md](./docs/troubleshooting.md) | 排障路径 |
 | [docs/build.md](./docs/build.md) | 打包发布 |
-| [docs/data-contract-vnext.md](./docs/data-contract-vnext.md) | vnext 数据契约 |
 | [docs/issues.md](./docs/issues.md) | 已知问题 |
 | [docs/baseline-data.md](./docs/baseline-data.md) | 质量与性能基线 |
 
@@ -133,7 +132,7 @@ cd frontend && npm run dev                                 # 前端 http://local
 2. 双击运行
 3. 首次启动会自动创建：
    - `workspace/` 目录（含 README.md 欢迎页）
-   - `config.json`（模板来自 `config.example.json`，已嵌入 exe）
+   - `config.json`（模板来自 `desktop/config.example.json`，已嵌入 exe）
 4. 应用启动后会自动跳到**设置页**，填入 API Key 即可使用
 5. 把你的 `.txt` 或 `.docx` 小说文件放到 `workspace/<书名>/` 下面
 6. 主界面选书 → 启动分析 → 看伏笔账本 + 最终报告
@@ -161,14 +160,13 @@ cd frontend && npm run dev                                 # 前端 http://local
 - 完整分析跑完后，磁盘占用大致是原 txt 的 3-5 倍（聚合 + checkpoint + 日志）
 - 不同厂商对思考模式协议支持不一样，详见 [docs/configuration.md](./docs/configuration.md) 的 api 段
 - PyInstaller 打包的 exe 未做代码签名，杀软可能误报（添加信任即可）
-- vnext 的伏笔复检链路还没有产出过一条 SUPPORTED 判定，真实长书也没有跑通的基线，
-  详见 [docs/issues.md](./docs/issues.md)
+- 伏笔复检假阳性门禁与真实长书端到端基线尚待完善，详见 [docs/issues.md](./docs/issues.md)
 
 ## 常见问题
 
 - **分析慢或超时**：调大 `api.timeout` / `api.summary_timeout`，或换快模型
 - **最终总结卡住**：查看 `api_failures.log` 的错误类型分布，或在设置页给总结换快模型
-- **前端改了不生效**：运行 `build_frontend.bat` 重新构建 dist，再重启应用
+- **前端改了不生效**：运行 `desktop\build_frontend.bat` 重新构建 dist，再重启应用
 
 更多排障内容见 [docs/troubleshooting.md](./docs/troubleshooting.md)。
 
@@ -186,7 +184,7 @@ python scripts/run_tests.py backend/tests/test_llm_client.py --no-frontend
 python scripts/run_tests.py --no-frontend -- -k recheck
 ```
 
-测试说明见 [docs/testing.md](./docs/testing.md)。后端 19 个领域测试文件覆盖模块导入冒烟、架构边界、LLM 重试链、JSON 容错、模型序列化、队列状态机、总结断点续跑、知识库快照隔离、伏笔账本、B/C 追踪与审核契约、vnext 数据契约与复检裁决；前端 4 个聚合 Vitest 测试文件覆盖 API 客户端、工具函数、核心组件与页面状态机。
+测试说明见 [docs/testing.md](./docs/testing.md)。后端 14 个领域测试文件覆盖模块导入冒烟、架构边界、LLM 重试链、JSON 容错、模型序列化、队列状态机、总结断点续跑、知识库快照隔离、伏笔账本、B/C 追踪与审核契约及复检裁决；前端 5 个 Vitest 测试文件覆盖 API 客户端、工具函数、核心组件与页面状态机。
 
 修改后端后重启进程生效；修改前端后跑 `npm run build` 重新生成 `frontend/dist/`。新加
 `APIConfig` / `AnalysisConfig` dataclass 字段后，前端 `AppConfigDto` 必须同步补类型。

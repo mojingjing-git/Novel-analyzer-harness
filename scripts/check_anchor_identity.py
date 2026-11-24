@@ -16,7 +16,7 @@
 
 用法::
 
-    python scripts/check_anchor_identity.py --book workspace/《大奉打更人》
+    python scripts/check_anchor_identity.py --book runtime/workspace/《大奉打更人》
 """
 
 from __future__ import annotations

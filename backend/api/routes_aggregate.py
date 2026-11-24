@@ -6,6 +6,8 @@ GET /api/aggregate/{book_id}/file/{name} — 读取聚合文件内容
 POST /api/aggregate/{book_id}/excel — 导出Excel
 """
 
+import asyncio
+import json
 import logging
 from pathlib import Path
 
@@ -41,15 +43,13 @@ async def run_aggregate(req: AggregateRequest) -> dict:
 
 
 async def _run_async_aggregate(output_dir: Path, aggregated_dir: Path, include_raw: bool) -> dict:
-    import asyncio
     from ..utils.aggregate_utils import aggregate_novel_analysis
 
     result = await asyncio.to_thread(
         aggregate_novel_analysis,
         str(output_dir), str(aggregated_dir), include_raw,
-        lambda: False,  # should_stop placeholder
+        lambda: False,
     )
-    # Convert Path values to strings for JSON serialization
     if isinstance(result, dict):
         return {k: str(v) for k, v in result.items()}
     return {}
@@ -68,6 +68,8 @@ async def list_aggregate_files(book_id: str) -> dict:
 
     files = []
     for f in sorted(aggregated_dir.glob("*.json")):
+        if f.name.startswith("_"):
+            continue
         files.append({
             "name": f.name,
             "size_kb": round(f.stat().st_size / 1024, 1),
@@ -78,7 +80,6 @@ async def list_aggregate_files(book_id: str) -> dict:
 @router.get("/{book_id}/file/{name}")
 async def read_aggregate_file(book_id: str, name: str) -> dict:
     """读取聚合文件内容"""
-    import json
     output_dir = get_output_dir(book_id)
     if output_dir is None:
         raise HTTPException(status_code=404, detail=f"书目不存在: {book_id}")
@@ -104,20 +105,24 @@ async def read_aggregate_file(book_id: str, name: str) -> dict:
 
 @router.post("/{book_id}/excel")
 async def export_aggregate_excel(book_id: str) -> dict:
-    """导出聚合数据到Excel"""
+    """导出聚合数据到Excel（导出前按需自动刷新聚合缓存，无需手动前置点击）"""
+    from ..utils.aggregate_utils import ensure_aggregated_cache, get_agg_lock
     from ..utils.excel_export import export_aggregated_to_excel
 
     output_dir = get_output_dir(book_id)
-    if output_dir is None:
-        raise HTTPException(status_code=404, detail=f"书目不存在: {book_id}")
-
-    aggregated_dir = output_dir / "aggregated"
-    if not aggregated_dir.exists():
-        raise HTTPException(status_code=404, detail="聚合目录不存在，请先运行聚合")
+    if output_dir is None or not output_dir.exists():
+        raise HTTPException(status_code=404, detail=f"书目不存在或无输出: {book_id}")
 
     try:
-        import asyncio
-        path = await asyncio.to_thread(export_aggregated_to_excel, aggregated_dir)
+        aggregated_dir = await asyncio.to_thread(ensure_aggregated_cache, output_dir)
+
+        def _locked_export():
+            with get_agg_lock(output_dir):
+                return export_aggregated_to_excel(aggregated_dir)
+
+        path = await asyncio.to_thread(_locked_export)
         return {"ok": True, "path": str(path)}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

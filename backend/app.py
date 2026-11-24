@@ -7,8 +7,6 @@ FastAPI 应用工厂
 
 import asyncio
 import logging
-import os
-import sys
 from contextlib import asynccontextmanager
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -16,7 +14,11 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.responses import Response
+from starlette.types import Scope
 
+from backend.config.paths import ensure_runtime_dir, get_bundle_dir, get_runtime_dir
 from backend.api import (
     routes_analysis,
     routes_books,
@@ -28,8 +30,6 @@ from backend.api import (
     routes_workspace,
     routes_aggregate,
     routes_foreshadow,
-    routes_vnext,
-    routes_location_normalization,
     ws,
 )
 from backend.progress_hub import get_hub, install_log_forwarder
@@ -37,21 +37,10 @@ from backend.core.llm_failure_logger import redact
 
 logger = logging.getLogger(__name__)
 
-# 项目根目录（用户数据落 EXE 同级）+ BUNDLE_DIR（只读资源，dist 嵌入位置）
-# 设计原则（v0.2.0 exe）：所有用户数据（workspace/ config/ queue_state/ log）
-# 都在 EXE 同级目录，不在 %APPDATA% 也不在 _MEIPASS，避免 C 盘残留 + 卸载残留。
-if getattr(sys, "frozen", False):
-    EXE_DIR = Path(sys.executable).resolve().parent
-    BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", EXE_DIR))
-    PROJECT_ROOT = EXE_DIR
-    LOG_FILE = PROJECT_ROOT / "analyzer.log"
-else:
-    # NOVEL_ROOT 允许从“本地副本”启动进程（WebView2 需本地路径），
-    # 同时让数据/日志仍落在共享盘真实项目根。
-    _novel_root = os.environ.get("NOVEL_ROOT")
-    PROJECT_ROOT = Path(_novel_root).resolve() if _novel_root else Path(__file__).resolve().parent.parent
-    BUNDLE_DIR = PROJECT_ROOT
-    LOG_FILE = PROJECT_ROOT / "analyzer.log"
+# 运行时数据根（打包 exe 落 EXE 同级；源码态默认落 runtime/）与只读资源根
+BUNDLE_DIR = get_bundle_dir()
+PROJECT_ROOT = ensure_runtime_dir()
+LOG_FILE = PROJECT_ROOT / "analyzer.log"
 FRONTEND_DIST = BUNDLE_DIR / "frontend" / "dist"
 
 # 配置日志文件轮转（10MB x 3）
@@ -232,16 +221,11 @@ def create_app() -> FastAPI:
     app.include_router(routes_books.router)
     app.include_router(routes_summary.router)
     app.include_router(routes_viz.router)
-    app.include_router(routes_location_normalization.router)
     app.include_router(routes_splitter.router)
     app.include_router(routes_workspace.router)
     app.include_router(routes_prompt.router)
     app.include_router(routes_aggregate.router)
     app.include_router(routes_foreshadow.router)
-    # vnext 数据空间暂未接入生产流水线与前端，默认冻结其 HTTP 死路由；
-    # 如需调试可设环境变量 NOVEL_ENABLE_VNEXT_ROUTES=1 显式启用。
-    if os.environ.get("NOVEL_ENABLE_VNEXT_ROUTES") == "1":
-        app.include_router(routes_vnext.router)
 
     @app.get("/api/health")
     async def health():
@@ -258,10 +242,32 @@ def create_app() -> FastAPI:
 
     # 发布模式：托管前端构建产物（必须放在最后，避免吞掉 /api 路由）
     if FRONTEND_DIST.exists():
-        app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")
+        app.mount("/", SPAStaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")
         logger.info("已托管前端静态文件: %s", FRONTEND_DIST)
 
     return app
+
+
+def _should_spa_fallback(path: str, method: str) -> bool:
+    """判定静态资源 404 时是否应回退到前端 SPA index.html。"""
+    if method not in ("GET", "HEAD"):
+        return False
+    norm = path.replace("\\", "/").lstrip("/")
+    if norm.startswith(("api/", "ws/", "assets/")) or norm in ("api", "ws", "assets"):
+        return False
+    return "." not in Path(norm).name
+
+
+class SPAStaticFiles(StaticFiles):
+    """支持前端 History 模式子路由回退到 index.html 的静态文件服务。"""
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code == 404 and _should_spa_fallback(path, scope.get("method", "GET")):
+                return await super().get_response("index.html", scope)
+            raise
 
 
 app = create_app()

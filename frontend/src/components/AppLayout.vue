@@ -11,19 +11,31 @@ const isDesktop = ref(false)
 // 窗口最大化状态（仅桌面端，切换 maximize/restore 按钮图标）
 const isMaximized = ref(false)
 
-const navItems = [
-  { path: '/', label: '分析队列', icon: 'queue' },
-  { path: '/characters', label: '角色卡', icon: 'characters' },
-  { path: '/summary', label: '最终总结', icon: 'summary' },
-  { path: '/splitter', label: '小说切分', icon: 'splitter' },
-  { path: '/workspace', label: '工作区', icon: 'workspace' },
-  { path: '/prompt', label: 'Prompt预览', icon: 'prompt' },
-  { path: '/style', label: '风格分析', icon: 'style' },
-  { path: '/stats', label: '统计面板', icon: 'stats' },
-  { path: '/timeline', label: '时间线', icon: 'timeline' },
-  { path: '/graph', label: '关系图', icon: 'graph' },
-  { path: '/map', label: '地图', icon: 'map' },
-  { path: '/settings', label: '设置', icon: 'settings' },
+const navGroups = [
+  {
+    title: '工作流',
+    items: [
+      { path: '/splitter', label: '小说切分', icon: 'splitter' },
+      { path: '/', label: '分析队列', icon: 'queue' },
+      { path: '/summary', label: '最终总结', icon: 'summary' },
+    ],
+  },
+  {
+    title: '作品洞察',
+    items: [
+      { path: '/characters', label: '人物谱系', icon: 'characters' },
+      { path: '/world', label: '世界舞台', icon: 'world' },
+      { path: '/timeline', label: '事件与伏笔', icon: 'timeline' },
+    ],
+  },
+  {
+    title: '工具与系统',
+    items: [
+      { path: '/stats', label: '统计与诊断', icon: 'stats' },
+      { path: '/workspace', label: '工作区', icon: 'workspace' },
+      { path: '/settings', label: '设置', icon: 'settings' },
+    ],
+  },
 ]
 
 function toggleTheme() {
@@ -243,21 +255,25 @@ onBeforeUnmount(() => {
       <!-- Win11 NavigationView 侧边栏：Mica 基底（背景层），内容卡片白色浮于其上 -->
       <aside class="sidebar mica-surface" :class="{ collapsed }">
         <nav class="nav-list">
-          <router-link
-            v-for="item in navItems"
-            :key="item.path"
-            :to="item.path"
-            class="nav-item"
-            active-class="is-active"
-            :exact-active-class="item.path === '/' ? 'is-active' : ''"
-            :title="collapsed ? item.label : undefined"
-            v-slot="{ isActive, isExactActive }"
-          >
-            <span class="nav-icon-wrap">
-              <Icon :name="item.icon" :size="16" :filled="item.path === '/' ? isExactActive : isActive" />
-            </span>
-            <span v-if="!collapsed" class="nav-label">{{ item.label }}</span>
-          </router-link>
+          <template v-for="(group, gi) in navGroups" :key="group.title">
+            <div v-if="!collapsed" class="nav-group-title">{{ group.title }}</div>
+            <div v-else-if="gi > 0" class="nav-group-divider"></div>
+            <router-link
+              v-for="item in group.items"
+              :key="item.path"
+              :to="item.path"
+              class="nav-item"
+              active-class="is-active"
+              :exact-active-class="item.path === '/' ? 'is-active' : ''"
+              :title="collapsed ? item.label : undefined"
+              v-slot="{ isActive, isExactActive }"
+            >
+              <span class="nav-icon-wrap">
+                <Icon :name="item.icon" :size="16" :filled="item.path === '/' ? isExactActive : isActive" />
+              </span>
+              <span v-if="!collapsed" class="nav-label">{{ item.label }}</span>
+            </router-link>
+          </template>
         </nav>
 
         <div class="sidebar-footer">
@@ -447,12 +463,26 @@ html.dark .sidebar {
   -webkit-tap-highlight-color: transparent;
 }
 
+.nav-group-title {
+  font-size: 11px;
+  line-height: 20px;
+  font-weight: 600;
+  padding: 2px 12px 2px 16px;
+  color: var(--win-text-muted);
+  user-select: none;
+}
+.nav-group-divider {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--win-stroke);
+}
+
 .nav-item {
   position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
-  height: 40px;
+  height: 36px;
   padding: 0 12px 0 16px;
   overflow: visible;
   border-radius: var(--win-radius-control);

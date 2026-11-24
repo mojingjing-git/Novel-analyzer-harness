@@ -1,6 +1,7 @@
 // WebSocket 进度推送 composable（单例模式）
 // 全应用共享一个 WebSocket 连接，避免页面切换时断开重连丢失消息
 import { ref, onUnmounted, type Ref } from 'vue'
+import type { RecheckLiveProgress } from './client'
 
 // ============ WS 事件协议（与 backend/ws_events.py 镜像，wire 契约见该文件）============
 
@@ -59,7 +60,7 @@ export interface WSTokenDeltaPayload {
 }
 
 export interface WSStateChangePayload {
-  state: string  // 12 值全集见 backend/ws_events.py 的 WSState
+  state: string  // 8 值全集见 backend/ws_events.py 的 WSState
   detail: string
 }
 
@@ -72,21 +73,20 @@ export interface WSSummaryProgressPayload {
   batch?: number
   total_batches?: number
   batches_done?: number
+  summary_done?: number
+  recon_done?: number
   elapsed?: number
   message?: string
   book_id?: string
   counts?: Record<string, number>
-}
-
-/** 地点归一化进度（后端有广播、前端当前以 REST 轮询为准，此类型备用） */
-export interface WSLocationNormProgressPayload {
-  type: string
-  phase?: string
-  batch_idx?: number
-  error?: string
-  message?: string
-  book_id?: string
-  batches_done?: number
+  recheck?: Record<string, unknown>
+  recheck_progress?: RecheckLiveProgress
+  lane_id?: number
+  label?: string
+  ok?: boolean
+  concurrency?: number
+  real_lanes?: boolean
+  ts?: number
 }
 
 export type ProgressMessage =
@@ -99,7 +99,6 @@ export type ProgressMessage =
   | { type: 'token_delta'; payload: WSTokenDeltaPayload }
   | { type: 'state_change'; payload: WSStateChangePayload }
   | { type: 'summary_progress'; payload: WSSummaryProgressPayload }
-  | { type: 'location_normalization_progress'; payload: WSLocationNormProgressPayload }
   | { type: 'ping' }
 
 export interface LogEntry {

@@ -1,8 +1,7 @@
-"""LLM 错误信号嗅探（provider 无关的纯函数，1.x 与 vnext 共用）。
+"""LLM 错误信号嗅探（provider 无关的纯函数）。
 
-从 core/llm_client.py 收敛而来：vnext 不得反向 import core，权威实现在本包，
-llm_client 保留同名兼容导出。新增"错误信号"类判定（账户级熔断、限流识别等）
-应放在这里，而不是 client 或各引擎里。
+从 core/llm_client.py 收敛而来：权威实现在本包，llm_client 保留同名兼容导出。
+新增"错误信号"类判定（账户级熔断、限流识别等）应放在这里，而不是 client 或各引擎里。
 """
 
 from .error_taxonomy import ErrorClass, classify_exception

@@ -9,30 +9,21 @@
 
 import json
 import logging
-import os
 import re
-import sys
 from dataclasses import dataclass, replace
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, Optional, Dict, Any
 
+from ..config.paths import get_runtime_dir
 from ..config.settings import AppConfig, ConfigManager
 from ..core.llm_client import LLMClient
 from ..utils.json_utils import safe_save_json
 
 logger = logging.getLogger(__name__)
 
-# 项目根目录（用户数据落 EXE 同级，与 app.py 策略一致）
-# 设计原则（v0.2.0 exe）：所有用户数据（workspace/ config/ queue_state/ log）
-# 都在 EXE 同级目录，不在 %APPDATA% 也不在 _MEIPASS。
-if getattr(sys, "frozen", False):
-    PROJECT_ROOT = Path(sys.executable).resolve().parent
-else:
-    # 与 app.py 保持一致：优先用 NOVEL_ROOT 指向“真实项目根”（共享盘），
-    # 这样队列状态 / 配置 / 工作区数据都落在共享盘，而不是本地副本目录。
-    _novel_root = os.environ.get("NOVEL_ROOT")
-    PROJECT_ROOT = Path(_novel_root).resolve() if _novel_root else Path(__file__).resolve().parent.parent.parent
+# 运行时数据根（打包 exe 落 EXE 同级，源码态默认落 runtime/）
+PROJECT_ROOT = get_runtime_dir()
 QUEUE_STATE_FILE = PROJECT_ROOT / "queue_state.json"
 CONFIG_FILE = PROJECT_ROOT / "config.json"
 
@@ -133,9 +124,21 @@ class QueueManager:
         return all(item.status in ("done", "skipped", "failed") for item in self._items)
 
     def add_item(self, item: QueueItem) -> int:
-        # 去重：同 blocks_dir 不重复添加
+        # 去重：同 blocks_dir 不重复添加（追更重扫时同步更新总章数与进度状态）
         for existing in self._items:
             if existing.blocks_dir == item.blocks_dir:
+                if existing.status != "running" and (
+                    (item.total_chapters > 0 and item.total_chapters != existing.total_chapters)
+                    or item.completed_chapters < existing.completed_chapters
+                ):
+                    if item.total_chapters > 0:
+                        existing.total_chapters = item.total_chapters
+                    existing.completed_chapters = item.completed_chapters
+                    bs = max(1, existing.block_size)
+                    total_blocks = (existing.total_chapters + bs - 1) // bs
+                    if existing.status == "done" and existing.completed_chapters < total_blocks:
+                        existing.status = "pending"
+                        existing.error_message = ""
                 logger.info(f"队列跳过重复: {item.name} (blocks={item.blocks_dir})")
                 return self._items.index(existing)
         self._items.append(item)
@@ -386,16 +389,37 @@ class QueueManager:
             logger.error(f"队列状态恢复失败: {e}")
 
     def infer_progress(self, item: QueueItem) -> int:
-        """扫描 output 目录推断已完成章数，校验 block_size"""
+        """扫描 output 目录推断已完成块数，校验 block_size 与块章节集合"""
         output_dir = item.workspace_dir / "output"
         if not output_dir.exists():
             return 0
+        expected_map: Dict[int, List[int]] = {}
+        if item.blocks_dir and item.blocks_dir.is_dir():
+            chs = sorted(
+                int(f.stem)
+                for f in item.blocks_dir.glob("*.txt")
+                if re.match(r"^\d+\.txt$", f.name)
+            )
+            bs = max(1, item.block_size)
+            expected_map = {chs[i]: chs[i : i + bs] for i in range(0, len(chs), bs)}
         valid_count = 0
         for f in output_dir.glob("*_result.json"):
             try:
                 data = json.loads(f.read_text(encoding="utf-8"))
-                if data.get("block_size", 0) == item.block_size:
-                    valid_count += 1
+                if data.get("block_size", 0) != item.block_size:
+                    continue
+                if expected_map:
+                    m = re.match(r"chapter_(\d+)_result\.json", f.name)
+                    ch_num = int(m.group(1)) if m else int(data.get("chapter_number") or 0)
+                    if ch_num not in expected_map:
+                        continue
+                    src_chs = [
+                        int(x) for x in (data.get("source_chapters") or [])
+                        if isinstance(x, int) or (isinstance(x, str) and x.strip().isdigit())
+                    ]
+                    if src_chs and src_chs != expected_map[ch_num]:
+                        continue
+                valid_count += 1
             except Exception:
                 continue
         return valid_count

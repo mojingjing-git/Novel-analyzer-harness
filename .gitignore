@@ -2,11 +2,9 @@
 config.json
 .env
 
-# 运行时数据
-workspace/
-/data/
+# 运行时统一目录与状态/日志兜底忽略
+/runtime/
 queue_state.json
-usage_state.json
 usage_state*.json
 *.log
 *.log.*
@@ -14,14 +12,6 @@ usage_state*.json
 .bak_*
 .tmp_verify/
 app.lock
-
-# vnext 运行时数据（S2，2026-10-30）：与旧数据空间完全分离，绝不入库
-workspace_vnext/
-queue_state_vnext.json
-books_vnext.json
-config_vnext.json
-
-# 会话鉴权 token（PR-1 引入，2026-09-10）
 session.token
 
 # Python
@@ -62,6 +52,7 @@ _commit*_msg.txt
 _tmp_test_*/
 _pytest_*.stale
 _pytest_*.xml
+pytest-of-*/
 
 # 一次性脚本（根目录 scripts/）
 scripts/_run_*.py

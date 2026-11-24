@@ -33,6 +33,16 @@ const KEY_LABELS: Record<string, string> = {
   relation: '关系',
   from: '起点',
   to: '终点',
+  importance: '重要度',
+  confidence: '置信度',
+  change_delta: '变化幅度',
+  driver: '驱动因素',
+  anchor_quote: '原文锚点',
+  anchor_chapter: '锚点章节',
+  motif_key: '母题词',
+  question: '待解问题',
+  answer_criteria: '回收判据',
+  lead: '纯线索',
 }
 
 function isObject(v: unknown): v is Record<string, unknown> {

@@ -1,7 +1,6 @@
 # 配置参考
 
-配置文件是仓库根目录的 `config.json`，首次启动时由 `config.example.json` 复制生成。
-设置页提供图形化编辑，保存后立即落盘。
+源码模式下配置文件位于 `runtime/config.json`，首次启动由 `desktop/config.example.json` 复制生成；打包便携 EXE 模式下则位于 EXE 同级目录 `config.json`。设置页提供图形化编辑，保存后立即落盘。
 
 **所有默认值以 `backend/config/constants.py` 为准**。本文表格里的"默认"列是代码默认值，
 不是某一台机器上的实例值。
@@ -22,9 +21,9 @@
 |---|---|
 | `LLM_API_KEY` | 覆盖 `api.api_key` |
 | `MINIMAX_API_KEY` | 覆盖 `api.api_key`（MiniMax 专用） |
-| `NOVEL_ROOT` | 覆盖默认工作区根目录，桌面端网络盘场景必须用 |
+| `NOVEL_RUNTIME_DIR` | 显式指定源码模式下的运行时数据根目录（默认 `<repo>/runtime/`，打包 EXE 始终写 EXE 同级） |
+| `NOVEL_ROOT` | 指向代码仓库或外置数据目录；当指向代码仓库根（如桌面端本地副本场景）时，运行数据落入 `<NOVEL_ROOT>/runtime/`，同时用于定位只读 `frontend/dist` 与模板 |
 | `NOVEL_ANALYZER_SESSION_TOKEN` | 桌面端日志下载端点的鉴权 token |
-| `NOVEL_ENABLE_VNEXT_ROUTES` | 设为 `1` 时挂载默认冻结的 `/api/vnext/*` 调试路由 |
 
 密钥来自环境变量时，保存配置会把 `api_key` 置空后落盘——磁盘上不留环境变量里的密钥。
 
@@ -129,15 +128,17 @@
 
 ### 伏笔复检
 
-总结第 2 阶段对每条伏笔用原文证据核对回收判定。带证据复检（V2）是默认路径；关掉 `recheck_v2_enabled` 即回退旧的全书复检。
+总结第 2 阶段对每条伏笔用原文证据核对回收判定。默认使用带证据 V3 多跳证据链引擎（`recheck_version = "v3"`），也可切换为 V2（`"v2"`）。
 
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `recheck_v2_enabled` | bool | `true` | 带证据复检开关（关闭回退旧路径） |
-| `recheck_v2_batch_size` | int | `6` | 每次调用让判定模型同时核对几条候选（与旧路径批大小分开） |
-| `recheck_max_calls` | int | `300` | 一次复检最多调用多少次，超出的候选记「未核对」，可续跑 |
-| `recheck_max_tokens` | int | `32768` | 单次复检调用的输出上限；判定回包（6 候选 JSON）约 2k token |
-| `recheck_concurrency` | int | `0` | 复检同时在途的批次数上限；0 = 跟随主 `concurrency` |
+| `recheck_version` | str | `"v3"` | 带证据复检引擎版本：`v3`（默认共享池单阶段多跳引擎）或 `v2`（批量窗口核对） |
+| `recheck_v2_batch_size` | int | `6` | 仅 V2：每次调用让判定模型同时核对几条候选 |
+| `recheck_v3_gray_u4` | bool | `false` | 仅 V3：是否在单阶段裁决后对多跳/非高置信/争议条目追加灰区 U4 终审 |
+| `recheck_v3_mid_single_hop` | bool | `false` | 仅 V3：是否将中重要度条目缩至 3 窗口并跳过二三跳（高重要度主线保持 5 窗 3 跳） |
+| `recheck_max_calls` | int | `1200` | 一次复检最多调用多少次，超出的候选记「未核对」，可续跑 |
+| `recheck_max_tokens` | int | `32768` | 单次复检调用的输出上限；判定回包约 2k token |
+| `recheck_concurrency` | int | `0` | 复检同时在途的并发上限；0 = 跟随主 `concurrency` |
 | `recheck_model` | str | `""` | 判定模型；留空跟随主模型。判定要准确，可换用网关专用模型名 |
 | `recheck_base_url` | str | `""` | 判定请求端点；留空跟随主通道。换模型通常要同源换通道 |
 | `recheck_api_key` | str | `""` | 判定通道的 API Key；留空跟随主 Key。换第三方端点时必配 |
@@ -145,11 +146,10 @@
 | `recheck_timeout` | int | `0` | 判定请求超时（秒）；0 = 跟随 `api.timeout` |
 | `recheck_json_mode` | str | `""` | 判定 JSON 输出约束；空=跟随 `api.json_mode`（判定通道是本地地址时整体跳过） |
 | `recheck_reasoning_effort` | str | `""` | 判定思考档位；空=跟随主配置的思考设置（low/medium/high 显式覆盖） |
-| `foreshadow_recheck_batch_size` | int | `40` | **仅旧路径**：全书复检每次调用携带的活跃伏笔数 |
 | `anchor_quote_enabled` | bool | `true` | 逐章采集锚点引文；关掉则复检退化为无证据模式 |
 | `anchor_min_chars` | int | `6` | 锚点引文的最短字数 |
 
-复检开关、判定通道全参数（预设 / base_url / api_key / model / provider / timeout / json_mode / effort）与并发、批大小、调用/输出上限在设置页「伏笔复检（带证据 V2）」分组可改；锚点两项只能手改 `config.json`。
+引擎版本、V3 灰区终审与支线单跳开关、判定通道全参数（预设 / base_url / api_key / model / provider / timeout / json_mode / effort）、并发、批大小与调用/输出上限均可在设置页修改；锚点两项通过编辑 `config.json` 配置。
 
 判定模型与判定通道必须同源：网关专用模型名（含 `/`，如 `codex/gpt-6-luna`）配官方端点会在运行时被阻断（复检记 `PARTIAL`）。
 
@@ -158,18 +158,6 @@
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
 | `skip_moderation_blocked` | bool | `true` | 判定为审核拦截的章节，重试一次后跳过并标记 |
-
-### B/C 实验开关（默认全关闭）
-
-以下 5 个开关对应伏笔登记/回收（B）与按需复审（C）的独立增强特性，默认全部为 `false`，保证基线零行为变化；评估结论与试产建议见 [结案总表](./research/bc-production-readiness-2026-11-06/结案总表.md)。
-
-| 字段 | 类型 | 默认 | 说明 |
-|---|---|---|---|
-| `enable_b_trace` | bool | `false` | 开启 B1–B4 遗漏全链路审计追踪 |
-| `fix_b4_flow_and_storage` | bool | `false` | 开启知识库未裁剪归档与完整伏笔目录/同题无损合并 |
-| `fix_b2_evidence_and_recheck` | bool | `false` | 开启 B2 复检证据召回增强与行车记录仪请求落盘 |
-| `enable_c_on_demand_audit` | bool | `false` | 开启 C 类按需声明级闭环复审（通过后才写 `resolved`） |
-| `enable_anchor_b_plus_rule` | bool | `false` | 开启伏笔登记 Rule B+（章末全局未解守卫与局部自足性解耦） |
 
 ## 顶层字段
 

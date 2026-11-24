@@ -48,9 +48,11 @@ SYSTEM = (
 
 
 def _load_config() -> dict:
-    path = ROOT / "config.json"
+    from backend.config.paths import runtime_path
+
+    path = runtime_path("config.json")
     if not path.is_file():
-        raise SystemExit("找不到 config.json（需要其中的 API 配置）")
+        raise SystemExit(f"找不到配置文件: {path}（需要其中的 API 配置）")
     return json.loads(path.read_text(encoding="utf-8"))
 
 

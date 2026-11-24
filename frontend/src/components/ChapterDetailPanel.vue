@@ -30,6 +30,7 @@ const SECTION_LABELS: Record<string, string> = {
   core_events: '核心事件',
   character_arcs: '人物弧光',
   foreshadowing: '伏笔',
+  anchor_stats: '锚点统计',
   plot_holes: '剧情漏洞',
   locations: '地点',
   spatial_relationships: '空间关系',
@@ -38,10 +39,18 @@ const SECTION_LABELS: Record<string, string> = {
   long_context_insights: '长上下文洞察',
 }
 
+const HIDDEN_SECTION_KEYS = new Set([
+  'chapter_number',
+  'block_size',
+  'source_chapters',
+  'raw_response',
+  'anchor_stats',
+])
+
 const sections = computed(() => {
   if (!result.value) return []
   return Object.entries(result.value)
-    .filter(([k]) => k !== 'chapter_number' && k !== 'block_size')
+    .filter(([k]) => !HIDDEN_SECTION_KEYS.has(k))
     .map(([k, v]) => ({ key: k, label: SECTION_LABELS[k] || k, value: v }))
 })
 
@@ -156,7 +165,7 @@ onUnmounted(() => {
 <template>
   <div class="chapter-detail">
     <div class="cd-report glass-card">
-      <div v-if="!bookId" class="cd-placeholder">请先在上方选择书目</div>
+      <div v-if="!bookId" class="cd-placeholder">请选择书目</div>
       <div v-else-if="loading" class="cd-placeholder">加载中...</div>
       <div v-else-if="error" class="cd-placeholder cd-error">{{ error }}</div>
       <div v-else-if="!result" class="cd-placeholder">暂无章节数据</div>

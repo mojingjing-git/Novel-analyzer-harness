@@ -28,6 +28,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from backend.common.proxy_env import sanitize_proxy_env  # noqa: E402
+from backend.config.paths import runtime_path  # noqa: E402
 from backend.config.settings import ConfigManager  # noqa: E402
 from backend.core.evidence import MAX_WINDOWS, EvidenceIndex  # noqa: E402
 from backend.core.llm_client import LLMClient  # noqa: E402
@@ -124,13 +126,11 @@ async def main() -> int:
     args = ap.parse_args()
 
     try:
-        import pytest_isolation
-
-        pytest_isolation.sanitize_proxy_env()
+        sanitize_proxy_env()
     except Exception as exc:
         print(f"代理净化跳过：{exc}", file=sys.stderr)
 
-    cfg = ConfigManager(ROOT / "config.json").load()
+    cfg = ConfigManager(runtime_path("config.json")).load()
     if args.base_url:
         cfg.api.base_url = args.base_url
     if args.model:

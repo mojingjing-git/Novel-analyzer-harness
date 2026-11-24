@@ -1,12 +1,9 @@
-"""B/C 验收与证据协议契约测试：
-覆盖 acceptance_gate、claim_evidence、claim_evidence_v2、closure、evaluation_corpus / bc_corpus、bc_compare_claims。
+"""验收与证据协议契约测试：
+覆盖 acceptance_gate、claim_evidence、claim_evidence_v2、closure。
 """
 from __future__ import annotations
 
 import copy
-from pathlib import Path
-
-import pytest
 
 from backend.common.claim_evidence import validate_claim_audit
 from backend.common.claim_evidence_v2 import (
@@ -19,13 +16,6 @@ from backend.common.closure import (
     validate_branch_hits,
     validate_prereg_row,
 )
-from backend.common.evaluation_corpus import (
-    SCHEMA as CORPUS_SCHEMA,
-    decode_source,
-    freeze_plan,
-    sample_spans,
-    work_key,
-)
 from scripts.acceptance_gate import (
     gate,
     label_status,
@@ -33,8 +23,6 @@ from scripts.acceptance_gate import (
     ngram_dice,
     sample_fingerprint,
 )
-from scripts.experiments.bc.bc_compare_claims import validate_pairs
-import scripts.experiments.bc.bc_corpus as bc_corpus_cli
 
 BASE_GATE_ITEM = {
     "question": "黑太岁的来源是什么？",
@@ -186,34 +174,7 @@ def test_closure_prereg_and_branch_hits():
     assert not errs and closing_satisfied(reg["closing"], hits, reg) is True
 
 
-def test_evaluation_corpus_and_bc_compare_claims(tmp_path: Path):
-    assert work_key("《道诡异仙》") == "道诡异仙"
-    assert bc_corpus_cli.read_json is not None
-
-    text = "\n".join(f"第{i}章 正文内容" + ("甲乙丙丁戊己庚辛壬癸" * 30) for i in range(1, 30))
-    raw_bytes = text.encode("utf-8")
-    decoded, enc = decode_source(raw_bytes)
-    assert enc == "utf-8-sig" and decoded == text
-    spans = sample_spans(text, "w1", "seed1", 2, 200)
-    assert len(spans) == 2
-
-    book_path = tmp_path / "book1.txt"
-    book_path.write_bytes(raw_bytes)
-    proto_file = tmp_path / "proto.md"
-    proto_file.write_text("# proto", encoding="utf-8")
-    plan = {
-        "schema": CORPUS_SCHEMA,
-        "seed": "seed1",
-        "windows_per_work": 2,
-        "window_chars": 200,
-        "previously_exposed_titles": [],
-        "protocol_files": ["proto.md"],
-        "works": [{"work_id": "w1", "title": "测试书", "split": "development", "path": str(book_path)}],
-    }
-    manifest = freeze_plan(plan, tmp_path)
-    assert len(manifest["works"]) == 1
-
-    # bc_compare_claims.validate_pairs
+def test_acceptance_gate_label_binding_and_fingerprint():
     base_item = {
         "fs_id": "fs_1",
         "work_id": "w1",
@@ -231,16 +192,6 @@ def test_evaluation_corpus_and_bc_compare_claims(tmp_path: Path):
     cur_item = {**base_item, "arm": "current"}
     cur_item["sample_id"] = sample_fingerprint(cur_item)
     cur_item["label_sample_id"] = cur_item["sample_id"]
-
-    v2_item = {**base_item, "arm": "claims_v2", "evidence_contract_version": "claims_v2"}
-    v2_item["sample_id"] = sample_fingerprint(v2_item)
-    v2_item["label_sample_id"] = v2_item["sample_id"]
-
     assert label_status(cur_item) == "bound"
-    validate_pairs([cur_item, v2_item], max_calls=4, candidate="claims_v2")
-
-    unbound = dict(cur_item, label_sample_id="stale_hash")
-    assert label_status(unbound) == "stale"
+    assert label_status(dict(cur_item, label_sample_id="stale_hash")) == "stale"
     assert label_status(dict(cur_item, label_sample_id=None)) == "unbound"
-    with pytest.raises(ValueError, match="reference_label_not_bound_before_run"):
-        validate_pairs([unbound, v2_item], max_calls=4, candidate="claims_v2")

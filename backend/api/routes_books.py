@@ -32,7 +32,7 @@ async def register_books(req: RegisterRequest) -> dict:
     """手动注册 base_dir 下的书目录（不加入队列）"""
     try:
         base = Path(req.base_dir)
-        added = book_service.register_scan_dir(base)
+        added = await asyncio.to_thread(book_service.register_scan_dir, base)
         return {"added": added}
     except Exception as e:
         logger.error(f"注册书目失败: {e}", exc_info=True)
@@ -41,7 +41,7 @@ async def register_books(req: RegisterRequest) -> dict:
 
 @router.get("")
 async def list_books() -> list:
-    return book_service.list_books()
+    return await asyncio.to_thread(book_service.list_books)
 
 
 @router.get("/{book_id}/results")
@@ -50,20 +50,10 @@ async def get_book_results(book_id: str) -> dict:
     if output_dir is None:
         raise HTTPException(status_code=404, detail=f"书目不存在: {book_id}")
 
-    aggregated_file = output_dir / "novel_analysis_aggregated.json"
-    if aggregated_file.exists():
-        try:
-            data = json.loads(aggregated_file.read_text(encoding="utf-8"))
-            return {"book_id": book_id, "data": data}
-        except Exception as e:
-            logger.error(f"读取聚合文件失败: {e}")
-            raise HTTPException(status_code=500, detail="聚合文件读取失败")
-
-    # 不存在则实时聚合（重同步操作，放线程池避免阻塞事件循环）
-    from backend.utils.aggregate_utils import JSONAggregator
+    from backend.utils.aggregate_utils import ensure_aggregated_cache
     try:
-        aggregator = JSONAggregator(output_dir)
-        path = await asyncio.to_thread(aggregator.aggregate_to_single_json)
+        agg_dir = await asyncio.to_thread(ensure_aggregated_cache, output_dir)
+        path = agg_dir / "novel_analysis_aggregated.json"
         data = json.loads(await asyncio.to_thread(path.read_text, encoding="utf-8"))
         return {"book_id": book_id, "data": data}
     except Exception as e:
@@ -71,18 +61,37 @@ async def get_book_results(book_id: str) -> dict:
         raise HTTPException(status_code=500, detail=f"聚合失败: {e}")
 
 
+@router.get("/{book_id}/style_profile")
+async def get_book_style_profile(book_id: str) -> dict:
+    """读取 Stage 3 落盘的 style_profile.json（书存在但无画像时返回 200 exists=False）"""
+    res = await asyncio.to_thread(book_service.load_style_profile, book_id)
+    if res is None:
+        raise HTTPException(status_code=404, detail=f"书目不存在: {book_id}")
+    return res
+
+
+@router.get("/{book_id}/recheck_verdicts")
+async def get_book_recheck_verdicts(book_id: str) -> dict:
+    """读取落盘的 recheck_verdicts.json（书存在但无复检结果时返回 200 exists=False）"""
+    res = await asyncio.to_thread(book_service.load_recheck_verdicts, book_id)
+    if res is None:
+        raise HTTPException(status_code=404, detail=f"书目不存在: {book_id}")
+    return res
+
+
 @router.get("/{book_id}/latest_chapter")
 async def get_latest_chapter(book_id: str) -> dict:
     """返回该书已分析完成的最大章节号（用于章节详情默认展示最新章节）"""
-    output_dir = book_service.get_output_dir(book_id)
+    output_dir = await asyncio.to_thread(book_service.get_output_dir, book_id)
     if output_dir is None:
         raise HTTPException(status_code=404, detail=f"书目不存在: {book_id}")
-    return {"book_id": book_id, "latest": book_service.latest_chapter(book_id)}
+    latest = await asyncio.to_thread(book_service.latest_chapter, book_id)
+    return {"book_id": book_id, "latest": latest}
 
 
 @router.get("/{book_id}/report")
 async def get_book_report(book_id: str) -> dict:
-    output_dir = book_service.get_output_dir(book_id)
+    output_dir = await asyncio.to_thread(book_service.get_output_dir, book_id)
     if output_dir is None:
         raise HTTPException(status_code=404, detail=f"书目不存在: {book_id}")
 
@@ -90,7 +99,7 @@ async def get_book_report(book_id: str) -> dict:
     if not report_path.exists():
         raise HTTPException(status_code=404, detail="报告尚未生成")
     try:
-        text = report_path.read_text(encoding="utf-8")
+        text = await asyncio.to_thread(report_path.read_text, encoding="utf-8")
         return {"book_id": book_id, "report": text}
     except Exception as e:
         logger.error(f"读取报告失败: {e}")
@@ -99,7 +108,7 @@ async def get_book_report(book_id: str) -> dict:
 
 @router.get("/{book_id}/ledger")
 async def get_book_ledger(book_id: str) -> dict:
-    output_dir = book_service.get_output_dir(book_id)
+    output_dir = await asyncio.to_thread(book_service.get_output_dir, book_id)
     if output_dir is None:
         raise HTTPException(status_code=404, detail=f"书目不存在: {book_id}")
 
@@ -107,7 +116,7 @@ async def get_book_ledger(book_id: str) -> dict:
     if not ledger_path.exists():
         raise HTTPException(status_code=404, detail="伏笔账本不存在")
     try:
-        data = json.loads(ledger_path.read_text(encoding="utf-8"))
+        data = json.loads(await asyncio.to_thread(ledger_path.read_text, encoding="utf-8"))
         return {"book_id": book_id, "ledger": data}
     except Exception as e:
         logger.error(f"读取账本失败: {e}")
@@ -117,7 +126,7 @@ async def get_book_ledger(book_id: str) -> dict:
 @router.get("/{book_id}/foreshadow_ranking")
 async def get_foreshadow_ranking(book_id: str) -> dict:
     """伏笔排行：按组合因子分数从大到小排列"""
-    output_dir = book_service.get_output_dir(book_id)
+    output_dir = await asyncio.to_thread(book_service.get_output_dir, book_id)
     if output_dir is None:
         raise HTTPException(status_code=404, detail=f"书目不存在: {book_id}")
 
@@ -126,7 +135,7 @@ async def get_foreshadow_ranking(book_id: str) -> dict:
         raise HTTPException(status_code=404, detail="伏笔账本不存在，请先运行最终总结")
 
     try:
-        data = json.loads(ledger_path.read_text(encoding="utf-8"))
+        data = json.loads(await asyncio.to_thread(ledger_path.read_text, encoding="utf-8"))
         items = data.get("items", [])
 
         # 计算排行数据
@@ -194,7 +203,7 @@ async def get_book_token_stats(book_id: str) -> dict:
     categories 里带 model 的新数据会附带逐类费用（models.dev 挂牌价；
     无 model 的老数据不算费——历史 JSON 无模型名，按现牌价推定会失真）。
     """
-    output_dir = book_service.get_output_dir(book_id)
+    output_dir = await asyncio.to_thread(book_service.get_output_dir, book_id)
     if output_dir is None:
         raise HTTPException(status_code=404, detail=f"书目不存在: {book_id}")
     result: Dict[str, Any] = {"book_id": book_id}
@@ -202,7 +211,7 @@ async def get_book_token_stats(book_id: str) -> dict:
         path = output_dir / name
         if path.exists():
             try:
-                data = json.loads(path.read_text(encoding="utf-8"))
+                data = json.loads(await asyncio.to_thread(path.read_text, encoding="utf-8"))
                 _attach_category_fees(data)
                 result[key] = data
             except Exception as e:
@@ -234,16 +243,15 @@ def _attach_category_fees(data: dict) -> None:
 
 @router.get("/{book_id}/characters")
 async def get_book_characters(book_id: str) -> dict:
-    """角色卡索引：返回角色列表与基本信息"""
+    """角色卡索引：按指纹透明更新聚合缓存并返回角色列表（含别名归并）"""
     output_dir = book_service.get_output_dir(book_id)
     if output_dir is None:
         raise HTTPException(status_code=404, detail=f"书目不存在: {book_id}")
 
-    from backend.utils.aggregate_utils import JSONAggregator
+    from backend.utils.aggregate_utils import ensure_aggregated_cache
     from backend.utils.character_card_generator import CharacterCardGenerator
     try:
-        aggregator = JSONAggregator(output_dir)
-        await asyncio.to_thread(aggregator.aggregate_character_tracking, output_dir / "character_tracking_aggregated.json")
+        await asyncio.to_thread(ensure_aggregated_cache, output_dir)
         generator = CharacterCardGenerator(output_dir)
         summaries = await asyncio.to_thread(generator.get_character_summaries)
         return {"book_id": book_id, "characters": summaries}
@@ -254,16 +262,15 @@ async def get_book_characters(book_id: str) -> dict:
 
 @router.get("/{book_id}/characters/{character_name}")
 async def get_character_card(book_id: str, character_name: str) -> dict:
-    """单个角色卡详情"""
+    """单个角色卡详情（支持通过别名解析并直达主规范角色卡）"""
     output_dir = book_service.get_output_dir(book_id)
     if output_dir is None:
         raise HTTPException(status_code=404, detail=f"书目不存在: {book_id}")
 
-    from backend.utils.aggregate_utils import JSONAggregator
+    from backend.utils.aggregate_utils import ensure_aggregated_cache
     from backend.utils.character_card_generator import CharacterCardGenerator
     try:
-        aggregator = JSONAggregator(output_dir)
-        await asyncio.to_thread(aggregator.aggregate_character_tracking, output_dir / "character_tracking_aggregated.json")
+        await asyncio.to_thread(ensure_aggregated_cache, output_dir)
         generator = CharacterCardGenerator(output_dir)
         card = await asyncio.to_thread(generator.get_card_data, character_name)
         return {"book_id": book_id, "character": card}
@@ -277,7 +284,7 @@ async def get_character_card(book_id: str, character_name: str) -> dict:
 @router.get("/{book_id}/chapter/{chapter}")
 async def get_chapter_result(book_id: str, chapter: int) -> dict:
     """单章分析结果 JSON"""
-    data = book_service.load_chapter_result(book_id, chapter)
+    data = await asyncio.to_thread(book_service.load_chapter_result, book_id, chapter)
     if data is None:
         raise HTTPException(status_code=404, detail=f"章节结果不存在: {book_id} 第{chapter}章")
     return {"book_id": book_id, "chapter": chapter, "data": data}

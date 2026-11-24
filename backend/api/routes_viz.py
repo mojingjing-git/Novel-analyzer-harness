@@ -1,16 +1,13 @@
 """
 可视化数据路由
 GET /api/viz/timeline/{book_id} — 时间线数据
-GET /api/viz/graph/{book_id}     — 关系图数据
-GET /api/viz/map/{book_id}       — 地图数据
+GET /api/viz/atlas/{book_id}    — 全书语义图谱（人物关系谱 + 换地图阶段流 + 多世界树）
 """
 
 import asyncio
 import logging
 
-from typing import Optional
-
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException
 
 from backend.services import book_service
 from backend.services import viz_service
@@ -39,36 +36,13 @@ async def get_timeline(book_id: str) -> dict:
         raise HTTPException(status_code=500, detail=f"时间线数据生成失败: {e}")
 
 
-@router.get("/graph/{book_id}")
-async def get_graph(
-    book_id: str,
-    chapter_start: Optional[int] = Query(None, ge=1),
-    chapter_end: Optional[int] = Query(None, ge=1),
-    min_edge_weight: int = Query(1, ge=1),
-    max_nodes: int = Query(200, ge=10, le=1000),
-    min_node_count: int = Query(1, ge=1),
-) -> dict:
+@router.get("/atlas/{book_id}")
+async def get_atlas(book_id: str) -> dict:
     try:
-        data = await asyncio.to_thread(
-            viz_service.graph_data,
-            _get_output_dir(book_id),
-            chapter_start, chapter_end,
-            min_edge_weight, max_nodes, min_node_count,
-        )
+        data = await asyncio.to_thread(viz_service.atlas_data, _get_output_dir(book_id))
         return {"book_id": book_id, **data}
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"关系图数据生成失败: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"关系图数据生成失败: {e}")
-
-
-@router.get("/map/{book_id}")
-async def get_map(book_id: str) -> dict:
-    try:
-        return {"book_id": book_id, **await asyncio.to_thread(viz_service.map_data, _get_output_dir(book_id))}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"地图数据生成失败: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"地图数据生成失败: {e}")
+        logger.error(f"全书语义图谱读取失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"全书语义图谱读取失败: {e}")

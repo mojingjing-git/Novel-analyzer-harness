@@ -6,12 +6,13 @@
 
 import json
 import logging
+import math
 import os
 import re
 import dataclasses
 from pathlib import Path
 from dataclasses import dataclass, field, asdict
-from typing import List, Optional
+from typing import Any, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +48,6 @@ from .constants import (
     DEFAULT_FORESHADOW_MIN_CONFIDENCE,
     DEFAULT_MAX_FORESHADOW_CATALOG_HIGH,
     DEFAULT_MAX_FORESHADOW_CATALOG_MID,
-    DEFAULT_FORESHADOW_RECHECK_BATCH_SIZE,
 )
 
 
@@ -187,24 +187,25 @@ class AnalysisConfig:
     auto_archive: bool = False  # 队列分析完成后自动归档整个小说目录到 分析结果/
     # 队列完成后自动总结
     auto_summary: bool = False        # 队列全部书分析完成后，逐本自动执行最终总结
-    summary_concurrency: int = 2      # 最终总结并发数（默认 2，避免高并发触发 API 超时）
+    summary_concurrency: int = 0      # 最终总结并发数（0=跟随主并发 analysis.concurrency，>0 显式覆盖）
     summary_batch_size: int = 30      # 最终总结每批章节数
-    foreshadow_recheck_batch_size: int = DEFAULT_FORESHADOW_RECHECK_BATCH_SIZE  # 全书伏笔复检批大小；调大减少调用次数（省 cache 命中价前缀），单批过大可能稀释注意力
-    # 伏笔复检 V2：锚点采集与复检预算
-    anchor_quote_enabled: bool = True        # 逐章采集 anchor_quote（关闭则复检退化为无证据模式）
+    # 伏笔复检（V3 / V2）：锚点采集与复检预算
+    anchor_quote_enabled: bool = True        # 逐章采集 anchor_quote（V2 需要；V3 可兼容空锚点）
     anchor_min_chars: int = 6                # 锚点最短字数；太短的长句子里必然命中
-    recheck_max_calls: int = 300             # 一次复检最多调用次数（超出标 BUDGET_SKIPPED，可续跑）
+    recheck_max_calls: int = 1200            # 一次复检最多调用次数（超出标 BUDGET_SKIPPED，可续跑）
     #: 单次复检调用的输出上限。判定回包是 JSON 数组（6 候选约 2k token），32768 足够；
     #: 旧值 60000 会顶到部分上游的输出上限而被拒。
     recheck_max_tokens: int = 32768
-    #: 复检并发：0 = 跟随 analysis.concurrency（共用同一个在途上限）；>0 只用来压窄波次
-    recheck_concurrency: int = 0          # 复检同时在途的批次数上限；0 = 跟随 analysis.concurrency
-    recheck_v2_enabled: bool = True          # 带证据的复检（V2）是默认路径；关掉即回退到旧的全书复检
-    #: V2 复检的批大小。**与旧路径的 ``foreshadow_recheck_batch_size`` 分开**：
-    #: 旧路径每批带全量卷摘要，40 条是按"少调用"调的；V2 每条候选带自己的
-    #: 有界证据包（实测 2.8k–4.7k 字/条），40 条会把提示词顶到十几万 token。
-    #: 实测 6 条一批一次答满、每候选提示词最低。
+    #: 复检并发：0 = 严格跟随 ``analysis.concurrency``；>0 显式覆盖
+    recheck_concurrency: int = 0
+    #: 复检引擎版本："v3"=多跳深挖与四防对称终审（默认）；"v2"=单跳严格核对
+    recheck_version: str = "v3"
+    #: V2 复检的批大小（recheck_version="v2" 时生效）
     recheck_v2_batch_size: int = 6
+    #: V3 灰区终审开关：False=默认跳过 U4 直接单阶段裁决+U5（省约 33% token）；True=灰区追加 U4 严审
+    recheck_v3_gray_u4: bool = False
+    #: V3 支线单跳省钱开关：True 时中重要度伏笔缩窗至 3 个并跳过 Hop-2/3，高重要度保留 5 窗 3 跳
+    recheck_v3_mid_single_hop: bool = False
     #: 复检专用模型：留空 = 跟随 ``api.model``。分开设是有实测理由的——
     #: 采集要的是"别漏"（覆盖面），判定要的是"判得准"（语义），
     #: 两者对模型的偏好并不一致：实测同一批真实语料，采集用 MiniMax-M3.1
@@ -242,12 +243,6 @@ class AnalysisConfig:
     max_verified_facts: int = MAX_VERIFIED_FACTS
     max_long_term_arcs: int = MAX_LONG_TERM_ARCS
     max_thematic_elements: int = MAX_THEMATIC_ELEMENTS
-    # B/C 改进独立实验开关（默认全部关闭，保证基线零行为变化）
-    enable_b_trace: bool = False
-    fix_b4_flow_and_storage: bool = False
-    fix_b2_evidence_and_recheck: bool = False
-    enable_c_on_demand_audit: bool = False
-    enable_anchor_b_plus_rule: bool = False
 
 
 @dataclass
@@ -275,9 +270,9 @@ class AppConfig:
     @classmethod
     def from_dict(cls, data: dict) -> 'AppConfig':
         """从字典创建配置"""
-        api_data = data.get('api', {})
-        analysis_data = data.get('analysis', {})
-        gui_data = data.get('gui', {})
+        api_data = dict(data.get('api')) if isinstance(data.get('api'), dict) else {}
+        analysis_data = dict(data.get('analysis')) if isinstance(data.get('analysis'), dict) else {}
+        gui_data = dict(data.get('gui')) if isinstance(data.get('gui'), dict) else {}
 
         # 兼容旧配置：temperature_sequence 已废弃（从未被重试逻辑读取——
         # 温度退火实际使用 temperature/temperature_step 算术递减），忽略并提示
@@ -286,11 +281,25 @@ class AppConfig:
             logger.warning("config.json 中 api.temperature_sequence 已废弃并被忽略，"
                            "请从配置中删除该字段（温度退火由 temperature/temperature_step 控制）。")
 
-        # 兼容旧配置：移除已废弃的字段
-        analysis_data.pop('compress_every', None)
-        analysis_data.pop('rolling_summary_target_chars', None)
-        analysis_data.pop('rolling_early_target_chars', None)
-        analysis_data.pop('rolling_recent_target_chars', None)
+        # 兼容旧配置：移除已退役的字段与实验开关
+        for _retired_key in (
+            'compress_every',
+            'rolling_summary_target_chars',
+            'rolling_early_target_chars',
+            'rolling_recent_target_chars',
+            'recheck_v2_enabled',
+            'foreshadow_recheck_batch_size',
+            'enable_b_trace',
+            'fix_b4_flow_and_storage',
+            'fix_b2_evidence_and_recheck',
+            'enable_c_on_demand_audit',
+            'enable_anchor_b_plus_rule',
+        ):
+            analysis_data.pop(_retired_key, None)
+
+        if 'recheck_version' in analysis_data:
+            ver = str(analysis_data.get('recheck_version') or '').strip().lower()
+            analysis_data['recheck_version'] = ver if ver in ('v3', 'v2') else 'v3'
 
         # 兼容旧配置：thinking_mode 必须是 dict，字符串则清空回默认值
         tm = api_data.get('thinking_mode')
@@ -316,12 +325,136 @@ class AppConfig:
         )
 
 
+def validate_settings_payload(data: Any) -> list[dict]:
+    """对 PUT/PATCH /api/settings 的载荷做严格类型与数值范围校验，返回 FastAPI 风格错误列表。"""
+    if not isinstance(data, dict):
+        return [{"loc": ["body"], "msg": "配置请求体必须为对象"}]
+
+    errors: list[dict] = []
+    parsed_nums: dict[tuple[str, str], float] = {}
+
+    def _add_err(loc: list[str], msg: str) -> None:
+        errors.append({"loc": loc, "msg": msg})
+
+    def _parse_int(val: Any) -> Optional[int]:
+        if isinstance(val, bool):
+            return None
+        if isinstance(val, int):
+            return val
+        if isinstance(val, float) and math.isfinite(val) and float(val).is_integer():
+            return int(val)
+        if isinstance(val, str):
+            s = val.strip()
+            if re.fullmatch(r"[+-]?\d+", s):
+                return int(s)
+            if re.fullmatch(r"[+-]?\d+\.0*", s):
+                return int(float(s))
+        return None
+
+    def _parse_float(val: Any) -> Optional[float]:
+        if isinstance(val, bool):
+            return None
+        if isinstance(val, (int, float)):
+            fval = float(val)
+            return fval if math.isfinite(fval) else None
+        if isinstance(val, str):
+            s = val.strip()
+            if re.fullmatch(r"[+-]?(\d+\.?\d*|\.\d+)", s):
+                fval = float(s)
+                return fval if math.isfinite(fval) else None
+        return None
+
+    def _is_valid_bool(val: Any) -> bool:
+        if isinstance(val, (bool, int, float)):
+            return True if isinstance(val, bool) else (math.isfinite(val) if isinstance(val, float) else True)
+        if isinstance(val, str):
+            return val.strip().lower() in ("true", "false", "1", "0", "yes", "no", "on", "off")
+        return False
+
+    section_defs = (("api", APIConfig), ("analysis", AnalysisConfig), ("gui", GUIConfig))
+    for sec, dc_cls in section_defs:
+        if sec not in data or data[sec] is None:
+            continue
+        sec_data = data[sec]
+        if not isinstance(sec_data, dict):
+            _add_err(["body", sec], "必须为对象")
+            continue
+        for f in dataclasses.fields(dc_cls):
+            if f.name not in sec_data:
+                continue
+            val = sec_data[f.name]
+            ftype = f.type
+            if ftype is bool:
+                if not _is_valid_bool(val):
+                    _add_err(["body", sec, f.name], "必须为布尔值")
+            elif ftype is int:
+                iv = _parse_int(val)
+                if iv is None:
+                    _add_err(["body", sec, f.name], "必须为整数")
+                else:
+                    parsed_nums[(sec, f.name)] = float(iv)
+            elif ftype is float:
+                fv = _parse_float(val)
+                if fv is None:
+                    _add_err(["body", sec, f.name], "必须为有效数字")
+                else:
+                    parsed_nums[(sec, f.name)] = fv
+            elif ftype is str:
+                if not isinstance(val, str):
+                    _add_err(["body", sec, f.name], "必须为字符串")
+            elif ftype is dict:
+                if not isinstance(val, dict):
+                    _add_err(["body", sec, f.name], "必须为对象")
+            elif ftype is List[str]:
+                if not (isinstance(val, list) and all(isinstance(x, str) for x in val)):
+                    _add_err(["body", sec, f.name], "必须为字符串数组")
+
+    api_data = data.get("api")
+    if isinstance(api_data, dict):
+        if "base_url" in api_data and isinstance(api_data["base_url"], str):
+            url = api_data["base_url"].strip()
+            if url and not url.startswith(("http://", "https://")):
+                _add_err(["body", "api", "base_url"], "必须以 http:// 或 https:// 开头")
+        for pos_key in ("max_tokens", "timeout", "summary_timeout"):
+            if ("api", pos_key) in parsed_nums and parsed_nums[("api", pos_key)] <= 0:
+                _add_err(["body", "api", pos_key], "必须大于 0")
+        if ("api", "temperature") in parsed_nums:
+            t = parsed_nums[("api", "temperature")]
+            if t < 0.0 or t > 2.0:
+                _add_err(["body", "api", "temperature"], "必须在 0 到 2 之间")
+        if ("api", "temperature_step") in parsed_nums and parsed_nums[("api", "temperature_step")] < 0.0:
+            _add_err(["body", "api", "temperature_step"], "不能小于 0")
+        if ("api", "temperature_max_retries") in parsed_nums and parsed_nums[("api", "temperature_max_retries")] < 1:
+            _add_err(["body", "api", "temperature_max_retries"], "必须 >= 1")
+        if ("api", "backoff_max_retries") in parsed_nums and parsed_nums[("api", "backoff_max_retries")] < 0:
+            _add_err(["body", "api", "backoff_max_retries"], "不能小于 0")
+
+    analysis_data = data.get("analysis")
+    if isinstance(analysis_data, dict):
+        for gte1_key in (
+            "concurrency", "block_size",
+            "summary_batch_size", "recheck_max_calls", "recheck_v2_batch_size",
+        ):
+            if ("analysis", gte1_key) in parsed_nums and parsed_nums[("analysis", gte1_key)] < 1:
+                _add_err(["body", "analysis", gte1_key], "必须 >= 1")
+        for gte0_key in ("summary_concurrency", "recheck_concurrency", "recheck_timeout", "checkpoint_interval"):
+            if ("analysis", gte0_key) in parsed_nums and parsed_nums[("analysis", gte0_key)] < 0:
+                _add_err(["body", "analysis", gte0_key], "不能小于 0")
+        if "recheck_version" in analysis_data and isinstance(analysis_data["recheck_version"], str):
+            rv = analysis_data["recheck_version"].strip().lower()
+            if rv and rv not in ("v3", "v2"):
+                _add_err(["body", "analysis", "recheck_version"], "只支持 v3 或 v2")
+
+    return errors
+
+
 class ConfigManager:
     """配置管理器"""
 
     def __init__(self, config_path: Optional[Path] = None):
         if config_path is None:
-            config_path = Path(CONFIG_FILE_NAME)
+            from .paths import runtime_path
+            config_path = runtime_path(CONFIG_FILE_NAME)
         self.config_path = config_path
         self.config = AppConfig()
         # config.json 解析失败标志：置位期间 save() 拒绝写入，
@@ -329,10 +462,12 @@ class ConfigManager:
         self._load_failed = False
         # 标记当前 api_key 是否来自环境变量：True 时 save() 不回写磁盘（防明文落盘）
         self._api_key_from_env = False
+        self._loaded_once = False
 
     def load(self) -> AppConfig:
         """从文件加载配置"""
         if not self.config_path.exists():
+            self._loaded_once = True
             return self.config
 
         try:
@@ -342,6 +477,7 @@ class ConfigManager:
             self.config = AppConfig.from_dict(data)
             # 成功解析即解除拒绝状态：修复后的文件在下次 load()/重启后可正常保存
             self._load_failed = False
+            self._loaded_once = True
         except Exception as e:
             # 配置损坏必须显式告警：静默回退默认配置会导致 API Key/模型全部丢失，
             # 用户只会看到"认证失败"等误导性错误（PowerShell 写文件引入 BOM 是常见诱因）
@@ -396,8 +532,41 @@ class ConfigManager:
             # 因此用 safe_save_json（临时文件 + os.replace 原子替换），与队列状态/章节结果一致。
             return safe_save_json(data, self.config_path, ensure_ascii=False)
         except Exception as e:
-            print(f"保存配置失败: {e}")
+            logger.error(f"保存配置失败: {e}")
             return False
+
+    def patch(self, partial: dict) -> Optional[AppConfig]:
+        """局部增量更新配置并原子持久化。损坏配置或保存失败返回 None。"""
+        if not self._loaded_once and not self._load_failed:
+            self.load()
+        if self._load_failed:
+            return None
+
+        was_env_key = self._api_key_from_env
+        prev_key = self.config.api.api_key
+
+        merged = self.config.to_dict()
+        if isinstance(partial, dict):
+            for sec in ("api", "analysis", "gui"):
+                if isinstance(partial.get(sec), dict):
+                    merged[sec] = {**(merged.get(sec) or {}), **partial[sec]}
+            for top_key in ("working_directory", "knowledge_file", "workspace_dir"):
+                if top_key in partial:
+                    merged[top_key] = partial[top_key]
+
+        new_cfg = AppConfig.from_dict(merged)
+
+        api_patch = partial.get("api") if isinstance(partial, dict) else None
+        if was_env_key:
+            if isinstance(api_patch, dict) and "api_key" in api_patch and api_patch["api_key"] != prev_key:
+                self._api_key_from_env = False
+            else:
+                self._api_key_from_env = True
+                new_cfg.api.api_key = prev_key
+
+        if not self.save(new_cfg):
+            return None
+        return self.config
 
     def update(self, **kwargs):
         """更新配置项"""

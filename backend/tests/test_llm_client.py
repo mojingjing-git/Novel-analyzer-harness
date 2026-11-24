@@ -280,3 +280,45 @@ async def test_stream_progress_callback_contract(monkeypatch):
     ctx, sid, uid, delta = hub.events[0]
     assert (ctx, sid, uid) == ("analysis", "book1", 7)
     assert delta == {"output_tokens": 40, "rate_tokens_per_sec": 80.0, "elapsed_sec": 0.5}
+
+
+async def test_t4_retry_boundary_lowest_transport_sdk_retries_strictly_disabled():
+    """F3 验收 5：拦截最底层传输计数，验证 SDK 与包装层绝不发生隐式重试。"""
+    import httpx2
+    from backend.config.settings import APIConfig
+
+    api = APIConfig(
+        base_url="http://127.0.0.1:3425/v1",
+        api_key="test",
+        model="codex/gpt-6-luna",
+        sdk_max_retries=0,
+        max_retries=0,
+        temperature_max_retries=1,
+        backoff_max_retries=0,
+        streaming_enabled=False,
+    )
+    client = LLMClient(api)
+
+    send_count_500 = 0
+
+    async def mock_send_500(request, *args, **kwargs):
+        nonlocal send_count_500
+        send_count_500 += 1
+        return httpx2.Response(status_code=500, request=request, content=b"server error")
+
+    client.client._client.send = mock_send_500
+    res500 = await client.chat_single([{"role": "user", "content": "hi"}])
+    assert res500.success is False
+    assert send_count_500 == 1, f"500 状态码触发了 SDK 隐式重试，计数={send_count_500}"
+
+    send_count_429 = 0
+
+    async def mock_send_429(request, *args, **kwargs):
+        nonlocal send_count_429
+        send_count_429 += 1
+        return httpx2.Response(status_code=429, request=request, content=b"rate limit")
+
+    client.client._client.send = mock_send_429
+    res429 = await client.chat_single([{"role": "user", "content": "hi"}])
+    assert res429.success is False
+    assert send_count_429 == 1, f"429 限流触发了包装层或 SDK 隐式重试，计数={send_count_429}"

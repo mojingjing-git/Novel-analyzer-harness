@@ -195,7 +195,7 @@ def aggregate_stats(results: List[Dict]) -> Dict:
 # 章节采样
 # ============================================================
 
-def sample_chapters(blocks_dir: Path, n: int = 6) -> List[Tuple[int, str]]:
+def sample_chapters(blocks_dir: Path, n: int = 6, limit: int = 0) -> List[Tuple[int, str]]:
     """取 n 个代表性章节（前半随机3 + 后半随机3），每章随机位置取 1500 字"""
     rng = random.Random(42)  # 独立 RNG，不干扰全局种子
     # 只取数字命名的正文章节：split_report.txt 等报告文件不得作为"第0章"采样
@@ -204,6 +204,8 @@ def sample_chapters(blocks_dir: Path, n: int = 6) -> List[Tuple[int, str]]:
         (f for f in blocks_dir.glob('*.txt') if re.match(r'^\d+\.txt$', f.name)),
         key=lambda f: int(f.stem),
     )
+    if limit and limit > 0:
+        files = files[:limit]
     if not files:
         return []
 
@@ -385,18 +387,21 @@ async def call_llm_semantic(prompt: str, api_config: dict,
     return None
 
 
-def compute_book_stats(blocks_dir: Path) -> Tuple[Dict, List[Tuple[int, str]]]:
+def compute_book_stats(blocks_dir: Path, limit: int = 0) -> Tuple[Dict, List[Tuple[int, str]]]:
     """全书统计 + 采样（纯 CPU/IO，供 asyncio.to_thread 调用）"""
-    samples = sample_chapters(blocks_dir, n=6)
+    samples = sample_chapters(blocks_dir, n=6, limit=limit)
     if not samples:
         return {}, []
 
+    chapter_files = sorted(
+        (f for f in blocks_dir.glob('*.txt') if re.match(r'^\d+\.txt$', f.name)),
+        key=lambda f: int(f.stem),
+    )
+    if limit and limit > 0:
+        chapter_files = chapter_files[:limit]
+
     all_chapters = []
-    for f in sorted(blocks_dir.glob('*.txt'),
-                    key=lambda f: int(re.match(r'(\d+)', f.stem).group(1))
-                    if re.match(r'(\d+)', f.stem) else 0):
-        if not re.match(r'(\d+)', f.stem):
-            continue
+    for f in chapter_files:
         try:
             text = _read_text_multi_encoding(f)
             if text is not None:
@@ -412,14 +417,14 @@ def compute_book_stats(blocks_dir: Path) -> Tuple[Dict, List[Tuple[int, str]]]:
 
 
 async def extract_style_profile(blocks_dir: Path, book_name: str, api_config: dict,
-                                token_sink=None) -> Optional[dict]:
+                                token_sink=None, limit: int = 0, on_phase=None) -> Optional[dict]:
     """
     提取风格 profile JSON（供 FinalSummaryRunner 注入 prompt）。
     统计部分走线程池，语义部分 async LLM；token_sink 可选，透传给语义 LLM 调用。
     """
     import asyncio
 
-    agg, samples = await asyncio.to_thread(compute_book_stats, blocks_dir)
+    agg, samples = await asyncio.to_thread(compute_book_stats, blocks_dir, limit)
     if not samples:
         logger.warning("风格分析：无可用章节样本")
         return None
@@ -427,6 +432,8 @@ async def extract_style_profile(blocks_dir: Path, book_name: str, api_config: di
         logger.warning("风格分析：无有效统计数据")
         return None
 
+    if callable(on_phase):
+        on_phase("llm_extract")
     semantic_prompt = build_semantic_prompt(agg, samples, book_name)
     logger.info(f"语义风格提取中 (样本{len(samples)}章, ~{len(semantic_prompt)}字符)...")
     semantic = await call_llm_semantic(semantic_prompt, api_config, token_sink=token_sink)
@@ -453,71 +460,3 @@ SEMANTIC_FIELD_LABELS = {
     'information_control': '信息释放',
     'narrator_and_genre': '叙述者/类型',
 }
-
-
-async def analyze_book(blocks_dir: Path, book_name: str, use_llm: bool = True,
-                       limit: int = 50) -> Optional[str]:
-    """
-    分析整本书的写作风格，返回 Markdown 报告字符串。
-    纯统计部分走线程池；LLM 语义部分可选（use_llm）。
-    """
-    import asyncio
-    from ..config.settings import ConfigManager
-
-    lines: List[str] = [f"# 《{book_name}》写作风格分析", ""]
-    agg: Dict = {}
-    samples: List[Tuple[int, str]] = []
-    semantic: Optional[Dict] = None
-
-    if use_llm:
-        # 必须 load() 才会从 config.json 读取真实配置（base_url/api_key/model），
-        # 否则 ConfigManager().config 永远是默认配置（空 key/空 model）。
-        # 显式传项目根 config.json，避免依赖进程 cwd（cwd 变化时相对路径读不到配置）。
-        from ..config.settings import ConfigManager
-        _config_path = Path(__file__).resolve().parent.parent.parent / "config.json"
-        cfg = ConfigManager(_config_path).load()
-        api_config = {
-            "base_url": cfg.api.base_url,
-            "api_key": cfg.api.api_key,
-            "model": cfg.api.model,
-            # 与 base_url/api_key/model 同源透传：网关以 OpenAI 协议暴露 claude-*
-            # 时，缺省 auto 会被前缀规则误导向 /v1/messages
-            "provider": cfg.api.provider,
-        }
-        profile = await extract_style_profile(blocks_dir, book_name, api_config)
-        if profile:
-            agg = profile.get("statistical", {}) or {}
-            semantic = profile.get("semantic")
-            samples = profile.get("sample_chapters", []) or []
-    else:
-        agg, samples = await asyncio.to_thread(compute_book_stats, blocks_dir)
-
-    if not agg and not samples:
-        logger.warning("风格分析：无有效章节数据")
-        return None
-
-    # 量化统计
-    lines.append("## 一、量化统计")
-    lines.append("")
-    if agg:
-        for k, v in agg.items():
-            lines.append(f"- **{k}**: {v}")
-    else:
-        lines.append("- （无统计数据）")
-    lines.append("")
-
-    # 语义风格（LLM）
-    if semantic:
-        lines.append("## 二、语义风格（LLM 提取）")
-        lines.append("")
-        for f in SEMANTIC_FIELDS:
-            val = semantic.get(f, '（未提取）')
-            label = SEMANTIC_FIELD_LABELS.get(f, f)
-            lines.append(f"- **{label}**: {val}")
-        lines.append("")
-        if samples:
-            chs = ", ".join(f"第{ch}章" for ch in samples)
-            lines.append(f"> 采样章节：{chs}")
-            lines.append("")
-
-    return "\n".join(lines)

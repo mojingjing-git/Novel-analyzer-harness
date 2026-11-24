@@ -4,7 +4,7 @@
  *
  * 消费 discovery 消息，append-only，ring buffer 200 条
  * 自动滚底；hover 暂停滚动
- * 新伏笔/新人物紫色高亮（#534AB7）
+ * 新伏笔/新人物使用 Win11 左侧 3px 系统蓝强调条标注
  */
 
 import { ref, computed, onMounted, nextTick, watch } from 'vue'
@@ -16,7 +16,7 @@ interface DiscoveryItem {
   foreshadows: string[]
   characters: string[]
   unresolved: string[]
-  highlighted: boolean  // 含新伏笔或新人物 → 紫色高亮
+  highlighted: boolean
 }
 
 const props = withDefaults(defineProps<{
@@ -32,7 +32,6 @@ const props = withDefaults(defineProps<{
 const listEl = ref<HTMLElement | null>(null)
 const paused = ref(false)
 
-// 渲染条目用 items prop，不在本组件自维护；这里只做截断 + 渲染
 const displayItems = computed<DiscoveryItem[]>(() => {
   const arr = props.items
   return arr.length > props.maxItems ? arr.slice(arr.length - props.maxItems) : arr
@@ -46,7 +45,6 @@ function timeStr(ts: number): string {
 function onMouseEnter() { paused.value = true }
 function onMouseLeave() { paused.value = false }
 
-// 自动滚底：items 变化时滚到底（除非 paused）
 watch(() => props.items.length, async () => {
   if (paused.value) return
   await nextTick()
@@ -56,7 +54,6 @@ watch(() => props.items.length, async () => {
 })
 
 onMounted(() => {
-  // 初始滚到底
   nextTick(() => {
     if (listEl.value) listEl.value.scrollTop = listEl.value.scrollHeight
   })
@@ -135,7 +132,7 @@ onMounted(() => {
 }
 .df-sub {
   font-size: 11px;
-  color: var(--win-text-tertiary);
+  color: var(--win-text-muted);
 }
 .df-list {
   display: flex;
@@ -143,41 +140,43 @@ onMounted(() => {
   gap: 4px;
   max-height: 280px;
   overflow-y: auto;
-  padding: 4px;
-  border-radius: 6px;
-  background: var(--win-bg-secondary, rgba(255,255,255,0.03));
-  border: 1px solid var(--win-border-secondary, rgba(255,255,255,0.06));
+  padding: 6px;
+  border-radius: var(--win-radius-control);
+  background: var(--win-control-alt);
+  border: 1px solid var(--win-stroke);
 }
 .df-empty {
   text-align: center;
-  color: var(--win-text-tertiary);
+  color: var(--win-text-muted);
   font-size: 12px;
-  padding: 24px 0;
+  padding: 20px 0;
 }
 .df-item {
   display: grid;
-  grid-template-columns: 56px 1fr;
+  grid-template-columns: 54px 1fr;
   gap: 6px;
   padding: 6px 8px;
-  border-radius: 4px;
+  border-radius: var(--win-radius-control);
   font-size: 12px;
-  background: var(--win-bg-primary, rgba(255,255,255,0.02));
+  background: var(--win-layer);
+  border: 1px solid transparent;
 }
 .df-item.df-highlight {
-  background: rgba(83, 74, 183, 0.10);
-  border-left: 2px solid #534AB7;
+  border-color: var(--win-stroke);
+  border-left: 3px solid var(--win-accent);
 }
 .df-time {
   font-family: ui-monospace, monospace;
   font-size: 10px;
-  color: var(--win-text-tertiary);
+  color: var(--win-text-muted);
   align-self: start;
-  padding-top: 1px;
+  padding-top: 2px;
+  font-variant-numeric: tabular-nums;
 }
 .df-body {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   min-width: 0;
 }
 .df-summary {
@@ -185,7 +184,7 @@ onMounted(() => {
   font-weight: 500;
 }
 .df-label {
-  color: var(--win-text-tertiary);
+  color: var(--win-text-muted);
   font-size: 10px;
   margin-right: 4px;
 }
@@ -199,15 +198,19 @@ onMounted(() => {
   font-size: 10px;
   padding: 1px 6px;
   border-radius: 3px;
-  background: var(--win-bg-tertiary, rgba(255,255,255,0.06));
+  background: var(--win-control-alt);
+  border: 1px solid var(--win-stroke);
+  color: var(--win-text-secondary);
 }
 .df-tag-foreshadow {
-  color: #534AB7;
-  background: rgba(83, 74, 183, 0.12);
+  color: var(--win-accent);
+  background: var(--win-accent-soft);
+  border-color: transparent;
 }
 .df-tag-character {
-  color: #534AB7;
-  background: rgba(83, 74, 183, 0.12);
+  color: var(--win-text-primary);
+  background: var(--win-control-alt);
+  border-color: var(--win-stroke);
   font-weight: 500;
 }
 .df-tag-unresolved {

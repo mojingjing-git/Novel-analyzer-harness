@@ -123,6 +123,7 @@ class AnalysisResult:
     long_context_insights: LongContextInsights = field(default_factory=LongContextInsights)
     raw_response: str = ""
     block_size: int = 1  # 该结果对应的块大小（N章合并），用于断点续跑时检测 block_size 变更
+    source_chapters: List[int] = field(default_factory=list)  # 本块实际合并的源文件章号列表（空列表表示旧格式未记录）
 
     def to_dict(self) -> dict:
         """转换为字典（用于JSON序列化）；spatial_relationships 的 from_ 键映射回 from"""
@@ -208,6 +209,7 @@ class AnalysisResult:
                         motif_key=str(f.get('motif_key') or '').strip(),
                         question=str(f.get('question') or '').strip(),
                         answer_criteria=str(f.get('answer_criteria') or '').strip(),
+                        lead=bool(f.get('lead', False)),
                     ))
                 except Exception as e:
                     import logging; logging.getLogger(__name__).debug(f"跳过异常伏笔: {e}")
@@ -295,7 +297,11 @@ class AnalysisResult:
             updated_knowledge=updated_knowledge,
             long_context_insights=long_context_insights,
             raw_response=data.get('raw_response', ''),
-            block_size=data.get('block_size', 1)
+            block_size=data.get('block_size', 1),
+            source_chapters=[
+                int(x) for x in (data.get('source_chapters') or [])
+                if isinstance(x, int) or (isinstance(x, str) and x.strip().isdigit())
+            ],
         )
 
 

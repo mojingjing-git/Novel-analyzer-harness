@@ -3,6 +3,7 @@
 - 列出 workspace/ 中的小说
 - 列出 分析结果/ 中的归档
 - 归档小说
+- 还原归档中的 blocks 切分章节回工作区
 - 删除归档
 - 将小说目录移入系统回收站
 """
@@ -11,10 +12,12 @@ import platform
 import re
 import shutil
 import subprocess
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional
 
+from .queue_manager import QueueItem
 from .queue_service import get_service
 
 logger = logging.getLogger(__name__)
@@ -109,11 +112,18 @@ def list_archives() -> List[Dict]:
             continue
         files = [f for f in subdir.rglob("*") if f.is_file()]
         total_size = sum(f.stat().st_size for f in files)
+        blocks_dir = subdir / "blocks"
+        blocks_count = (
+            sum(1 for f in blocks_dir.glob("*.txt") if re.match(r"^\d+\.txt$", f.name))
+            if blocks_dir.is_dir() else 0
+        )
         archives.append({
             "name": subdir.name,
             "file_count": len(files),
             "total_size": total_size,
             "dir_mtime": subdir.stat().st_mtime,
+            "has_blocks": blocks_count > 0,
+            "blocks_count": blocks_count,
         })
 
     return archives
@@ -134,7 +144,9 @@ def detect_book_name(novel_dir: Path) -> str:
             return cand
 
     # 2) style.md 中的书名
-    style_md = novel_dir / "style.md"
+    style_md = novel_dir / "output" / "style.md"
+    if not style_md.exists():
+        style_md = novel_dir / "style.md"
     if style_md.exists():
         try:
             text = style_md.read_text(encoding="utf-8")
@@ -177,6 +189,24 @@ def _generate_archive_name(book_name: str) -> str:
     """生成带时间戳的归档名"""
     now = datetime.now()
     return f"{book_name}-{now.strftime('%Y%m%d-%H%M')}"
+
+
+def strip_archive_timestamp(archive_name: str) -> str:
+    """剥离归档目录名末尾的 -YYYYMMDD-HHMM 时间戳"""
+    return re.sub(r"-\d{8}-\d{4}$", "", (archive_name or "").strip())
+
+
+def _validate_novel_folder_name(name: str) -> Optional[str]:
+    """校验工作区目标目录名是否合法；合法返回 None，非法返回中文错误描述。"""
+    if not name:
+        return "目标名称不能为空"
+    if name in (".", "..", "分析结果"):
+        return f"目标名称不可为保留名称: {name}"
+    if name.startswith(".") or name.endswith((".", " ")):
+        return "目标名称不能以点或空格开头/结尾"
+    if re.search(r'[<>:"/\\|?*\x00-\x1f]', name):
+        return '目标名称不能包含路径或特殊字符 (< > : " / \\ | ? *)'
+    return None
 
 
 def archive_novel(novel_name: str, mode: str = "rename") -> Dict:
@@ -224,7 +254,6 @@ def archive_novel(novel_name: str, mode: str = "rename") -> Dict:
         shutil.move(str(temp_path), str(archive_dest))
     except Exception as e:
         # 移动失败，回滚；回滚自身失败必须暴露滞留路径
-        # （目录滞留时间戳临时名，用户按原名重试报“不存在”，看似书丢了）
         roll_err = ""
         try:
             temp_path.rename(novel_dir)
@@ -279,6 +308,102 @@ def delete_archive(archive_name: str) -> Dict:
         return {"ok": True}
     except Exception as e:
         return {"ok": False, "error": f"删除失败: {e}"}
+
+
+def restore_archive_blocks(archive_name: str, target_name: str = "") -> Dict:
+    """将归档中的 blocks/ 切分章节（仅复制原文与切分元数据，不含分析产出）还原至 workspace/，并同步待分析队列与书目列表。"""
+    archive_root = _get_archive_root()
+    archive_dir = _safe_join(archive_root, archive_name)
+    if archive_dir is None or not archive_dir.is_dir():
+        return {"ok": False, "error": f"归档不存在或名称非法: {archive_name}"}
+
+    src_blocks = archive_dir / "blocks"
+    blocks_count = (
+        sum(1 for f in src_blocks.glob("*.txt") if re.match(r"^\d+\.txt$", f.name))
+        if src_blocks.is_dir() else 0
+    )
+    if blocks_count == 0:
+        return {"ok": False, "error": "该归档不包含有效的 blocks 切分章节文件"}
+
+    ws = _get_workspace_path()
+    ws.mkdir(parents=True, exist_ok=True)
+
+    raw_target = (target_name or "").strip()
+    if raw_target:
+        name_err = _validate_novel_folder_name(raw_target)
+        if name_err:
+            return {"ok": False, "error": name_err}
+        dest_dir = _safe_join(ws, raw_target)
+        if dest_dir is None:
+            return {"ok": False, "error": f"非法目标目录名（可能越界）: {raw_target}"}
+        if dest_dir.exists():
+            return {
+                "ok": False,
+                "error": f"工作区已存在同名目录「{raw_target}」，请先归档或改用其他名称",
+                "conflict": True,
+            }
+        final_name = raw_target
+    else:
+        base = strip_archive_timestamp(archive_name)
+        if not base or _validate_novel_folder_name(base) is not None:
+            base = archive_name
+        cand = base
+        idx = 2
+        while (ws / cand).exists() or (archive_root / cand).exists():
+            cand = f"{base}-{idx}"
+            idx += 1
+        name_err = _validate_novel_folder_name(cand)
+        if name_err:
+            return {"ok": False, "error": name_err}
+        dest_dir = _safe_join(ws, cand)
+        if dest_dir is None:
+            return {"ok": False, "error": f"非法目标目录名（可能越界）: {cand}"}
+        final_name = cand
+
+    staging_dir = ws / f".restore_tmp_{uuid.uuid4().hex[:8]}"
+    try:
+        staging_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(src_blocks, staging_dir / "blocks")
+        staging_dir.rename(dest_dir)
+    except Exception as e:
+        shutil.rmtree(staging_dir, ignore_errors=True)
+        return {"ok": False, "error": f"还原 blocks 失败: {e}"}
+
+    from . import book_service
+
+    service = get_service()
+    dest_blocks = dest_dir / "blocks"
+    dest_blocks_resolved = dest_blocks.resolve()
+    for q_idx in range(len(service.queue.items) - 1, -1, -1):
+        existing = service.queue.items[q_idx]
+        if existing.status == "running":
+            continue
+        remove = False
+        if not existing.workspace_dir.exists():
+            remove = True
+        else:
+            try:
+                if existing.blocks_dir.resolve() == dest_blocks_resolved:
+                    remove = True
+            except OSError:
+                remove = True
+        if remove:
+            service.queue.remove_item(q_idx)
+
+    block_size = max(1, service.config_manager.config.analysis.block_size)
+    service.queue.add_item(QueueItem(
+        name=final_name,
+        blocks_dir=dest_blocks,
+        workspace_dir=dest_dir,
+        status="pending",
+        total_chapters=blocks_count,
+        completed_chapters=0,
+        block_size=block_size,
+    ))
+    service.save_queue()
+    book_service.refresh_books()
+    logger.info("已还原归档切分: %s/blocks -> %s (%d 章)", archive_name, dest_dir, blocks_count)
+    return {"ok": True, "novel_name": final_name, "blocks_count": blocks_count}
 
 
 def _move_to_trash(path: Path) -> None:

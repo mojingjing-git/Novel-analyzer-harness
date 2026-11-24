@@ -1,9 +1,9 @@
 """Shared Class C Claim-Level Audit Gate & Prompt Builder (Production + Evaluation).
 
 Extracted from `scripts/acceptance_gate.py` so production (`backend/services/recheck_v2.py`)
-and evaluation (`scripts/acceptance_gate.py`, `scripts/experiments/bc/bc_eval_t4_c_on_demand.py`) execute
+and evaluation (`scripts/acceptance_gate.py`) execute
 the exact same prompt construction, mechanical increment checks, and claim-evidence gate
-without production depending on experimental scripts.
+without production depending on standalone scripts.
 """
 
 from __future__ import annotations

@@ -28,38 +28,47 @@ logger = logging.getLogger(__name__)
 
 
 class ThrottledBroadcaster:
-    """按 channel key 独立节流（150ms）；适合流式 token 增量广播 + 多 block 并发。
+    """按 channel key 独立节流（250ms）；适合流式 token 增量广播 + 多 block 并发。
 
-    - channel_key 三元组 (context, session_id, unit_idx) 独立桶，不合并最新值
+    - channel_key 三元组 (context, session_id, unit_idx) 独立桶，不跨通道合并
     - 多 block 并发广播不互相覆盖
 
-    设计：emit() 立即调度；同 key 在 MIN_INTERVAL (150ms) 内只发一次；不同 key 独立计时。
+    设计：emit() 立即调度；同 key 在 MIN_INTERVAL (250ms) 内只发一次，
+    期间新到达的消息会覆盖缓存，延迟窗口结束时发出最新一帧；不同 key 独立计时。
     """
 
-    MIN_INTERVAL = 0.15  # 150ms
+    MIN_INTERVAL = 0.25  # 250ms
 
     def __init__(self, hub: "ProgressHub"):
         self._hub = hub
         self._last_emit: Dict[str, float] = {}
         self._pending_tasks: Dict[str, asyncio.Task] = {}
+        self._latest_messages: Dict[str, Dict[str, Any]] = {}
 
     async def emit(self, channel_key: str, message: Dict[str, Any]) -> None:
         now = asyncio.get_running_loop().time()
         elapsed = now - self._last_emit.get(channel_key, 0)
-        if elapsed >= self.MIN_INTERVAL:
+        if elapsed >= self.MIN_INTERVAL and channel_key not in self._pending_tasks:
+            self._latest_messages.pop(channel_key, None)
             await self._hub.publish(message)
             self._last_emit[channel_key] = now
-        elif channel_key not in self._pending_tasks:
-            self._pending_tasks[channel_key] = asyncio.create_task(
-                self._delayed_emit(channel_key, message)
-            )
+        else:
+            self._latest_messages[channel_key] = message
+            if channel_key not in self._pending_tasks:
+                delay = max(0.01, self.MIN_INTERVAL - elapsed)
+                self._pending_tasks[channel_key] = asyncio.create_task(
+                    self._delayed_emit(channel_key, delay)
+                )
 
-    async def _delayed_emit(self, channel_key: str, message: Dict[str, Any]) -> None:
+    async def _delayed_emit(self, channel_key: str, delay: float) -> None:
         try:
-            await asyncio.sleep(self.MIN_INTERVAL)
-            await self._hub.publish(message)
-            self._last_emit[channel_key] = asyncio.get_running_loop().time()
+            await asyncio.sleep(delay)
+            latest = self._latest_messages.pop(channel_key, None)
+            if latest is not None:
+                await self._hub.publish(latest)
+                self._last_emit[channel_key] = asyncio.get_running_loop().time()
         finally:
+            self._latest_messages.pop(channel_key, None)
             self._pending_tasks.pop(channel_key, None)
 
 
@@ -143,10 +152,10 @@ class ProgressHub:
         unit_idx: int,
         delta: Dict[str, Any],
     ) -> None:
-        """流式 token 增量广播：自动节流 5-10/s
+        """流式 token 增量广播：按 250ms 节流并始终保留最新帧
 
         channel_key 三元组 (context, session_id, unit_idx) 独立桶——
-        多 block 并发不互相覆盖；同一 block 的流式 chunk 150ms 内合并。
+        多 block 并发不互相覆盖；同一 block 的流式 chunk 250ms 内保留最新值并在窗口末尾发出。
 
         Args:
             context: 'analysis' | 'summary_phase_1' | 'summary_phase_2' | 'summary_phase_3' | 'summary_phase_4'

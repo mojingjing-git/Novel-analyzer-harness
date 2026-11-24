@@ -33,8 +33,12 @@ class SummaryService:
         self._error: str = ""
         self._batches_done: int = 0
         self._total_batches: int = 0
+        self._summary_done: int = 0
+        self._recon_done: int = 0
+        self._recheck_progress: Dict[str, Any] = {}
         self._started_at: float = 0.0
         self._finished_at: float = 0.0
+        self._concurrency: int = 1
         # 本次窗口会话的总结 token 累计（内存态，重启清零；跨书累计）
         self._session_token_stats: Dict[str, Dict[str, int]] = {}
         self._session_elapsed: float = 0.0
@@ -50,17 +54,22 @@ class SummaryService:
             "phase": self._phase,
             "batches_done": self._batches_done,
             "total_batches": self._total_batches,
+            "summary_done": self._summary_done,
+            "recon_done": self._recon_done,
             "error": self._error,
             "started_at": self._started_at,
             "finished_at": self._finished_at,
+            "concurrency": getattr(self._runner, "_active_concurrency", self._concurrency) if (self.is_running and self._runner) else self._concurrency,
+            "inflight_lanes": self._runner.get_inflight_lanes() if (self.is_running and self._runner and hasattr(self._runner, "get_inflight_lanes")) else [],
             "token_stats": self._runner.get_token_stats() if self._runner else {},
+            "recheck_progress": dict(self._recheck_progress),
             # 复检的账（状态/覆盖计数/明细文件）：总结页直接展示，跑完不用翻文件。
             # getattr 容错：测试里的假 runner 不带这个属性，属正常形态
             "recheck": (getattr(self._runner, "last_recheck_summary", None) or {}) if self._runner else {},
         }
 
     def start(self, book_id: str, start_chapter: int, end_chapter: int,
-              batch_size: int, concurrency: Optional[int] = None,
+              batch_size: Optional[int] = None, concurrency: Optional[int] = None,
               allow_during_analysis: bool = False) -> None:
         """启动总结任务。已在运行抛 RuntimeError，书不存在抛 KeyError，无结果抛 ValueError
 
@@ -83,14 +92,21 @@ class SummaryService:
 
         # 每次启动重读配置（与 AnalysisService 一致）
         config: AppConfig = get_analysis_service().config_manager.load()
-        if concurrency is None:
-            concurrency = config.analysis.concurrency
+        if not batch_size or batch_size <= 0:
+            batch_size = getattr(config.analysis, "summary_batch_size", None) or 30
+        resolved_batch_size = max(1, int(batch_size))
+        if not concurrency or concurrency <= 0:
+            concurrency = getattr(config.analysis, "summary_concurrency", None) or config.analysis.concurrency
+        self._concurrency = max(1, int(concurrency))
 
         self._book_id = book_id
         self._phase = "starting"
         self._error = ""
         self._batches_done = 0
         self._total_batches = 0
+        self._summary_done = 0
+        self._recon_done = 0
+        self._recheck_progress = {}
         self._started_at = time.time()
         self._finished_at = 0.0
 
@@ -102,19 +118,40 @@ class SummaryService:
             if ptype == "phase":
                 self._phase = payload.get("phase", self._phase)
                 self._total_batches = payload.get("total_batches", self._total_batches)
+                if self._phase in ("recheck", "style", "report"):
+                    self._recheck_progress = {}
+            elif ptype == "stage1_progress":
+                if payload.get("summary_done") is not None:
+                    self._summary_done = int(payload["summary_done"])
+                if payload.get("recon_done") is not None:
+                    self._recon_done = int(payload["recon_done"])
+                self._total_batches = payload.get("total_batches", self._total_batches)
             elif ptype == "batch_done":
                 self._batches_done += 1
                 self._total_batches = payload.get("total_batches", self._total_batches)
-            elif ptype == "complete":
-                self._phase = "complete"
+                self._summary_done = max(self._summary_done, self._batches_done)
+                self._recon_done = max(self._recon_done, self._batches_done)
+            elif ptype == "recheck_progress":
+                rp = payload.get("recheck_progress")
+                if isinstance(rp, dict):
+                    self._recheck_progress = dict(rp)
+            elif ptype in ("recheck_done", "complete"):
+                if ptype == "complete":
+                    self._phase = "complete"
+                self._recheck_progress = {}
             message = payload.get("message", "")
             if message:
                 level = "error" if ptype == "batch_failed" else "info"
                 asyncio.create_task(hub.log(message, level=level, category="summary"))
             asyncio.create_task(hub.publish({
                 "type": WSType.SUMMARY_PROGRESS,
-                "payload": {**payload, "book_id": book_id,
-                            "batches_done": self._batches_done},
+                "payload": {
+                    **payload,
+                    "book_id": book_id,
+                    "batches_done": self._batches_done,
+                    "summary_done": self._summary_done,
+                    "recon_done": self._recon_done,
+                },
             }))
 
         def on_token_stats(payload: dict) -> None:
@@ -133,8 +170,8 @@ class SummaryService:
             output_dir=output_dir,
             start_chapter=start_chapter,
             end_chapter=end_chapter,
-            batch_size=batch_size,
-            concurrency=concurrency,
+            batch_size=resolved_batch_size,
+            concurrency=self._concurrency,
             on_progress=on_progress,
             on_token_stats=on_token_stats,
         )

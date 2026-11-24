@@ -23,6 +23,16 @@ def sha256_text(text: str) -> str:
     return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
 
 
+def compute_recheck_code_snapshot(contract_version: str = "recheck_v3") -> str:
+    """计算当前复检引擎源码字节的 SHA-256 前 16 位（仅路径哈希，不跨层 import services）。"""
+    target = "recheck_v2.py" if "v2" in (contract_version or "").lower() else "recheck_v3.py"
+    path = Path(__file__).resolve().parents[1] / "services" / target
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()[:16]
+    except OSError:
+        return "unknown"
+
+
 def make_run_identity(
     *,
     work_id: str,

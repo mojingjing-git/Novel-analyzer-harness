@@ -14,6 +14,7 @@ from backend.core.prompt_builder import PromptBuilder
 from backend.models.knowledge import KnowledgeBase
 from backend.services.book_service import get_book_path, get_output_dir
 from backend.config.settings import ConfigManager
+from backend.services.queue_manager import CONFIG_FILE
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ def build_prompt_preview(book_id: str, chapter: int, max_chars: int = 0) -> dict
 
     # 必须 load() 才会读取 config.json 的真实配置（模型/Key/base_url），
     # 否则 ConfigManager().config 永远是默认配置
-    config = ConfigManager().load()
+    config = ConfigManager(CONFIG_FILE).load()
 
     # 读章节内容
     chapter_content = "[正文内容] (占位符 — 未找到章节文件)"
