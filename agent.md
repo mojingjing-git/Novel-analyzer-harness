@@ -102,12 +102,12 @@
 │   │   ├── QueuePage.vue         # 分析队列
 │   │   ├── SettingsPage.vue      # 设置编排页（组合 components/settings/ 下 4 张配置卡片）
 │   │   ├── CharacterCardPage.vue # 人物谱系（ECharts 关系网 + 别名检索 + 角色卡）
-│   │   ├── SummaryPage.vue       # 最终总结（含文风量化栏、复检明细人工覆写与 Excel 导出）
+│   │   ├── SummaryPage.vue       # 最终总结（含文风量化栏、复检明细只读查看与 Excel 导出）
 │   │   ├── SplitterPage.vue      # 小说切分
 │   │   ├── WorkspacePage.vue     # 工作区与归档
 │   │   ├── WorldStagePage.vue    # 世界舞台（换地图阶段流 + 多世界树）
 │   │   ├── StatsPage.vue         # 统计与诊断（累计账本 / 会话 / 历史 / 日志 / Prompt 预览）
-│   │   └── TimelinePage.vue      # 时间线（含伏笔待确认过滤与人工复核覆写）
+│   │   └── TimelinePage.vue      # 时间线（含伏笔只读排行视图）
 │   ├── components/               # 14 个通用组件 + settings/（SettingsApiConnectionCard /
 │   │                             #   SettingsStrategyCard / SettingsModelMatrixCard /
 │   │                             #   SettingsAdvancedSection）
@@ -427,12 +427,12 @@ Win11 Fluent 风格，颜色 / 圆角 / 阴影 / 间距统一走 `--win-*` 变�
 | `QueuePage.vue` | 分析队列：书籍队列、启停分析、进度车道、token 统计、日志下载 |
 | `SettingsPage.vue` | 设置编排页：挂载 `components/settings/` 下 4 张卡片组件管理 API / 模型矩阵 / 策略 / 高级参数与伏笔分类 |
 | `CharacterCardPage.vue` | 人物谱系：核心关系网、别名检索与归并角色卡详情 |
-| `SummaryPage.vue` | 最终总结：总结启停、阶段进度、风格量化概览、复检明细人工覆写、全书脉络报告与一键导出 Excel |
+| `SummaryPage.vue` | 最终总结：总结启停、阶段进度、风格量化概览、复检明细只读查看、全书脉络报告与一键导出 Excel |
 | `SplitterPage.vue` | 切分预览、批量切分、书名推断 |
 | `WorkspacePage.vue` | 工作区与归档列表、切分还原、归档与删除 |
 | `WorldStagePage.vue` | 世界舞台：主线换地图阶段流与 ECharts 多世界层级拓扑树 |
 | `StatsPage.vue` | 统计与诊断：跨进程累计账本、会话统计、按书历史、实时日志与 Prompt 预览 |
-| `TimelinePage.vue` | 时间线与伏笔分类排名（含「待确认」过滤与人工复核覆写操作） |
+| `TimelinePage.vue` | 时间线与伏笔分类只读排名 |
 
 ### 6.5 组件（14 个通用组件 + 4 个配置子组件）
 

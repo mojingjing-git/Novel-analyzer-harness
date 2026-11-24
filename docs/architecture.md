@@ -170,7 +170,7 @@ schema 版本号随分类表一起管理。`FORESHADOW_CATEGORY_TEXT` 是前端�
 ### 伏笔账本
 
 `foreshadow_ledger.json` 是全书伏笔的状态机，状态分 `active` / `resolved` / `dormant`。
-休眠判定按章距跨度 `DORMANT_CHAPTER_THRESHOLD`（200 章）触发，并跳过 `needs_review=True` 的待确认条目。`reconciliation` 逐批判定回收，全书复检兜底；人工可通过 `POST /api/books/{book_id}/ledger/{item_id}/review` 及前端「时间线 / 伏笔排行」或「最终总结 / 复检明细」页执行 `confirm_resolved` / `reject_to_active` / `mark_dormant` 覆写（写入 `source_type="human_override"` 并清空 `needs_review`），覆写后的条目受自动复检引擎跳过保护。
+休眠判定按章距跨度 `DORMANT_CHAPTER_THRESHOLD`（200 章）触发，并跳过 `needs_review=True` 的待确认条目。`reconciliation` 逐批判定回收，全书复检兜底；前端保持纯只读展示（并在已有覆写结果时渲染只读状态徽章），后端同时开放 `POST /api/books/{book_id}/ledger/{item_id}/review` 接口（支持 `confirm_resolved` / `reject_to_active` / `mark_dormant`，写入 `source_type="human_override"` 并清空 `needs_review`），供脚本、CLI 或外部 Agent 调用，覆写后的条目受自动复检引擎跳过保护。
 
 ## 最终总结（`backend/services/final_summary/`）
 

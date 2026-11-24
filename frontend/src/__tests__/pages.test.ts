@@ -774,7 +774,7 @@ describe('TimelinePage & WorkspacePage', () => {
           confidence: 0.9, status: 'resolved', first_seen_chapter: 2, last_seen_chapter: 20,
           span: 18, evidence_count: 4, evidence_chapters: [2, 20],
           resolution: '第20章揭示镜内封印为上古妖魂。', resolved_chapter: 20,
-          resolution_quality: 'verified', needs_review: false,
+          resolution_quality: 'verified', needs_review: false, source_type: 'human_override',
         },
         {
           id: 'fs_a', description: '玄铁令牌', composite_score: 210, importance: '中',
@@ -807,30 +807,15 @@ describe('TimelinePage & WorkspacePage', () => {
     await nextTick()
     expect(wrapper.text()).toContain('当前状态筛选下暂无伏笔')
 
-    // 待确认过滤与人工确认回收覆写
-    await wrapper.findAll('button').find((b) => b.text().trim() === '待确认')!.trigger('click')
-    await nextTick()
-    expect(wrapper.text()).toContain('玄铁令牌')
-    expect(wrapper.text()).not.toContain('铜镜之谜')
-
-    mockedApi.reviewForeshadowItem.mockResolvedValueOnce({
-      book_id: 'A',
-      item: {
-        id: 'fs_a', description: '玄铁令牌', composite_score: 210, importance: '中', confidence: 1,
-        status: 'resolved', first_seen_chapter: 5, last_seen_chapter: 10, span: 5,
-        evidence_count: 2, evidence_chapters: [5, 10],
-        resolution: '人工确认已回收', resolved_chapter: null,
-        needs_review: false, resolution_quality: 'verified', source_type: 'human_override',
-      },
-      lifecycle_bars: { resolved_verified: 2 },
-      counts: { total: 2, active: 0, resolved: 2, dormant: 0 },
-    })
-    await wrapper.findAll('button').find((b) => b.text().trim() === '确认回收')!.trigger('click')
-    await settle()
-    expect(mockedApi.reviewForeshadowItem).toHaveBeenCalledWith('A', 'fs_a', { action: 'confirm_resolved' })
+    // 前端界面收口为只读展示（保留覆写只读徽章，不暴露手操按钮与待确认过滤）
     await wrapper.findAll('button').find((b) => b.text().trim() === '全部')!.trigger('click')
     await nextTick()
     expect(wrapper.text()).toContain('人工复核')
+    const btnLabels = wrapper.findAll('button').map((b) => b.text().trim())
+    expect(btnLabels).not.toContain('待确认')
+    expect(btnLabels).not.toContain('确认回收')
+    expect(btnLabels).not.toContain('驳回为活跃')
+    expect(btnLabels).not.toContain('标为休眠')
     wrapper.unmount()
   })
 
@@ -1002,23 +987,10 @@ describe('SummaryPage', () => {
     await nextTick()
     expect(wrapper.text()).toContain('黑袍人身份')
     expect(wrapper.text()).not.toContain('第12章交待了钥匙用途。')
-
-    mockedApi.reviewForeshadowItem.mockResolvedValueOnce({
-      book_id: 'B',
-      item: {
-        id: 'fs_2', description: '黑袍人身份', composite_score: 200, importance: '中', confidence: 1,
-        status: 'active', first_seen_chapter: 3, last_seen_chapter: 10, span: 7,
-        evidence_count: 2, evidence_chapters: [3, 10],
-        resolution: null, resolved_chapter: null,
-        needs_review: false, resolution_quality: '', source_type: 'human_override',
-      },
-      lifecycle_bars: { active_open: 1 },
-      counts: { total: 1, active: 1, resolved: 0, dormant: 0 },
-    })
-    await wrapper.findAll('button').find((b) => b.text().trim() === '驳回为活跃')!.trigger('click')
-    await settle()
-    expect(mockedApi.reviewForeshadowItem).toHaveBeenCalledWith('B', 'fs_2', { action: 'reject_to_active' })
-    expect(wrapper.text()).toContain('人工已驳回')
+    const verdictBtnLabels = wrapper.findAll('button').map((b) => b.text().trim())
+    expect(verdictBtnLabels).not.toContain('确认回收')
+    expect(verdictBtnLabels).not.toContain('驳回为活跃')
+    expect(verdictBtnLabels).not.toContain('标为休眠')
 
     mockedApi.getBookReport.mockClear()
     mockedApi.summaryStatus.mockResolvedValue({

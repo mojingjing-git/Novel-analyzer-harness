@@ -75,7 +75,7 @@
 ### 43 条无锚点的旧回收无法自动复审
 
 `llm_judged` 的已回收条目里 43 条没有可用锚点引文，证据复检进不去，
-只能等锚点迁移（D-1 的 `anchor_file_index`/`anchor_content_hash`）或通过人工复核页面处置。
+只能等锚点迁移（D-1 的 `anchor_file_index`/`anchor_content_hash`）或通过后端复核接口（`POST /api/books/{book_id}/ledger/{item_id}/review`）处置。
 
 ## 二、数据层语义
 
