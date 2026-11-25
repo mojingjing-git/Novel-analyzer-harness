@@ -86,6 +86,7 @@
 │   │   ├── paths.py              # 代码根 / 资源根 / runtime 运行目录解析真源
 │   │   ├── schema.py             # 131 项配置元模型、分组、约束与 CLI 解析助手
 │   │   ├── settings.py           # APIConfig / AnalysisConfig / GUIConfig / AppConfig + ConfigManager
+│   │   ├── profiles.py           # 6 槽配置一键切换持久化与 3 档内置通用预设（128K/256K/512K）
 │   │   └── presets.py            # 厂商预设
 │   ├── models/
 │   │   ├── analysis_result.py    # AnalysisResult 结构化输出
@@ -103,7 +104,7 @@
 ├── frontend/src/                 # Vue 3 + TypeScript（含 __tests__/ 下 5 个聚合测试文件）
 │   ├── pages/                    # 9 个主页面（router.ts）
 │   │   ├── QueuePage.vue         # 分析队列
-│   │   ├── SettingsPage.vue      # 设置编排页（组合 components/settings/ 下 4 张配置卡片）
+│   │   ├── SettingsPage.vue      # 设置编排页（组合 components/settings/ 下配置槽位与核心参数卡片）
 │   │   ├── CharacterCardPage.vue # 人物谱系（ECharts 关系网 + 别名检索 + 角色卡）
 │   │   ├── SummaryPage.vue       # 最终总结（含文风量化栏、复检明细只读查看与 Excel 导出）
 │   │   ├── SplitterPage.vue      # 小说切分
@@ -111,7 +112,7 @@
 │   │   ├── WorldStagePage.vue    # 世界舞台（换地图阶段流 + 多世界树）
 │   │   ├── StatsPage.vue         # 统计与诊断（累计账本 / 会话 / 历史 / 日志 / Prompt 预览）
 │   │   └── TimelinePage.vue      # 时间线（含伏笔只读排行视图）
-│   ├── components/               # 14 个通用组件 + settings/（SettingsApiConnectionCard /
+│   ├── components/               # 通用组件 + settings/（SettingsProfilesCard / SettingsApiConnectionCard /
 │   │                             #   SettingsStrategyCard / SettingsModelMatrixCard /
 │   │                             #   SettingsAdvancedSection）
 │   ├── composables/              # useLocale / useLogStore / useRipple / useSelectedBook / vTooltip
@@ -530,8 +531,8 @@ npm run build
 ## 9. 硬性约束（必须遵守）
 
 ### 9.1 密钥与数据安全
-- `runtime/config.json` 含真实 API Key，**禁止提交、打印、写入日志或纳入任何输出**
-- `/runtime/` 以及 `config.json`、`queue_state.json`、`usage_state*.json`、`*.log`、`app.lock`、`.bak_*` 均已被 `.gitignore` 忽略
+- `runtime/config.json` 与 `runtime/config_profiles.json` 可能含真实 API Key，**禁止提交、打印、写入日志或纳入任何输出**
+- `/runtime/` 以及 `config.json`、`config_profiles.json`、`queue_state.json`、`usage_state*.json`、`*.log`、`app.lock`、`.bak_*` 均已被 `.gitignore` 忽略
 - 所有可能含 key 的错误日志**必须过 `redact()`**（`llm_failure_logger.redact`）。两重防御：
   1. `FailureLogger.record_failure` 入口对 `error_message` 自动 redact
   2. `app.py` 的 `_SensitiveFieldsFilter` 对所有落 `analyzer.log` 的 record 二次过滤

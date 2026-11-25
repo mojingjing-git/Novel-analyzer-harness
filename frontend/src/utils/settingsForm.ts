@@ -3,6 +3,19 @@
  * 语义锁定：空字符串剪除（v-model.number 清空残留）、422 校验错误按 loc 末元素映射红框。
  */
 
+import type { AppConfigDto } from '../api/client'
+
+/** 构造存入自定义配置槽的干净深拷贝（保留空字符串以尊重清空意图的 str 字段，仅采集 api/analysis 两节） */
+export function buildProfileConfigPayload(config: AppConfigDto): {
+  api: Record<string, unknown>
+  analysis: Record<string, unknown>
+} {
+  return {
+    api: JSON.parse(JSON.stringify(config.api ?? {})) as Record<string, unknown>,
+    analysis: JSON.parse(JSON.stringify(config.analysis ?? {})) as Record<string, unknown>,
+  }
+}
+
 /** 递归删除空字符串字段（语义即"恢复该项默认"）。数组与 null 不递归、不删除 */
 export function pruneEmptyStrings(obj: Record<string, unknown>): void {
   for (const k of Object.keys(obj)) {

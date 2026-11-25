@@ -207,6 +207,17 @@
 
 预设不预置模型名，`model` 一律留空由用户填。完整定义见 `backend/config/presets.py`。
 
+## 配置方案槽位（6 槽一键切换）
+
+设置页顶部与 CLI `config profile` 共用 **6 槽配置切换系统**（实现位于 `backend/config/profiles.py`，用户槽持久化于 `config.json` 同级 `config_profiles.json`）：
+
+- **3 个内置通用默认槽（只读，模型无关）**：`builtin_128k`（`128K 兼容保底`，短别名 `128k`）、`builtin_256k`（`256K 甜点推荐`，短别名 `256k`）、`builtin_512k`（`512K 超长巨著`，短别名 `512k`）。一键切换仅更新并发、分块、Prompt 紧凑预算、卷压缩与 V3 复检预算并归位同域参数，完整保留当前主连接（`base_url`/`api_key`/`provider`/`model`/`summary_model`/`thinking_mode`）、独立复检通道、伏笔分类白名单与工作区路径。
+- **3 个用户自定义槽（`user_1` / `user_2` / `user_3`）**：保存整套 `api` 与 `analysis` 配置快照（不含工作区路径与 `gui`），支持命名、备注与一键跨厂商/跨模型切换。
+- **凭据与环境变量保护**：
+  - 默认 `include_credentials=false` 存入自定义槽时会剥离 `api.api_key` 与 `analysis.recheck_api_key`；切换时若复检端点源地址变化，系统自动清空孤儿 `recheck_api_key` 并在响应中提示。
+  - `include_credentials=true` 时仅保存本地磁盘密钥，`GET /api/settings/profiles` 响应始终脱敏；环境变量 `LLM_API_KEY` / `MINIMAX_API_KEY` 永不写入 `config_profiles.json`，在环境变量生效期间激活状态按 `_disk_api_key` 稳定匹配。
+  - `config_profiles.json` 解析失败时置位 `store_corrupted`，只读继续提供内置预设并阻止写入自定义槽以免覆盖原文件。
+
 ## 已废弃的键
 
 读到这些键会被丢弃，其中 `api.temperature_sequence` 会打一条警告日志：

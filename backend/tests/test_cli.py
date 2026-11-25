@@ -1284,3 +1284,148 @@ def test_cli_analyze_knowledge_file_and_summary_concurrency_wiring(
     assert seen["summary_concurrency"] == 7
     assert seen["main_concurrency"] == 2
     assert seen["kw_concurrency"] == 7
+
+
+def test_cli_config_profile_offline_and_live_server(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """config profile list/apply/save/clear 离线落盘与活体服务代理、别名映射及凭据脱敏。"""
+    from types import SimpleNamespace
+    import httpx
+    from fastapi import FastAPI
+    from backend.api import routes_settings
+    from backend.config.settings import ConfigManager
+
+    rt = tmp_path / "rt"
+    _write_config(rt, api_key="sk-cli-profile-secret-123")
+
+    # 1. 离线列出 6 槽 + 应用内置短别名 256k + 验证 stdout 脱敏
+    c_list, p_list, _ = _run_json(capsys, ["--offline", "--json", "--runtime-dir", str(rt), "config", "profile", "list"])
+    assert c_list == EXIT_OK
+    assert len(p_list["data"]["slots"]) == 6
+
+    c_app, p_app, _ = _run_json(
+        capsys,
+        ["--offline", "--json", "--runtime-dir", str(rt), "config", "profile", "apply", "256k"],
+    )
+    assert c_app == EXIT_OK
+    assert p_app["data"]["applied_slot_id"] == "builtin_256k"
+    assert p_app["data"]["config"]["api"]["api_key"] == "***"
+    assert "sk-cli-profile-secret-123" not in json.dumps(p_app, ensure_ascii=False)
+
+    # 2. 离线存入 user_1（带 -o 密钥覆盖）与清空
+    c_save, p_save, _ = _run_json(
+        capsys,
+        [
+            "--offline", "--json", "--runtime-dir", str(rt),
+            "-o", "concurrency=9",
+            "-o", "api_key=sk-override-cli-secret-999",
+            "config", "profile", "save", "user_1",
+            "--name", "CLI槽", "--description", "命令行存入", "--include-credentials",
+        ],
+    )
+    assert c_save == EXIT_OK
+    assert p_save["data"]["slot"]["id"] == "user_1"
+    assert p_save["data"]["slot"]["has_api_key"] is True
+    assert p_save["data"]["slot"]["summary"]["concurrency"] == 9
+    assert "sk-override-cli-secret-999" not in json.dumps(p_save, ensure_ascii=False)
+
+    # 冲突全局标志与内置只读拦截均返回 EXIT_USAGE (2)
+    c_conflict, _, _ = _run_json(
+        capsys,
+        ["--json", "--server", "http://127.0.0.1:9999", "--config", str(rt / "config.json"), "config", "profile", "list"],
+    )
+    assert c_conflict == EXIT_USAGE
+    c_ro, _, _ = _run_json(
+        capsys,
+        ["--offline", "--json", "--runtime-dir", str(rt), "config", "profile", "save", "128k"],
+    )
+    assert c_ro == EXIT_USAGE
+
+    c_clr, p_clr, _ = _run_json(
+        capsys,
+        ["--offline", "--json", "--runtime-dir", str(rt), "config", "profile", "clear", "user_1"],
+    )
+    assert c_clr == EXIT_OK
+    assert p_clr["data"]["cleared"] == "user_1"
+
+    # 3. 活体服务在线代理（含 X-Session-Token、-o 先 GET 服务端再叠加与 409 映射）
+    srv_cfg_path = tmp_path / "srv_rt" / "config.json"
+    srv_cfg_path.parent.mkdir(parents=True)
+    srv_cfg_path.write_text(
+        json.dumps({"api": {"base_url": "https://srv.test/v1", "api_key": "sk-srv-only", "model": "srv-m"}, "analysis": {"concurrency": 3}}),
+        encoding="utf-8",
+    )
+    srv_mgr = ConfigManager(srv_cfg_path)
+    srv_mgr.load()
+    fake_analysis = SimpleNamespace(is_running=False, config_manager=srv_mgr)
+    fake_summary = SimpleNamespace(is_running=False)
+    monkeypatch.setattr(routes_settings, "get_service", lambda: fake_analysis)
+    monkeypatch.setattr("backend.services.summary_service.get_summary_service", lambda: fake_summary)
+
+    token = "cli-prof-live-tok"
+    monkeypatch.setenv("NOVEL_ANALYZER_SESSION_TOKEN", token)
+    (rt / "session.token").write_text(token, encoding="utf-8")
+    (rt / "app.lock").write_text(json.dumps({"pid": 1002, "port": 18889, "started_at": 1}), encoding="utf-8")
+
+    mini_app = FastAPI()
+
+    @mini_app.get("/api/health")
+    async def _health():
+        return {"app": "novel-analyzer-web", "status": "ok"}
+
+    mini_app.include_router(routes_settings.router)
+    test_client = TestClient(mini_app)
+    seen: List[tuple[str, str]] = []
+
+    class _ProfBridge:
+        def __init__(self, **_kw: Any) -> None:
+            pass
+
+        def __enter__(self) -> "_ProfBridge":
+            return self
+
+        def __exit__(self, *_exc: Any) -> bool:
+            return False
+
+        def get(self, url: str, **kw: Any) -> Any:
+            path = "/" + url.split("://", 1)[1].split("/", 1)[1] if "://" in url else url
+            seen.append(("GET", path))
+            return test_client.get(path, **kw)
+
+        def request(self, method: str, url: str, **kw: Any) -> Any:
+            path = "/" + url.split("://", 1)[1].split("/", 1)[1] if "://" in url else url
+            seen.append((method, path))
+            return test_client.request(method, path, **kw)
+
+    monkeypatch.setattr(httpx, "Client", _ProfBridge)
+
+    c_l2, p_l2, _ = _run_json(
+        capsys,
+        ["--json", "--runtime-dir", str(rt), "-o", "concurrency=7", "config", "profile", "save", "user_1", "--name", "远端叠加"],
+    )
+    assert c_l2 == EXIT_OK
+    assert p_l2["data"]["persistence"] == "live_server"
+    assert ("GET", "/api/settings") in seen
+    assert ("PUT", "/api/settings/profiles/user_1") in seen
+    # 使用了远端模型 srv-m 而非本地 runtime/config.json
+    assert p_l2["data"]["slot"]["summary"]["model"] == "srv-m"
+    assert p_l2["data"]["slot"]["summary"]["concurrency"] == 7
+
+    fake_analysis.is_running = True
+    c_409, p_409, _ = _run_json(
+        capsys,
+        ["--json", "--runtime-dir", str(rt), "config", "profile", "apply", "builtin_128k"],
+    )
+    assert c_409 == EXIT_CONFLICT
+    assert p_409["ok"] is False
+
+    fake_analysis.is_running = False
+    c_del2, p_del2, _ = _run_json(
+        capsys,
+        ["--json", "--runtime-dir", str(rt), "config", "profile", "clear", "user_1"],
+    )
+    assert c_del2 == EXIT_OK
+    assert ("DELETE", "/api/settings/profiles/user_1") in seen

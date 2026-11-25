@@ -113,6 +113,9 @@
 |---|---|---|
 | `/api/settings` | GET / PUT / PATCH | 读 / 全量替换 / 局部更新配置。运行中受并发与阶段写护栏限制 |
 | `/api/settings/schema` | GET | 返回全量 131 项配置元模型、11 个 UI 分组、默认值与校验约束 |
+| `/api/settings/profiles` | GET | 列出 6 个配置方案槽位（3 个内置通用预设 + 3 个用户自定义槽）及当前激活状态（需 `X-Session-Token`，响应脱敏不返回明文密钥） |
+| `/api/settings/profiles/{slot_id}` | PUT / DELETE | 存入或更新指定用户自定义槽位（`user_1..3`），或清空该槽位（需 `X-Session-Token`；内置槽返回 `400`） |
+| `/api/settings/profiles/{slot_id}/apply` | POST | 一键切换指定槽位到当前生效配置，支持 `128k` / `256k` / `512k` 短别名（需 `X-Session-Token`；运行中返回 `409`） |
 | `/api/settings/presets` | GET | 厂商预设列表 |
 | `/api/settings/models` | GET | 按已保存配置拉取可用模型 |
 | `/api/settings/preview/models` | POST | 用未保存的表单试查模型（不写回配置） |

@@ -1,18 +1,27 @@
 <script setup lang="ts">
 import { ref, computed, watch, inject, onMounted, onUnmounted } from 'vue'
 import { routeLocationKey, routerKey } from 'vue-router'
-import { api, type AppConfigDto, type ConfigSchemaDto, type ModelSpecDto } from '../api/client'
+import {
+  api,
+  type AppConfigDto,
+  type ConfigProfileSlotDto,
+  type ConfigProfilesResponse,
+  type ConfigSchemaDto,
+  type ModelSpecDto,
+} from '../api/client'
+import SettingsProfilesCard from '../components/settings/SettingsProfilesCard.vue'
 import SettingsApiConnectionCard from '../components/settings/SettingsApiConnectionCard.vue'
 import SettingsStrategyCard from '../components/settings/SettingsStrategyCard.vue'
 import SettingsModelMatrixCard from '../components/settings/SettingsModelMatrixCard.vue'
 import SettingsAdvancedSection from '../components/settings/SettingsAdvancedSection.vue'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
 import {
   DEFAULT_SETTINGS_SCHEMA,
   FIELD_GROUP_BY_KEY,
   mergeSettingsSchema,
 } from '../utils/settingsSchema'
 import {
-  pruneEmptyStrings, mapFieldErrors, toggleCategoryIn, CATEGORY_CLEAR_FALLBACK,
+  pruneEmptyStrings, buildProfileConfigPayload, mapFieldErrors, toggleCategoryIn, CATEGORY_CLEAR_FALLBACK,
   inferThinkingState, makeThinkingPresets,
   composeThinkingMode, decomposeThinkingMode,
   type ThinkingState,
@@ -38,6 +47,24 @@ const showAdvanced = ref(false)
 const showRecheckEndpoint = ref(false)
 const settingsSchema = ref<ConfigSchemaDto>(DEFAULT_SETTINGS_SCHEMA)
 const advancedSectionRef = ref<InstanceType<typeof SettingsAdvancedSection> | null>(null)
+const profilesCardRef = ref<InstanceType<typeof SettingsProfilesCard> | null>(null)
+
+const profilesState = ref<ConfigProfilesResponse | null>(null)
+const profileBusy = ref(false)
+const profileNotice = ref('')
+const profileWarnings = ref<string[]>([])
+const profileError = ref('')
+const saveModalError = ref('')
+let profileNoticeTimer: ReturnType<typeof setTimeout> | undefined
+
+const pendingConfirm = ref<{
+  kind: 'apply' | 'clear'
+  slot: ConfigProfileSlotDto
+  title: string
+  message: string
+  confirmText: string
+  danger: boolean
+} | null>(null)
 
 const categoryDefs = ref<CategoryDef[]>([])
 const keptSet = computed(() => new Set(config.value?.analysis.foreshadow_kept_categories ?? []))
@@ -206,20 +233,30 @@ async function runSyncCatalog() {
 async function load() {
   loadError.value = ''
   try {
-    const [cfgRes, presetsRes, schemaRes] = await Promise.all([
+    const [cfgRes, presetsRes, schemaRes, profilesRes] = await Promise.all([
       api.getSettings(),
       api.getPresets(),
-      api.getSettingsSchema?.().catch(() => null),
+      Promise.resolve(api.getSettingsSchema?.()).catch(() => null),
+      Promise.resolve(api.getSettingsProfiles?.()).catch(() => null),
     ])
+    if (disposed) return
     config.value = cfgRes
     savedSnapshot.value = configSnapshot.value
     presets.value = presetsRes.presets
     settingsSchema.value = mergeSettingsSchema(schemaRes)
+    profilesState.value = profilesRes ?? null
     syncThinkingFromConfig()
     syncSummaryThinkingFromConfig()
     await Promise.all([fetchModelSpec(), fetchSummaryModelSpec()])
   } catch (e) {
     loadError.value = (e as Error).message || '无法连接后端服务'
+  }
+}
+
+async function refreshProfiles() {
+  const res = await Promise.resolve(api.getSettingsProfiles?.()).catch(() => null)
+  if (!disposed && res) {
+    profilesState.value = res
   }
 }
 
@@ -248,8 +285,24 @@ function onPreset(name: string) {
 const fieldErrors = ref<Record<string, string>>({})
 const saveError = ref('')
 
+function applyValidationDetail(detail: unknown): string[] {
+  const { fieldErrors: fe, msgs } = mapFieldErrors(detail)
+  fieldErrors.value = fe
+  const advGroups = Object.keys(fe)
+    .map((k) => FIELD_GROUP_BY_KEY[k])
+    .filter((g): g is string => Boolean(g))
+  if (Object.keys(fe).some((k) => ADVANCED_FIELD_KEYS.has(k))) {
+    showAdvanced.value = true
+    advancedSectionRef.value?.revealGroups(advGroups)
+  }
+  if (Object.keys(fe).some((k) => RECHECK_ENDPOINT_FIELD_KEYS.has(k))) {
+    showRecheckEndpoint.value = true
+  }
+  return msgs
+}
+
 async function save() {
-  if (!config.value || saving.value) return
+  if (!config.value || saving.value || profileBusy.value) return
   saving.value = true
   saved.value = false
   clearTimeout(savedTimer)
@@ -270,6 +323,7 @@ async function save() {
       savedSnapshot.value = configSnapshot.value
       saved.value = true
       savedTimer = setTimeout(() => { saved.value = false }, 2000)
+      void refreshProfiles()
     } else {
       savedSnapshot.value = submittedSnapshot
     }
@@ -277,18 +331,7 @@ async function save() {
     if (disposed) return
     const err = e as Error & { status?: number; detail?: unknown }
     if (err.status === 422 && Array.isArray(err.detail)) {
-      const { fieldErrors: fe, msgs } = mapFieldErrors(err.detail)
-      fieldErrors.value = fe
-      const advGroups = Object.keys(fe)
-        .map((k) => FIELD_GROUP_BY_KEY[k])
-        .filter((g): g is string => Boolean(g))
-      if (Object.keys(fe).some((k) => ADVANCED_FIELD_KEYS.has(k))) {
-        showAdvanced.value = true
-        advancedSectionRef.value?.revealGroups(advGroups)
-      }
-      if (Object.keys(fe).some((k) => RECHECK_ENDPOINT_FIELD_KEYS.has(k))) {
-        showRecheckEndpoint.value = true
-      }
+      const msgs = applyValidationDetail(err.detail)
       saveError.value = '保存失败（参数校验未通过）：\n' + msgs.join('\n')
     } else {
       saveError.value = '保存失败: ' + err.message
@@ -302,7 +345,7 @@ function errCls(field: string): string {
 }
 
 function discardChanges() {
-  if (savedSnapshot.value === null || saving.value) return
+  if (savedSnapshot.value === null || saving.value || profileBusy.value) return
   try {
     const restored = JSON.parse(savedSnapshot.value) as AppConfigDto
     config.value = restored
@@ -314,6 +357,154 @@ function discardChanges() {
     void Promise.all([fetchModelSpec(), fetchSummaryModelSpec()])
   } catch (e) {
     console.error('还原草稿失败', e)
+  }
+}
+
+// ===== 6 槽配置一键切换 =====
+function showProfileNotice(msg: string) {
+  profileNotice.value = msg
+  clearTimeout(profileNoticeTimer)
+  profileNoticeTimer = setTimeout(() => { profileNotice.value = '' }, 2500)
+}
+
+function onApplyProfile(slot: ConfigProfileSlotDto) {
+  if (saving.value || profileBusy.value) return
+  if (hasUnsavedChanges.value) {
+    pendingConfirm.value = {
+      kind: 'apply',
+      slot,
+      title: '切换配置方案',
+      message: `当前表单有尚未保存的修改，切换到「${slot.name}」将会覆盖这些未保存修改。确认继续吗？`,
+      confirmText: '覆盖并切换',
+      danger: false,
+    }
+    return
+  }
+  void executeApplyProfile(slot)
+}
+
+async function executeApplyProfile(slot: ConfigProfileSlotDto) {
+  profileBusy.value = true
+  profileError.value = ''
+  profileWarnings.value = []
+  try {
+    const res = await api.applySettingsProfile(slot.id)
+    if (disposed) return
+    config.value = res.config
+    savedSnapshot.value = configSnapshot.value
+    fieldErrors.value = {}
+    saveError.value = ''
+    clearTimeout(savedTimer)
+    saved.value = false
+    dynamicThinkingOptions.value = []
+    dynamicSummaryThinkingOptions.value = []
+    syncThinkingFromConfig()
+    syncSummaryThinkingFromConfig()
+    probeResult.value = null
+    probeError.value = ''
+    summaryProbeResult.value = null
+    summaryProbeError.value = ''
+    recheckProbeResult.value = null
+    recheckProbeError.value = ''
+    models.value = []
+    modelError.value = ''
+    const ana = res.config.analysis
+    if (
+      (ana.recheck_base_url || '').trim()
+      || (ana.recheck_api_key || '').trim()
+      || (ana.recheck_provider || '').trim()
+      || (ana.recheck_json_mode || '').trim()
+    ) {
+      showRecheckEndpoint.value = true
+    }
+    profilesState.value = res.profiles
+    profileWarnings.value = res.warnings ?? []
+    showProfileNotice(`已一键切换到「${slot.name}」`)
+    void Promise.all([fetchModelSpec(), fetchSummaryModelSpec()])
+  } catch (e) {
+    if (!disposed) {
+      profileError.value = '切换失败: ' + (e instanceof Error ? e.message : String(e))
+    }
+  } finally {
+    if (!disposed) profileBusy.value = false
+  }
+}
+
+async function onSaveProfile(payload: {
+  slotId: string
+  name: string
+  description: string
+  include_credentials: boolean
+}) {
+  if (!config.value || saving.value || profileBusy.value) return
+  profileBusy.value = true
+  profileError.value = ''
+  saveModalError.value = ''
+  profileWarnings.value = []
+  try {
+    const res = await api.saveSettingsProfile(payload.slotId, {
+      name: payload.name,
+      description: payload.description,
+      include_credentials: payload.include_credentials,
+      config: buildProfileConfigPayload(config.value),
+    })
+    if (disposed) return
+    profilesState.value = res.profiles
+    profileWarnings.value = res.warnings ?? []
+    profilesCardRef.value?.closeSaveModal()
+    showProfileNotice(`已存入「${res.slot.name}」`)
+  } catch (e) {
+    if (disposed) return
+    const err = e as Error & { status?: number; detail?: unknown }
+    if (err.status === 422 && Array.isArray(err.detail)) {
+      const msgs = applyValidationDetail(err.detail)
+      saveModalError.value = '参数校验未通过，无法存入槽位：\n' + msgs.join('\n')
+    } else {
+      saveModalError.value = '存入失败: ' + (err.message || String(e))
+    }
+  } finally {
+    if (!disposed) profileBusy.value = false
+  }
+}
+
+function onClearProfile(slot: ConfigProfileSlotDto) {
+  if (saving.value || profileBusy.value) return
+  pendingConfirm.value = {
+    kind: 'clear',
+    slot,
+    title: '清空自定义槽',
+    message: `确认清空「${slot.name}」(${slot.id}) 保存的配置快照吗？此操作不会修改当前正在生效的配置。`,
+    confirmText: '确认清空',
+    danger: true,
+  }
+}
+
+async function executeClearProfile(slot: ConfigProfileSlotDto) {
+  profileBusy.value = true
+  profileError.value = ''
+  profileWarnings.value = []
+  try {
+    const res = await api.clearSettingsProfile(slot.id)
+    if (disposed) return
+    profilesState.value = res.profiles
+    showProfileNotice(`已清空 ${slot.id}`)
+  } catch (e) {
+    if (!disposed) {
+      profileError.value = '清空失败: ' + (e instanceof Error ? e.message : String(e))
+    }
+  } finally {
+    if (!disposed) profileBusy.value = false
+  }
+}
+
+function onConfirmDialogConfirm() {
+  const pending = pendingConfirm.value
+  pendingConfirm.value = null
+  if (!pending) return
+  if (pending.kind === 'apply') {
+    void executeApplyProfile(pending.slot)
+  } else {
+    void executeClearProfile(pending.slot)
   }
 }
 
@@ -494,6 +685,7 @@ onMounted(() => {
 onUnmounted(() => {
   disposed = true
   clearTimeout(savedTimer)
+  clearTimeout(profileNoticeTimer)
 })
 </script>
 
@@ -506,6 +698,21 @@ onUnmounted(() => {
     <div>
       <h2 class="section-title">设置</h2>
     </div>
+
+    <SettingsProfilesCard
+      ref="profilesCardRef"
+      :profiles="profilesState"
+      :busy="profileBusy || saving"
+      :hasUnsavedChanges="hasUnsavedChanges"
+      :notice="profileNotice"
+      :warnings="profileWarnings"
+      :error="profileError"
+      :saveModalError="saveModalError"
+      @apply="onApplyProfile"
+      @save="onSaveProfile"
+      @clear="onClearProfile"
+      @clear-save-error="saveModalError = ''"
+    />
 
     <div class="settings-cards-grid">
       <SettingsApiConnectionCard
@@ -589,10 +796,10 @@ onUnmounted(() => {
         <pre class="text-xs whitespace-pre-wrap" style="color: var(--win-danger)">{{ saveError }}</pre>
       </div>
       <div class="flex gap-2.5 items-center flex-wrap">
-        <button @click="save" :disabled="saving" class="glass-button glass-button-primary btn-lg">
+        <button @click="save" :disabled="saving || profileBusy" class="glass-button glass-button-primary btn-lg">
           {{ saving ? '保存中...' : '保存设置' }}
         </button>
-        <button v-if="hasUnsavedChanges && !saving" type="button" @click="discardChanges" class="glass-button">
+        <button v-if="hasUnsavedChanges && !saving && !profileBusy" type="button" @click="discardChanges" class="glass-button">
           放弃更改
         </button>
         <Transition name="modal">
@@ -604,6 +811,16 @@ onUnmounted(() => {
         </button>
       </div>
     </div>
+
+    <ConfirmDialog
+      v-if="pendingConfirm"
+      :title="pendingConfirm.title"
+      :message="pendingConfirm.message"
+      :confirmText="pendingConfirm.confirmText"
+      :danger="pendingConfirm.danger"
+      @confirm="onConfirmDialogConfirm"
+      @cancel="pendingConfirm = null"
+    />
   </div>
 </template>
 

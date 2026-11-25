@@ -537,3 +537,91 @@ def test_settings_schema_endpoint(monkeypatch):
     assert "api.breaker_open_after" in paths
     assert "analysis.recheck_v3_mode" in paths
     assert "analysis.recheck_v3_pool_max_chars" in paths
+
+
+def test_settings_profiles_endpoints_auth_guards_and_validation(tmp_path, monkeypatch):
+    """GET/PUT/DELETE/POST /api/settings/profiles* 鉴权、运行期冲突、空槽/只读校验与凭据脱敏。"""
+    from types import SimpleNamespace
+    from fastapi import FastAPI
+    from backend.api import routes_settings
+    from backend.config.settings import AppConfig, ConfigManager
+
+    cfg_path = tmp_path / "config.json"
+    mgr = ConfigManager(cfg_path)
+    seed = AppConfig.from_dict({
+        "api": {
+            "base_url": "https://user:secret@api.test.com/v1?api_key=abc",
+            "api_key": "sk-api-plain-secret",
+            "model": "m-main",
+        },
+        "analysis": {"concurrency": 5},
+    })
+    mgr.save(seed)
+
+    fake_analysis = SimpleNamespace(is_running=False, config_manager=mgr)
+    fake_summary = SimpleNamespace(is_running=False)
+    monkeypatch.setattr(routes_settings, "get_service", lambda: fake_analysis)
+    monkeypatch.setattr("backend.services.summary_service.get_summary_service", lambda: fake_summary)
+
+    token = "profile-api-session-token"
+    monkeypatch.setenv(_ENV_VAR, token)
+    headers = {"X-Session-Token": token}
+
+    test_app = FastAPI()
+    test_app.include_router(routes_settings.router)
+    client = TestClient(test_app)
+
+    # 1. 四类端点未携带或携带错误 token 一律返回 403
+    assert client.get("/api/settings/profiles").status_code == 403
+    assert client.put("/api/settings/profiles/user_1", json={"name": "A"}).status_code == 403
+    assert client.delete("/api/settings/profiles/user_1").status_code == 403
+    assert client.post("/api/settings/profiles/builtin_256k/apply").status_code == 403
+
+    # 2. 获取 6 槽与校验内置/空槽/未知槽错误处理
+    list_r = client.get("/api/settings/profiles", headers=headers)
+    assert list_r.status_code == 200
+    assert len(list_r.json()["slots"]) == 6
+    assert client.put("/api/settings/profiles/builtin_256k", headers=headers, json={"name": "X"}).status_code == 400
+    assert client.delete("/api/settings/profiles/builtin_256k", headers=headers).status_code == 400
+    assert client.post("/api/settings/profiles/user_1/apply", headers=headers).status_code == 400
+    assert client.post("/api/settings/profiles/unknown_slot/apply", headers=headers).status_code == 404
+
+    # 3. 显式传入 config: {} 或非法参数返回 422
+    assert client.put("/api/settings/profiles/user_1", headers=headers, json={"name": "Bad", "config": {}}).status_code == 422
+    bad_cfg = client.put(
+        "/api/settings/profiles/user_1",
+        headers=headers,
+        json={"name": "BadUrl", "config": {"api": {"base_url": "ftp://bad"}, "analysis": {"concurrency": 0}}},
+    )
+    assert bad_cfg.status_code == 422
+
+    # 4. 存入 user_1（含凭据）但列表 GET 响应绝不泄露明文密钥或 URL 密码
+    put_r = client.put(
+        "/api/settings/profiles/user_1",
+        headers=headers,
+        json={"name": "自定义主力", "description": "含密钥测试", "include_credentials": True},
+    )
+    assert put_r.status_code == 200
+    assert put_r.json()["slot"]["has_api_key"] is True
+    assert "sk-api-plain-secret" not in put_r.text
+    assert "user:secret" not in put_r.text
+    assert put_r.json()["slot"]["summary"]["base_url"] == "https://api.test.com/v1"
+
+    # 5. 运行期并发写护栏拦截 apply -> 409
+    fake_analysis.is_running = True
+    assert client.post("/api/settings/profiles/builtin_256k/apply", headers=headers).status_code == 409
+    fake_analysis.is_running = False
+    fake_summary.is_running = True
+    assert client.post("/api/settings/profiles/builtin_256k/apply", headers=headers).status_code == 409
+    fake_summary.is_running = False
+
+    # 6. 空闲期应用内置 256K 槽成功并清空 user_1 成功
+    apply_r = client.post("/api/settings/profiles/builtin_256k/apply", headers=headers)
+    assert apply_r.status_code == 200
+    assert apply_r.json()["applied_slot_id"] == "builtin_256k"
+    assert apply_r.json()["config"]["analysis"]["recheck_v3_pool_max_chars"] == 180000
+    assert apply_r.json()["config"]["api"]["model"] == "m-main"
+
+    del_r = client.delete("/api/settings/profiles/user_1", headers=headers)
+    assert del_r.status_code == 200
+    assert del_r.json()["cleared"] == "user_1"

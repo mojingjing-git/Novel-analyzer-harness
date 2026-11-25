@@ -7,6 +7,7 @@ import asyncio
 import copy
 from dataclasses import asdict
 import json
+import os
 from pathlib import Path
 import signal
 import sys
@@ -979,4 +980,302 @@ def handle_config_presets(ctx: CliContext, _args: argparse.Namespace) -> Dict[st
     for name, row in masked_presets.items():
         lines.append(f"- {name}: model={row.get('model')} | base_url={row.get('base_url')}")
     emit_output(ctx, data, "\n".join(lines))
+    return data
+
+
+def _validate_profile_target_flags(ctx: CliContext) -> None:
+    if ctx.server_url and ctx.config_file is not None:
+        raise CliError(EXIT_USAGE, "conflicting_flags", "--config 与 --server 不能同时使用")
+    if ctx.server_url and ctx.offline:
+        raise CliError(EXIT_USAGE, "conflicting_flags", "--offline 与 --server 不能同时使用")
+
+
+def _safe_http_error_summary(resp: Any, secrets: Sequence[str]) -> str:
+    try:
+        payload = resp.json()
+    except Exception:
+        payload = None
+    if isinstance(payload, dict) and "detail" in payload:
+        detail = payload["detail"]
+        if isinstance(detail, str):
+            return redact_secrets(detail, secrets)[:240]
+        if isinstance(detail, list):
+            return redact_secrets(format_validation_errors(detail), secrets)[:240]
+    raw = str(getattr(resp, "text", "") or "")
+    return redact_secrets(raw, secrets)[:180] or f"HTTP {resp.status_code}"
+
+
+def _profile_http_request(
+    ctx: CliContext,
+    srv: Any,
+    method: str,
+    path: str,
+    json_body: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    import httpx
+
+    headers = {"X-Session-Token": srv.token} if srv.token else {}
+    req_kw: Dict[str, Any] = {"headers": headers}
+    if json_body is not None:
+        req_kw["json"] = json_body
+    try:
+        with httpx.Client(timeout=10.0, trust_env=False) as client:
+            resp = client.request(method, f"{srv.url}{path}", **req_kw)
+    except Exception as exc:
+        raise CliError(EXIT_ERROR, "http_error", f"请求运行中服务失败: {exc}") from exc
+
+    secrets = collect_known_secrets(ctx)
+    if resp.status_code in (401, 403):
+        raise CliError(
+            EXIT_ERROR,
+            "unauthorized",
+            f"后端鉴权失败 (HTTP {resp.status_code})，请传入 --token 或设置 NOVEL_ANALYZER_SESSION_TOKEN",
+        )
+    summary = _safe_http_error_summary(resp, secrets)
+    if resp.status_code == 400:
+        raise CliError(EXIT_USAGE, "bad_request", f"后端拒绝请求 (HTTP 400): {summary}")
+    if resp.status_code == 422:
+        raise CliError(EXIT_USAGE, "validation_error", f"后端参数校验未通过 (HTTP 422): {summary}")
+    if resp.status_code == 404:
+        raise CliError(EXIT_NOT_FOUND, "slot_not_found", f"目标配置槽位不存在 (HTTP 404): {summary}")
+    if resp.status_code == 409:
+        raise CliError(EXIT_CONFLICT, "server_conflict", f"后端当前状态冲突 (HTTP 409): {summary}")
+    if resp.status_code >= 400:
+        raise CliError(EXIT_ERROR, "http_error", f"后端返回错误 (HTTP {resp.status_code}): {summary}")
+
+    try:
+        data = resp.json()
+    except Exception as exc:
+        raise CliError(EXIT_ERROR, "invalid_response", f"后端返回非 JSON 响应: {exc}") from exc
+    if not isinstance(data, dict):
+        raise CliError(EXIT_ERROR, "invalid_response", "后端响应格式无效")
+    return data
+
+
+def _raise_cli_profile_error(exc: Any) -> None:
+    if exc.status_code == 422:
+        raise CliError(
+            EXIT_USAGE,
+            exc.code,
+            exc.message,
+            details={"validation_errors": exc.details} if exc.details else None,
+        ) from exc
+    if exc.status_code == 400:
+        raise CliError(EXIT_USAGE, exc.code, exc.message) from exc
+    if exc.status_code == 404:
+        raise CliError(EXIT_NOT_FOUND, exc.code, exc.message) from exc
+    if exc.status_code == 409:
+        raise CliError(EXIT_CONFLICT, exc.code, exc.message) from exc
+    raise CliError(EXIT_ERROR, exc.code, exc.message) from exc
+
+
+def _resolve_offline_profile_store(ctx: CliContext) -> Tuple[Any, Any, Path]:
+    from backend.config.profiles import ProfileStore
+    from backend.config.settings import ConfigManager
+
+    cfg_path = resolve_config_path(ctx)
+    if ctx.config_file is not None and not cfg_path.exists():
+        raise CliError(EXIT_NOT_FOUND, "config_not_found", f"指定的配置文件不存在: {cfg_path}")
+    cm = ConfigManager(cfg_path)
+    store = ProfileStore.for_config_manager(cm)
+    return cm, store, cfg_path
+
+
+def _format_profiles_human(profiles: Dict[str, Any]) -> str:
+    lines = [
+        f"配置方案槽位 (active={profiles.get('active_slot_id') or 'none'}, "
+        f"last_applied={profiles.get('last_applied_slot_id') or 'none'}, "
+        f"modified={bool(profiles.get('is_modified_from_last'))})"
+    ]
+    if profiles.get("store_corrupted"):
+        lines.append("[警告] config_profiles.json 解析失败待修复，自定义槽不可写")
+    for s in profiles.get("slots") or []:
+        mark = "*" if s.get("is_active") else " "
+        kind = "内置" if s.get("kind") == "builtin" else "用户"
+        status = "已存" if s.get("populated") else "空槽"
+        summary = s.get("summary") or {}
+        extra = ""
+        if s.get("populated") and isinstance(summary, dict):
+            extra = (
+                f" | bs={summary.get('block_size')} conc={summary.get('concurrency')} "
+                f"sum_bs={summary.get('summary_batch_size')} pool={summary.get('recheck_v3_pool_max_chars')}"
+            )
+            if s.get("kind") == "user":
+                extra += f" model={summary.get('model') or '(未填)'}"
+        lines.append(f"[{mark}] {s.get('id')} ({kind}/{status}): {s.get('name')}{extra}")
+    return "\n".join(lines)
+
+
+def handle_config_profile_list(ctx: CliContext, _args: argparse.Namespace) -> Dict[str, Any]:
+    """列出 6 个配置方案槽位及激活状态。"""
+    from backend.config.profiles import ProfileError
+
+    _validate_profile_target_flags(ctx)
+    srv = None if ctx.config_file is not None else discover_live_server(ctx)
+    if srv is not None:
+        profiles = _profile_http_request(ctx, srv, "GET", "/api/settings/profiles")
+        mode = "live_server"
+        srv_url = srv.url
+    else:
+        cm, store, _cfg_path = _resolve_offline_profile_store(ctx)
+        try:
+            profiles = store.list_profiles(cm)
+        except ProfileError as exc:
+            _raise_cli_profile_error(exc)
+        mode = "disk"
+        srv_url = None
+
+    data = {
+        "persistence": mode,
+        "server_url": srv_url,
+        **profiles,
+    }
+    emit_output(ctx, data, _format_profiles_human(profiles))
+    return data
+
+
+def handle_config_profile_apply(ctx: CliContext, args: argparse.Namespace) -> Dict[str, Any]:
+    """一键切换指定槽位到当前生效配置，响应中的配置一律脱敏。"""
+    from backend.config.profiles import ProfileError, normalize_slot_id
+
+    _validate_profile_target_flags(ctx)
+    slot_id = normalize_slot_id(str(getattr(args, "slot_id", "") or ""))
+    srv = None if ctx.config_file is not None else discover_live_server(ctx)
+    if srv is not None:
+        res = _profile_http_request(ctx, srv, "POST", f"/api/settings/profiles/{slot_id}/apply")
+        mode = "live_server"
+        srv_url = srv.url
+    else:
+        cm, store, _cfg_path = _resolve_offline_profile_store(ctx)
+        try:
+            res = store.apply_slot(cm, slot_id)
+        except ProfileError as exc:
+            _raise_cli_profile_error(exc)
+        mode = "disk"
+        srv_url = None
+
+    masked_cfg = _mask_config_payload(res.get("config") or {})
+    warnings = list(res.get("warnings") or [])
+    data = {
+        "persistence": mode,
+        "server_url": srv_url,
+        "applied_slot_id": res.get("applied_slot_id", slot_id),
+        "warnings": warnings,
+        "config": masked_cfg,
+        "profiles": res.get("profiles"),
+    }
+    warn_suffix = f"；提示: {'; '.join(warnings)}" if warnings else ""
+    emit_output(ctx, data, f"已一键切换到配置槽 {data['applied_slot_id']} ({mode}){warn_suffix}")
+    return data
+
+
+def handle_config_profile_save(ctx: CliContext, args: argparse.Namespace) -> Dict[str, Any]:
+    """将当前配置（或叠加 -o/--set 覆盖后的配置）存入用户自定义槽位。"""
+    from backend.config.profiles import ProfileError, normalize_slot_id
+
+    _validate_profile_target_flags(ctx)
+    slot_id = normalize_slot_id(str(getattr(args, "slot_id", "") or ""))
+    name = getattr(args, "name", None)
+    description = getattr(args, "description", None)
+    include_creds = bool(getattr(args, "include_credentials", False))
+    env_key = os.environ.get("LLM_API_KEY") or os.environ.get("MINIMAX_API_KEY") or ""
+
+    secrets = collect_known_secrets(ctx)
+    masked_overrides = [redact_secrets(item, secrets) for item in ctx.config_overrides]
+
+    srv = None if ctx.config_file is not None else discover_live_server(ctx)
+    if srv is not None:
+        body: Dict[str, Any] = {
+            "name": name,
+            "description": description,
+            "include_credentials": include_creds,
+        }
+        if ctx.config_overrides:
+            cur_srv_cfg = _profile_http_request(ctx, srv, "GET", "/api/settings")
+            _, merged_cfg, _ = apply_key_value_assignments(ctx.config_overrides, base_dict=cur_srv_cfg)
+            cfg_payload: Dict[str, Any] = {
+                "api": dict(merged_cfg.get("api") or {}),
+                "analysis": dict(merged_cfg.get("analysis") or {}),
+            }
+            if not include_creds:
+                cfg_payload["api"].pop("api_key", None)
+                cfg_payload["analysis"].pop("recheck_api_key", None)
+            elif env_key and str(cfg_payload["api"].get("api_key") or "") == env_key:
+                cfg_payload["api"].pop("api_key", None)
+            body["config"] = cfg_payload
+
+        res = _profile_http_request(ctx, srv, "PUT", f"/api/settings/profiles/{slot_id}", json_body=body)
+        mode = "live_server"
+        srv_url = srv.url
+    else:
+        cm, store, _cfg_path = _resolve_offline_profile_store(ctx)
+        raw_cfg: Optional[Dict[str, Any]] = None
+        if ctx.config_overrides:
+            cfg, _ = load_cli_config(ctx, require_valid=True)
+            cfg_dict = cfg.to_dict()
+            raw_cfg = {
+                "api": dict(cfg_dict.get("api") or {}),
+                "analysis": dict(cfg_dict.get("analysis") or {}),
+            }
+            if not include_creds:
+                raw_cfg["api"].pop("api_key", None)
+                raw_cfg["analysis"].pop("recheck_api_key", None)
+            elif env_key and str(raw_cfg["api"].get("api_key") or "") == env_key:
+                raw_cfg["api"].pop("api_key", None)
+        try:
+            res = store.save_user_slot(
+                cm,
+                slot_id,
+                name=name,
+                description=description,
+                include_credentials=include_creds,
+                raw_config=raw_cfg,
+            )
+        except ProfileError as exc:
+            _raise_cli_profile_error(exc)
+        mode = "disk"
+        srv_url = None
+
+    slot = res.get("slot") or {}
+    warnings = list(res.get("warnings") or [])
+    data = {
+        "persistence": mode,
+        "server_url": srv_url,
+        "overrides": masked_overrides,
+        "slot": slot,
+        "warnings": warnings,
+        "profiles": res.get("profiles"),
+    }
+    warn_suffix = f"；提示: {'; '.join(warnings)}" if warnings else ""
+    emit_output(ctx, data, f"已存入配置槽 {slot_id} ({slot.get('name', slot_id)}, {mode}){warn_suffix}")
+    return data
+
+
+def handle_config_profile_clear(ctx: CliContext, args: argparse.Namespace) -> Dict[str, Any]:
+    """清空指定用户自定义槽位。"""
+    from backend.config.profiles import ProfileError, normalize_slot_id
+
+    _validate_profile_target_flags(ctx)
+    slot_id = normalize_slot_id(str(getattr(args, "slot_id", "") or ""))
+    srv = None if ctx.config_file is not None else discover_live_server(ctx)
+    if srv is not None:
+        res = _profile_http_request(ctx, srv, "DELETE", f"/api/settings/profiles/{slot_id}")
+        mode = "live_server"
+        srv_url = srv.url
+    else:
+        cm, store, _cfg_path = _resolve_offline_profile_store(ctx)
+        try:
+            res = store.clear_user_slot(cm, slot_id)
+        except ProfileError as exc:
+            _raise_cli_profile_error(exc)
+        mode = "disk"
+        srv_url = None
+
+    data = {
+        "persistence": mode,
+        "server_url": srv_url,
+        "cleared": res.get("cleared", slot_id),
+        "profiles": res.get("profiles"),
+    }
+    emit_output(ctx, data, f"已清空配置槽 {data['cleared']} ({mode})")
     return data

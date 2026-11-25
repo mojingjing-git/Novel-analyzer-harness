@@ -91,6 +91,10 @@ python -m backend.cli [全局选项] <命令> [子命令与参数]
 | `config patch` | `--file PATH_OR_DASH` | 从 JSON 文件或 `-`（`stdin`）应用局部嵌套补丁；校验未知键并走 `PATCH /api/settings` 或原子写盘 |
 | `config reset` | `[KEYS ...] \| --all` `--include-credentials` | 将指定键或全量配置重置为默认值；`--all` 默认保留端点与密钥凭据，显式 `--include-credentials` 时一并清空 |
 | `config presets` | 无 | 列出内置 API 厂商预设（密钥字段脱敏） |
+| `config profile list` | 无 | 列出 6 个配置方案槽位（3 个内置通用预设 + 3 个用户自定义槽）及当前激活状态 |
+| `config profile apply SLOT` | `SLOT` | 一键切换指定槽位到当前配置（支持 `128k`/`256k`/`512k` 别名；响应配置字段自动脱敏） |
+| `config profile save SLOT` | `SLOT` `--name` `--description` `--include-credentials` | 将当前配置（可叠加 `-o/--set`）存入用户槽 `user_1..3`；在线叠加先拉取服务端配置再合成，环境变量密钥永不落盘 |
+| `config profile clear SLOT` | `SLOT` | 清空指定用户自定义槽位（`user_1..3`） |
 
 ## 并发锁与活体后端代理
 

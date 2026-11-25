@@ -7,9 +7,11 @@ PUT /api/settings — 覆盖保存配置
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from backend.api.auth import require_session_token
+from backend.config.profiles import ProfileError, ProfileStore
 from backend.config.settings import AppConfig, validate_settings_payload
 from backend.config.presets import API_PRESETS
 from backend.services.queue_service import get_service
@@ -25,6 +27,19 @@ class ModelPreviewRequest(BaseModel):
     # summary_model 复用同一 base_url/api_key，探测结果对其同样有效。
     model: Optional[str] = None
 
+
+class SaveProfileRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    include_credentials: bool = False
+    config: Optional[dict] = None
+
+
+def _raise_profile_error(exc: ProfileError) -> None:
+    detail = exc.details if exc.status_code == 422 and exc.details else exc.message
+    raise HTTPException(status_code=exc.status_code, detail=detail) from exc
+
+
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 
@@ -32,6 +47,60 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 async def get_presets() -> dict:
     """返回 API 预设列表"""
     return {"presets": API_PRESETS}
+
+
+@router.get("/profiles", dependencies=[Depends(require_session_token)])
+async def get_settings_profiles() -> dict:
+    """返回 6 个配置方案槽位（3 个内置通用预设 + 3 个用户自定义槽）与激活状态。"""
+    service = get_service()
+    try:
+        store = ProfileStore.for_config_manager(service.config_manager)
+        return store.list_profiles(service.config_manager)
+    except ProfileError as exc:
+        _raise_profile_error(exc)
+
+
+@router.put("/profiles/{slot_id}", dependencies=[Depends(require_session_token)])
+async def put_settings_profile(slot_id: str, req: SaveProfileRequest) -> dict:
+    """将当前配置（或提交配置载荷）存入指定用户自定义槽位（user_1/user_2/user_3）。"""
+    service = get_service()
+    try:
+        store = ProfileStore.for_config_manager(service.config_manager)
+        return store.save_user_slot(
+            service.config_manager,
+            slot_id,
+            name=req.name,
+            description=req.description,
+            include_credentials=req.include_credentials,
+            raw_config=req.config,
+        )
+    except ProfileError as exc:
+        _raise_profile_error(exc)
+
+
+@router.delete("/profiles/{slot_id}", dependencies=[Depends(require_session_token)])
+async def delete_settings_profile(slot_id: str) -> dict:
+    """清空指定用户自定义槽位。"""
+    service = get_service()
+    try:
+        store = ProfileStore.for_config_manager(service.config_manager)
+        return store.clear_user_slot(service.config_manager, slot_id)
+    except ProfileError as exc:
+        _raise_profile_error(exc)
+
+
+@router.post("/profiles/{slot_id}/apply", dependencies=[Depends(require_session_token)])
+async def apply_settings_profile(slot_id: str) -> dict:
+    """一键切换：将指定槽位应用到当前生效配置（运行中受并发写护栏保护）。"""
+    service = get_service()
+    conflict = _running_task_conflict(allow_during_analysis=False)
+    if conflict:
+        raise HTTPException(status_code=409, detail=conflict)
+    try:
+        store = ProfileStore.for_config_manager(service.config_manager)
+        return store.apply_slot(service.config_manager, slot_id)
+    except ProfileError as exc:
+        _raise_profile_error(exc)
 
 
 @router.get("/schema")

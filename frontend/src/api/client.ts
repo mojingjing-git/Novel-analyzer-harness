@@ -192,6 +192,79 @@ export interface ConfigSchemaDto {
   fields: ConfigFieldSchemaDto[]
 }
 
+export interface ConfigProfileSummaryDto {
+  base_url?: string
+  model: string
+  summary_model: string
+  recheck_model: string
+  block_size: number
+  concurrency: number
+  summary_concurrency: number
+  recheck_concurrency: number
+  summary_batch_size: number
+  recheck_version: string
+  recheck_v3_mode: string
+  recheck_v3_pool_max_chars: number
+  recheck_v3_batch_size: number
+  recheck_v3_max_hops: number
+  volume_compress_threshold: number
+}
+
+export interface ConfigProfileSlotDto {
+  id: string
+  kind: 'builtin' | 'user'
+  slot_index: number
+  name: string
+  description: string
+  badge: string
+  recommended: boolean
+  populated: boolean
+  is_active: boolean
+  matches_current: boolean
+  include_credentials: boolean
+  has_api_key: boolean
+  has_recheck_api_key: boolean
+  updated_at: string | null
+  summary: ConfigProfileSummaryDto | null
+  managed_field_count: number
+}
+
+export interface ConfigProfilesResponse {
+  active_slot_id: string | null
+  last_applied_slot_id: string | null
+  is_modified_from_last: boolean
+  store_corrupted: boolean
+  slots: ConfigProfileSlotDto[]
+}
+
+export interface SaveProfilePayload {
+  name?: string
+  description?: string
+  include_credentials?: boolean
+  config?: {
+    api: Record<string, unknown>
+    analysis: Record<string, unknown>
+  }
+}
+
+export interface SaveProfileResponse {
+  slot: ConfigProfileSlotDto
+  warnings: string[]
+  profiles: ConfigProfilesResponse
+}
+
+export interface ClearProfileResponse {
+  cleared: string
+  profiles: ConfigProfilesResponse
+}
+
+export interface ApplyProfileResponse {
+  applied_slot_id: string
+  config: AppConfigDto
+  warnings: string[]
+  profiles: ConfigProfilesResponse
+}
+
 export interface AppConfigDto {
   api: {
     base_url: string
@@ -701,6 +774,20 @@ export const api = {
     request<AppConfigDto>('/api/settings', { method: 'PATCH', body: JSON.stringify(patch) }),
   getPresets: () => request<{ presets: Record<string, { base_url: string; api_key: string; model: string }> }>('/api/settings/presets'),
   getSettingsSchema: () => request<ConfigSchemaDto>('/api/settings/schema'),
+  getSettingsProfiles: () => request<ConfigProfilesResponse>('/api/settings/profiles'),
+  saveSettingsProfile: (slotId: string, payload: SaveProfilePayload) =>
+    request<SaveProfileResponse>(`/api/settings/profiles/${seg(slotId)}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+  clearSettingsProfile: (slotId: string) =>
+    request<ClearProfileResponse>(`/api/settings/profiles/${seg(slotId)}`, {
+      method: 'DELETE',
+    }),
+  applySettingsProfile: (slotId: string) =>
+    request<ApplyProfileResponse>(`/api/settings/profiles/${seg(slotId)}/apply`, {
+      method: 'POST',
+    }),
   getModels: () => request<{ models: string[] }>('/api/settings/models'),
   previewModels: (params: { base_url?: string; api_key?: string; provider?: string }) =>
     request<{ models: string[] }>('/api/settings/preview/models', { method: 'POST', body: JSON.stringify(params) }),

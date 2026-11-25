@@ -268,3 +268,185 @@ def test_schema_resolve_spec_parse_cli_value_and_promoted_validation():
     assert ("body", "analysis", "recheck_v3_mode") in bad_locs
     assert ("body", "analysis", "recheck_v3_max_hops") in bad_locs
     assert ("body", "analysis", "volume_compress_ratio") in bad_locs
+
+
+def test_builtin_profiles_valid_and_preserve_endpoints_and_paths(tmp_path):
+    """3 个内置通用预设须通过全量校验、归位同域残留并绝不覆盖连接/模型/思考/分类/路径。"""
+    from backend.config.profiles import BUILTIN_PROFILES, BUILTIN_SLOT_IDS, ProfileStore
+
+    for slot_id in BUILTIN_SLOT_IDS:
+        assert validate_settings_payload(BUILTIN_PROFILES[slot_id]["patch"]) == []
+
+    cfg_path = tmp_path / "config.json"
+    mgr = ConfigManager(cfg_path)
+    seed = AppConfig.from_dict({
+        "working_directory": "D:\\books\\novel_a",
+        "workspace_dir": "custom_ws",
+        "knowledge_file": "custom_kb.json",
+        "gui": {"language": "en-US"},
+        "api": {
+            "base_url": "https://gateway.local:3425/v1",
+            "api_key": "sk-keep-main",
+            "model": "MiniMax-M3.1",
+            "summary_model": "gpt-6-luna",
+            "provider": "anthropic",
+            "json_mode": "deepseek",
+            "thinking_mode": {"reasoning_effort": "low"},
+            "summary_thinking_mode": {"thinking": {"type": "disabled"}},
+            "reasoning_effort": "low",
+            "streaming_enabled": False,
+        },
+        "analysis": {
+            "foreshadow_kept_categories": ["身份", "其他"],
+            "auto_archive": True,
+            "auto_summary": True,
+            "recheck_model": "codex/gpt-6-luna",
+            "recheck_base_url": "https://recheck.local/v1",
+            "recheck_api_key": "sk-keep-recheck",
+            "recheck_provider": "openai",
+            "recheck_json_mode": "qwen",
+            "recheck_reasoning_effort": "medium",
+            # 故意写入将被内置槽归位的策略/复检旧值
+            "recheck_max_tokens": 2048,
+            "recheck_v3_max_audit_windows": 9,
+            "volume_compress_group": 12,
+            "rolling_max_momentum": 3,
+            "recheck_v3_hop3_new_cap": 7,
+        },
+    })
+    assert mgr.save(seed) is True
+
+    store = ProfileStore.for_config_manager(mgr)
+    res = store.apply_slot(mgr, "256K")
+    assert res["applied_slot_id"] == "builtin_256k"
+    assert res["profiles"]["active_slot_id"] == "builtin_256k"
+    assert res["profiles"]["is_modified_from_last"] is False
+
+    after = AppConfig.from_dict(res["config"])
+    # 策略与上下文参数已切换到 256K 档并归位残留
+    assert after.analysis.block_size == 2
+    assert after.analysis.recheck_v3_pool_max_chars == 180000
+    assert after.analysis.recheck_max_tokens == 32768
+    assert after.analysis.recheck_v3_max_audit_windows == 0
+    assert after.analysis.volume_compress_group == 5
+    assert after.analysis.rolling_max_momentum == 15
+    assert after.analysis.recheck_v3_hop3_new_cap == 0
+
+    # 连接/密钥/模型/思考/分类/路径原样保留
+    assert after.api.base_url == "https://gateway.local:3425/v1"
+    assert after.api.api_key == "sk-keep-main"
+    assert after.api.model == "MiniMax-M3.1"
+    assert after.api.summary_model == "gpt-6-luna"
+    assert after.api.provider == "anthropic"
+    assert after.api.thinking_mode == {"reasoning_effort": "low"}
+    assert after.api.summary_thinking_mode == {"thinking": {"type": "disabled"}}
+    assert after.api.streaming_enabled is False
+    assert after.analysis.recheck_model == "codex/gpt-6-luna"
+    assert after.analysis.recheck_base_url == "https://recheck.local/v1"
+    assert after.analysis.recheck_api_key == "sk-keep-recheck"
+    assert after.analysis.foreshadow_kept_categories == ["身份", "其他"]
+    assert after.analysis.auto_archive is True
+    assert after.analysis.auto_summary is True
+    assert after.working_directory == "D:\\books\\novel_a"
+    assert after.workspace_dir == "custom_ws"
+    assert after.knowledge_file == "custom_kb.json"
+    assert after.gui.language == "en-US"
+
+    # 微调参数后 is_modified_from_last=True 且 active_slot_id=None
+    mgr.patch({"analysis": {"concurrency": 12}})
+    profiles_after_tweak = store.list_profiles(mgr)
+    assert profiles_after_tweak["active_slot_id"] is None
+    assert profiles_after_tweak["last_applied_slot_id"] == "builtin_256k"
+    assert profiles_after_tweak["is_modified_from_last"] is True
+
+
+def test_user_slots_security_cross_origin_env_key_and_corrupt_store(tmp_path, monkeypatch):
+    """覆盖用户槽凭据脱敏、跨端点孤儿复检 Key 清空、环境变量保护、bool/int 匹配与损坏文件护栏。"""
+    import pytest
+    from backend.config.profiles import ProfileError, ProfileStore
+
+    cfg_path = tmp_path / "config.json"
+    mgr = ConfigManager(cfg_path)
+    seed = AppConfig.from_dict({
+        "api": {
+            "base_url": "https://user:pass@slot1.example.com/v1?api_key=query_secret",
+            "api_key": "sk-slot1-main",
+            "model": "model-slot1",
+            "thinking_mode": {"enable_thinking": False},
+        },
+        "analysis": {
+            "concurrency": 6,
+            "recheck_base_url": "https://recheck-a.example.com/v1",
+            "recheck_api_key": "sk-slot1-recheck",
+        },
+    })
+    mgr.save(seed)
+    store = ProfileStore.for_config_manager(mgr)
+
+    # 1. include_credentials=False：剥离密钥 + URL 脱敏 + GET 不暴露凭据
+    saved = store.save_user_slot(mgr, "user_1", name="日常槽", description="双通道", include_credentials=False)
+    slot1 = saved["slot"]
+    assert slot1["has_api_key"] is False
+    assert slot1["has_recheck_api_key"] is False
+    assert slot1["summary"]["base_url"] == "https://slot1.example.com/v1"
+    assert "pass" not in json.dumps(saved, ensure_ascii=False)
+    assert "sk-slot1" not in json.dumps(saved, ensure_ascii=False)
+
+    # 2. 切到另一复检通道后应用 user_1（include_credentials=False）-> 清空孤儿 recheck_api_key 并提示主端点变化
+    mgr.patch({
+        "api": {"base_url": "https://other.example.com/v1", "api_key": "sk-other"},
+        "analysis": {
+            "recheck_base_url": "https://recheck-b.example.com/v1",
+            "recheck_api_key": "sk-orphan-b",
+        },
+    })
+    applied_u1 = store.apply_slot(mgr, "user_1")
+    assert applied_u1["config"]["analysis"]["recheck_api_key"] == ""
+    assert applied_u1["config"]["api"]["api_key"] == "sk-other"
+    assert len(applied_u1["warnings"]) == 2
+    assert applied_u1["profiles"]["active_slot_id"] == "user_1"
+
+    # bool vs int 严格区分：thinking_mode={enable_thinking: 0} 不能误匹配 False
+    mgr.patch({"api": {"thinking_mode": {"enable_thinking": 0}}})
+    assert store.list_profiles(mgr)["active_slot_id"] is None
+
+    # 3. 环境变量保护：LLM_API_KEY 生效时，include_credentials=True 不将其写入磁盘槽位
+    monkeypatch.setenv("LLM_API_KEY", "sk-env-secret")
+    saved_env = store.save_user_slot(mgr, "user_2", name="环境槽", include_credentials=True)
+    assert saved_env["slot"]["has_api_key"] is False
+    assert saved_env["warnings"]
+    disk_raw = json.loads(store.profiles_path.read_text(encoding="utf-8"))
+    assert "api_key" not in disk_raw["slots"]["user_2"]["patch"]["api"]
+
+    # 明确传入非环境变量密钥落盘，应用后仍以 _disk_api_key 维持 active_slot_id 稳定
+    custom_raw = AppConfig.from_dict({
+        "api": {"base_url": "https://slot3.example.com/v1", "api_key": "sk-explicit-disk", "model": "m3"},
+        "analysis": {"concurrency": 4},
+    }).to_dict()
+    store.save_user_slot(mgr, "user_3", name="独立密钥槽", include_credentials=True, raw_config=custom_raw)
+    applied_u3 = store.apply_slot(mgr, "user_3")
+    assert applied_u3["config"]["api"]["api_key"] == "sk-env-secret"
+    assert json.loads(cfg_path.read_text(encoding="utf-8"))["api"]["api_key"] == "sk-explicit-disk"
+    assert applied_u3["profiles"]["active_slot_id"] == "user_3"
+    assert store.list_profiles(mgr)["active_slot_id"] == "user_3"
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+
+    # 4. 清空槽位后清除 last_applied_slot_id
+    cleared = store.clear_user_slot(mgr, "user_3")
+    assert cleared["cleared"] == "user_3"
+    assert cleared["profiles"]["last_applied_slot_id"] is None
+
+    # 5. config_profiles.json 损坏保护：拒绝写入用户槽且不覆盖原文件，仍可应用内置槽
+    broken = '{"slots": '
+    store.profiles_path.write_text(broken, encoding="utf-8")
+    listed_broken = store.list_profiles(mgr)
+    assert listed_broken["store_corrupted"] is True
+    with pytest.raises(ProfileError) as exc_save:
+        store.save_user_slot(mgr, "user_1", name="覆写失败")
+    assert exc_save.value.status_code == 409
+    assert store.profiles_path.read_text(encoding="utf-8") == broken
+
+    res_builtin = store.apply_slot(mgr, "builtin_128k")
+    assert res_builtin["applied_slot_id"] == "builtin_128k"
+    assert res_builtin["profiles"]["store_corrupted"] is True
+    assert store.profiles_path.read_text(encoding="utf-8") == broken

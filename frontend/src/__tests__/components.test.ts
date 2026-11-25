@@ -14,7 +14,7 @@ vi.mock('../api/client', () => ({
   },
 }))
 
-import { api, type BookInfo } from '../api/client'
+import { api, type BookInfo, type ConfigProfilesResponse } from '../api/client'
 import DiscoveryFeed from '../components/DiscoveryFeed.vue'
 import LaneView from '../components/LaneView.vue'
 import RunDashboard, { type DiscoveryItem } from '../components/RunDashboard.vue'
@@ -22,6 +22,7 @@ import CountUp from '../components/CountUp.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import BookSelector from '../components/BookSelector.vue'
 import ChapterDetailPanel from '../components/ChapterDetailPanel.vue'
+import SettingsProfilesCard from '../components/settings/SettingsProfilesCard.vue'
 import { resetSelectedBookForTest } from '../composables/useSelectedBook'
 
 const mockedApi = vi.mocked(api)
@@ -418,5 +419,86 @@ describe('useLogStore', () => {
     expect(store.logs.value.some((l) => l.category === 'analysis')).toBe(false)
     store.clear()
     expect(window.localStorage.getItem(KEY)).toBeNull()
+  })
+})
+
+describe('SettingsProfilesCard', () => {
+  function mkSampleProfiles(): ConfigProfilesResponse {
+    const baseSummary = {
+      model: '', summary_model: '', recheck_model: '',
+      block_size: 2, concurrency: 8, summary_concurrency: 6, recheck_concurrency: 6,
+      summary_batch_size: 45, recheck_version: 'v3', recheck_v3_mode: 'wide',
+      recheck_v3_pool_max_chars: 180000, recheck_v3_batch_size: 20, recheck_v3_max_hops: 2,
+      volume_compress_threshold: 180000,
+    }
+    return {
+      active_slot_id: 'builtin_256k',
+      last_applied_slot_id: 'builtin_256k',
+      is_modified_from_last: false,
+      store_corrupted: false,
+      slots: [
+        { id: 'builtin_128k', kind: 'builtin', slot_index: 1, name: '128K 兼容保底', description: '128K', badge: '128K', recommended: false, populated: true, is_active: false, matches_current: false, include_credentials: false, has_api_key: false, has_recheck_api_key: false, updated_at: null, summary: { ...baseSummary, concurrency: 6, recheck_v3_pool_max_chars: 75000, recheck_v3_batch_size: 10 }, managed_field_count: 37 },
+        { id: 'builtin_256k', kind: 'builtin', slot_index: 2, name: '256K 甜点推荐', description: '256K', badge: '256K · 推荐', recommended: true, populated: true, is_active: true, matches_current: true, include_credentials: false, has_api_key: false, has_recheck_api_key: false, updated_at: null, summary: baseSummary, managed_field_count: 37 },
+        { id: 'builtin_512k', kind: 'builtin', slot_index: 3, name: '512K 超长巨著', description: '512K', badge: '512K', recommended: false, populated: true, is_active: false, matches_current: false, include_credentials: false, has_api_key: false, has_recheck_api_key: false, updated_at: null, summary: { ...baseSummary, concurrency: 10, recheck_v3_pool_max_chars: 360000, recheck_v3_batch_size: 32 }, managed_field_count: 37 },
+        { id: 'user_1', kind: 'user', slot_index: 4, name: '主力方案', description: 'M3.1', badge: '自定义 1', recommended: false, populated: true, is_active: false, matches_current: false, include_credentials: true, has_api_key: true, has_recheck_api_key: false, updated_at: '2026-11-25T05:00:00+08:00', summary: { ...baseSummary, base_url: 'https://api.test/v1', model: 'MiniMax-M3.1' }, managed_field_count: 120 },
+        { id: 'user_2', kind: 'user', slot_index: 5, name: '自定义槽 2', description: '', badge: '空槽 2', recommended: false, populated: false, is_active: false, matches_current: false, include_credentials: false, has_api_key: false, has_recheck_api_key: false, updated_at: null, summary: null, managed_field_count: 0 },
+        { id: 'user_3', kind: 'user', slot_index: 6, name: '自定义槽 3', description: '', badge: '空槽 3', recommended: false, populated: false, is_active: false, matches_current: false, include_credentials: false, has_api_key: false, has_recheck_api_key: false, updated_at: null, summary: null, managed_field_count: 0 },
+      ],
+    }
+  }
+
+  it('渲染 6 槽（3 内置 + 3 用户）、无 role="status"/select/保存按钮，并支持存入弹窗与 Escape 关闭', async () => {
+    const wrapper = mount(SettingsProfilesCard, {
+      attachTo: document.body,
+      props: {
+        profiles: mkSampleProfiles(),
+        busy: false,
+        hasUnsavedChanges: false,
+        notice: '',
+        warnings: [],
+        error: '',
+        saveModalError: '',
+      },
+    })
+
+    expect(wrapper.findAll('[data-profile-slot]')).toHaveLength(6)
+    expect(wrapper.find('[role="status"]').exists()).toBe(false)
+    expect(wrapper.find('select').exists()).toBe(false)
+    expect(wrapper.findAll('button').some((b) => b.text().includes('保存'))).toBe(false)
+    expect(wrapper.get('[data-profile-apply="builtin_256k"]').text()).toBe('已生效')
+    expect((wrapper.get('[data-profile-apply="builtin_256k"]').element as HTMLButtonElement).disabled).toBe(true)
+
+    // 打开空槽 user_2 存入弹窗
+    const saveBtn = wrapper.get<HTMLButtonElement>('[data-profile-save="user_2"]')
+    saveBtn.element.focus()
+    await saveBtn.trigger('click')
+    await nextTick()
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(true)
+
+    // Escape 关闭并归还焦点
+    await wrapper.get('[role="dialog"]').trigger('keydown', { key: 'Escape' })
+    await nextTick()
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(document.activeElement).toBe(saveBtn.element)
+
+    // 重新打开并提交表单 -> emit('save')
+    await saveBtn.trigger('click')
+    await nextTick()
+    await wrapper.get<HTMLInputElement>('#profile-slot-name').setValue('新方案')
+    await wrapper.get<HTMLInputElement>('#profile-slot-desc').setValue('用于长篇测试')
+    await wrapper.get('form[role="dialog"]').trigger('submit')
+    expect(wrapper.emitted('save')?.[0]).toEqual([{
+      slotId: 'user_2',
+      name: '新方案',
+      description: '用于长篇测试',
+      include_credentials: false,
+    }])
+
+    // 后端返回校验错误时保持弹窗可见并展示 saveModalError
+    await wrapper.setProps({ saveModalError: '校验未通过' })
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(true)
+    expect(wrapper.get('[role="dialog"]').text()).toContain('校验未通过')
+
+    wrapper.unmount()
   })
 })

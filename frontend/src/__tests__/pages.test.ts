@@ -65,6 +65,10 @@ vi.mock('../api/client', () => ({
     patchSettings: vi.fn(),
     getPresets: vi.fn(),
     getSettingsSchema: vi.fn().mockResolvedValue(null),
+    getSettingsProfiles: vi.fn(),
+    saveSettingsProfile: vi.fn(),
+    clearSettingsProfile: vi.fn(),
+    applySettingsProfile: vi.fn(),
     getForeshadowCategories: vi.fn(),
     previewModels: vi.fn(),
     getModels: vi.fn().mockResolvedValue({ models: ['m-a'] }),
@@ -107,7 +111,7 @@ vi.mock('../api/client', () => ({
   },
 }))
 
-import { api, type AnalysisStatus, type AppConfigDto, type QueueItemDto } from '../api/client'
+import { api, type AnalysisStatus, type AppConfigDto, type ConfigProfilesResponse, type QueueItemDto } from '../api/client'
 import { useProgressSocket, type ProgressMessage } from '../api/useProgressSocket'
 import QueuePage from '../pages/QueuePage.vue'
 import SettingsPage from '../pages/SettingsPage.vue'
@@ -128,6 +132,30 @@ import { resetSelectedBookForTest } from '../composables/useSelectedBook'
 
 const mockedApi = vi.mocked(api)
 const settle = () => vi.advanceTimersByTimeAsync(0)
+
+function mkProfiles(activeId: string | null = null): ConfigProfilesResponse {
+  const sum = {
+    model: '', summary_model: '', recheck_model: '',
+    block_size: 2, concurrency: 8, summary_concurrency: 6, recheck_concurrency: 6,
+    summary_batch_size: 45, recheck_version: 'v3', recheck_v3_mode: 'wide',
+    recheck_v3_pool_max_chars: 180000, recheck_v3_batch_size: 20, recheck_v3_max_hops: 2,
+    volume_compress_threshold: 180000,
+  }
+  return {
+    active_slot_id: activeId,
+    last_applied_slot_id: activeId,
+    is_modified_from_last: false,
+    store_corrupted: false,
+    slots: [
+      { id: 'builtin_128k', kind: 'builtin', slot_index: 1, name: '128K 兼容保底', description: '128K', badge: '128K', recommended: false, populated: true, is_active: activeId === 'builtin_128k', matches_current: activeId === 'builtin_128k', include_credentials: false, has_api_key: false, has_recheck_api_key: false, updated_at: null, summary: { ...sum, concurrency: 6, recheck_v3_pool_max_chars: 75000, recheck_v3_batch_size: 10 }, managed_field_count: 37 },
+      { id: 'builtin_256k', kind: 'builtin', slot_index: 2, name: '256K 甜点推荐', description: '256K', badge: '256K · 推荐', recommended: true, populated: true, is_active: activeId === 'builtin_256k', matches_current: activeId === 'builtin_256k', include_credentials: false, has_api_key: false, has_recheck_api_key: false, updated_at: null, summary: sum, managed_field_count: 37 },
+      { id: 'builtin_512k', kind: 'builtin', slot_index: 3, name: '512K 超长巨著', description: '512K', badge: '512K', recommended: false, populated: true, is_active: activeId === 'builtin_512k', matches_current: activeId === 'builtin_512k', include_credentials: false, has_api_key: false, has_recheck_api_key: false, updated_at: null, summary: { ...sum, concurrency: 10, recheck_v3_pool_max_chars: 360000, recheck_v3_batch_size: 32 }, managed_field_count: 37 },
+      { id: 'user_1', kind: 'user', slot_index: 4, name: '自定义槽 1', description: '', badge: '空槽 1', recommended: false, populated: false, is_active: false, matches_current: false, include_credentials: false, has_api_key: false, has_recheck_api_key: false, updated_at: null, summary: null, managed_field_count: 0 },
+      { id: 'user_2', kind: 'user', slot_index: 5, name: '自定义槽 2', description: '', badge: '空槽 2', recommended: false, populated: false, is_active: false, matches_current: false, include_credentials: false, has_api_key: false, has_recheck_api_key: false, updated_at: null, summary: null, managed_field_count: 0 },
+      { id: 'user_3', kind: 'user', slot_index: 6, name: '自定义槽 3', description: '', badge: '空槽 3', recommended: false, populated: false, is_active: false, matches_current: false, include_credentials: false, has_api_key: false, has_recheck_api_key: false, updated_at: null, summary: null, managed_field_count: 0 },
+    ],
+  }
+}
 
 function mkCfg(): AppConfigDto {
   return {
@@ -197,6 +225,22 @@ beforeEach(() => {
   mockedApi.getSettings.mockResolvedValue(mkCfg())
   mockedApi.putSettings.mockResolvedValue(mkCfg())
   mockedApi.patchSettings.mockResolvedValue(mkCfg())
+  mockedApi.getSettingsProfiles.mockResolvedValue(mkProfiles())
+  mockedApi.saveSettingsProfile.mockResolvedValue({
+    slot: mkProfiles().slots[3],
+    warnings: [],
+    profiles: mkProfiles(),
+  })
+  mockedApi.clearSettingsProfile.mockResolvedValue({
+    cleared: 'user_1',
+    profiles: mkProfiles(),
+  })
+  mockedApi.applySettingsProfile.mockResolvedValue({
+    applied_slot_id: 'builtin_256k',
+    config: mkCfg(),
+    warnings: [],
+    profiles: mkProfiles('builtin_256k'),
+  })
   mockedApi.getPresets.mockResolvedValue({
     presets: {
       厂商A: { base_url: 'https://a/v1', model: 'model-a', api_key: 'sk-a' },
@@ -680,6 +724,95 @@ describe('SettingsPage', () => {
 
     expect(searchInput.element.value).toBe('')
     expect(wrapper.get('[data-field-input="analysis.recheck_v3_pool_max_chars"]').classes()).toContain('input-invalid')
+    wrapper.unmount()
+  })
+
+  it('SettingsPage：6 槽一键切换同步表单、未保存草稿二次确认、保留空串存入用户槽、清空确认与 409 冲突展示', async () => {
+    const wrapper = mount(SettingsPage, { global: { directives: { tooltip: {} } } })
+    await settle()
+
+    // 1. 直接一键切换内置 256K 槽 -> 同步更新表单与 savedSnapshot（不产生未保存提示）
+    const nextCfg = mkCfg()
+    nextCfg.analysis.concurrency = 8
+    nextCfg.analysis.block_size = 2
+    nextCfg.analysis.recheck_base_url = 'https://recheck.test/v1'
+    mockedApi.applySettingsProfile.mockResolvedValueOnce({
+      applied_slot_id: 'builtin_256k',
+      config: nextCfg,
+      warnings: ['请检查复检参数'],
+      profiles: mkProfiles('builtin_256k'),
+    })
+    await wrapper.get('[data-profile-apply="builtin_256k"]').trigger('click')
+    await settle()
+    expect(mockedApi.applySettingsProfile).toHaveBeenCalledWith('builtin_256k')
+    expect(wrapper.text()).not.toContain('有未保存的修改')
+    expect(wrapper.text()).toContain('请检查复检参数')
+
+    // 2. 表单有未保存修改后点击切槽 -> 弹出 ConfirmDialog 确认才提交
+    const baseInput = wrapper.findAll('input').find((el) => (el.element as HTMLInputElement).value === 'https://x')!
+    await baseInput.setValue('')
+    await nextTick()
+    expect(wrapper.text()).toContain('有未保存的修改')
+
+    await wrapper.get('[data-profile-apply="builtin_128k"]').trigger('click')
+    await nextTick()
+    expect(wrapper.findComponent(ConfirmDialog).exists()).toBe(true)
+
+    // 先取消，确认后再打开存入弹窗验证保留空串 base_url=""
+    await wrapper.findComponent(ConfirmDialog).vm.$emit('cancel')
+    await nextTick()
+    expect(mockedApi.applySettingsProfile).toHaveBeenCalledTimes(1)
+
+    const u1Prof = mkProfiles('builtin_256k')
+    u1Prof.slots[3] = {
+      ...u1Prof.slots[3],
+      name: '空地址自定义槽',
+      badge: '自定义 1',
+      populated: true,
+      updated_at: '2026-11-25T05:10:00+08:00',
+      summary: {
+        model: 'm-a', summary_model: '', recheck_model: '',
+        block_size: 2, concurrency: 8, summary_concurrency: 2, recheck_concurrency: 0,
+        summary_batch_size: 30, recheck_version: 'v3', recheck_v3_mode: 'auto',
+        recheck_v3_pool_max_chars: 0, recheck_v3_batch_size: 0, recheck_v3_max_hops: 3,
+        volume_compress_threshold: 1, base_url: '',
+      },
+    }
+    mockedApi.saveSettingsProfile.mockResolvedValueOnce({
+      slot: u1Prof.slots[3],
+      warnings: [],
+      profiles: u1Prof,
+    })
+
+    await wrapper.get('[data-profile-save="user_1"]').trigger('click')
+    await nextTick()
+    await wrapper.get<HTMLInputElement>('#profile-slot-name').setValue('空地址自定义槽')
+    await wrapper.get('form[role="dialog"]').trigger('submit')
+    await settle()
+    expect(mockedApi.saveSettingsProfile).toHaveBeenCalledWith(
+      'user_1',
+      expect.objectContaining({
+        name: '空地址自定义槽',
+        include_credentials: false,
+        config: expect.objectContaining({
+          api: expect.objectContaining({ base_url: '' }),
+        }),
+      }),
+    )
+
+    // 3. 清空 user_1 经 ConfirmDialog 确认；409 冲突展示错误
+    await wrapper.get('[data-profile-clear="user_1"]').trigger('click')
+    await nextTick()
+    await wrapper.findComponent(ConfirmDialog).vm.$emit('confirm')
+    await settle()
+    expect(mockedApi.clearSettingsProfile).toHaveBeenCalledWith('user_1')
+
+    mockedApi.applySettingsProfile.mockRejectedValueOnce(Object.assign(new Error('分析运行中，不能修改配置'), { status: 409 }))
+    await wrapper.get('[data-profile-apply="builtin_128k"]').trigger('click')
+    await nextTick()
+    await wrapper.findComponent(ConfirmDialog).vm.$emit('confirm')
+    await settle()
+    expect(wrapper.text()).toContain('分析运行中，不能修改配置')
     wrapper.unmount()
   })
 })

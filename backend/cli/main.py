@@ -29,6 +29,10 @@ from .cmd_pipeline import (
     handle_config_health,
     handle_config_patch,
     handle_config_presets,
+    handle_config_profile_apply,
+    handle_config_profile_clear,
+    handle_config_profile_list,
+    handle_config_profile_save,
     handle_config_reset,
     handle_config_schema,
     handle_config_set,
@@ -261,6 +265,27 @@ def _register_pipeline_and_config_parsers(subparsers: argparse._SubParsersAction
 
     p_cpresets = c_sub.add_parser("presets", parents=[common], help="列出内置 API 厂商预设")
     p_cpresets.set_defaults(handler=handle_config_presets)
+
+    p_cprof = c_sub.add_parser("profile", parents=[common], help="配置方案槽位管理（3 内置预设 + 3 自定义槽）")
+    p_sub = p_cprof.add_subparsers(dest="profile_cmd", parser_class=CliArgumentParser)
+
+    p_plist = p_sub.add_parser("list", parents=[common], help="列出 6 个配置方案槽位及当前激活状态")
+    p_plist.set_defaults(handler=handle_config_profile_list)
+
+    p_papply = p_sub.add_parser("apply", parents=[common], help="一键切换指定槽位到当前生效配置（支持 128k/256k/512k 别名）")
+    p_papply.add_argument("slot_id", help="目标槽位（builtin_128k/builtin_256k/builtin_512k 或 128k/256k/512k 或 user_1..3）")
+    p_papply.set_defaults(handler=handle_config_profile_apply)
+
+    p_psave = p_sub.add_parser("save", parents=[common], help="将当前配置存入指定用户自定义槽位（user_1..3）")
+    p_psave.add_argument("slot_id", help="目标用户槽位（user_1 / user_2 / user_3）")
+    p_psave.add_argument("--name", default=None, help="自定义方案名称（最多 40 字）")
+    p_psave.add_argument("--description", default=None, help="方案说明（最多 160 字）")
+    p_psave.add_argument("--include-credentials", action="store_true", help="一并存入本地主/复检 API Key（环境变量密钥除外）")
+    p_psave.set_defaults(handler=handle_config_profile_save)
+
+    p_pclear = p_sub.add_parser("clear", parents=[common], help="清空指定用户自定义槽位")
+    p_pclear.add_argument("slot_id", help="目标用户槽位（user_1 / user_2 / user_3）")
+    p_pclear.set_defaults(handler=handle_config_profile_clear)
 
 
 def build_parser() -> CliArgumentParser:

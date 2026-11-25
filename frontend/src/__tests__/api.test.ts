@@ -111,6 +111,28 @@ describe('api client', () => {
     expect((init.headers as Record<string, string>)['X-Session-Token']).toBe('sec-token')
     expect(JSON.parse(init.body as string)).toEqual({ action: 'confirm_resolved', resolved_chapter: 18 })
   })
+
+  it('settings profiles 4 个方法编码槽位路径、方法与 X-Session-Token', async () => {
+    __setSessionTokenForTests('prof-tok')
+    fetchMock.mockResolvedValue(jsonResponse({ active_slot_id: null, last_applied_slot_id: null, is_modified_from_last: false, store_corrupted: false, slots: [] }))
+
+    await api.getSettingsProfiles()
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/settings/profiles')
+    expect((fetchMock.mock.calls[0][1].headers as Record<string, string>)['X-Session-Token']).toBe('prof-tok')
+
+    await api.saveSettingsProfile('user/1', { name: '测试', include_credentials: false })
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/settings/profiles/user%2F1')
+    expect(fetchMock.mock.calls[1][1].method).toBe('PUT')
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body as string)).toEqual({ name: '测试', include_credentials: false })
+
+    await api.applySettingsProfile('builtin_256k')
+    expect(fetchMock.mock.calls[2][0]).toBe('/api/settings/profiles/builtin_256k/apply')
+    expect(fetchMock.mock.calls[2][1].method).toBe('POST')
+
+    await api.clearSettingsProfile('user_1')
+    expect(fetchMock.mock.calls[3][0]).toBe('/api/settings/profiles/user_1')
+    expect(fetchMock.mock.calls[3][1].method).toBe('DELETE')
+  })
 })
 
 describe('useProgressSocket', () => {

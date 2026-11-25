@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { api, type AppConfigDto, type ModelSpecDto } from '../../api/client'
 import {
   THINKING_DEPTH_PRESETS,
@@ -119,6 +119,14 @@ const recheckModelFilter = ref('')
 const recheckModelBoxRef = ref<HTMLElement | null>(null)
 const recheckModelsBusy = ref(false)
 const recheckModelsError = ref('')
+
+watch(
+  [() => props.config.analysis.recheck_base_url, () => props.config.api.base_url],
+  () => {
+    recheckModels.value = []
+    recheckModelsError.value = ''
+  },
+)
 
 const recheckModelSourceList = computed(() => {
   if (recheckModels.value.length > 0) return recheckModels.value
