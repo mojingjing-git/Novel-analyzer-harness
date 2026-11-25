@@ -4,7 +4,9 @@
 （端口选择、静态挂载、session token、单实例锁）——这些恰好只在打包后才出错。
 """
 import json
+import shutil
 import subprocess
+import tempfile
 import time
 import urllib.request
 from pathlib import Path
@@ -33,11 +35,14 @@ def main() -> int:
     if not EXE.is_file():
         print("FAIL 没有打包产物")
         return 1
-    log = EXE.parent / "analyzer.log"
-    if log.is_file():
-        log.unlink()
 
-    proc = subprocess.Popen([str(EXE)], cwd=str(EXE.parent),
+    stage_dir = Path(tempfile.mkdtemp(prefix="novel_smoke_"))
+    staged_exe = stage_dir / EXE.name
+    shutil.copyfile(EXE, staged_exe)
+    log = stage_dir / "analyzer.log"
+    crash_log = stage_dir / "crash.log"
+
+    proc = subprocess.Popen([str(staged_exe)], cwd=str(stage_dir),
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     checks = []
     try:
@@ -84,6 +89,19 @@ def main() -> int:
                            "books=" + repr(payload)))
         except Exception as exc:
             checks.append(("空工作区 /api/books 返回 0 本书（list 且不报错）", False, repr(exc)))
+
+        log_text = log.read_text(encoding="utf-8", errors="replace") if log.is_file() else ""
+        scan_ok = (
+            "启动期工作区扫描失败" not in log_text
+            and "ModuleNotFoundError" not in log_text
+        )
+        checks.append(("analyzer.log 无工作区扫描失败或缺失模块报错", scan_ok,
+                       "clean" if scan_ok else "found startup error in analyzer.log"))
+
+        crash_text = crash_log.read_text(encoding="utf-8", errors="replace") if crash_log.is_file() else ""
+        crash_clean = ("Traceback" not in crash_text) and ("[ERROR]" not in crash_text)
+        checks.append(("crash.log 无 Traceback 或 [ERROR]", crash_clean,
+                       "clean" if crash_clean else "found error in crash.log"))
     finally:
         proc.terminate()
         try:
@@ -91,6 +109,8 @@ def main() -> int:
         except subprocess.TimeoutExpired:
             proc.kill()
         subprocess.run(["taskkill", "/F", "/IM", "novel-analyzer.exe"], capture_output=True)
+        time.sleep(0.5)
+        shutil.rmtree(stage_dir, ignore_errors=True)
     return _report(checks)
 
 

@@ -198,3 +198,18 @@ async def test_queue_pauses_on_account_breaker(tmp_path, monkeypatch):
     assert summary_calls == []
     assert state_events[-1][0] == WSState.STOPPED
     assert "账户熔断停队" in state_events[-1][1]
+
+
+def test_scan_directory_finds_books(tmp_path):
+    """QueueManager.scan_directory 能正确识别含 blocks/*.txt 的书目目录。"""
+    book_blocks = tmp_path / "测试书" / "blocks"
+    book_blocks.mkdir(parents=True)
+    (book_blocks / "0001.txt").write_text("第一章内容", encoding="utf-8")
+    (book_blocks / "0002.txt").write_text("第二章内容", encoding="utf-8")
+    (tmp_path / "无关目录").mkdir()
+
+    found = QueueManager().scan_directory(tmp_path)
+
+    assert len(found) == 1
+    assert found[0].name == "测试书"
+    assert found[0].total_chapters == 2
