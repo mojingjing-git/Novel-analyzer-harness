@@ -210,7 +210,7 @@ U3_DETECTIVE_PROMPT = """你是零人工长篇小说伏笔深度核查侦探。�
   "verdict": "RESOLVED_EXPLICIT|RESOLVED_IMPLICIT|PARTIALLY_RESOLVED|UNRESOLVED",
   "unresolved_type": "",
   "confidence": "high|medium|low",
-  "answer": "仅陈述所给原文逐字引文能直接证实的答案",
+  "answer": "仅陈述所给原文逐字引文能直接证实的答案（若提及章号，必须使用全书顺序章号即对应 unit_id，禁止使用卷内重排标题章号）",
   "evidence_chain": [{{"unit_id": 12, "quote": "逐字连续原句>=6字", "role": "payoff"}}],
   "follow_up": {{"keyword_queries": ["词1"], "unit_ranges": [[10, 14]], "reason": "需要追查什么"}}
 }}]
@@ -243,7 +243,7 @@ U4_AUDITOR_PROMPT = """你是长篇小说终审总编辑，负责对 {count} 条
   "fs_id": "fs_xxx",
   "verdict": "RESOLVED_EXPLICIT|RESOLVED_IMPLICIT|PARTIALLY_RESOLVED|UNRESOLVED",
   "unresolved_type": "",
-  "answer": "经四防核验及外科裁剪后的干净确切结论",
+  "answer": "经四防核验及外科裁剪后的干净确切结论（若提及章号，必须使用全书顺序章号即对应 unit_id，禁止使用卷内重排标题章号）",
   "evidence_chain": [{{"unit_id": 12, "quote": "逐字连续原句>=6字", "role": "payoff"}}]
 }}]
 """
@@ -260,7 +260,7 @@ U5_QUOTE_REPAIR_PROMPT = """确定性原文校验未能在所给正文单元中�
 {bundle_text}
 
 输出单个纯 JSON 对象：
-{{"fs_id": "{fs_id}", "verdict": "{verdict}", "unresolved_type": "", "answer": "...", "evidence_chain": [{{"unit_id": 12, "quote": "逐字连续原句", "role": "payoff"}}]}}
+{{"fs_id": "{fs_id}", "verdict": "{verdict}", "unresolved_type": "", "answer": "...（若提及章号，必须使用全书顺序章号即对应 unit_id，禁止使用卷内重排标题章号）", "evidence_chain": [{{"unit_id": 12, "quote": "逐字连续原句", "role": "payoff"}}]}}
 """
 
 U3_POOL_SINGLE_STAGE_PROMPT = """你是零人工长篇小说伏笔深度核查侦探兼终审总编辑。本批共核查 {count} 条伏笔，下方先给出按章节单元去重合并的【共享正文证据池】（每段明确标注 `【正篇】` 或 `【番外/外传篇】`），随后逐条给出每条伏笔的题卡与各自专属推荐单元。
@@ -293,7 +293,7 @@ U3_POOL_SINGLE_STAGE_PROMPT = """你是零人工长篇小说伏笔深度核查�
   "verdict": "RESOLVED_EXPLICIT|RESOLVED_IMPLICIT|PARTIALLY_RESOLVED|UNRESOLVED",
   "unresolved_type": "",
   "confidence": "high|medium|low",
-  "answer": "经四防核验与裁剪后的干净确切结论",
+  "answer": "经四防核验与裁剪后的干净确切结论（若提及章号，必须使用全书顺序章号即对应 unit_id，禁止使用卷内重排标题章号）",
   "evidence_chain": [{{"unit_id": 12, "quote": "逐字连续原句>=6字", "role": "payoff"}}],
   "follow_up": null
 }}]
@@ -321,7 +321,7 @@ U4_POOL_AUDITOR_PROMPT = """你是长篇小说终审总编辑，负责对 {count
   "fs_id": "fs_xxx",
   "verdict": "RESOLVED_EXPLICIT|RESOLVED_IMPLICIT|PARTIALLY_RESOLVED|UNRESOLVED",
   "unresolved_type": "",
-  "answer": "经四防核验及外科裁剪后的干净确切结论",
+  "answer": "经四防核验及外科裁剪后的干净确切结论（若提及章号，必须使用全书顺序章号即对应 unit_id，禁止使用卷内重排标题章号）",
   "evidence_chain": [{{"unit_id": 12, "quote": "逐字连续原句>=6字", "role": "payoff"}}]
 }}]
 """

@@ -15,6 +15,7 @@ from backend.core.text_units import (
     find_literal,
     load_blocks_as_files,
     locate_in_units,
+    locate_with_mode,
     unit_label,
 )
 from backend.models.analysis_result import AnalysisResult, is_single_chapter_result_dict
@@ -170,6 +171,21 @@ def test_text_units_location_and_labels(tmp_path):
         (tmp_path / name).write_text("内容", encoding="utf-8")
     loaded, excluded = load_blocks_as_files(tmp_path)
     assert sorted(loaded) == [1, 2] and excluded == ["split_report.txt"]
+
+    # 分卷重排书在候选范围内多章命中时，优先按全局 anchor_round in hits 消歧
+    reset_units = {
+        287: "第三十七章 第一节\n相同线索句。",
+        289: "第三十九章 第三节\n相同线索句。",
+    }
+    reset_labels = build_display_labels(reset_units)
+    hit = locate_with_mode(
+        reset_units,
+        "相同线索句。",
+        candidate_range=(286, 290),
+        display_labels=reset_labels,
+        anchor_round=289,
+    )
+    assert hit.unit == 289 and hit.mode == "range"
 
 
 # ---------------------------------------------------------------------------

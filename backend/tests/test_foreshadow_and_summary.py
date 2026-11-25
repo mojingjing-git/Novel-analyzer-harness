@@ -1000,3 +1000,16 @@ def test_promoted_summary_style_dormant_and_atlas_tunables(tmp_path):
     compressed = runner._compress_volume_summaries(["A" * 200, "B" * 200, "C" * 200])
     assert ("B" * 60) in compressed
     assert ("B" * 61) not in compressed
+
+
+def test_display_chapter_returns_global_unit_and_final_prompt_constraints():
+    """_display_chapter 恒返回全书全局单元序号；FINAL_SYSTEM_PROMPT 包含全书章号与规范中文约束。"""
+    from backend.services.final_summary.prompts import FINAL_SYSTEM_PROMPT
+    from backend.services.recheck_v2 import _display_chapter
+
+    labels = {289: "第 39 回"}
+    assert _display_chapter(289, labels, fallback=259, noun="文件") == 289
+    assert _display_chapter(0, labels, fallback=259, noun="文件") == 259
+    assert "全书顺序章号" in FINAL_SYSTEM_PROMPT
+    assert "规范简体中文" in FINAL_SYSTEM_PROMPT
+    assert "fs_663" in FINAL_SYSTEM_PROMPT

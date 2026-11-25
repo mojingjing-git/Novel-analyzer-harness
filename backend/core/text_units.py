@@ -169,6 +169,8 @@ def locate_with_mode(
             if len(hits) == 1:
                 return LocateHit(hits[0], find_literal(units[hits[0]], q), "range")
             if anchor_round:
+                if anchor_round in hits:
+                    return LocateHit(anchor_round, find_literal(units[anchor_round], q), "range")
                 for k in hits:
                     disp = (display_labels or {}).get(k) or ""
                     if disp.replace("第", "").replace("回", "").strip() == str(anchor_round):

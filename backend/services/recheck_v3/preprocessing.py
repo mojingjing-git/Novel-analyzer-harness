@@ -317,12 +317,13 @@ def _disambiguate_chapter_to_units(
         return []
     if num <= 0:
         return []
+    # 全局序号有效且严格位于设问之后时直接短路返回，避免分卷重排书把同名卷内号一并加入噪声
+    if num in chapters and num > after_unit:
+        return [num]
     out: list[int] = []
     for u in label_num_to_units.get(num, []):
         if u > after_unit and u not in out:
             out.append(u)
-    if num in chapters and num > after_unit and num not in out:
-        out.append(num)
     return out
 
 

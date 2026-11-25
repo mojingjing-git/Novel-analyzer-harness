@@ -119,11 +119,9 @@ class RecheckOutcome:
     retried_batches: int = 0
     #: 抛异常的批次数（它们的候选会落到 not_checked，不静默算通过）
     failed_batches: int = 0
-    #: 锚点章号被修正过的条目（记录下来的章号 → 引文真正所在章）。
-    #: 章号只是提示：书里同一个章号可能重复出现，采集记的那一份未必是引文所在。
+    #: 锚点章号被修正过的条目（记录下来的全局单元章号 → 引文真正所在章）。
     resolved_chapters: dict[str, int] = field(default_factory=dict)
-    #: 被修正的条目的**物理单元键**（2.0 里是文件序号）。与 resolved_chapters 分开：
-    #: 后者是文学章号语义（可写进账本），前者是检索单元语义（不能混进章号字段）。
+    #: 被修正的条目的物理单元键（全书连续单元序号，与 resolved_chapters 采用统一全局章号口径）。
     resolved_units: dict[str, int] = field(default_factory=dict)
     #: 逐条定位诊断：candidate_id -> {unit, mode, source_chapter, range, low_confidence}。
     #: 与 verdicts 分开存——**没进入候选的条目（掉队条目）也要有定位记录**，
@@ -223,29 +221,15 @@ def _display_chapter(
     *,
     noun: str = "章",
 ) -> int:
-    """单元键 → **文学章号**（写进账本的必须是章号，不能是文件序号）。
+    """单元键 → 全书全局章号（与 ``first_seen_chapter``、``anchor_chapter`` 同坐标系）。
 
-    2.0 的单元键是物理文件序号（1..922），而账本的 ``resolved_chapter``、
-    ``first_seen_chapter`` 以及休眠跨度计算都是**章号语义**——把 366 写进
-    ``resolved_chapter`` 会让"在第几章回收"整体错位。
-
-    - ``noun="章"``（1.x）：单元键**就是**章号，原样返回；
-    - ``noun="文件"``（2.0）：章号来自文件内解析出的回号；解析不出就退回采集侧
-      记的 ``anchor_chapter``，再不行是 0（未知）。**任何情况下都不写文件序号**。
+    当 ``unit > 0`` 时直接返回 ``int(unit)``，避免按分卷重排的标题回号覆盖写回
+    ``resolved_chapter``；仅在 ``unit <= 0`` 时退回 ``fallback``（或 ``0``）。
     """
-    if noun != "文件":
-        return int(unit)
-    disp = (display_labels or {}).get(unit)
-    if disp:
-        digits = disp.replace("第", "").replace("回", "").strip()
-        try:
-            from backend.core.chapter_split import cn_to_int
-
-            parsed = cn_to_int(digits)
-        except Exception:  # pragma: no cover - 解析失败就走回退
-            parsed = None
-        if parsed:
-            return parsed
+    _ = (display_labels, noun)
+    unit_int = int(unit or 0)
+    if unit_int > 0:
+        return unit_int
     return int(fallback or 0)
 
 
@@ -958,12 +942,10 @@ def _apply_state(
 ) -> None:
     """把实体级结论写回账本条目。**只有 AUTO_RESOLVED 才置 resolved。**
 
-    `resolved_chapter` 取**引文所在章**，不是埋设章：一条伏笔在第 12 章埋、在第 900 章收，
-    写回埋设章等于把"什么时候解决的"记错，而且账面看不出来。
+    `resolved_chapter` 取**引文所在全局章号**，不是埋设章：与 `first_seen_chapter`、
+    `anchor_chapter`、`evidence_chapters` 保持同一全书顺序坐标系。
 
-    `chapter_of` 返回的是**检索单元键**（2.0 里是物理文件序号）；写进账本前必须经
-    `unit_to_chapter` 转回**文学章号**——把 366 写进 `resolved_chapter` 会让
-    "在第几章回收"整体错位，也会污染休眠跨度计算（AGY 复审 P1-2）。
+    `chapter_of` 返回检索单元键，由 `unit_to_chapter` 映射为写入账本的全局章号。
     """
     supported = [v for v in group if v.verdict == "SUPPORTED"]
     if state == AUTO_RESOLVED and supported:

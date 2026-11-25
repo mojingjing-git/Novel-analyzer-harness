@@ -127,7 +127,7 @@ class CheckpointMixin:
             "block_size": infer_result_block_size(self.output_dir, default=1),
             "recheck_v3_gray_u4": bool(getattr(a, "recheck_v3_gray_u4", False)) if is_v3 else False,
             "recheck_v3_mid_single_hop": bool(getattr(a, "recheck_v3_mid_single_hop", False)) if is_v3 else False,
-            "v3_engine_rev": "tier2_pool_v1" if is_v3 else "v2",
+            "v3_engine_rev": "tier2_pool_v2" if is_v3 else "v2_global_ch",
         }
         v3_defaults = {
             "recheck_v3_mode": "auto",

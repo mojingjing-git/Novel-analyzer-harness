@@ -65,8 +65,8 @@ def _make_item(
     )
 
 
-def test_apply_v3_verdict_resolved_tiers_and_literary_chapter() -> None:
-    """三种回收分级正确写回账本并按 display_labels 映射文学章号。"""
+def test_apply_v3_verdict_resolved_tiers_and_global_chapter() -> None:
+    """三种回收分级正确写回账本并统一采用全书全局单元章号（不被卷内标题号覆盖）。"""
     labels = {1: "第 1 回", 2: "第 56 回", 3: "第 108 回", 4: "第 112 回"}
 
     it_exp = _make_item("fs_exp")
@@ -80,7 +80,7 @@ def test_apply_v3_verdict_resolved_tiers_and_literary_chapter() -> None:
         unit_noun="文件",
     )
     assert it_exp.status == "resolved"
-    assert it_exp.resolved_chapter == 56
+    assert it_exp.resolved_chapter == 2
     assert it_exp.resolution == "铜盒乃先师所留镇魂之器。"
     assert it_exp.source_type == "auto_recheck_v3"
     assert it_exp.resolution_quality == "verified"
@@ -98,7 +98,7 @@ def test_apply_v3_verdict_resolved_tiers_and_literary_chapter() -> None:
         unit_noun="文件",
     )
     assert it_imp.status == "resolved"
-    assert it_imp.resolved_chapter == 108
+    assert it_imp.resolved_chapter == 3
     assert it_imp.resolution_quality == "verified"
     assert it_imp.needs_review is False
     assert "V3复检：隐式/别名兑现已核实" in it_imp.notes
@@ -114,7 +114,7 @@ def test_apply_v3_verdict_resolved_tiers_and_literary_chapter() -> None:
         unit_noun="文件",
     )
     assert it_part.status == "resolved"
-    assert it_part.resolved_chapter == 112
+    assert it_part.resolved_chapter == 4
     assert it_part.resolution.startswith("[核心已回收·支线留白] ")
     assert it_part.resolution_quality == "verified"
     assert it_part.needs_review is False
@@ -1396,3 +1396,44 @@ def test_recheck_v3_options_tuning_and_u1_cache_invalidation(tmp_path: Path) -> 
         ),
     ))
     assert split_calls == 3
+
+
+def test_volume_reset_book_uses_global_chapter_and_disambiguation() -> None:
+    """分卷重置章号的书籍中，V3 落账、章节消歧与设问定位均应优先采用全书全局章号。"""
+    from backend.services.recheck_v3.evidence_pool import _resolve_setup_location
+    from backend.services.recheck_v3.preprocessing import _disambiguate_chapter_to_units
+
+    chapters = {u: f"第{u}单元正文内容，阿宁与蛇群在西王母城附近推进。" for u in range(1, 300)}
+    chapters[39] = "第三十九章 鲁王宫旧事\n早期剧情。"
+    chapters[289] = "第三十九章 蛇声\n鸡冠蛇发出模仿人声的异响。"
+    labels = {39: "第 39 回", 289: "第 39 回"}
+
+    # 1) apply_v3_verdict_to_item 落账必须写全局 unit_id=289，不能写卷内回号 39
+    item = _make_item("fs_snake", first_seen_chapter=259, anchor_chapter=259)
+    apply_v3_verdict_to_item(
+        item,
+        tier="RESOLVED_EXPLICIT",
+        unresolved_type="",
+        answer="第289章揭示鸡冠蛇模仿人声搬运尸体。",
+        evidence_chain=[{"unit_id": 289, "offset": 0, "quote": "鸡冠蛇发出模仿人声的异响。", "role": "payoff"}],
+        display_labels=labels,
+        unit_noun="文件",
+        setup_unit=259,
+    )
+    assert item.resolved_chapter == 289
+
+    # 2) _disambiguate_chapter_to_units：全局号有效时直接短路，仅在旧卷内号小于设问章时回退同名回号
+    label_num_to_units = {39: [39, 289]}
+    assert _disambiguate_chapter_to_units(chapters, labels, label_num_to_units, 39, after_unit=10) == [39]
+    assert _disambiguate_chapter_to_units(chapters, labels, label_num_to_units, 39, after_unit=250) == [289]
+
+    # 3) _resolve_setup_location：分卷重排时优先按全局 anchor_chapter=289 定位
+    loc_item = _make_item(
+        "fs_loc",
+        desc="不存在于原文的长摘要描述片段测试",
+        anchor_quote="",
+        anchor_chapter=289,
+        first_seen_chapter=285,
+    )
+    resolved_u, _off, _mode = _resolve_setup_location(loc_item, chapters, labels, block_size=4)
+    assert resolved_u == 289

@@ -492,10 +492,14 @@ def _resolve_setup_location(
     desc = str(getattr(item, "description", "") or "").strip()
     target_u: int | None = None
     if anchor_ch:
-        for u, lbl in sorted(display_labels.items()):
-            if lbl.replace("第", "").replace("回", "").strip() == str(anchor_ch) and lo <= u <= hi:
-                target_u = u
-                break
+        anchor_int = int(anchor_ch)
+        if anchor_int in chapters and lo <= anchor_int <= hi:
+            target_u = anchor_int
+        else:
+            for u, lbl in sorted(display_labels.items()):
+                if lbl.replace("第", "").replace("回", "").strip() == str(anchor_ch) and lo <= u <= hi:
+                    target_u = u
+                    break
     if target_u is None:
         target_u = first_ch if first_ch in chapters else min(chapters)
 
