@@ -131,7 +131,7 @@ python -m backend.cli ledger show 《书名》 <item_id> --with-evidence --json
 
 ## 下载
 
-从 [GitHub Releases](https://github.com/mojingjing-git/novel-analyzer/releases) 下载最新 `novel-analyzer.exe`（约 26 MB），双击即可运行。
+从 [GitHub Releases](https://github.com/mojingjing-git/Novel-analyzer-harness/releases) 下载最新 `novel-analyzer.exe`（Windows x64 单文件），双击即可运行。
 
 **使用流程**：
 1. 把 `novel-analyzer.exe` 放到任何可写目录（推荐 `D:\tools\novel-analyzer\`，避免 Program Files 权限问题）
