@@ -319,6 +319,42 @@ def load_chapter_result_for_chapter(output_dir: Path, chapter: int) -> Optional[
     return None
 
 
+def infer_result_block_size(output_dir: Path, default: int = 1) -> int:
+    """从磁盘结果文件推断实际分析粒度（兼容历史合块归档与单章协议产物）。"""
+    fallback = max(1, int(default or 1))
+    if not output_dir or not output_dir.exists():
+        return fallback
+    candidates: List[Tuple[int, Path]] = []
+    for f in output_dir.glob("chapter_*_result.json"):
+        m = re.match(r"chapter_(\d+)_result\.json", f.name)
+        if m:
+            candidates.append((int(m.group(1)), f))
+    candidates.sort(key=lambda x: x[0])
+
+    inferred = 0
+    sampled = 0
+    for _ch, fpath in candidates:
+        try:
+            data = json.loads(fpath.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if not isinstance(data, dict):
+            continue
+        sampled += 1
+        raw_bs = data.get("block_size")
+        bs_val = (
+            int(raw_bs)
+            if isinstance(raw_bs, (int, float)) and not isinstance(raw_bs, bool)
+            else 1
+        )
+        src = data.get("source_chapters")
+        src_len = len(src) if isinstance(src, list) else 0
+        inferred = max(inferred, 1, bs_val, src_len)
+        if sampled >= 20:
+            break
+    return inferred if sampled > 0 else fallback
+
+
 def review_foreshadow_ledger(
     output_dir: Path,
     book_id: str,

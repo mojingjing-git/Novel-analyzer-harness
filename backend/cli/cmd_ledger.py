@@ -114,13 +114,14 @@ def _extract_item_evidence(
     """为单条伏笔定位埋设原文窗与回收证据窗（零 fuzzy difflib）。"""
     from backend.core.file_processor import FileProcessor
     from backend.core.text_units import find_literal, load_blocks_as_files, locate_with_mode
+    from backend.services.book_artifacts import infer_result_block_size
 
     blocks_dir = book_dir / "blocks"
     if not blocks_dir.is_dir():
         return {"available": False, "reason": "blocks_dir_missing", "setup": None, "payoffs": []}
 
     cfg, _ = load_cli_config(ctx, require_valid=False)
-    block_size = max(1, int(getattr(getattr(cfg, "analysis", None), "block_size", 4) or 4))
+    block_size = infer_result_block_size(book_dir / "output", default=1)
 
     fp = FileProcessor(blocks_dir, cfg.analysis.encoding_priority)
     available_chs = fp.scan_chapters()

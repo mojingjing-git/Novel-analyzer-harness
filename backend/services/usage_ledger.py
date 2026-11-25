@@ -116,14 +116,15 @@ class UsageLedger:
             self._mark_dirty()
 
     def add_chapter(self, payload: dict) -> None:
-        """每章统计（耗时/重试/失败/缓存 delta；成功才计章数）。"""
+        """每章/批统计（耗时/重试/失败/缓存 delta；成功时按实际成功章数累加）。"""
         elapsed = float(payload.get("elapsed") or 0)
         retries = int(payload.get("retries") or 0)
         failed = int(payload.get("failed_tokens") or 0)
         cached = int(payload.get("cached_tokens") or 0)
+        chapters_count = max(1, int(payload.get("chapters_count") or 1))
         with self._lock:
             if payload.get("status", "done") == "done":
-                self._state["chapters_done"] += 1
+                self._state["chapters_done"] += chapters_count
             self._state["retries"] += retries
             self._state["failed_tokens"] += failed
             self._state["elapsed_seconds"] += elapsed

@@ -7,8 +7,20 @@ import { api } from '../api/client'
 // 自动回到"不指定"状态（即永远显示最新章节）。
 const IDLE_MS = 60_000
 
-const props = defineProps<{ bookId: string; chapter: number }>()
-const emit = defineEmits<{ 'update:chapter': [value: number] }>()
+const props = withDefaults(defineProps<{
+  bookId: string
+  chapter: number
+  analysisRunning?: boolean
+  pauseIdle?: boolean
+}>(), {
+  analysisRunning: false,
+  pauseIdle: false,
+})
+const emit = defineEmits<{
+  'update:chapter': [value: number]
+  'rerun-chapter': [chapter: number]
+  'open-rerun': [chapter: number]
+}>()
 
 const manualChapter = computed<number>({
   get: () => props.chapter,
@@ -96,9 +108,15 @@ async function loadChapter() {
   }
 }
 
-// 活动事件 → 重置 1 分钟计时器（仅在手动指定模式下生效）
+// 活动事件 → 重置 1 分钟计时器（仅在手动指定模式下生效；重跑弹窗/运行期间暂停倒计时）
 function resetIdle() {
-  if (manualChapter.value <= 0) return
+  if (manualChapter.value <= 0 || props.pauseIdle) {
+    if (idleTimer) {
+      clearTimeout(idleTimer)
+      idleTimer = null
+    }
+    return
+  }
   if (idleTimer) clearTimeout(idleTimer)
   idleTimer = setTimeout(() => {
     manualChapter.value = 0 // 回到不指定状态
@@ -107,6 +125,27 @@ function resetIdle() {
 function onActivity() {
   resetIdle()
 }
+
+watch(
+  () => props.pauseIdle,
+  (paused) => {
+    if (paused) {
+      if (idleTimer) {
+        clearTimeout(idleTimer)
+        idleTimer = null
+      }
+    } else if (manualChapter.value > 0) {
+      resetIdle()
+    }
+  }
+)
+
+defineExpose({
+  reload: async () => {
+    await loadLatest()
+    await loadChapter()
+  },
+})
 
 // 规范化 chapter：空 / 负数 / 小数 → 0 或向下取整；并管理空闲计时器
 watch(
@@ -145,6 +184,10 @@ onMounted(() => {
   window.addEventListener('touchmove', onActivity, { passive: true })
   window.addEventListener('keydown', onActivity)
   window.addEventListener('click', onActivity)
+  if (props.bookId) {
+    void loadLatest()
+    void loadChapter()
+  }
   // 每 5s 刷新最新章节（运行中也能跟上），仅在未指定章节时
   latestPoll = setInterval(() => {
     if (manualChapter.value <= 0) loadLatest()
@@ -172,10 +215,30 @@ onUnmounted(() => {
       <template v-else>
         <div class="cd-report-head">
           <span class="cd-chapter">第 {{ effectiveChapter }} 章</span>
-          <span v-if="blockSize" class="cd-blocksize">· 共 {{ blockSize }} 个文本块</span>
-          <span class="cd-mode" :class="{ 'is-manual': isManual }">
-            {{ isManual ? '指定章节' : '自动 · 最新章节' }}
-          </span>
+          <span v-if="blockSize > 1" class="cd-blocksize">· 共 {{ blockSize }} 个文本块</span>
+          <div class="cd-head-actions">
+            <button
+              v-if="bookId && effectiveChapter > 0"
+              type="button"
+              class="glass-button cd-rerun-btn"
+              :disabled="analysisRunning"
+              @click="emit('rerun-chapter', effectiveChapter)"
+            >
+              重跑本章
+            </button>
+            <button
+              v-if="bookId"
+              type="button"
+              class="glass-button cd-rerun-btn"
+              :disabled="analysisRunning"
+              @click="emit('open-rerun', effectiveChapter)"
+            >
+              区间重跑…
+            </button>
+            <span class="cd-mode" :class="{ 'is-manual': isManual }">
+              {{ isManual ? '指定章节' : '自动 · 最新章节' }}
+            </span>
+          </div>
         </div>
         <section v-for="sec in sections" :key="sec.key" class="cd-section">
           <h4 class="cd-section-title">{{ sec.label }}</h4>
@@ -229,8 +292,19 @@ onUnmounted(() => {
   font-size: 12px;
   color: var(--win-text-secondary);
 }
-.cd-mode {
+.cd-head-actions {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cd-rerun-btn {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.cd-mode {
   font-size: 12px;
   /* 4px / 12px 对齐 4 倍数网格 */
   padding: 4px 12px;

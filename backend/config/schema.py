@@ -293,8 +293,9 @@ CONFIG_FIELD_SPECS: Tuple[ConfigFieldSpec, ...] = (
     ),
     # ==================== 3. 运行与流程策略 (9) ====================
     _ana(
-        "block_size", "int", DEFAULT_BLOCK_SIZE, "strategy_core", "块大小（章/块）",
-        "单次分析合并的章节数；大上下文模型可调大至 4–12 以摊薄系统提示词前缀。",
+        "block_size", "int", DEFAULT_BLOCK_SIZE, "strategy_core", "批大小（章/批）",
+        "单次 LLM 请求最多打包的章节数；请求内逐章独立输出、落盘统一为单章文件，"
+        "中途修改不影响断点续跑；动态装包同时受正文字符上限与模型输出预算约束。",
         ui_placement="core", min_val=1, max_val=200,
     ),
     _ana(
@@ -519,8 +520,8 @@ CONFIG_FIELD_SPECS: Tuple[ConfigFieldSpec, ...] = (
         min_val=1,
     ),
     _ana(
-        "checkpoint_interval", "int", DEFAULT_CHECKPOINT_INTERVAL, "analysis_prompt_rolling", "分析断点保存间隔（块）",
-        "每完成 N 块落盘一次内存知识库快照，0 表示仅在任务结束落盘。",
+        "checkpoint_interval", "int", DEFAULT_CHECKPOINT_INTERVAL, "analysis_prompt_rolling", "分析断点保存间隔（章）",
+        "每完成 N 章落盘一次内存知识库快照，0 表示仅在任务结束落盘。",
         min_val=0,
     ),
     _ana(
@@ -535,7 +536,7 @@ CONFIG_FIELD_SPECS: Tuple[ConfigFieldSpec, ...] = (
     ),
     _ana(
         "rolling_update_interval", "int", 0, "analysis_prompt_rolling", "滚动摘要更新步长 (0=跟随并发)",
-        "每隔多少块执行一次滚动摘要增量更新；0 表示跟随 analysis.concurrency。",
+        "每隔多少批执行一次滚动摘要增量更新；0 表示跟随 analysis.concurrency。",
         min_val=0,
     ),
     _ana(

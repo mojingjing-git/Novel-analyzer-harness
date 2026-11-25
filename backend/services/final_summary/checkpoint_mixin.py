@@ -11,6 +11,11 @@ import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from backend.config.constants import (
+    DEFAULT_MAX_FORESHADOW_CATALOG_HIGH,
+    DEFAULT_MAX_FORESHADOW_CATALOG_MID,
+)
+from backend.services.book_artifacts import infer_result_block_size
 from backend.utils.json_utils import safe_load_json, safe_save_json
 
 from .parsers import recheck_channel, validate_volume_summary
@@ -94,8 +99,8 @@ class CheckpointMixin:
             "foreshadow_min_importance": getattr(a, "foreshadow_min_importance", "中"),
             "foreshadow_min_confidence": getattr(a, "foreshadow_min_confidence", "中"),
             "foreshadow_kept_categories": sorted(getattr(a, "foreshadow_kept_categories", []) or []),
-            "max_foreshadow_catalog_high": int(getattr(a, "max_foreshadow_catalog_high", 500)),
-            "max_foreshadow_catalog_mid": int(getattr(a, "max_foreshadow_catalog_mid", 200)),
+            "max_foreshadow_catalog_high": int(getattr(a, "max_foreshadow_catalog_high", DEFAULT_MAX_FORESHADOW_CATALOG_HIGH)),
+            "max_foreshadow_catalog_mid": int(getattr(a, "max_foreshadow_catalog_mid", DEFAULT_MAX_FORESHADOW_CATALOG_MID)),
         }
         tuning = self._non_default_tuning(a, {
             "foreshadow_min_clue_chars": 15,
@@ -109,7 +114,7 @@ class CheckpointMixin:
         return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()[:16]
 
     def _compute_stage2_fingerprint(self, stage1_fp: str, blocks_fp: str, recheck_ver: str) -> str:
-        """Stage 2 复检失效指纹：stage1_fp + blocks_fp + 引擎版本 + 复检通道 + block_size + 调优参数。"""
+        """Stage 2 复检失效指纹：stage1_fp + blocks_fp + 引擎版本 + 复检通道 + 产物粒度 + 调优参数。"""
         a = self.config.analysis
         rc_model, rc_base = recheck_channel(self.config)
         is_v3 = recheck_ver == "v3"
@@ -119,7 +124,7 @@ class CheckpointMixin:
             "recheck_version": recheck_ver,
             "recheck_model": rc_model,
             "recheck_base_url": rc_base,
-            "block_size": int(getattr(a, "block_size", 4) or 4),
+            "block_size": infer_result_block_size(self.output_dir, default=1),
             "recheck_v3_gray_u4": bool(getattr(a, "recheck_v3_gray_u4", False)) if is_v3 else False,
             "recheck_v3_mid_single_hop": bool(getattr(a, "recheck_v3_mid_single_hop", False)) if is_v3 else False,
             "v3_engine_rev": "tier2_pool_v1" if is_v3 else "v2",

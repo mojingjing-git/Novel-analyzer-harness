@@ -841,11 +841,19 @@ async def test_volume_summary_refusal_guard_and_checkpoint_rejection(tmp_path):
 
 
 def test_stage2_fingerprint_reacts_to_v3_switches(tmp_path):
-    """切换 recheck_v3_gray_u4 / recheck_v3_mid_single_hop 时应改变 V3 Stage 2 指纹。"""
+    """切换 recheck_v3_gray_u4 / recheck_v3_mid_single_hop 时应改变 V3 Stage 2 指纹；改 analysis.block_size 不失效断点。"""
     from backend.config.settings import AnalysisConfig
+    from backend.services.book_artifacts import infer_result_block_size
 
     out_dir = tmp_path / "output"
     out_dir.mkdir(parents=True)
+    assert infer_result_block_size(out_dir, default=1) == 1
+    (out_dir / "chapter_1_result.json").write_text(
+        json.dumps({"chapter_number": 1, "block_size": 1, "source_chapters": [1]}),
+        encoding="utf-8",
+    )
+    assert infer_result_block_size(out_dir, default=1) == 1
+
     fps: list[str] = []
     for gray, mid in [(False, False), (True, False), (False, True)]:
         cfg = AppConfig(
@@ -855,6 +863,23 @@ def test_stage2_fingerprint_reacts_to_v3_switches(tmp_path):
         r = FinalSummaryRunner(config=cfg, output_dir=out_dir, start_chapter=1, end_chapter=1)
         fps.append(r._compute_stage2_fingerprint("s1", "blk", "v3"))
     assert len(set(fps)) == 3
+
+    # 更改运行期 analysis.block_size，只要磁盘产物仍为单章（1），Stage 2 断点指纹保持稳定
+    cfg_bs8 = AppConfig(
+        analysis=AnalysisConfig(recheck_version="v3", block_size=8),
+        working_directory=str(tmp_path),
+    )
+    r_bs8 = FinalSummaryRunner(config=cfg_bs8, output_dir=out_dir, start_chapter=1, end_chapter=1)
+    assert r_bs8._compute_stage2_fingerprint("s1", "blk", "v3") == fps[0]
+
+    # 历史合块归档（block_size=4）从磁盘结果文件反推粒度
+    legacy_dir = tmp_path / "legacy_output"
+    legacy_dir.mkdir()
+    (legacy_dir / "chapter_1_result.json").write_text(
+        json.dumps({"chapter_number": 1, "block_size": 4, "source_chapters": [1, 2, 3, 4]}),
+        encoding="utf-8",
+    )
+    assert infer_result_block_size(legacy_dir, default=1) == 4
 
 
 async def test_ledger_apply_human_override_and_recheck_skip():

@@ -121,6 +121,9 @@ const hasLedgerData = computed(() => ledgerRows.value.length > 0)
 // ============ 当前会话（分析服务内存态，进程重启清空） ============
 
 const totalElapsed = computed(() => stats.value?.elapsed?.toFixed(0) || '0')
+const recordedChaptersCount = computed(() =>
+  (stats.value?.chapter_stats || []).reduce((sum, s) => sum + (s.chapters_count ?? 1), 0)
+)
 
 // ============ 按书历史（落盘 JSON） ============
 
@@ -367,7 +370,7 @@ function fmtUsd(usd: number | null | undefined): string {
     <section v-else-if="activeTab === 'session'" class="space-y-4">
       <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <div class="glass-stat text-center">
-          <div class="stat-num" style="color: var(--win-accent)">{{ stats?.chapter_stats?.length || 0 }}</div>
+          <div class="stat-num" style="color: var(--win-accent)">{{ recordedChaptersCount }}</div>
           <div class="glass-stat-label">当前会话已记录章数</div>
         </div>
         <div class="glass-stat text-center">
@@ -382,14 +385,14 @@ function fmtUsd(usd: number | null | undefined): string {
 
       <div v-if="stats?.chapter_stats?.length" class="glass-card overflow-hidden">
         <div class="px-4 py-2.5 text-sm font-semibold" style="border-bottom: 1px solid var(--win-stroke); letter-spacing: -0.01em">
-          每章统计 ({{ stats.chapter_stats.length }}章)
+          每批/章统计 ({{ stats.chapter_stats.length }}条 · 共 {{ recordedChaptersCount }}章)
           <span class="ml-2 text-xs" style="color: var(--win-text-secondary)">当前会话 · 进程重启清空</span>
         </div>
         <div class="stat-scroll">
           <table class="glass-table" style="font-size: 12px">
             <thead>
               <tr>
-                <th class="text-left">章号</th>
+                <th class="text-left">章号/范围</th>
                 <th class="text-left">耗时(s)</th>
                 <th class="text-left">输入Tokens</th>
                 <th class="text-left">输出Tokens</th>
@@ -399,8 +402,8 @@ function fmtUsd(usd: number | null | undefined): string {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="s in stats.chapter_stats" :key="s.chapter">
-                <td>{{ s.chapter }}</td>
+              <tr v-for="(s, idx) in stats.chapter_stats" :key="idx">
+                <td>{{ s.range || s.chapter }}</td>
                 <td>{{ s.elapsed?.toFixed(1) }}</td>
                 <td>{{ s.input_tokens }}</td>
                 <td>{{ s.output_tokens }}</td>

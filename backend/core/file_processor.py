@@ -8,7 +8,7 @@ import re
 import logging
 import threading
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from ..utils.text_utils import detect_encoding
 from ..config.constants import ENCODING_CANDIDATES
@@ -112,37 +112,17 @@ class FileProcessor:
             return None
 
 
-    def read_block(self, chapters: List[int]) -> Optional[str]:
-        """
-        合并多章为一个文本块（用于块化分析）。
-
-        签名接收**实际存在的章号列表**。若按 range(start, start+block_size) 连号读取，
-        与 pipeline 按"实际章号"切块不一致——目录断号时（如只有 1/3/5.txt）
-        中间的章会被静默跳过、永远不分析。
-
-        Args:
-            chapters: 本块的实际章号列表（有序）
-
-        Returns:
-            合并后的文本，失败返回None
-        """
-        if not chapters:
-            return None
-        parts = []
-        multi = len(chapters) > 1
-        for i, ch in enumerate(chapters):
-            content = self.read_chapter(ch)
+    def read_chapters_batch(self, chapters: Sequence[int]) -> List[Tuple[int, str]]:
+        """按实存章号列表逐章读取原文，返回 [(chapter_num, content), ...]。"""
+        items: List[Tuple[int, str]] = []
+        for ch in chapters:
+            cid = int(ch)
+            content = self.read_chapter(cid)
             if content is None:
-                if i == 0:
-                    return None
-                logger.warning(f"read_block: 第{ch}章不存在，块内后续章跳过")
-                break
-            if multi:
-                parts.append(f"--- 第{ch}章 ---\n{content}")
-            else:
-                parts.append(content)
-
-        return "\n\n".join(parts)
+                logger.warning(f"read_chapters_batch: 第{cid}章读取失败或不存在，已跳过")
+                continue
+            items.append((cid, content))
+        return items
 
     def clear_cache(self):
         """清空内容缓存"""

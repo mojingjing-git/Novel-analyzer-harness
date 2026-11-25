@@ -570,7 +570,7 @@ def _get_hwnd() -> int | None:
 def main():
     _install_crash_diagnostics()
 
-    # === v0.2.0 exe 首次启动逻辑 ===
+    # === exe 首次启动检查与引导 ===
     # 1. 检测 WebView2 Runtime（Win10 部分用户首次启动需下载 ~100MB）
     wv2 = check_webview2()
     if wv2 is None:
@@ -780,7 +780,7 @@ def main():
     # 且 DWM 亮暗模式与前端运行时 localStorage 动态切换存在脱节冲突。
     # 故统一采用高性能非透明窗口 + CSS 原生模拟 Mica 质感（中性渐变 + 纯色图层）。
 
-    # v0.2.0：首次启动后等页面加载完跳设置页（让用户填 API Key）
+    # 首次启动后等页面加载完跳设置页（引导填写 API Key）
     if first_run_status == "NEEDS_API_KEY":
         def _jump_to_settings_when_ready():
             for _ in range(20):  # 最多等 5 秒

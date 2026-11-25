@@ -110,7 +110,7 @@ function fmtNum(n: number): string {
         <div class="rd-value">
           <CountUp :value="completed" :format="fmtNum" />
           <span class="rd-suffix">/ {{ fmtNum(total) }}</span>
-          <span v-if="blockSize > 1 && total > 0" class="rd-suffix">({{ completed * blockSize }}/{{ total * blockSize }}章)</span>
+          <span v-if="total > 0" class="rd-suffix">章</span>
         </div>
         <div v-if="total > 0" class="rd-progress-track">
           <div class="rd-progress-fill" :style="{ width: `${progressPct}%` }" />

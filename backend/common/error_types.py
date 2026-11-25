@@ -362,6 +362,8 @@ class LLMResult:
     #: 置于字段表末尾——历史调用点以位置参数构造（第 5 位是 usage_status），
     #: 中间插字段会把枚举错位成 cached_tokens。
     cached_tokens: int = 0
+    #: 模型原始结束原因（如 "stop" / "end_turn" / "length" / "max_tokens"），供批量分析截断止损判定。
+    finish_reason: str = ""
 
     def __post_init__(self) -> None:
         """一致性校验：tokens 为 None 时 usage_status 必须是 UNKNOWN
@@ -393,6 +395,7 @@ class LLMResult:
                 if self.prior_known_tokens is not None
                 else None
             ),
+            "finish_reason": _text(self.finish_reason, ""),
         }
 
     @classmethod
@@ -429,4 +432,5 @@ class LLMResult:
             verdict=verdict,
             attempts=attempts,
             prior_known_tokens=_parse_tokens(data.get("prior_known_tokens")),
+            finish_reason=_text(data.get("finish_reason"), ""),
         )

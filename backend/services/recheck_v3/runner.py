@@ -344,6 +344,15 @@ async def run_recheck_v3(
         if output_dir is not None
         else None
     )
+    u1_content_h = hashlib.sha256()
+    for rc in route_chunks:
+        u1_content_h.update(f"{rc.get('start_unit')}:{rc.get('end_unit')}:".encode("utf-8"))
+        u1_content_h.update(str(rc.get("digest") or rc.get("text") or "").encode("utf-8"))
+    for x in sorted(eligible, key=lambda row: str(row.get("fs_id") or "")):
+        it = x.get("item")
+        u1_content_h.update(
+            f"{x.get('fs_id')}|{getattr(it, 'description', '')}|{getattr(it, 'question', '')}|{getattr(it, 'answer_criteria', '')}\n".encode("utf-8")
+        )
     fp_parts = [
         "v3.2",
         "compact" if compact_mode else "wide",
@@ -351,6 +360,7 @@ async def run_recheck_v3(
         str(max(chapters_map)),
         str(len(route_chunks)),
         ",".join(sorted(x["fs_id"] for x in eligible)),
+        u1_content_h.hexdigest()[:16],
     ]
     u1_extra: list[str] = []
     if pre_lookback_units != 45:

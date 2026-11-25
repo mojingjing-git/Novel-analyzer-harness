@@ -6,6 +6,7 @@ import LogConsole from '../components/LogConsole.vue'
 import ChapterDetailPanel from '../components/ChapterDetailPanel.vue'
 import BookSelector from '../components/BookSelector.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import RerunChaptersDialog from '../components/RerunChaptersDialog.vue'
 import RunDashboard, { type DiscoveryItem, type ActiveBlock, type FinishedBlock } from '../components/RunDashboard.vue'
 import { applySummaryProgress } from '../utils/summaryLanes'
 import { phaseLabelOf } from '../utils/summaryProgress'
@@ -15,7 +16,7 @@ import {
   aggregateRate as computeAggregateRate, summarizeSession, resolveDeleteIndex,
   pickRunningBlockSize, RATE_HISTORY_MAX, type BlockTokenInfo,
 } from '../utils/queueFeed'
-import { api, type AnalysisStatus, type SessionTokenStatsResponse } from '../api/client'
+import { api, type AnalysisStatus, type BookInfo, type RerunChaptersRequest, type SessionTokenStatsResponse } from '../api/client'
 import { useProgressSocket, type ProgressMessage } from '../api/useProgressSocket'
 import { useLogStore } from '../composables/useLogStore'
 
@@ -62,6 +63,16 @@ const aggregateRate = computed(() => computeAggregateRate(rateByBlock.value, act
 // 章节详情共享的书目与章节号（从独立的工具栏提升到此处，便于两个分栏内容框对齐）
 const detailBookId = ref('')
 const detailChapter = ref(0)
+const detailPanelRef = ref<{ reload?: () => Promise<void> } | null>(null)
+const booksMeta = ref<BookInfo[]>([])
+const rerunDialog = ref<{
+  bookId: string
+  totalChapters: number
+  hasReport: boolean
+  initialChapters: string
+  currentChapter: number
+} | null>(null)
+let wasRunningMode: string = 'idle'
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
 const { logs: storeLogs, add, clear } = useLogStore()
@@ -240,15 +251,68 @@ async function refresh() {
   try {
     const s = await api.analysisStatus()
     if (disposed) return
+    const prevRunning = Boolean(status.value?.running)
+    const prevMode = wasRunningMode
     status.value = s
+    wasRunningMode = s?.running ? (s.mode || 'queue') : 'idle'
     syncLaneRegistry()
     // 刷新/重连时 WS 进度可能尚未到达，用 REST 状态兜底填充进度条，
     // 避免运行中刷新页面后进度条凭空消失（等待下一个 block_done 才出现）
     if (s?.running && progress.value.total === 0 && s.queue?.current_progress != null && s.queue.current_total) {
       progress.value = { current: s.queue.current_progress, total: s.queue.current_total, eta: '' }
     }
+    if (prevRunning && !s?.running && prevMode === 'rerun') {
+      void detailPanelRef.value?.reload?.()
+    }
     await refreshSessionStats()
   } catch (e) { console.error(e) }
+}
+
+async function openRerunDialog(bookId: string, initialChapters = '', currentChapter = 0) {
+  if (!bookId || status.value?.running) return
+  let list = booksMeta.value
+  if (!list.length) {
+    try {
+      list = await api.listBooks()
+      booksMeta.value = list
+    } catch {
+      list = []
+    }
+  }
+  const bookMeta = list.find((b) => b.id === bookId || b.name === bookId)
+  const queueMeta = status.value?.items?.find((it) => it.name === bookId)
+  rerunDialog.value = {
+    bookId,
+    totalChapters: bookMeta?.total_chapters || queueMeta?.total_chapters || 0,
+    hasReport: Boolean(bookMeta?.has_report),
+    initialChapters,
+    currentChapter,
+  }
+}
+
+function submitRerun(payload: RerunChaptersRequest) {
+  void withBusy(async () => {
+    const messages: ProgressMessage[] = []
+    analysisStartMessages = messages
+    try {
+      const res = await api.rerunChapters(payload)
+      if (analysisStartMessages !== messages) return
+      rerunDialog.value = null
+      switchTab('overview')
+      progress.value = { current: 0, total: res.total, eta: '' }
+      pendingTokenByBlock.clear()
+      pendingRateByBlock.clear()
+      hasPendingTokenFlush = false
+      lastTokenFlushAt = 0
+      tokenByBlock.value = new Map()
+      rateByBlock.value = new Map()
+      rateHistory.value = []
+      for (const message of messages) onMessage(message)
+      add(`已启动定点重跑《${res.book_id}》（共 ${res.total} 章）`, 'info', 'analysis')
+    } finally {
+      analysisStartMessages = null
+    }
+  }, '定点重跑')
 }
 // 本次窗口会话累计（分析+总结，内存态跨书累计；重启清零）
 async function refreshSessionStats() { try { sessionStats.value = await api.getSessionTokenStats() } catch (e) { console.error(e) } }
@@ -515,6 +579,10 @@ onUnmounted(() => {
       {{ summaryHint }}
     </div>
 
+    <div v-if="status?.running && status?.mode === 'rerun' && status?.rerun" class="glass-tinted-blue px-4 py-2 rounded text-sm">
+      正在定点重跑《{{ status.rerun.book_id }}》（{{ status.rerun.total }} 章：{{ status.rerun.chapters.slice(0, 6).join(', ') }}{{ status.rerun.chapters.length > 6 ? '…' : '' }}）
+    </div>
+
     <div class="glass-card overflow-x-auto">
       <table class="glass-table">
         <thead>
@@ -522,7 +590,7 @@ onUnmounted(() => {
             <th>书名</th>
             <th style="width: 96px">状态</th>
             <th style="width: 136px">进度</th>
-            <th style="width: 210px">操作</th>
+            <th style="width: 268px">操作</th>
           </tr>
         </thead>
         <tbody>
@@ -542,14 +610,8 @@ onUnmounted(() => {
               </span>
             </td>
             <td style="color: var(--win-text-secondary)">
-              <template v-if="item.block_size > 1">
-                {{ item.completed_chapters }}/{{ Math.ceil(item.total_chapters / item.block_size) }} 块
-                <span style="font-size: 11px; margin-left: 4px">({{ item.completed_chapters * item.block_size }}/{{ item.total_chapters }} 章)</span>
-              </template>
-              <template v-else>
-                {{ item.completed_chapters }}/{{ item.total_chapters }}
-                <span style="font-size: 11px; margin-left: 4px">章</span>
-              </template>
+              {{ item.completed_chapters }}/{{ item.total_chapters }}
+              <span style="font-size: 11px; margin-left: 4px">章</span>
             </td>
             <td>
               <div class="ops-row">
@@ -573,6 +635,14 @@ onUnmounted(() => {
                   :disabled="busy || status?.running || !['done', 'failed', 'skipped'].includes(item.status)"
                 >
                   重跑
+                </button>
+                <button
+                  v-if="!status?.running && item.status !== 'running'"
+                  @click="openRerunDialog(item.name)"
+                  class="glass-button op-btn"
+                  :disabled="busy"
+                >
+                  定点重跑
                 </button>
                 <button
                   v-if="!status?.running && item.status !== 'running'"
@@ -641,6 +711,15 @@ onUnmounted(() => {
                 class="glass-input dt-input"
                 v-tooltip="tooltips.chapter_input"
               />
+              <button
+                v-if="detailBookId"
+                type="button"
+                class="glass-button btn-head-sm"
+                :disabled="busy || status?.running"
+                @click="openRerunDialog(detailBookId, detailChapter > 0 ? String(detailChapter) : '', detailChapter)"
+              >
+                定点重跑…
+              </button>
             </div>
             <span class="conn-state" style="font-size: 11px">
               <span class="dot" :class="connected ? 'on' : 'off'"></span>
@@ -691,9 +770,14 @@ onUnmounted(() => {
         />
         <ChapterDetailPanel
           v-else
+          ref="detailPanelRef"
           :book-id="detailBookId"
           v-model:chapter="detailChapter"
+          :analysis-running="Boolean(status?.running)"
+          :pause-idle="Boolean(rerunDialog) || status?.mode === 'rerun'"
           class="split-detail"
+          @rerun-chapter="(ch) => openRerunDialog(detailBookId, String(ch), ch)"
+          @open-rerun="(ch) => openRerunDialog(detailBookId, '', ch)"
         />
       </div>
 
@@ -742,6 +826,18 @@ onUnmounted(() => {
       :danger="true"
       @confirm="confirmDelete"
       @cancel="deleteTarget = null"
+    />
+
+    <RerunChaptersDialog
+      v-if="rerunDialog"
+      :book-id="rerunDialog.bookId"
+      :total-chapters="rerunDialog.totalChapters"
+      :has-report="rerunDialog.hasReport"
+      :initial-chapters="rerunDialog.initialChapters"
+      :current-chapter="rerunDialog.currentChapter"
+      :busy="busy"
+      @confirm="submitRerun"
+      @cancel="rerunDialog = null"
     />
   </div>
 </template>

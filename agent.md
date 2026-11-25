@@ -33,17 +33,18 @@
 │   ├── progress_hub.py           # 进度广播中枢（分级驱逐慢消费者 + token_delta 250ms 节流 + log 转发）
 │   ├── common/                   # 共用纯逻辑层（12 个模块：错误分类 / 审核 / 关闭条件 / LLM 错误信号 / 复检请求日志 / proxy_env / dep_health / file_lock；只依赖标准库）
 │   ├── cli/                      # 无头命令行接口（7 个模块：runtime / cmd_books / cmd_ledger / cmd_pipeline / main / __main__ / __init__；详见 docs/cli.md）
-│   ├── core/                     # 核心引擎（23 个模块；error_types / error_taxonomy / moderation 为 common 的兼容转发层）
-│   │   ├── pipeline.py           # 主分析流水线（预热 / 并发 / checkpoint / 滚动总结 / 失败补跑）
-│   │   ├── analyzer.py           # 单章分析引擎（LLM 调用 + 校验回调 + 知识库更新）
-│   │   ├── llm_client.py         # LLM 客户端（OpenAI/Anthropic 双协议 + 温度退火与指数退避 + 流式/非流式）
+│   ├── core/                     # 核心引擎（24 个模块；error_types / error_taxonomy / moderation 为 common 的兼容转发层）
+│   │   ├── pipeline.py           # 主分析流水线（动态装包 / 预热 / 动态并发池 / checkpoint / 滚动总结 / 缩容补跑）
+│   │   ├── batch_packer.py       # 逐章批量动态装包与思考开关判定
+│   │   ├── analyzer.py           # 逐章批量分析引擎（独立槽位校验、截断抢救与逐章原文锚点校验）
+│   │   ├── llm_client.py         # LLM 客户端（OpenAI/Anthropic 双协议 + 温度退火与指数退避 + 流式/非流式 + 截断止损）
 │   │   ├── llm_probe.py          # 禁用思考参数探测
 │   │   ├── llm_failure_logger.py # 失败日志 + 敏感信息 redact
 │   │   ├── llm_stream.py         # 流式数据结构与双协议解析
 │   │   ├── stream_progress.py    # 流式 Token 进度回调工厂（章节/总结/风格共用）
 │   │   ├── error_taxonomy.py     # 厂商错误分类与重试策略（RETRY_POLICY / classify_*）
 │   │   ├── error_types.py        # 错误判定共享类型
-│   │   ├── prompt_builder.py     # 提示词构建（system 11 条规则 + 9 路上下文注入）
+│   │   ├── prompt_builder.py     # 提示词构建（system 13 条规则 + 逐章边界标记 + 9 路上下文注入）
 │   │   ├── knowledge_base.py     # 知识库管理器（增量合并 / 压缩 / 快照隔离）
 │   │   ├── memory_state.py       # 内存状态容器（结果 + 知识库 + 断点恢复）
 │   │   ├── style_analyzer.py     # 风格分析（单章 22 项统计 + 8 维 LLM 语义）
@@ -194,21 +195,23 @@
   → excel_export → analysis_data.xlsx
 ```
 
-### 4.2 分析流水线（pipeline.py）
+### 4.2 分析流水线（pipeline.py + batch_packer.py）
+
+**阶段零：扫描与动态装包**
+- `pack_chapter_batches()` 按 `block_size`、`max_content_chars` 与基于推理开关估算的 `max_tokens * 0.75` 将待跑章节动态打包；断点恢复仅采纳单章结果（`block_size=1`、`source_chapters=[c]`）并补发最多 50 条 `restored=True` 进度事件。
 
 **阶段一：串行预热**
-- 前 `concurrency` 个块串行处理
-- 建立初始 KnowledgeBase，保证后续块读不到未来章节知识
+- 前 `concurrency` 批串行处理，支持部分成功缺失追回与异常批二分拆小
+- 建立初始 KnowledgeBase，保证后续批次只读取前置已分析章节知识
 
-**阶段二：流式并发**
-- `asyncio.Semaphore` 限流 + `as_completed` 流式调度
-- 每 N 块触发一次 rolling summary（后台 asyncio.Task）
-- 每 `checkpoint_interval` 批触发检查点落盘
-- `state.get_kb_snapshot(chapter_limit)` 实现 KB 快照隔离
+**阶段二：动态并发池**
+- `deque` + `asyncio.wait(FIRST_COMPLETED)` 动态调度；逐章槽位经 `parse_batch_response` 拆分后按升序单章并入 `MemoryState` 并强制按单章落盘
+- 多章零产出批遭遇截断、`CONTEXT_LENGTH` 或审核拦截时二分拆分重排，部分成功批保留已完成章并仅把缺失章组成小批追回
+- 每 N 批触发一次后台 rolling summary（思考模型归档自动抬升最小 `max_tokens` 下限）
+- 每累计完成 `checkpoint_interval` 章触发检查点落盘
 
 **阶段三：失败补跑**
-- 最多 3 轮串行重试失败块
-- 每轮只重试上一轮标记为失败的块
+- 最多 `failed_block_retry_rounds` 轮按减半批上限重新装包串行补跑
 - 致命错误类（认证、计费、上下文超限、参数错）不进入补跑
 
 ### 4.3 LLM 客户端（llm_client.py + llm_probe/llm_failure_logger/llm_stream）
@@ -328,20 +331,21 @@ self._char_rel_chapter: Dict[str, int]     # 角色关系单调章号水位线
 
 ## 5. 后端模块详解
 
-### 5.1 核心层（backend/core/，23 个模块）
+### 5.1 核心层（backend/core/，24 个模块）
 
 | 模块 | 职责 |
 |---|---|
-| `pipeline.py` | 全书分析总调度：切块、预热、并发、补跑、checkpoint、滚动总结 |
-| `analyzer.py` | 单章分析引擎：拼提示词、调用 LLM、校验与解析响应 |
-| `llm_client.py` | LLM 客户端：OpenAI / Anthropic 双协议，温度退火 + 指数退避，流式与非流式 |
+| `pipeline.py` | 全书分析总调度：动态装包、预热、并发池、拆分/追回、checkpoint、滚动总结与缩容补跑 |
+| `batch_packer.py` | 动态装包与思考状态判定（`is_thinking_enabled` / `effective_batch_cap` / `pack_chapter_batches`） |
+| `analyzer.py` | 逐章批量分析引擎：按章边拼提示词、调用 LLM、`parse_batch_response` 拆分校验与逐章原文锚点校验 |
+| `llm_client.py` | LLM 客户端：OpenAI / Anthropic 双协议，温度退火 + 指数退避，流式与非流式，`stop_on_truncation` 截断止损 |
 | `llm_probe.py` | 探测端点认哪个"关闭思考"参数 |
 | `llm_failure_logger.py` | 失败日志（每行 JSON）+ 敏感信息脱敏 `redact()` |
-| `llm_stream.py` | 流式数据结构与双协议事件解析 |
+| `llm_stream.py` | 流式数据结构与双协议事件解析（含 `finish_reason` 提取） |
 | `stream_progress.py` | 流式 token 进度回调工厂（章节 / 总结 / 风格共用） |
 | `error_taxonomy.py` | 厂商错误分类与重试策略（`RETRY_POLICY`、`classify_exception`、`classify_message`） |
 | `error_types.py` | 错误判定共享类型（枚举与纯数据） |
-| `prompt_builder.py` | 提示词构建：system 11 条规则 + 9 路上下文注入 |
+| `prompt_builder.py` | 提示词构建：system 13 条规则 + 逐章边界标记 + 9 路上下文注入 |
 | `knowledge_base.py` | 磁盘知识库的加载、保存、增量合并与压缩 |
 | `memory_state.py` | 内存状态容器：全部结果 + 增量知识库 + 断点恢复 |
 | `style_analyzer.py` | 写作风格：单章 22 项统计 + 8 维 LLM 语义 |

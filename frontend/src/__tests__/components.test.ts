@@ -11,6 +11,7 @@ vi.mock('../api/client', () => ({
     listBooks: vi.fn(),
     getLatestChapter: vi.fn(),
     getChapterResult: vi.fn(),
+    getModels: vi.fn().mockResolvedValue({ models: ['gpt-4o', 'MiniMax-M3.1'] }),
   },
 }))
 
@@ -23,6 +24,7 @@ import ConfirmDialog from '../components/ConfirmDialog.vue'
 import BookSelector from '../components/BookSelector.vue'
 import ChapterDetailPanel from '../components/ChapterDetailPanel.vue'
 import SettingsProfilesCard from '../components/settings/SettingsProfilesCard.vue'
+import RerunChaptersDialog from '../components/RerunChaptersDialog.vue'
 import { resetSelectedBookForTest } from '../composables/useSelectedBook'
 
 const mockedApi = vi.mocked(api)
@@ -181,8 +183,14 @@ describe('RunDashboard', () => {
     const cards = wrapper.findAll('.rd-card')
     expect(cards).toHaveLength(4)
     expect(cards[0].text()).toContain('13')
+    expect(cards[0].text()).toContain('/ 100')
     expect(cards[0].text()).not.toContain('12.999')
     expect(cards[1].text()).toContain('—')
+
+    // 即使传入 blockSize: 8，已完成卡片也不再把章节数乘以 blockSize
+    await wrapper.setProps({ blockSize: 8 })
+    await nextTick()
+    expect(cards[0].text()).not.toContain('800')
 
     const countUps = wrapper.findAllComponents(CountUp)
     expect(countUps[1].props('value')).toBe(12345)
@@ -377,12 +385,23 @@ describe('BookSelector & ChapterDetailPanel', () => {
     const text = wrapper.text()
     expect(text).not.toContain('anchor_stats')
     expect(text).not.toContain('source_chapters')
+    expect(text).toContain('共 4 个文本块')
     expect(text).toContain('重要度')
     expect(text).toContain('变化幅度')
     expect(text).toContain('驱动因素')
     expect(text).toContain('待解问题')
     expect(text).toContain('回收判据')
     expect(text).toContain('纯线索')
+
+    // block_size=1（新单章产物）不展示冗余的“文本块”徽标
+    mockedApi.getChapterResult.mockResolvedValueOnce({
+      book_id: 'A',
+      chapter: 6,
+      data: { chapter_number: 6, block_size: 1, source_chapters: [6], core_events: [] },
+    })
+    await wrapper.setProps({ chapter: 6 })
+    await settle()
+    expect(wrapper.text()).not.toContain('文本块')
   })
 })
 
@@ -500,5 +519,53 @@ describe('SettingsProfilesCard', () => {
     expect(wrapper.get('[role="dialog"]').text()).toContain('校验未通过')
 
     wrapper.unmount()
+  })
+})
+
+describe('RerunChaptersDialog & ChapterDetailPanel rerun actions', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('校验章号范围并打包临时覆盖参数，且详情头部支持触发重跑', async () => {
+    const dlg = mount(RerunChaptersDialog, {
+      props: {
+        bookId: '测书',
+        totalChapters: 50,
+        hasReport: true,
+        initialChapters: '37-40, 5',
+        currentChapter: 5,
+      },
+    })
+    await nextTick()
+    expect(dlg.text()).toContain('将重跑 5 章：5, 37, 38, 39, 40')
+    expect(dlg.text()).toContain('不会自动重算')
+
+    await dlg.find('.adv-toggle').trigger('click')
+    const selects = dlg.findAll('select')
+    await selects[0].setValue('high')
+    const submitBtn = dlg.findAll('button').find((b) => b.text().includes('开始重跑'))!
+    await submitBtn.trigger('click')
+
+    const emitted = dlg.emitted('confirm')?.[0]?.[0] as Record<string, unknown>
+    expect(emitted.book_id).toBe('测书')
+    expect(emitted.chapters).toBe('37-40, 5')
+    expect((emitted.overrides as Record<string, unknown>).reasoning_effort).toBe('high')
+
+    mockedApi.getLatestChapter.mockResolvedValue({ book_id: 'A', latest: 6 })
+    mockedApi.getChapterResult.mockResolvedValue({
+      book_id: 'A',
+      chapter: 6,
+      data: { chapter_number: 6, block_size: 1, source_chapters: [6], core_events: [] },
+    })
+    const panel = mount(ChapterDetailPanel, { props: { bookId: 'A', chapter: 6 } })
+    await settle()
+    const rerunOne = panel.findAll('button').find((b) => b.text().includes('重跑本章'))
+    expect(rerunOne).toBeTruthy()
+    await rerunOne!.trigger('click')
+    expect(panel.emitted('rerun-chapter')?.[0]).toEqual([6])
   })
 })

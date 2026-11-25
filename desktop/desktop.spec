@@ -1,13 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for Novel Analyzer v0.2.0 single-file Windows exe.
+"""PyInstaller spec for Novel Analyzer single-file Windows exe.
 
 Build (from repo root):
     .venv\\Scripts\\python.exe -m PyInstaller --noconfirm --clean desktop\\desktop.spec
 
 Output:
-    dist/novel-analyzer.exe  (~65-80 MB)
+    dist/novel-analyzer.exe  (~32 MB)
 
-策略（v0.2.0）:
+打包策略:
 - --onefile 单文件输出
 - 不用 UPX（杀软误报 +30%）
 - excludes 大量未用 stdlib/三方库
@@ -66,9 +66,8 @@ hiddenimports = [
     'fastapi.middleware.cors',
 ]
 
-# 自动收集 backend 全部业务子模块（排除 tests）
-# v0.2.0 关键修复：PyInstaller 静态分析抓不到 uvicorn.run("backend.app:app") 的字符串 import
-# 用 collect_submodules 自动发现整个 backend 包的所有子模块
+# 自动收集 backend 全部业务子模块（排除 tests）：PyInstaller 静态分析抓不到
+# uvicorn.run("backend.app:app") 的字符串 import，统一用 collect_submodules 收集
 _backend_submods = [m for m in collect_submodules('backend') if '.tests' not in m]
 hiddenimports += _backend_submods
 print(f"[spec] auto-collected backend submodules: {len(_backend_submods)}")
@@ -126,5 +125,5 @@ exe = EXE(
     target_arch=None,                         # 当前 Python 架构
     codesign_identity=None,                   # 无证书
     entitlements_file=None,
-    icon=None,                                # 默认 Python 图标（v0.2.0 不做图标）
+    icon=None,                                # 使用默认 Python 图标
 )

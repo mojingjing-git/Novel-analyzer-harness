@@ -24,17 +24,48 @@ export interface QueueProgress {
   current_total: number
 }
 
+export interface RerunMeta {
+  book_id: string
+  chapters: number[]
+  total: number
+  overrides?: Record<string, unknown>
+}
+
 export interface AnalysisStatus {
   running: boolean
+  mode?: 'idle' | 'queue' | 'rerun'
+  rerun?: RerunMeta | null
   queue: QueueProgress
   items: QueueItemDto[]
   workspace_dir: string
   // 后端 status 接口给出两个独立字段：concurrency = 并发路数，
-  // block_size = 每块章数。两者不可混用（拿 block_size 当并发数会让「N/4」显示错）
+  // block_size = 批大小（单批最大章数）。两者不可混用。
   concurrency?: number
   block_size?: number
-  // 运行概览车道对账源：pipeline 信号量窗口内的真实在途块
+  // 运行概览车道对账源：pipeline 并发窗口内的真实在途批
   inflight_blocks?: Array<{ chapter: number; range: string; started_at: number }>
+}
+
+export interface RerunOverrides {
+  model?: string
+  reasoning_effort?: 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | ''
+  temperature?: number
+  block_size?: number
+  concurrency?: number
+}
+
+export interface RerunChaptersRequest {
+  book_id: string
+  chapters: string | number[]
+  overrides?: RerunOverrides
+  update_rolling?: boolean
+}
+
+export interface RerunChaptersResponse {
+  ok: boolean
+  book_id: string
+  chapters: number[]
+  total: number
 }
 
 export interface TokenCategory {
@@ -44,6 +75,8 @@ export interface TokenCategory {
 
 export interface ChapterStat {
   chapter: number
+  range?: string
+  chapters_count?: number
   elapsed: number
   input_tokens: number
   output_tokens: number
@@ -804,6 +837,11 @@ export const api = {
   // 分析控制
   startAnalysis: () => request<{ ok: boolean }>('/api/analysis/start', { method: 'POST' }),
   stopAnalysis: () => request<{ ok: boolean }>('/api/analysis/stop', { method: 'POST' }),
+  rerunChapters: (payload: RerunChaptersRequest) =>
+    request<RerunChaptersResponse>('/api/analysis/rerun', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   analysisStatus: () => request<AnalysisStatus>('/api/analysis/status'),
   getTokenStats: () => request<TokenStatsResponse>('/api/analysis/token_stats'),
   getSessionTokenStats: () => request<SessionTokenStatsResponse>('/api/analysis/token_stats/session'),

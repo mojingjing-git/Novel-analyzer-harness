@@ -350,6 +350,7 @@ class RecheckMixin:
         self._emit_progress({"type": "status", "message": "正在构建全书伏笔路由与核查..."})
 
         try:
+            from backend.services.book_artifacts import infer_result_block_size
             outcome = await run_recheck_v3(
                 self.ledger.items,
                 chapters=chapters,
@@ -360,7 +361,7 @@ class RecheckMixin:
                 concurrency=v3_concurrency,
                 unit_noun="文件",
                 display_labels=build_display_labels(chapters),
-                block_size=int(getattr(analysis_cfg, "block_size", 4) or 4),
+                block_size=infer_result_block_size(self.output_dir, default=1),
                 compact_mode=compact_mode,
                 enable_gray_u4=bool(getattr(analysis_cfg, "recheck_v3_gray_u4", False)),
                 mid_single_hop=bool(getattr(analysis_cfg, "recheck_v3_mid_single_hop", False)),
@@ -417,6 +418,7 @@ class RecheckMixin:
         self._emit_progress({"type": "status", "message": "正在核对伏笔证据..."})
 
         try:
+            from backend.services.book_artifacts import infer_result_block_size
             v2_analysis = getattr(self.config, "analysis", None)
             v2_wr = getattr(v2_analysis, "recheck_v2_window_radius", None)
             v2_mw = getattr(v2_analysis, "recheck_v2_max_windows", None)
@@ -429,7 +431,7 @@ class RecheckMixin:
                 batch_size=batch_size,
                 unit_noun="文件",
                 display_labels=build_display_labels(chapters),
-                block_size=int(getattr(v2_analysis, "block_size", 4) or 4),
+                block_size=infer_result_block_size(self.output_dir, default=1),
                 window_radius=400 if v2_wr is None else int(v2_wr),
                 max_windows=3 if v2_mw is None else int(v2_mw),
                 retry_rounds=2 if v2_rr is None else int(v2_rr),

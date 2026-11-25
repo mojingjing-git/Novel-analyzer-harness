@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from openpyxl import load_workbook
 
-from backend.core.analyzer import validate_parsed_analysis
+from backend.core.analyzer import parse_batch_response, validate_chapter_slot, validate_parsed_analysis
 from backend.core.llm_failure_logger import redact
 from backend.core.text_units import (
     build_display_labels,
@@ -17,7 +17,7 @@ from backend.core.text_units import (
     locate_in_units,
     unit_label,
 )
-from backend.models.analysis_result import AnalysisResult
+from backend.models.analysis_result import AnalysisResult, is_single_chapter_result_dict
 from backend.services import viz_service
 from backend.utils.aggregate_utils import JSONAggregator, _normalize_char_name
 from backend.utils.character_card_generator import CharacterCardGenerator
@@ -27,6 +27,7 @@ from backend.utils.json_utils import (
     parse_json_robust,
     repair_missing_quotes,
     safe_save_json,
+    salvage_json_array_objects,
 )
 from backend.utils.text_utils import detect_and_decode, detect_encoding
 
@@ -248,3 +249,128 @@ def test_style_limit_and_character_card_logging(tmp_path, caplog, capsys):
     assert ok is False
     assert capsys.readouterr().out == ""
     assert any("加载聚合数据失败" in rec.message for rec in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# 逐章批量协议：JSON 截断抢救、槽位校验与单章解析
+# ---------------------------------------------------------------------------
+
+def test_salvage_json_array_objects_and_batch_response_parsing(monkeypatch):
+    # 1. salvage_json_array_objects：markdown 包裹 + 字符串含转义引号/花括号 + 尾部未闭合对象剔除
+    raw_truncated = (
+        '```json\n{"chapters": [\n'
+        '{"chapter": 1, "cross_block": {"summary": "他低声道：\\"{机关已启}\\""}, '
+        '"core_events": [{"event": "进入地宫"}]},\n'
+        '{"chapter": 2, "cross_block": {"summary": "第二章摘要"}, '
+        '"core_events": [{"event": "机关触发"}]},\n'
+        '{"chapter": 3, "cross_block": {"summary": "残缺半截'
+    )
+    salvaged = salvage_json_array_objects(raw_truncated, "chapters")
+    assert [s["chapter"] for s in salvaged] == [1, 2]
+    assert '"{机关已启}"' in salvaged[0]["cross_block"]["summary"]
+
+    # 2. truncated=True 严禁走 parse_json_robust（避免 json_repair 缝合残缺尾章）
+    def _forbid_robust(*_args, **_kwargs):
+        raise AssertionError("截断响应不得调用 parse_json_robust")
+
+    monkeypatch.setattr("backend.core.analyzer.parse_json_robust", _forbid_robust)
+    res_map, missing, used_salvage, _ = parse_batch_response(
+        raw_truncated,
+        [1, 2, 3],
+        {1: "他走进了地宫深处。", 2: "机关忽然启动。", 3: "未完。"},
+        truncated=True,
+    )
+    assert sorted(res_map.keys()) == [1, 2]
+    assert missing == [3]
+    assert used_salvage is True
+    assert res_map[1].block_size == 1 and res_map[1].source_chapters == [1]
+    monkeypatch.undo()
+
+    # 3. 扁平单章结构仅在单章非截断时兜底；多章批或截断不兜底
+    flat_payload = json.dumps({
+        "core_events": [{"event": "平铺事件"}],
+        "cross_block": {"summary": "扁平单章摘要"},
+        "long_context_insights": {"pattern": "平铺模式"},
+    }, ensure_ascii=False)
+    flat_ok, miss1, _, _ = parse_batch_response(flat_payload, [5], {5: "第5章正文。"}, truncated=False)
+    assert sorted(flat_ok.keys()) == [5] and miss1 == []
+    assert flat_ok[5].long_context_insights.pattern == "平铺模式"
+
+    multi_reject, miss2, _, _ = parse_batch_response(flat_payload, [5, 6], {5: "a", 6: "b"}, truncated=False)
+    assert multi_reject == {} and miss2 == [5, 6]
+
+    # 4. 同 ID 去重保留更丰富对象 + null 列表安全兜底 + 对称重对齐校验
+    batch_payload = json.dumps({
+        "chapters": [
+            {
+                "chapter": "第10章",
+                "core_events": None,
+                "cross_block": {"summary": "简短"},
+                "foreshadowing": None,
+                "plot_holes": None,
+                "character_arcs": None,
+            },
+            {
+                "chapter": 10,
+                "core_events": [{"event": "完整事件一"}, {"event": "完整事件二"}],
+                "cross_block": {"summary": "非常详细的第十章剧情摘要内容"},
+                "foreshadowing": [{"clue": "青铜匙", "anchor_quote": "他摸出一枚冷冰冰的青铜匙。"}],
+            },
+            {
+                "chapter": 999,  # 错 ID，需靠第 11 章原文锚点重对齐
+                "core_events": [{"event": "夜袭"}],
+                "cross_block": {"summary": "第十一章摘要"},
+                "foreshadowing": [{"clue": "黑衣人", "anchor_quote": "黑衣人跃上屋檐消失在夜色中。"}],
+            },
+        ],
+        "long_context_insights": {"thematic_elements": ["宿命"], "pattern": "双线暗合"},
+    }, ensure_ascii=False)
+    # chapter=10 第一个槽位 core_events=None 应被 validate_chapter_slot 拒绝，null 字段不崩溃
+    assert validate_chapter_slot({"core_events": None, "cross_block": {"summary": "x"}})[0] is False
+    parsed_null = AnalysisResult.from_dict({
+        "chapter_number": 7,
+        "core_events": None,
+        "character_arcs": None,
+        "foreshadowing": None,
+        "plot_holes": None,
+    })
+    assert parsed_null.core_events == [] and parsed_null.foreshadowing == []
+
+    res2, missing2, _, realigned = parse_batch_response(
+        batch_payload,
+        [10, 11],
+        {
+            10: "月色下，他摸出一枚冷冰冰的青铜匙。",
+            11: "三更时分，黑衣人跃上屋檐消失在夜色中。",
+        },
+        truncated=False,
+        anchor_enabled=True,
+        min_anchor_chars=6,
+    )
+    assert sorted(res2.keys()) == [10, 11] and missing2 == [] and realigned == 1
+    assert "非常详细" in res2[10].cross_block.summary
+    assert res2[11].long_context_insights.pattern == "双线暗合"
+
+    # 5. is_single_chapter_result_dict 仅接受单章格式
+    assert is_single_chapter_result_dict({"chapter_number": 4, "block_size": 1, "source_chapters": [4]}, 4) is True
+    assert is_single_chapter_result_dict({"chapter_number": 4, "block_size": None, "source_chapters": []}, 4) is True
+    assert is_single_chapter_result_dict({"chapter_number": 4, "block_size": 4, "source_chapters": [4, 5, 6, 7]}, 4) is False
+    assert is_single_chapter_result_dict({"chapter_number": 4, "block_size": 1, "source_chapters": [4, 5]}, 4) is False
+
+
+def test_parse_chapter_spec_validation_and_bounds():
+    """parse_chapter_spec 支持区间/散列解析，拒绝倒置/超大范围/布尔/缺失章。"""
+    import pytest
+    from backend.common.chapter_spec import parse_chapter_spec
+
+    assert parse_chapter_spec("40") == [40]
+    assert parse_chapter_spec("55, 37-40，40 39") == [37, 38, 39, 40, 55]
+    assert parse_chapter_spec("2..4", available_chapters=[1, 2, 3, 4, 5]) == [2, 3, 4]
+    assert parse_chapter_spec([5, 3, 5]) == [3, 5]
+
+    for bad in ("", "40-37", "1-999999999", "0", "abc", [True], [0]):
+        with pytest.raises(ValueError):
+            parse_chapter_spec(bad)
+
+    with pytest.raises(ValueError, match="不存在"):
+        parse_chapter_spec("1, 99", available_chapters=[1, 2, 3])

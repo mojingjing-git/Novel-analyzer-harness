@@ -322,9 +322,20 @@ def test_builtin_profiles_valid_and_preserve_endpoints_and_paths(tmp_path):
     assert res["profiles"]["active_slot_id"] == "builtin_256k"
     assert res["profiles"]["is_modified_from_last"] is False
 
+    assert BUILTIN_PROFILES["builtin_128k"]["patch"]["analysis"]["block_size"] == 6
+    assert BUILTIN_PROFILES["builtin_256k"]["patch"]["analysis"]["block_size"] == 8
+    assert BUILTIN_PROFILES["builtin_512k"]["patch"]["analysis"]["block_size"] == 8
+    assert BUILTIN_PROFILES["builtin_128k"]["patch"]["analysis"]["max_foreshadow_catalog_mid"] == 250
+    assert BUILTIN_PROFILES["builtin_256k"]["patch"]["analysis"]["max_foreshadow_catalog_mid"] == 400
+    assert BUILTIN_PROFILES["builtin_512k"]["patch"]["analysis"]["max_foreshadow_catalog_mid"] == 600
+    assert BUILTIN_PROFILES["builtin_128k"]["patch"]["analysis"]["recheck_v3_mid_single_hop"] is True
+    assert BUILTIN_PROFILES["builtin_256k"]["patch"]["analysis"]["recheck_v3_mid_single_hop"] is True
+    assert BUILTIN_PROFILES["builtin_512k"]["patch"]["analysis"]["recheck_v3_mid_single_hop"] is False
+    from backend.config.constants import DEFAULT_MAX_FORESHADOW_CATALOG_MID
+    assert DEFAULT_MAX_FORESHADOW_CATALOG_MID == 400
     after = AppConfig.from_dict(res["config"])
     # 策略与上下文参数已切换到 256K 档并归位残留
-    assert after.analysis.block_size == 2
+    assert after.analysis.block_size == 8
     assert after.analysis.recheck_v3_pool_max_chars == 180000
     assert after.analysis.recheck_max_tokens == 32768
     assert after.analysis.recheck_v3_max_audit_windows == 0

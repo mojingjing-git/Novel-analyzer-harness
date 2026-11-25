@@ -13,7 +13,7 @@ from typing import Optional, Dict, List, Tuple
 from datetime import datetime
 
 from ..models.knowledge import KnowledgeBase
-from ..models.analysis_result import AnalysisResult
+from ..models.analysis_result import AnalysisResult, is_single_chapter_result_dict
 from ..utils.json_utils import safe_save_json, safe_load_json
 from ..config.constants import (
     MAX_COMPRESSED_ARCS, MAX_RECENT_SUMMARIES,
@@ -53,6 +53,26 @@ class KnowledgeBaseManager:
         self.file_path = file_path
         self.backup_dir = file_path.parent / "backups"
         self.backup_dir.mkdir(parents=True, exist_ok=True)
+
+    @classmethod
+    def invalidate_cache(cls, output_dir: Optional[Path] = None) -> None:
+        """失效 build_temp_knowledge 内存缓存（output_dir=None 时清空全部）。"""
+        import os as _os
+        target_norm = (
+            _os.path.normcase(str(Path(output_dir).resolve()))
+            if output_dir is not None
+            else None
+        )
+        with _temp_kb_lock:
+            if target_norm is None:
+                _temp_kb_cache.clear()
+                return
+            to_del = [
+                k for k in _temp_kb_cache
+                if _os.path.normcase(str(Path(k[0]).resolve())) == target_norm
+            ]
+            for k in to_del:
+                _temp_kb_cache.pop(k, None)
 
     def load(self) -> KnowledgeBase:
         """加载知识库"""
@@ -121,7 +141,12 @@ class KnowledgeBaseManager:
             kb.rolling_structured = rs
 
     @staticmethod
-    def build_temp_knowledge(output_dir: Path, chapter_limit: int = None) -> KnowledgeBase:
+    def build_temp_knowledge(
+        output_dir: Path,
+        chapter_limit: int = None,
+        *,
+        single_chapter_only: bool = False,
+    ) -> KnowledgeBase:
         """
         扫描output目录下所有 chapter_*_result.json，脚本合并成临时KB（纯dict操作，无LLM调用）。
         带内存缓存：相同输入直接返回缓存KB，有新文件时只解析新增部分增量合并。
@@ -130,10 +155,15 @@ class KnowledgeBaseManager:
         Args:
             output_dir: 输出目录
             chapter_limit: 可选，只加载章号 ≤ 此值的章节（补跑/并行时防止读到"未来"章）
+            single_chapter_only: 为 True 时过滤掉旧版多章合块文件（block_size>1）
         """
         global _temp_kb_cache, _temp_kb_lock
 
-        cache_key = (str(output_dir), chapter_limit)
+        cache_key: Tuple = (
+            (str(output_dir), chapter_limit, True)
+            if single_chapter_only
+            else (str(output_dir), chapter_limit)
+        )
 
         result_files = sorted(output_dir.glob("chapter_*_result.json"))
         if not result_files:
@@ -151,8 +181,12 @@ class KnowledgeBaseManager:
         if not result_files:
             return KnowledgeBase()
 
-        # 构建文件指纹 (filename, mtime_ns)
-        current_fingerprint = frozenset((f.name, f.stat().st_mtime_ns) for f in result_files)
+        # 构建文件指纹 (filename, mtime_ns, size)
+        current_fingerprint = frozenset(
+            (f.name, st.st_mtime_ns, st.st_size)
+            for f in result_files
+            for st in (f.stat(),)
+        )
 
         with _temp_kb_lock:
             # 1. 精确匹配
@@ -162,12 +196,12 @@ class KnowledgeBaseManager:
                     logger.debug(f"build_temp_knowledge 缓存命中 ({len(cached_results)}章)")
                     return cached_kb
 
-                # 同 key：用 (文件名, mtime) 检测新增或内容已变文件。
-                # 旧逻辑只按文件名比对，重跑时文件名不变但 mtime 变化 → 漏判 → 返回陈旧缓存。
-                cached_fps = {name: mtime for name, mtime in cached_fp}
+                # 同 key：用 (文件名, mtime, size) 检测新增或内容已变文件。
+                cached_fps = {name: (mtime, size) for name, mtime, size in cached_fp}
                 changed_files = [
                     f for f in result_files
-                    if f.name not in cached_fps or cached_fps[f.name] != f.stat().st_mtime_ns
+                    for st in (f.stat(),)
+                    if f.name not in cached_fps or cached_fps[f.name] != (st.st_mtime_ns, st.st_size)
                 ]
                 if not changed_files:
                     return cached_kb
@@ -177,7 +211,9 @@ class KnowledgeBaseManager:
                 newly_added = [f for f in changed_files if f.name not in cached_fps]
                 if len(newly_added) == len(changed_files):
                     # 全是新文件 → 安全增量合并
-                    new_results = KnowledgeBaseManager._parse_result_files(changed_files)
+                    new_results = KnowledgeBaseManager._parse_result_files(
+                        changed_files, single_chapter_only=single_chapter_only
+                    )
                     if not new_results:
                         return cached_kb
                     all_results = cached_results + new_results
@@ -190,7 +226,9 @@ class KnowledgeBaseManager:
                     return kb
                 else:
                     # 存在内容变化的旧文件（如重跑）→ 整体重建保证 KB 新鲜
-                    all_results = KnowledgeBaseManager._parse_result_files(result_files)
+                    all_results = KnowledgeBaseManager._parse_result_files(
+                        result_files, single_chapter_only=single_chapter_only
+                    )
                     if not all_results:
                         return cached_kb
                     all_results.sort(key=lambda r: r.chapter_number)
@@ -204,7 +242,12 @@ class KnowledgeBaseManager:
             str_dir = str(output_dir)
             best_key, best_limit = None, -1
             for key in _temp_kb_cache:
-                if key[0] == str_dir and key[1] is not None:
+                same_mode = (
+                    (len(key) == 3 and key[2] is True)
+                    if single_chapter_only
+                    else (len(key) == 2)
+                )
+                if key[0] == str_dir and same_mode and key[1] is not None:
                     if chapter_limit is None or key[1] <= chapter_limit:
                         if key[1] > best_limit:
                             best_key, best_limit = key, key[1]
@@ -220,8 +263,9 @@ class KnowledgeBaseManager:
                 for f in result_files:
                     m = re.match(r'chapter_(\d+)_result\.json', f.name)
                     if m and int(m.group(1)) <= best_limit:
-                        cur_base[f.name] = f.stat().st_mtime_ns
-                base_map = dict(cached_fp)
+                        st = f.stat()
+                        cur_base[f.name] = (st.st_mtime_ns, st.st_size)
+                base_map = {name: (mtime, size) for name, mtime, size in cached_fp}
                 near_neighbor_valid = (
                     set(base_map.keys()) == set(cur_base.keys())
                     and all(base_map[n] == cur_base[n] for n in base_map)
@@ -236,7 +280,13 @@ class KnowledgeBaseManager:
                     if m and int(m.group(1)) > best_limit:
                         new_files.append(f)
 
-                new_results = KnowledgeBaseManager._parse_result_files(new_files) if new_files else []
+                new_results = (
+                    KnowledgeBaseManager._parse_result_files(
+                        new_files, single_chapter_only=single_chapter_only
+                    )
+                    if new_files
+                    else []
+                )
                 if new_results:
                     all_results = cached_results + new_results
                     all_results.sort(key=lambda r: r.chapter_number)
@@ -252,7 +302,9 @@ class KnowledgeBaseManager:
             # 基线失效或无可用近邻 → 落入下方全量重建（陈旧数据不固化）
 
             # 3. 全量构建（首次）
-            results = KnowledgeBaseManager._parse_result_files(result_files)
+            results = KnowledgeBaseManager._parse_result_files(
+                result_files, single_chapter_only=single_chapter_only
+            )
             if not results:
                 return KnowledgeBase()
 
@@ -263,13 +315,18 @@ class KnowledgeBaseManager:
             return kb
 
     @staticmethod
-    def _parse_result_files(files: list) -> List[AnalysisResult]:
+    def _parse_result_files(files: list, *, single_chapter_only: bool = False) -> List[AnalysisResult]:
         """解析一批 result JSON 文件为 AnalysisResult 列表"""
         results = []
         for f in files:
             try:
                 with open(f, 'r', encoding='utf-8') as fp:
                     data = json.load(fp)
+                if single_chapter_only:
+                    m = re.match(r'chapter_(\d+)_result\.json', Path(f).name)
+                    ch_num = int(m.group(1)) if m else int(data.get("chapter_number") or 0)
+                    if not is_single_chapter_result_dict(data, ch_num):
+                        continue
                 results.append(AnalysisResult.from_dict(data))
             except Exception as e:
                 logger.warning(f"读取 {f} 失败: {e}")
@@ -290,13 +347,20 @@ class KnowledgeBaseManager:
         return {}
 
     @staticmethod
-    def merge_results(output_dir: Path, kb_limits: Optional[dict] = None) -> KnowledgeBase:
+    def merge_results(
+        output_dir: Path,
+        kb_limits: Optional[dict] = None,
+        *,
+        single_chapter_only: bool = False,
+    ) -> KnowledgeBase:
         """
         脚本合并所有 chapter_*_result.json 生成最终KB（无LLM调用）。
         等同于 build_temp_knowledge 但按配置上限裁剪所有列表与字典字段。
         注意：对缓存KB的深拷贝操作，避免 _trim_kb 污染缓存。
         """
-        kb = KnowledgeBaseManager.build_temp_knowledge(output_dir)
+        kb = KnowledgeBaseManager.build_temp_knowledge(
+            output_dir, single_chapter_only=single_chapter_only
+        )
         # 深拷贝，避免 _trim_kb 原地修改缓存中的KB对象
         kb_copy = KnowledgeBase.from_dict(kb.to_dict())
         KnowledgeBaseManager._trim_kb(kb_copy, kb_limits=kb_limits)

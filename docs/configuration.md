@@ -57,14 +57,14 @@
 
 ## analysis 段
 
-### 并发与切块
+### 并发与分批
 
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `concurrency` | int | `2` | 章节分析的并行 worker 数 |
-| `block_size` | int | `1` | 每块包含几章（1 = 单章一块） |
-| `checkpoint_interval` | int | `5` | 每 N 批落盘一次，0 = 只在结束时落盘 |
-| `encoding_priority` | list[str] | 11 种编码候选 | 文件编码探测顺序。设置页没有这一项 |
+| `concurrency` | int | `2` | 章节分析的并行 worker 路数 |
+| `block_size` | int | `1` | 批大小（章/批），单次请求最多打包的章节数；落盘统一拆分为单章文件 |
+| `checkpoint_interval` | int | `5` | 每累计完成 N 章落盘一次内存快照，0 表示只在结束时落盘 |
+| `encoding_priority` | list[str] | 11 种编码候选 | 文件编码探测顺序，未在设置页展示 |
 
 ### Prompt 预算
 
@@ -89,7 +89,7 @@
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
 | `rolling_early_chapters` | int | `100` | 首次生成结构化 JSON 的触发章数 |
-| `rolling_update_interval` | int | `0` | 滚动总结更新间隔块数；0 = 自适应默认 |
+| `rolling_update_interval` | int | `0` | 滚动总结更新间隔批数；0 = 跟随 `analysis.concurrency` |
 | `rolling_summary_max_tokens` | int | `0` | 滚动总结输出上限；0 = 跟随策略默认 |
 | `rolling_summary_max_retries` | int | `1` | 滚动总结单次最大重试次数 |
 | `rolling_summary_temperature` | float | `0.2` | 滚动总结采样温度 |
@@ -127,7 +127,7 @@
 | `foreshadow_min_importance` | str | `中` | **取值是中文等级 `高` / `中` / `低`，不是 0–1 的数值** |
 | `foreshadow_min_confidence` | str | `低` | 同上，中文等级字符串 |
 | `max_foreshadow_catalog_high` | int | `500` | 高重要度伏笔在总表里的上限，`-1` 表示不限制 |
-| `max_foreshadow_catalog_mid` | int | `200` | 中重要度伏笔在总表里的上限 |
+| `max_foreshadow_catalog_mid` | int | `400` | 中重要度伏笔在总表里的上限（三档内置预设分别为 `250 / 400 / 600`） |
 
 ### 总结与归档
 
@@ -211,7 +211,7 @@
 
 设置页顶部与 CLI `config profile` 共用 **6 槽配置切换系统**（实现位于 `backend/config/profiles.py`，用户槽持久化于 `config.json` 同级 `config_profiles.json`）：
 
-- **3 个内置通用默认槽（只读，模型无关）**：`builtin_128k`（`128K 兼容保底`，短别名 `128k`）、`builtin_256k`（`256K 甜点推荐`，短别名 `256k`）、`builtin_512k`（`512K 超长巨著`，短别名 `512k`）。一键切换仅更新并发、分块、Prompt 紧凑预算、卷压缩与 V3 复检预算并归位同域参数，完整保留当前主连接（`base_url`/`api_key`/`provider`/`model`/`summary_model`/`thinking_mode`）、独立复检通道、伏笔分类白名单与工作区路径。
+- **3 个内置通用默认槽（只读，模型无关）**：`builtin_128k`（`128K 兼容保底`，短别名 `128k`，`block_size=6`）、`builtin_256k`（`256K 甜点推荐`，短别名 `256k`，`block_size=8`）、`builtin_512k`（`512K 超长巨著`，短别名 `512k`，`block_size=8`）。一键切换仅更新并发、批大小、Prompt 紧凑预算、卷压缩与 V3 复检预算并归位同域参数，完整保留当前主连接（`base_url`/`api_key`/`provider`/`model`/`summary_model`/`thinking_mode`）、独立复检通道、伏笔分类白名单与工作区路径。
 - **3 个用户自定义槽（`user_1` / `user_2` / `user_3`）**：保存整套 `api` 与 `analysis` 配置快照（不含工作区路径与 `gui`），支持命名、备注与一键跨厂商/跨模型切换。
 - **凭据与环境变量保护**：
   - 默认 `include_credentials=false` 存入自定义槽时会剥离 `api.api_key` 与 `analysis.recheck_api_key`；切换时若复检端点源地址变化，系统自动清空孤儿 `recheck_api_key` 并在响应中提示。

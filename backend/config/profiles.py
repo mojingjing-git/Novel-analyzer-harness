@@ -17,7 +17,11 @@ import threading
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlsplit, urlunsplit
 
-from .constants import DEFAULT_VOLUME_COMPRESS_GROUP, ROLLING_MAX_MOMENTUM
+from .constants import (
+    DEFAULT_MAX_FORESHADOW_CATALOG_HIGH,
+    DEFAULT_VOLUME_COMPRESS_GROUP,
+    ROLLING_MAX_MOMENTUM,
+)
 from .settings import AppConfig, ConfigManager, validate_settings_payload
 from ..utils.json_utils import safe_save_json
 
@@ -45,7 +49,6 @@ _MAX_NAME_LEN = 40
 _MAX_DESC_LEN = 160
 
 _COMMON_BUILTIN_ANALYSIS: Dict[str, Any] = {
-    "block_size": 2,
     "rolling_update_interval": 10,
     "rolling_max_momentum": ROLLING_MAX_MOMENTUM,
     # 紧凑提示词预算（TIGHT_KB）
@@ -71,8 +74,8 @@ _COMMON_BUILTIN_ANALYSIS: Dict[str, Any] = {
     "recheck_v3_max_audit_windows": 0,
     "recheck_v3_nms_cluster_radius": 3,
     "recheck_v3_nms_max_per_cluster": 2,
-    "recheck_v3_mid_single_hop": True,
     "recheck_v3_gray_u4": False,
+    "max_foreshadow_catalog_high": DEFAULT_MAX_FORESHADOW_CATALOG_HIGH,
     "recheck_max_calls": 2000,
     "recheck_timeout": 600,
 }
@@ -92,6 +95,7 @@ BUILTIN_PROFILES: Dict[str, Dict[str, Any]] = {
             },
             "analysis": {
                 **_COMMON_BUILTIN_ANALYSIS,
+                "block_size": 6,
                 "concurrency": 6,
                 "summary_concurrency": 4,
                 "recheck_concurrency": 4,
@@ -114,6 +118,8 @@ BUILTIN_PROFILES: Dict[str, Dict[str, Any]] = {
                 "recheck_v3_u1_superchunk_chars": 52000,
                 "recheck_v3_u1_split_batch_size": 50,
                 "recheck_v3_u1_route_q_batch": 80,
+                "max_foreshadow_catalog_mid": 250,
+                "recheck_v3_mid_single_hop": True,
                 "recheck_v3_chapter_chars": 4800,
                 "recheck_v3_pre_lookback_units": 30,
             },
@@ -133,6 +139,7 @@ BUILTIN_PROFILES: Dict[str, Dict[str, Any]] = {
             },
             "analysis": {
                 **_COMMON_BUILTIN_ANALYSIS,
+                "block_size": 8,
                 "concurrency": 8,
                 "summary_concurrency": 6,
                 "recheck_concurrency": 6,
@@ -155,6 +162,8 @@ BUILTIN_PROFILES: Dict[str, Dict[str, Any]] = {
                 "recheck_v3_u1_superchunk_chars": 150000,
                 "recheck_v3_u1_split_batch_size": 100,
                 "recheck_v3_u1_route_q_batch": 150,
+                "max_foreshadow_catalog_mid": 400,
+                "recheck_v3_mid_single_hop": True,
                 "recheck_v3_chapter_chars": 6000,
                 "recheck_v3_pre_lookback_units": 30,
             },
@@ -174,6 +183,7 @@ BUILTIN_PROFILES: Dict[str, Dict[str, Any]] = {
             },
             "analysis": {
                 **_COMMON_BUILTIN_ANALYSIS,
+                "block_size": 8,
                 "concurrency": 10,
                 "summary_concurrency": 6,
                 "recheck_concurrency": 6,
@@ -196,6 +206,8 @@ BUILTIN_PROFILES: Dict[str, Dict[str, Any]] = {
                 "recheck_v3_u1_superchunk_chars": 300000,
                 "recheck_v3_u1_split_batch_size": 120,
                 "recheck_v3_u1_route_q_batch": 180,
+                "max_foreshadow_catalog_mid": 600,
+                "recheck_v3_mid_single_hop": False,
                 "recheck_v3_chapter_chars": 6800,
                 "recheck_v3_pre_lookback_units": 35,
             },

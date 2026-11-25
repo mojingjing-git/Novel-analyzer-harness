@@ -7,11 +7,14 @@ GET/PUT /api/queue、POST /api/queue/scan、队列项操作
 import asyncio
 import logging
 
+from typing import Any, Dict, List, Optional, Union
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from backend.api.auth import require_session_token
+from backend.common.file_lock import BookLockError
 from backend.core.model_catalog import calc_model_cost, get_catalog_version
 from backend.services.queue_manager import CONFIG_FILE, QueueItem
 from backend.services.queue_service import get_service
@@ -95,6 +98,38 @@ async def start_analysis() -> dict:
     if blocker == "summary_running":
         raise HTTPException(status_code=409, detail="最终总结正在运行，请在总结结束后再启动分析")
     raise HTTPException(status_code=400, detail="队列为空或已全部完成")
+
+
+class RerunChaptersRequest(BaseModel):
+    book_id: str
+    chapters: Union[str, List[int]]
+    overrides: Optional[Dict[str, Any]] = None
+    update_rolling: bool = False
+
+
+@router.post("/analysis/rerun", dependencies=[Depends(require_session_token)])
+async def rerun_chapters(req: RerunChaptersRequest) -> dict:
+    service = get_service()
+    try:
+        return service.start_rerun(
+            req.book_id,
+            req.chapters,
+            overrides=req.overrides,
+            update_rolling=req.update_rolling,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except BookLockError as exc:
+        raise HTTPException(status_code=409, detail="书目正被其他进程操作，请稍后重试") from exc
+    except RuntimeError as exc:
+        msg = str(exc)
+        if msg == "analysis_running":
+            raise HTTPException(status_code=409, detail="分析或重跑任务已在运行中") from exc
+        if msg == "summary_running":
+            raise HTTPException(status_code=409, detail="最终总结正在运行，请在总结结束后再启动重跑") from exc
+        raise HTTPException(status_code=409, detail=msg) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/analysis/stop")
@@ -202,10 +237,10 @@ async def scan_queue(req: ScanRequest) -> dict:
     if not found:
         raise HTTPException(status_code=404, detail="未扫描到任何 {书名}/blocks/*.txt 结构")
     for item in found:
-        # 恢复进度推断（沿用配置的 block_size）
+        # 恢复进度推断（统计已完成的单章数）
         item.block_size = max(1, service.config_manager.config.analysis.block_size)
-        done_blocks = service.queue.infer_progress(item)
-        item.completed_chapters = done_blocks
+        done_chapters = service.queue.infer_progress(item)
+        item.completed_chapters = done_chapters
         service.queue.add_item(item)
     service.save_queue()
     return service.status()

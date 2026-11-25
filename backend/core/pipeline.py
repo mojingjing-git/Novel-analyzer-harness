@@ -8,13 +8,14 @@
 """
 
 import asyncio
+from collections import deque
 import json
 import logging
 import re
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Awaitable, Callable, Optional
+from typing import Awaitable, Callable, List, Optional, Sequence, Tuple
 
 from ..config.settings import AppConfig
 from ..config.constants import (
@@ -23,9 +24,16 @@ from ..config.constants import (
     ROLLING_SUMMARY_TEMPERATURE,
     ROLLING_EARLY_CHAPTERS,
     ROLLING_MOMENTUM_WINDOW, ROLLING_ARCHIVE_TRIGGER_COUNT,
+    ROLLING_ARCHIVE_THINKING_MIN_TOKENS,
 )
 from .file_processor import FileProcessor
-from .analyzer import NovelAnalyzer
+from .analyzer import BatchAnalysisResult, NovelAnalyzer
+from .batch_packer import (
+    effective_batch_cap,
+    is_thinking_enabled,
+    pack_chapter_batches,
+    resolve_thinking_effort,
+)
 from .knowledge_base import KnowledgeBaseManager
 from .llm_client import LLMClient
 from .memory_state import MemoryState
@@ -42,11 +50,23 @@ logger = logging.getLogger(__name__)
 ProgressCallback = Callable[[dict], Awaitable[None]]
 
 
+def _fmt_batch_range(chapters: Sequence[int]) -> str:
+    """格式化章节批次范围字符串，供进度与日志使用。"""
+    chs = [int(c) for c in chapters]
+    if not chs:
+        return "ch0"
+    if len(chs) == 1:
+        return f"ch{chs[0]}"
+    return f"ch{chs[0]}-ch{chs[-1]}"
+
+
 def _fmt_range(block_id: int, block_chs, block_size: int) -> str:
-    """格式化章节范围字符串，供进度日志使用。block_chs 为 None 时按 block_id 推导。"""
+    """格式化章节范围字符串（保留兼容入口）。"""
     if block_chs:
-        return f"ch{block_chs[0]}-ch{block_chs[-1]}" if block_size > 1 else f"ch{block_id}"
-    return f"ch{block_id}-ch{block_id + block_size - 1}" if block_size > 1 else f"ch{block_id}"
+        return _fmt_batch_range(block_chs)
+    if block_size > 1:
+        return f"ch{block_id}-ch{block_id + block_size - 1}"
+    return f"ch{block_id}"
 
 
 def _usage_status_of(retry_info) -> str:
@@ -207,6 +227,9 @@ class AnalysisPipeline:
         end_chapter: Optional[int] = None,
         on_progress: Optional[ProgressCallback] = None,
         on_token_stats: Optional[ProgressCallback] = None,
+        target_chapters: Optional[Sequence[int]] = None,
+        force_rerun: bool = False,
+        update_rolling: Optional[bool] = None,
     ):
         """
         Args:
@@ -217,6 +240,9 @@ class AnalysisPipeline:
             end_chapter: 结束章节（None表示到最后）
             on_progress: 进度回调 async fn(dict)，payload 对齐 progress 信号
             on_token_stats: token 统计回调 async fn(dict)
+            target_chapters: 指定定点重跑的章节列表（非空时仅重跑这些章并隐含 force_rerun）
+            force_rerun: True 时忽略磁盘既有结果强制重跑目标范围
+            update_rolling: 是否更新 rolling_summary.json；None 时定点重跑默认 False、全量默认 True
         """
         self.config = config
         self.directory = directory
@@ -226,6 +252,11 @@ class AnalysisPipeline:
         self._stop_requested = False
         self._on_progress = on_progress
         self._on_token_stats = on_token_stats
+        self.target_chapters: Optional[List[int]] = (
+            sorted({int(c) for c in target_chapters}) if target_chapters is not None else None
+        )
+        self.force_rerun: bool = bool(force_rerun or (self.target_chapters is not None))
+        self.update_rolling: Optional[bool] = update_rolling
         self._block_map: dict = {}  # block_id -> 实际章号列表（补跑时按原块恢复）
         self._rolling_early: int = ROLLING_EARLY_CHAPTERS  # 滚动摘要首生成阈值（可自适应）
         # 运行概览在途块（block_id -> {chapter, range, started_at}）：LLM 调用窗口内登记，
@@ -266,25 +297,25 @@ class AnalysisPipeline:
             rolling_client.request_stop()
         logger.info("收到停止请求")
 
-    def _retryable_failed_blocks(self, failed_block_ids: list) -> list:
-        """补跑列表过滤：剔除致命错误块（AUTH/BILLING/CONTEXT_LENGTH/BAD_REQUEST，
-        见 _analyze_one_block_impl 的登记逻辑）。全部为致命错误时返回空列表，调用方据此终止补跑。"""
-        retryable = [bid for bid in failed_block_ids if bid not in self._fatal_blocks]
-        skipped_fatal = len(failed_block_ids) - len(retryable)
+    def _retryable_failed_blocks(self, failed_chapter_ids: list) -> list:
+        """补跑列表过滤：剔除致命错误章节（AUTH/BILLING/CONTEXT_LENGTH/BAD_REQUEST）。"""
+        retryable = [cid for cid in failed_chapter_ids if cid not in self._fatal_blocks]
+        skipped_fatal = len(failed_chapter_ids) - len(retryable)
         if skipped_fatal:
-            sample = ",".join(sorted({self._fatal_blocks[bid] for bid in failed_block_ids
-                                      if bid in self._fatal_blocks}))
-            logger.warning(f"补跑剔除{skipped_fatal}个致命错误块（{sample}，重试成功率恒为零）")
+            sample = ",".join(sorted({self._fatal_blocks[cid] for cid in failed_chapter_ids
+                                      if cid in self._fatal_blocks}))
+            logger.warning(f"补跑剔除{skipped_fatal}个致命错误章节（{sample}，重试成功率恒为零）")
         return retryable
 
     async def run(self) -> dict:
         """
-        执行分析任务（三阶段：预热 → 并发 → 补跑）。
+        执行分析任务（三阶段：预热 → 动态并发池 → 缩容补跑）。
+        请求层按批大小、正文字符与输出 Token 容量动态打包，落盘与进度严格按单章结算。
         返回 finished payload：{stopped, total_analyzed, errors, failed_chapters}
-        异常向上抛出，由调用方（service）捕获并转为 error 消息。
         """
         total_analyzed = 0
-        self._fatal_blocks.clear()  # 断点续跑/复用实例时防止上一轮的 fatal 登记残留
+        self._fatal_blocks.clear()
+        self._block_map.clear()
         self._account_tripped = False
         self._account_trip_reason = ""
 
@@ -301,42 +332,50 @@ class AnalysisPipeline:
         if not all_chapters:
             raise RuntimeError("未找到章节文件（需要1.txt, 2.txt等格式）")
 
-        # 滚动摘要首生成阈值自适应：短书按总章数 1/3 触发（否则全书
-        # 分析完都不会生成结构化滚动摘要，prompt 缺失"全书主线概要"层）；
-        # 长书维持配置值（默认 100 章）。
         cfg_early = self.config.analysis.rolling_early_chapters or ROLLING_EARLY_CHAPTERS
         self._rolling_early = min(cfg_early, max(30, len(all_chapters) // 3))
 
-        # 3. 确定分析范围
+        # 3. 确定分析范围与动态装包参数
         if self.end_chapter is None or self.end_chapter > all_chapters[-1]:
             self.end_chapter = all_chapters[-1]
 
-        chapters_to_analyze = [
-            c for c in all_chapters
-            if self.start_chapter <= c <= self.end_chapter
-        ]
+        if self.target_chapters is not None:
+            target_set = set(self.target_chapters)
+            chapters_to_analyze = [c for c in all_chapters if c in target_set]
+        else:
+            chapters_to_analyze = [
+                c for c in all_chapters
+                if self.start_chapter <= c <= self.end_chapter
+            ]
+        valid_chapter_ids = set(chapters_to_analyze)
+        total = len(chapters_to_analyze)
+        effective_update_rolling = (
+            bool(self.update_rolling)
+            if self.update_rolling is not None
+            else (self.target_chapters is None)
+        )
 
-        # 3a. 块化：将连续章节合并为分析块（按"实际存在的章号"切块）
-        block_size = max(1, self.config.analysis.block_size)
-        blocks = []
-        for i in range(0, len(chapters_to_analyze), block_size):
-            block_chapters = chapters_to_analyze[i:i + block_size]
-            blocks.append((block_chapters[0], block_chapters))
-        # 保存块 -> 实际章号映射：断号目录下 read_block 必须按实际章号读，
-        # 补跑阶段 block_chs=None 时也据此恢复原块内容。
-        self._block_map = {bid: chs for bid, chs in blocks}
+        block_size = max(1, int(self.config.analysis.block_size or 1))
+        max_content_chars = max(1, int(self.config.analysis.max_content_chars or 12000))
+        max_tokens = self.config.api.max_tokens
+        thinking_enabled = is_thinking_enabled(self.config.api)
+        thinking_effort = resolve_thinking_effort(self.config.api)
+        runtime_cap = effective_batch_cap(
+            block_size,
+            max_tokens,
+            thinking_enabled,
+            reasoning_effort=thinking_effort,
+        )
 
-        total = len(blocks)
-        logger.info(f"共{total}块待分析（每块{block_size}章），并发数: {self.config.analysis.concurrency}")
+        logger.info(f"共{total}章待分析（单批上限={block_size}章），并发数: {self.config.analysis.concurrency}")
 
-        # 4. 确定输出目录 + 初始化 MemoryState
+        # 4. 确定输出目录 + 初始化 MemoryState（仅恢复单章产物，与 block_size 解耦）
         if self.config.working_directory:
             output_dir = Path(self.config.working_directory) / OUTPUT_DIR_NAME
         else:
             output_dir = Path(OUTPUT_DIR_NAME)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # 传入知识库限制配置，使 _trim_kb 使用用户配置而非硬编码常量
         kb_limits = {
             'max_compressed_arcs': self.config.analysis.max_compressed_arcs,
             'max_recent_summaries': self.config.analysis.max_recent_summaries,
@@ -354,48 +393,57 @@ class AnalysisPipeline:
             kb_limits=kb_limits,
         )
         state = self.state
-        # 恢复内部走线程池：千章级续跑不再阻塞事件循环
+        restore_chapters = set(all_chapters) if self.force_rerun else valid_chapter_ids
         restored = await state.restore_from_disk(
-            output_dir, block_size=block_size, expected_blocks=self._block_map
+            output_dir, valid_chapters=restore_chapters
         )
         if restored > 0:
-            logger.info(f"从磁盘恢复 {restored} 个已有 result")
+            logger.info(f"从磁盘恢复 {restored} 个已有单章 result")
 
-        # 4a. 断点续跑：跳过已落盘的块
-        completed = {bid for bid, _ in blocks if bid in state._flushed_chapters}
-        skipped_blocks = [(bid, chs) for bid, chs in blocks if bid in completed]
-        remaining_blocks = [(bid, chs) for bid, chs in blocks
-                            if bid not in completed and bid not in state._skipped_chapters]
-        if skipped_blocks:
-            logger.info(f"断点续跑：跳过已完成{len(skipped_blocks)}块 → 块ID: {[b[0] for b in skipped_blocks]}")
-            # 补发 block_done 事件，使前端续跑时也能看到这些章「已完成」（与正常完成表现一致）
-            for idx, (bid, _chs) in enumerate(skipped_blocks, start=1):
-                if idx % 50 == 0:
-                    # 补发洪峰限速：每块 ~3 条消息，千章级续跑一次灌 2700+ 条会打满
-                    # 每连接 WS 队列（maxsize=1000）触发丢最旧，挤掉真实 block_done
+        # 4a. 断点续跑 / 定点重跑范围初始化
+        if self.force_rerun:
+            done_chapters: set[int] = set()
+            pending_chapters = list(chapters_to_analyze)
+            restored_sorted: List[int] = []
+        else:
+            done_chapters = {c for c in chapters_to_analyze if c in state._flushed_chapters}
+            skipped_set: set[int] = {c for c in chapters_to_analyze if c in state._skipped_chapters}
+            pending_chapters = [
+                c for c in chapters_to_analyze
+                if c not in done_chapters and c not in skipped_set
+            ]
+            restored_sorted = sorted(done_chapters)
+        if restored_sorted:
+            logger.info(f"断点续跑：跳过已完成 {len(restored_sorted)} 章")
+            emit_list = restored_sorted[-50:]
+            offset = len(restored_sorted) - len(emit_list)
+            for idx, ch in enumerate(emit_list, start=1):
+                if idx % 20 == 0:
                     await asyncio.sleep(0)
                 await self._emit({
                     "status": PipelineStatus.DONE,
-                    "chapter": bid,
-                    "progress": idx,
+                    "chapter": ch,
+                    "progress": offset + idx,
                     "total": total,
                     "elapsed": 0,
-                    # 跳过块未发请求、未消耗：tokens 必须是整数（与其它载荷一致，
-                    # 元组会被前端读成 NaN/0），usage_status 标 KNOWN。
                     "tokens": 0,
                     "usage_status": "KNOWN",
+                    "range": f"ch{ch}",
+                    "chapters_count": 1,
+                    "restored": True,
                 })
-        if not remaining_blocks:
-            logger.info("所有块已完成，无需分析；仍执行最终 KB 合并与落盘收尾")
-            # 不能在此直接 return：否则会跳过最终 KB 合并/保存（knowledge.json 不刷新）
-            valid_block_ids = {b[0] for b in blocks}
+
+        if not pending_chapters:
+            logger.info("所有章节已完成或已跳过，仍执行最终 KB 合并与落盘收尾")
             await state.flush_to_disk(output_dir)
             final_kb = await asyncio.to_thread(
-                KnowledgeBaseManager.merge_results, output_dir, kb_limits=kb_limits
+                KnowledgeBaseManager.merge_results,
+                output_dir,
+                kb_limits=kb_limits,
+                single_chapter_only=True,
             )
             await asyncio.to_thread(KnowledgeBaseManager(self.knowledge_file).save, final_kb)
             logger.info(f"最终知识库已保存: {self.knowledge_file}")
-            # 全量已完成：同样重生成汇总报告（保持与正常路径一致）
             all_done_results = sorted(state.results.values(), key=lambda r: r.chapter_number)
             if all_done_results:
                 try:
@@ -404,90 +452,179 @@ class AnalysisPipeline:
                     logger.info(f"汇总报告已生成: {summary_path}")
                 except Exception as e:
                     logger.warning(f"生成汇总报告失败: {e}")
-            result_count = len([ch for ch in state.results if ch in valid_block_ids])
-            failed_chapters = state.failed_chapters_in(valid_block_ids)
-            skipped_chapters = [f"{c}({r})" for c, r in state._skipped_chapters.items()]
+            try:
+                self.file_processor.clear_cache()
+            except Exception:
+                pass
+            result_count = (
+                len(done_chapters)
+                if self.force_rerun
+                else len([ch for ch in state.results if ch in valid_chapter_ids])
+            )
+            failed_chapters = state.failed_chapters_in(valid_chapter_ids)
+            skipped_chapters = [
+                f"{c}({r})" for c, r in state._skipped_chapters.items()
+                if c in valid_chapter_ids
+            ]
             return {
-                "stopped": False, "total_analyzed": result_count,
-                "errors": [f"失败{len(failed_chapters)}块"] if failed_chapters else [],
+                "stopped": False,
+                "total_analyzed": result_count,
+                "errors": [f"失败{len(failed_chapters)}章"] if failed_chapters else [],
                 "failed_chapters": failed_chapters,
                 "skipped_chapters": skipped_chapters,
                 "account_tripped": False,
                 "account_trip_reason": "",
             }
 
+        # 4b. 测量待跑章节字符数并执行动态装包
+        def _measure_pending_lengths() -> dict[int, int]:
+            lengths: dict[int, int] = {}
+            for ch in pending_chapters:
+                txt = self.file_processor.read_chapter(ch)
+                lengths[ch] = len(txt) if txt is not None else 0
+            return lengths
+
+        chapter_lengths = await asyncio.to_thread(_measure_pending_lengths)
+        initial_batches = pack_chapter_batches(
+            pending_chapters,
+            chapter_lengths,
+            block_size=runtime_cap,
+            max_content_chars=max_content_chars,
+            max_tokens=max_tokens,
+            thinking_enabled=thinking_enabled,
+            reasoning_effort=thinking_effort,
+            break_on_gap=True,
+        )
+
         # 5. 初始化分析引擎
         analyzer = NovelAnalyzer(self.config)
         self._analyzer = analyzer
 
-        # 6. 并发参数
-        concurrency = max(1, self.config.analysis.concurrency)
+        # 6. 并发与预热参数（大批量时串行预热封顶 2 批，避免超时串行叠加阻塞全队）
+        concurrency = max(1, int(self.config.analysis.concurrency or 1))
+        skip_warmup = (restored > 10) or (self.force_rerun and restored > 0) or (self.target_chapters is not None)
+        warmup_cap = 2 if block_size >= 4 else concurrency
+        warmup_batches_count = 0 if skip_warmup else min(warmup_cap, concurrency, len(initial_batches))
+        chapters_since_checkpoint = 0
 
-        # 6a. 串行预热：前 N=concurrency 块串行处理，建立初始KB
-        # 续跑时已有产物 >10 跳过预热（KB 已从磁盘重建）
-        skip_warmup = restored > 10
-        warmup_count = 0 if skip_warmup else min(concurrency, len(remaining_blocks))
-        # 进度从已恢复的块数开始，避免断点续跑时进度条从 0 跳变
-        completed_count = len(skipped_blocks)
+        warmup_queue = deque(initial_batches[:warmup_batches_count])
+        queue = deque(initial_batches[warmup_batches_count:])
 
-        if not skip_warmup:
-            logger.info(f"串行预热前{warmup_count}块，建立初始知识库...")
-            for i in range(warmup_count):
-                if self._stop_requested:
-                    break
-                block_id, block_chs = remaining_blocks[i]
-                # 预热 start 事件使用 completed_count（而非循环索引 i），
-                # 避免前端进度条从已完成数"回退"到 0
-                _, completed_count, _, _, _ = await self.analyze_block_with_progress(
-                    block_id=block_id, block_chs=block_chs, block_size=block_size,
-                    total=total, label="预热",
-                    progress_count=completed_count, completed_count=completed_count,
-                    emit_start=True,
+        def _repack_queue_to_cap(q: deque, new_cap: int) -> None:
+            if not q or new_cap < 1:
+                return
+            rebuilt: list[list[int]] = []
+            changed = False
+            for queued_batch in q:
+                if len(queued_batch) > new_cap:
+                    changed = True
+                    rebuilt.extend(
+                        pack_chapter_batches(
+                            queued_batch,
+                            chapter_lengths,
+                            block_size=new_cap,
+                            max_content_chars=max_content_chars,
+                            max_tokens=max_tokens,
+                            thinking_enabled=thinking_enabled,
+                            reasoning_effort=thinking_effort,
+                            break_on_gap=True,
+                        )
+                    )
+                else:
+                    rebuilt.append(queued_batch)
+            if changed:
+                q.clear()
+                q.extend(rebuilt)
+
+        def _maybe_shrink(target_cap: int) -> None:
+            nonlocal runtime_cap
+            clamped = max(1, min(runtime_cap, int(target_cap)))
+            if clamped < runtime_cap:
+                logger.warning(f"触发自适应缩批：单批上限 {runtime_cap} → {clamped} 章，重排待跑队列")
+                runtime_cap = clamped
+                _repack_queue_to_cap(warmup_queue, runtime_cap)
+                _repack_queue_to_cap(queue, runtime_cap)
+
+        # 6a. 串行预热：先跑少量批，建立初始 KB
+        if not skip_warmup and warmup_batches_count > 0:
+            logger.info(f"串行预热前{warmup_batches_count}批，建立初始知识库...")
+            while warmup_queue and not self._stop_requested and not self._account_tripped:
+                batch_chs = warmup_queue.popleft()
+                ch_range = _fmt_batch_range(batch_chs)
+                await self._emit({
+                    "chapter": int(batch_chs[0]),
+                    "status": PipelineStatus.START,
+                    "progress": len(done_chapters),
+                    "total": total,
+                    "range": ch_range,
+                    "block_size": len(batch_chs),
+                    "message": f"[预热] 开始分析{ch_range}...",
+                })
+                try:
+                    outcome, elapsed = await self._execute_one_batch(
+                        analyzer, self.file_processor, state, batch_chs
+                    )
+                except Exception as e:
+                    logger.error(f"[预热] 批{ch_range}分析异常: {e}", exc_info=True)
+                    outcome = BatchAnalysisResult(
+                        valid_results={},
+                        missing_chapters=list(batch_chs),
+                        tokens=(0, 0),
+                        retry_info={
+                            "retries": 0, "failed_tokens": 0,
+                            "usage_status": "UNKNOWN", "error": f"批分析异常: {e}",
+                        },
+                    )
+                    elapsed = 0.0
+                followups, new_chs = await self._process_batch_outcome(
+                    batch_chs, outcome, elapsed,
+                    state=state, done_chapters=done_chapters,
+                    valid_chapter_ids=valid_chapter_ids, total=total, label="预热",
+                    on_shrink=_maybe_shrink,
                 )
+                chapters_since_checkpoint += len(new_chs)
+                if state.should_checkpoint(chapters_since_checkpoint):
+                    await state.flush_to_disk(output_dir)
+                    chapters_since_checkpoint = 0
+                if followups and not self._stop_requested and not self._account_tripped:
+                    warmup_queue.extendleft(reversed(followups))
 
-        # 6b. 流式并发池：剩余任务经 Semaphore 限流，as_completed 持续消费
-        remaining = remaining_blocks[warmup_count:]
+        # 6b. 动态并发池（deque + asyncio.wait(FIRST_COMPLETED)）
         if skip_warmup:
-            logger.info(f"已有{restored}块结果，跳过预热，剩余{len(remaining_blocks)}块直接并发（并发数={concurrency}）")
+            logger.info(f"已有{restored}章结果，跳过预热，剩余{len(queue)}批直接并发（并发数={concurrency}）")
         else:
-            logger.info(f"预热完成，剩余{len(remaining)}块切换为流式并发模式（并发数={concurrency}）")
+            logger.info(f"预热完成，剩余{len(queue)}批切换为流式并发模式（并发数={concurrency}）")
 
-        # rolling 独立 LLMClient 实例（不污染主分析 stats，不走重试链）
         rolling_client = LLMClient(self.config.api)
         self._rolling_client = rolling_client
-        # rolling_last_chapter 优先从内存恢复的 state.rolling
         rolling_last_chapter = 0
         if isinstance(state.rolling, dict):
             rolling_last_chapter = state.rolling.get("last_updated_chapter", 0)
         if rolling_last_chapter == 0:
-            if skip_warmup and state._flushed_chapters:
+            if done_chapters:
+                rolling_last_chapter = max(done_chapters)
+            elif state._flushed_chapters:
                 rolling_last_chapter = max(state._flushed_chapters)
-            elif not skip_warmup and remaining_blocks[:warmup_count]:
-                rolling_last_chapter = max(
-                    b_chs[-1] if b_chs else b_id
-                    for b_id, b_chs in remaining_blocks[:warmup_count]
-                )
 
-        # Rolling 后台任务同步：asyncio.Event（初始 set = 无 rolling 在运行）
         _rolling_done = asyncio.Event()
         _rolling_done.set()
         _completed_since_rolling = 0
         raw_interval = int(getattr(self.config.analysis, "rolling_update_interval", 0) or 0)
-        _rolling_batch_size = max(1, raw_interval if raw_interval > 0 else concurrency)  # 每 N 块完成触发一次 rolling
+        _rolling_batch_size = max(1, raw_interval if raw_interval > 0 else concurrency)
         _rolling_state = {"last_chapter": rolling_last_chapter}
 
-        async def _async_rolling(completed_block_ids):
+        async def _async_rolling(completed_chapter_ids):
             """后台 rolling 更新（asyncio.Task）"""
             try:
                 new_last = await self._update_rolling_summary(
                     rolling_client, output_dir, _rolling_state["last_chapter"],
-                    completed_block_ids, state)
+                    completed_chapter_ids, state)
                 if self._handle_rolling_breaker(rolling_client):
                     return
                 _rolling_state["last_chapter"] = new_last
                 await self._emit({
                     "chapter": 0, "status": PipelineStatus.ROLLING_UPDATED,
-                    "progress": completed_count, "total": total,
+                    "progress": len(done_chapters), "total": total,
                     "message": f"全书主线摘要已更新（纳入到第{new_last}章）"
                 })
             except Exception as e:
@@ -496,158 +633,250 @@ class AnalysisPipeline:
             finally:
                 _rolling_done.set()
 
-        # Semaphore 限流的并发 worker
-        sem = asyncio.Semaphore(concurrency)
-
-        async def _worker(block_id, block_chs):
-            async with sem:
-                if self._stop_requested:
-                    return block_id, block_chs, False, 0.0, (0, 0), None, {"retries": 0, "failed_tokens": 0}, True
-                # 并发模式必须 emit start：前端 activeBlocks 依赖 block_start 消息登记车道。
-                # 预热阶段走 analyze_block_with_progress（自带 emit），并发阶段若不 emit，
-                # activeBlocks 永远为空 → 「并发车道 0/N 运行中」错误，
-                # 车道也看不到运行时间（progressBar/lastTokenAt 不更新）。
-                # 在 _analyze_one_block 前补发 start，_handle_block_outcome 照常
-                # 触发 done。semaphore 内部 emit 保证只在真正拿到槽位后才登记活跃。
-                ch_range = _fmt_range(block_id, block_chs, block_size)
-                await self._emit({
-                    "chapter": block_id, "status": PipelineStatus.START,
-                    "progress": completed_count, "total": total,
-                    "range": ch_range, "block_size": len(block_chs or [block_id]),
-                    "message": f"开始分析{ch_range}..."
-                })
-                try:
-                    success, elapsed, ch_tokens, result, retry_info = await self._analyze_one_block(
-                        analyzer, self.file_processor, state, block_id, block_chs,
-                        block_size=block_size)
-                except Exception as e:
-                    # 异常必须带原 block_id 走 failed：消费循环的 except 兜底拿不到
-                    # block_id（固定发 chapter:0），前端 blockId>0 检查会忽略，
-                    # 已登记的 start 车道将永远收不到 done（车道堆叠泄漏源之一）
-                    logger.error(f"块{block_id}分析异常: {e}", exc_info=True)
-                    state.add_failed(block_id, f"块分析异常: {e}")
-                    # 异常可能发生在请求已发出 / 已扣费之后，(0, 0) 只是记账哨兵，
-                    # 故标 UNKNOWN——不能把"没拿到用量"当成"用量确实为零"上报。
-                    success, elapsed, ch_tokens, result, retry_info = (
-                        False, 0.0, (0, 0), None,
-                        {"retries": 0, "failed_tokens": 0, "usage_status": "UNKNOWN"})
-                return block_id, block_chs, success, elapsed, ch_tokens, result, retry_info, False
-
-        tasks = [asyncio.create_task(_worker(bid, chs)) for bid, chs in remaining]
-
-        _rolling_pending_ids = []
-        batch_idx = 0  # checkpoint 计数
-
-        for fut in asyncio.as_completed(tasks):
+        async def _run_batch_task(batch_chs: list[int]) -> Tuple[BatchAnalysisResult, float]:
             if self._stop_requested:
-                close_coro = getattr(fut, "close", None)
-                if callable(close_coro):
-                    close_coro()
-                break
-            try:
-                block_id, block_chs, success, elapsed, ch_tokens, result, retry_info, skipped = await fut
-                if skipped:
-                    continue
-                _, completed_count = await self._handle_block_outcome(
-                    success=success, block_id=block_id, block_chs=block_chs,
-                    block_size=block_size, total=total, label="",
-                    completed_count=completed_count, elapsed=elapsed,
-                    ch_tokens=ch_tokens, result=result, retry_info=retry_info,
+                return (
+                    BatchAnalysisResult(
+                        valid_results={},
+                        missing_chapters=list(batch_chs),
+                        tokens=(0, 0),
+                        retry_info={
+                            "retries": 0, "failed_tokens": 0,
+                            "usage_status": "KNOWN", "error": "用户请求停止",
+                        },
+                        stopped=True,
+                    ),
+                    0.0,
                 )
-                if self._stop_requested:
-                    break
+            ch_range = _fmt_batch_range(batch_chs)
+            await self._emit({
+                "chapter": int(batch_chs[0]),
+                "status": PipelineStatus.START,
+                "progress": len(done_chapters),
+                "total": total,
+                "range": ch_range,
+                "block_size": len(batch_chs),
+                "message": f"开始分析{ch_range}...",
+            })
+            try:
+                return await self._execute_one_batch(analyzer, self.file_processor, state, batch_chs)
             except Exception as e:
-                error_msg = f"块分析异常: {e}"
-                logger.error(error_msg, exc_info=True)
-                await self._emit({
-                    "chapter": 0, "status": PipelineStatus.FAILED, "progress": completed_count,
-                    "total": total, "message": error_msg
-                })
-                continue
+                logger.error(f"批{ch_range}分析异常: {e}", exc_info=True)
+                return (
+                    BatchAnalysisResult(
+                        valid_results={},
+                        missing_chapters=list(batch_chs),
+                        tokens=(0, 0),
+                        retry_info={
+                            "retries": 0, "failed_tokens": 0,
+                            "usage_status": "UNKNOWN", "error": f"批分析异常: {e}",
+                        },
+                    ),
+                    0.0,
+                )
 
-            # 流式 rolling 触发：每 N 块完成触发一次
-            _completed_since_rolling += 1
-            _rolling_pending_ids.append(block_id)
-            if _completed_since_rolling >= _rolling_batch_size:
-                await _rolling_done.wait()  # 等上一轮 rolling 完成
-                _rolling_done.clear()
-                captured_ids = list(_rolling_pending_ids)
-                asyncio.create_task(_async_rolling(captured_ids))
-                _rolling_pending_ids.clear()
-                _completed_since_rolling = 0
-                await self._emit({
-                    "chapter": 0, "status": PipelineStatus.ROLLING_STARTED,
-                    "progress": completed_count, "total": total,
-                    "message": f"全书主线摘要更新中（后台，已完成{completed_count}块）..."
-                })
+        active: dict[asyncio.Task, list[int]] = {}
+        _rolling_pending_ids: list[int] = []
 
-            # Checkpoint（不等 rolling）
-            batch_idx += 1
-            if state.should_checkpoint(batch_idx - 1):
-                await state.flush_to_disk(output_dir)
+        try:
+            while (queue or active) and not self._stop_requested and not self._account_tripped:
+                while queue and len(active) < concurrency and not self._stop_requested and not self._account_tripped:
+                    nxt = queue.popleft()
+                    task = asyncio.create_task(_run_batch_task(nxt))
+                    active[task] = nxt
+                if not active:
+                    break
 
-        # 取消未完成任务并等待清理（确保所有 worker 的 finally 释放 _inflight_blocks）
-        for t in tasks:
-            if not t.done():
-                t.cancel()
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
-        # 流式循环结束，等最后一轮 rolling 完成
-        await _rolling_done.wait()
+                done_tasks, _ = await asyncio.wait(
+                    active.keys(), return_when=asyncio.FIRST_COMPLETED
+                )
+                for task in done_tasks:
+                    batch_chs = active.pop(task)
+                    try:
+                        outcome, elapsed = await task
+                    except asyncio.CancelledError:
+                        continue
+                    except Exception as e:
+                        error_msg = f"批{_fmt_batch_range(batch_chs)}任务异常: {e}"
+                        logger.error(error_msg, exc_info=True)
+                        outcome = BatchAnalysisResult(
+                            valid_results={},
+                            missing_chapters=list(batch_chs),
+                            tokens=(0, 0),
+                            retry_info={
+                                "retries": 0, "failed_tokens": 0,
+                                "usage_status": "UNKNOWN", "error": error_msg,
+                            },
+                        )
+                        elapsed = 0.0
 
-        # 提前计算 valid_block_ids（补跑阶段也需要使用）
-        valid_block_ids = {b[0] for b in blocks}
+                    followups, new_chs = await self._process_batch_outcome(
+                        batch_chs, outcome, elapsed,
+                        state=state, done_chapters=done_chapters,
+                        valid_chapter_ids=valid_chapter_ids, total=total, label="",
+                        on_shrink=_maybe_shrink,
+                    )
+                    if followups and not self._stop_requested and not self._account_tripped:
+                        queue.extendleft(reversed(followups))
 
-        # 7c. 失败块自动补跑（每轮串行逐个重试以确保KB正确）
+                    if new_chs:
+                        _rolling_pending_ids.extend(new_chs)
+                        _completed_since_rolling += 1
+                        if effective_update_rolling and _completed_since_rolling >= _rolling_batch_size and _rolling_pending_ids:
+                            await _rolling_done.wait()
+                            _rolling_done.clear()
+                            captured_ids = list(_rolling_pending_ids)
+                            asyncio.create_task(_async_rolling(captured_ids))
+                            _rolling_pending_ids.clear()
+                            _completed_since_rolling = 0
+                            await self._emit({
+                                "chapter": 0,
+                                "status": PipelineStatus.ROLLING_STARTED,
+                                "progress": len(done_chapters),
+                                "total": total,
+                                "message": f"全书主线摘要更新中（后台，已完成{len(done_chapters)}章）...",
+                            })
+
+                    chapters_since_checkpoint += len(new_chs)
+                    if state.should_checkpoint(chapters_since_checkpoint):
+                        await state.flush_to_disk(output_dir)
+                        chapters_since_checkpoint = 0
+
+                    if self._stop_requested or self._account_tripped:
+                        break
+        finally:
+            for t in list(active.keys()):
+                if not t.done():
+                    t.cancel()
+            if active:
+                await asyncio.gather(*active.keys(), return_exceptions=True)
+            await _rolling_done.wait()
+
+        # 7c. 失败章自动补跑（每轮按减半批上限重新装包串行补跑）
         _actually_retried_succeeded: set[int] = set()
         retry_rounds = max(0, int(getattr(self.config.analysis, "failed_block_retry_rounds", 3)))
+        retry_cap = max(
+            1,
+            min(
+                runtime_cap,
+                effective_batch_cap(
+                    block_size,
+                    max_tokens,
+                    thinking_enabled,
+                    reasoning_effort=thinking_effort,
+                ),
+            ),
+        )
         for retry_round in range(retry_rounds):
-            if self._stop_requested:
+            if self._stop_requested or self._account_tripped:
                 break
-            failed_block_ids = [bid for bid, _ in blocks
-                                if bid in state._failed_chapters and bid not in state.results]
-            if not failed_block_ids:
+            failed_chs = [
+                ch for ch in chapters_to_analyze
+                if ch in state._failed_chapters
+                and ch not in done_chapters
+                and ch not in state._skipped_chapters
+            ]
+            if not failed_chs:
                 break
-            # 致命错误块（欠费/认证/参数/上下文）确定性不可自愈，不进补跑
-            failed_block_ids = self._retryable_failed_blocks(failed_block_ids)
-            if not failed_block_ids:
-                logger.warning("补跑终止：失败块全部为致命错误（API 余额不足/认证失败等），不再补跑")
+            failed_chs = self._retryable_failed_blocks(failed_chs)
+            if not failed_chs:
+                logger.warning("补跑终止：失败章节全部为致命错误（API 余额不足/认证失败等），不再补跑")
                 break
-            logger.info(f"补跑第{retry_round + 1}轮: {len(failed_block_ids)}个失败块")
-            for block_id in failed_block_ids:
-                if self._stop_requested:
-                    break
-                state._failed_chapters.pop(block_id, None)
-                ok_retry, completed_count, _, _, _ = await self.analyze_block_with_progress(
-                    block_id=block_id, block_chs=None, block_size=block_size,
-                    total=total, label="补跑",
-                    progress_count=completed_count, completed_count=completed_count,
-                    emit_start=True,
+            retry_cap = max(1, retry_cap // 2)
+            retry_lengths: dict[int, int] = {}
+            for ch in failed_chs:
+                if ch in chapter_lengths:
+                    retry_lengths[ch] = chapter_lengths[ch]
+                else:
+                    txt = await asyncio.to_thread(self.file_processor.read_chapter, ch)
+                    retry_lengths[ch] = len(txt) if txt is not None else 0
+            retry_batches = pack_chapter_batches(
+                failed_chs,
+                retry_lengths,
+                block_size=retry_cap,
+                max_content_chars=max_content_chars,
+                max_tokens=max_tokens,
+                thinking_enabled=thinking_enabled,
+                reasoning_effort=thinking_effort,
+                break_on_gap=True,
+            )
+            logger.info(
+                f"补跑第{retry_round + 1}轮: {len(failed_chs)}章 → {len(retry_batches)}批"
+                f"（单批上限={retry_cap}章）"
+            )
+            retry_queue = deque(retry_batches)
+            while retry_queue and not self._stop_requested and not self._account_tripped:
+                batch_chs = retry_queue.popleft()
+                for ch in batch_chs:
+                    state._failed_chapters.pop(ch, None)
+                ch_range = _fmt_batch_range(batch_chs)
+                await self._emit({
+                    "chapter": int(batch_chs[0]),
+                    "status": PipelineStatus.START,
+                    "progress": len(done_chapters),
+                    "total": total,
+                    "range": ch_range,
+                    "block_size": len(batch_chs),
+                    "message": f"[补跑] 开始分析{ch_range}...",
+                })
+                try:
+                    outcome, elapsed = await self._execute_one_batch(
+                        analyzer, self.file_processor, state, batch_chs
+                    )
+                except Exception as e:
+                    logger.error(f"[补跑] 批{ch_range}分析异常: {e}", exc_info=True)
+                    outcome = BatchAnalysisResult(
+                        valid_results={},
+                        missing_chapters=list(batch_chs),
+                        tokens=(0, 0),
+                        retry_info={
+                            "retries": 0, "failed_tokens": 0,
+                            "usage_status": "UNKNOWN", "error": f"批分析异常: {e}",
+                        },
+                    )
+                    elapsed = 0.0
+                followups, new_chs = await self._process_batch_outcome(
+                    batch_chs, outcome, elapsed,
+                    state=state, done_chapters=done_chapters,
+                    valid_chapter_ids=valid_chapter_ids, total=total, label="补跑",
                 )
-                if ok_retry:
-                    _actually_retried_succeeded.add(block_id)
+                if new_chs:
+                    _actually_retried_succeeded.update(new_chs)
+                chapters_since_checkpoint += len(new_chs)
+                if state.should_checkpoint(chapters_since_checkpoint):
+                    await state.flush_to_disk(output_dir)
+                    chapters_since_checkpoint = 0
+                if followups and not self._stop_requested and not self._account_tripped:
+                    retry_queue.extendleft(reversed(followups))
 
-        # 补跑成功后更新 rolling summary（包含低章号补跑块；失败只告警，绝不阻断收尾落盘）
-        if not self._stop_requested:
-            retried_block_ids = sorted(
+        # 补跑完成后更新 rolling summary（含尚未纳入的新增尾章与低章号补跑章）
+        if effective_update_rolling and not self._stop_requested:
+            retried_chapter_ids = sorted(
                 {
-                    bid for bid, _ in blocks
-                    if bid in valid_block_ids and bid > _rolling_state["last_chapter"] and bid in state.results
+                    ch for ch in chapters_to_analyze
+                    if ch > _rolling_state["last_chapter"] and ch in state.results
                 }
                 | _actually_retried_succeeded
             )
-            if retried_block_ids:
-                logger.info(f"补跑完成后更新 rolling summary: {len(retried_block_ids)}个块")
+            if retried_chapter_ids:
+                logger.info(f"补跑完成后更新 rolling summary: {len(retried_chapter_ids)}章")
                 await self._safe_post_retry_rolling_update(
                     rolling_client, output_dir, _rolling_state,
-                    retried_block_ids, state, completed_count, total)
+                    retried_chapter_ids, state, len(done_chapters), total)
 
-        # 8. 收集成功/失败信息（仅统计当前范围内的块）
+        # 8. 收集成功/失败信息（仅统计当前范围内的章节）
         await state.flush_to_disk(output_dir)
 
-        result_count = len([ch for ch in state.results if ch in valid_block_ids])
-        failed_chapters = state.failed_chapters_in(valid_block_ids)
-        skipped_chapters = [f"{c}({r})" for c, r in state._skipped_chapters.items()]
+        result_count = (
+            len(done_chapters)
+            if self.force_rerun
+            else len([ch for ch in state.results if ch in valid_chapter_ids])
+        )
+        failed_chapters = state.failed_chapters_in(valid_chapter_ids)
+        skipped_chapters = [
+            f"{c}({r})" for c, r in state._skipped_chapters.items()
+            if c in valid_chapter_ids
+        ]
         total_analyzed = result_count
 
         if failed_chapters:
@@ -659,16 +888,19 @@ class AnalysisPipeline:
                 "message": f"失败章节: {', '.join(str(c) for c in failed_chapters)}"
             })
 
-        # 9. 脚本合并所有结果生成最终KB（纯 CPU/IO，走线程池）
+        # 9. 脚本合并所有单章结果生成最终 KB（纯 CPU/IO，走线程池）
         logger.info("开始脚本合并所有章节结果...")
+        await asyncio.to_thread(KnowledgeBaseManager.invalidate_cache, output_dir)
         final_kb = await asyncio.to_thread(
-            KnowledgeBaseManager.merge_results, output_dir, kb_limits=kb_limits
+            KnowledgeBaseManager.merge_results,
+            output_dir,
+            kb_limits=kb_limits,
+            single_chapter_only=True,
         )
         await asyncio.to_thread(KnowledgeBaseManager(self.knowledge_file).save, final_kb)
         logger.info(f"最终知识库已保存: {self.knowledge_file}")
 
-        # 10. 使用全量结果生成汇总报告（含断点恢复的旧块：续跑必须重生成完整报告，
-        # 不能只用本轮新块覆盖磁盘上已存在的完整版）
+        # 10. 使用全量结果生成汇总报告
         all_results = sorted(state.results.values(), key=lambda r: r.chapter_number)
         if all_results:
             try:
@@ -678,19 +910,19 @@ class AnalysisPipeline:
             except Exception as e:
                 logger.warning(f"生成汇总报告失败: {e}")
 
-        # 11. 完成前释放章节内容缓存（全书内容无界常驻内存，分析结束即清空）
+        # 11. 完成前释放章节内容缓存
         try:
             self.file_processor.clear_cache()
         except Exception:
             pass
 
         # 12. 完成
-        logger.info(f"分析任务完成，成功{total_analyzed}块，失败{len(failed_chapters)}块"
-                    f"{f'，内容审核拦截跳过{len(skipped_chapters)}块' if skipped_chapters else ''}")
+        logger.info(f"分析任务完成，成功{total_analyzed}章，失败{len(failed_chapters)}章"
+                    f"{f'，内容审核拦截跳过{len(skipped_chapters)}章' if skipped_chapters else ''}")
         return {
             "stopped": self._stop_requested,
             "total_analyzed": total_analyzed,
-            "errors": [f"失败{len(failed_chapters)}块"] if failed_chapters else [],
+            "errors": [f"失败{len(failed_chapters)}章"] if failed_chapters else [],
             "failed_chapters": failed_chapters,
             "skipped_chapters": skipped_chapters,
             "account_tripped": self._account_tripped,
@@ -698,263 +930,349 @@ class AnalysisPipeline:
         }
 
     def inflight_blocks(self) -> list:
-        """当前真实在途块快照（LLM 调用窗口内，天然 ≤ concurrency 且零丢失）"""
+        """当前真实在途批快照（LLM 调用窗口内，天然 ≤ concurrency 且零丢失）"""
         return sorted(self._inflight_blocks.values(), key=lambda d: d["started_at"])
 
-    async def _analyze_one_block(self, analyzer, file_processor, state,
-                                 block_id: int, block_chs=None,
-                                 block_size: int = 1) -> tuple:
-        """
-        分析单个块的公共逻辑（预热/并发/补跑共用）。
-        纯分析+保存，不 emit progress（由调用方负责）。
-
-        在途登记放在这一层而非 _worker：预热与补跑不走 _worker，
-        三条路径在此单点汇聚才能覆盖全部车道。
-
-        Args:
-            block_chs: 本块实际章号列表；None 时回退到 _block_map（补跑场景），
-                       再回退 [block_id]（兼容旧调用）。
-
-        Returns:
-            (success, elapsed, ch_tokens, result, retry_info)
-        """
-        chs = block_chs or self._block_map.get(block_id) or [block_id]
-        self._inflight_blocks[block_id] = {
-            "chapter": block_id,
-            "range": _fmt_range(block_id, chs, block_size),
+    async def _execute_one_batch(
+        self,
+        analyzer: NovelAnalyzer,
+        file_processor: FileProcessor,
+        state: MemoryState,
+        batch_chs: Sequence[int],
+    ) -> Tuple[BatchAnalysisResult, float]:
+        """执行单批逐章槽位分析（预热/并发/补跑共用）。"""
+        chs = [int(c) for c in batch_chs]
+        lead_ch = chs[0]
+        ch_range = _fmt_batch_range(chs)
+        self._inflight_blocks[lead_ch] = {
+            "chapter": lead_ch,
+            "range": ch_range,
             "started_at": time.time(),
         }
-        try:
-            return await self._analyze_one_block_impl(
-                analyzer, file_processor, state, block_id, chs, block_size)
-        finally:
-            self._inflight_blocks.pop(block_id, None)
-
-    async def _analyze_one_block_impl(self, analyzer, file_processor, state,
-                                      block_id: int, chs: list,
-                                      block_size: int = 1) -> tuple:
-        """_analyze_one_block 的实际分析体（chs 已解析，在途登记由外层负责）"""
-        content = await asyncio.to_thread(file_processor.read_block, chs)
-        if content is None:
-            state.add_failed(block_id, "读取失败")
-            return False, 0.0, (0, 0), None, {"retries": 0, "failed_tokens": 0}
-
-        # 快照构建是 CPU 密集深拷贝，事件循环内裸调会让并发 worker/
-        # WS 广播整体冻结；内部 _snapshot_lock 是 threading.Lock，to_thread 安全。
-        temp_kb = await asyncio.to_thread(state.get_kb_snapshot, chapter_limit=block_id)
         t_start = time.time()
-        result, ch_tokens, retry_info = await analyzer.analyze_chapter(
-            block_id, content, temp_kb, block_size=block_size,
-            # session_id 借用 directory 路径（保证多书并发隔离）
-            book_id=str(self.directory) if self.directory else "")
-        elapsed = time.time() - t_start
-
-        if result is None:
-            err_text = (retry_info or {}).get("error", "")
-            # 审核拦截有两个来源：结构化码（is_moderation_error）与**厂商返回的文本**
-            # （`output new_sensitive (1027)` 这类，is_moderation_message 才认）。
-            # 原来只查前者，实测这类文本被当成普通失败：块进失败集、补跑还会重烧一遍，
-            # 而用户配的 skip_moderation_blocked 等于没生效。
-            if self.config.analysis.skip_moderation_blocked and (
-                is_moderation_error(err_text) or is_moderation_message(err_text)
-            ):
-                # 内容审核拦截：标记 skipped（不进失败集、补跑不重试）
-                retry_info["moderation_skip"] = True
-                state.add_skipped(block_id, "内容审核拦截")
-                logger.warning(f"块{block_id}内容审核拦截，跳过（重试1次后仍拦截）")
-                return False, elapsed, ch_tokens, None, retry_info
-
-            # 账户级熔断判定（严格使用 `is True` 守卫，防单测 MagicMock 真值误触发）
-            tripped_by_breaker = getattr(analyzer, "breaker_tripped", False) is True
-            _verdict_dict = (retry_info or {}).get("verdict")
-            _structured = ErrorVerdict.from_dict(_verdict_dict) if isinstance(_verdict_dict, dict) else None
-            tripped_by_verdict = (
-                _structured is not None
-                and _structured.is_permanent
-                and _structured.scope == ErrorScope.ACCOUNT_GLOBAL
-            )
-            if tripped_by_breaker or tripped_by_verdict:
-                raw_reason = getattr(analyzer, "breaker_reason", "")
-                reason_text = (
-                    raw_reason.strip()
-                    if isinstance(raw_reason, str) and raw_reason.strip()
-                    else (err_text[:120] if err_text else "账户级永久错误（认证失败或余额不足）")
-                )
-                self._account_tripped = True
-                if not self._account_trip_reason:
-                    self._account_trip_reason = reason_text
-                retry_info["account_tripped"] = True
-                self.stop()
-                logger.error(f"块{block_id}触发账户级熔断，已立即停止流水线: {reason_text}")
-                return False, elapsed, ch_tokens, None, retry_info
-
-            # 停止或熔断短路取消的在途块不记入失败落盘，以便下次断点续跑自然重跑
-            if self._stop_requested or err_text == "用户请求停止" or err_text.startswith("熔断："):
-                logger.info(f"块{block_id}因停止/熔断中止，不写入失败标记")
-                return False, elapsed, ch_tokens, None, retry_info
-
-            # 致命错误登记：stop 类错误重试成功率恒为零，
-            # 补跑轮据此剔除。审核类不登记（见 __init__ 注释）；err_text 为空/UNKNOWN 保守不登记。
-            # **结构化优先、文本兜底**。
-            _fatal_value = None
-            if _structured is not None:
-                if _structured.is_permanent:
-                    _fatal_value = _structured.cls.value
-            else:
-                _text_verdict = classify_message(err_text)
-                if (_text_verdict.cls is not ErrorClass.UNKNOWN
-                        and _text_verdict.is_permanent()
-                        and _text_verdict.cls not in (ErrorClass.MODERATION_INPUT, ErrorClass.MODERATION_OUTPUT)):
-                    _fatal_value = _text_verdict.cls.value
-            # 审核类不登记（见 __init__ 注释）：skip_moderation_blocked=False 时
-            # 用户明确要求补跑审核块
-            if _fatal_value is not None and _fatal_value not in (
-                    VerdictErrorClass.MODERATION_INPUT.value,
-                    VerdictErrorClass.MODERATION_OUTPUT.value):
-                self._fatal_blocks[block_id] = _fatal_value
-            reason = "分析失败（LLM响应解析失败或重试耗尽）"
-            state.add_failed(block_id, reason)
-            logger.warning(f"块{block_id}分析失败: {reason}，耗时{elapsed:.1f}s，tokens={ch_tokens}")
-            return False, elapsed, ch_tokens, None, retry_info
-
-        result.source_chapters = list(chs)
-        await state.add_result(result)
-        return True, elapsed, ch_tokens, result, retry_info
-
-    async def analyze_block_with_progress(
-        self, *, block_id: int, block_chs, block_size: int, total: int,
-        label: str, progress_count: int, completed_count: int,
-        emit_start: bool = True,
-    ):
-        """
-        同步块路径（预热 + 补跑两段循环共享逻辑）。
-        包括：emit start → _analyze_one_block → _handle_block_outcome。
-
-        Returns:
-            (success, new_completed_count, ch_tokens, result, retry_info)
-        """
-        if self._stop_requested:
-            return False, completed_count, (0, 0), None, {"retries": 0, "failed_tokens": 0}
-
-        ch_range = _fmt_range(block_id, block_chs, block_size)
-        prefix = f"[{label}] " if label else ""
-
-        if emit_start:
-            await self._emit({
-                "chapter": block_id, "status": PipelineStatus.START,
-                "progress": progress_count, "total": total,
-                "range": ch_range, "block_size": len(block_chs or [block_id]),
-                "message": f"{prefix}开始分析{ch_range}..."
-            })
-
         try:
-            success, elapsed, ch_tokens, result, retry_info = await self._analyze_one_block(
-                self._analyzer, self.file_processor, self.state, block_id, block_chs,
-                block_size=block_size,
+            chapter_items = await asyncio.to_thread(file_processor.read_chapters_batch, chs)
+            present_ids = {int(c) for c, _ in chapter_items}
+            unreadable = [c for c in chs if c not in present_ids]
+            if not chapter_items:
+                return (
+                    BatchAnalysisResult(
+                        valid_results={},
+                        missing_chapters=chs,
+                        tokens=(0, 0),
+                        retry_info={
+                            "retries": 0, "failed_tokens": 0,
+                            "usage_status": "KNOWN", "error": "读取失败",
+                        },
+                    ),
+                    time.time() - t_start,
+                )
+            # 严禁将本章（>= lead_ch）的旧结果注入自身 Prompt，防止定点重跑自我泄漏
+            temp_kb = await asyncio.to_thread(state.get_kb_snapshot, chapter_limit=lead_ch - 1)
+            outcome = await analyzer.analyze_batch(
+                chapter_items,
+                temp_kb,
+                book_id=str(self.directory) if self.directory else "",
             )
+            if unreadable:
+                missing = list(outcome.missing_chapters)
+                for u in unreadable:
+                    if u not in missing:
+                        missing.append(u)
+                outcome.missing_chapters = missing
+            return outcome, time.time() - t_start
+        finally:
+            self._inflight_blocks.pop(lead_ch, None)
 
-            success, new_completed = await self._handle_block_outcome(
-                success=success, block_id=block_id, block_chs=block_chs,
-                block_size=block_size, total=total, label=label,
-                completed_count=completed_count, elapsed=elapsed,
-                ch_tokens=ch_tokens, result=result, retry_info=retry_info,
-            )
-        except Exception as e:
-            # 预热/补跑路径的异常兜底：不包裹会冲出 run() 被服务层整书标 failed；
-            # 且必须带正确 chapter 发 failed，否则前端已登记的 start 车道泄漏
-            logger.error(f"{prefix}块{block_id}分析异常: {e}", exc_info=True)
-            self.state.add_failed(block_id, f"块分析异常: {e}")
-            await self._emit({
-                "chapter": block_id, "status": PipelineStatus.FAILED,
-                "progress": completed_count, "total": total,
-                "range": ch_range, "block_size": len(block_chs or [block_id]),
-                "retries": 0, "failed_tokens": 0,
-                "message": f"{prefix}{ch_range}分析异常",
-            })
-            # 同上——异常路径的 (0, 0) 是哨兵而非测量值，标 UNKNOWN
-            return False, completed_count, (0, 0), None, {
-                "retries": 0, "failed_tokens": 0, "usage_status": "UNKNOWN"}
-        return success, new_completed, ch_tokens, result, retry_info
-
-    async def _handle_block_outcome(
-        self, *, success: bool, block_id: int, block_chs, block_size: int,
-        total: int, label: str, completed_count: int, elapsed: float,
-        ch_tokens, result, retry_info: Optional[dict] = None,
-    ):
-        """单块结果后处理（accumulate + emit done/failed + token stats）。
-
-        对外载荷（block_done / chapter token_stats）统一携带 usage_status：
-        "UNKNOWN" 表示本次没拿到 usage，载荷里的 0 是记账哨兵而不是"零消耗"，
-        数字仍保持 int 以不破坏既有聚合口径，可信与否由本字段决定。
+    async def _process_batch_outcome(
+        self,
+        batch_chs: Sequence[int],
+        outcome: BatchAnalysisResult,
+        elapsed: float,
+        *,
+        state: MemoryState,
+        done_chapters: set[int],
+        valid_chapter_ids: set[int],
+        total: int,
+        label: str = "",
+        on_shrink: Optional[Callable[[int], None]] = None,
+    ) -> Tuple[List[List[int]], List[int]]:
+        """处理批量调用结果：按升序逐章并入 state、精准闭道、按错误分类拆批或标失败。
 
         Returns:
-            (success, new_completed_count)
+            ``(followup_batches, newly_succeeded_chapters)``
         """
-        retry_info = retry_info or {"retries": 0, "failed_tokens": 0}
-        ch_range = _fmt_range(block_id, block_chs, block_size)
+        chs = [int(c) for c in batch_chs]
+        lead_ch = chs[0]
+        ch_range = _fmt_batch_range(chs)
         prefix = f"[{label}] " if label else ""
-        # 本块用量状态，随下面所有"消耗"上报一起走
-        usage_status = _usage_status_of(retry_info)
 
-        if success:
-            completed_count += 1
-            # 剔除 raw_response 再广播：否则每个 block_done 携带整段原文（可达 13 万 token），
-            # WS 带宽与前端内存都会被拖垮；raw_response 仅用于本次广播，
-            # 落盘与广播均剔除（详见 memory_state.flush_to_disk，前端经 /api/books 读取结构化结果）。
-            result_dict = result.to_dict() if result else None
-            if isinstance(result_dict, dict):
-                result_dict.pop("raw_response", None)
+        valid_chs = sorted(outcome.valid_results.keys())
+        merged_dicts: List[dict] = []
+        for ch in valid_chs:
+            res = outcome.valid_results[ch]
+            res.chapter_number = ch
+            res.block_size = 1
+            res.source_chapters = [ch]
+            await state.add_result(res)
+            if ch in valid_chapter_ids:
+                done_chapters.add(ch)
+            d = res.to_dict()
+            if isinstance(d, dict):
+                d.pop("raw_response", None)
+            merged_dicts.append(d)
+            res.raw_response = ""
+
+        retry_info = outcome.retry_info or {"retries": 0, "failed_tokens": 0}
+        usage_status = _usage_status_of(retry_info)
+        in_tok, out_tok = (
+            outcome.tokens
+            if isinstance(outcome.tokens, tuple) and len(outcome.tokens) == 2
+            else (0, 0)
+        )
+        completed_count = len(done_chapters)
+        missing = [c for c in outcome.missing_chapters if c not in outcome.valid_results]
+
+        async def _emit_chapter_tokens() -> None:
+            await self._emit_tokens({
+                "category": "chapter",
+                "input_tokens": in_tok,
+                "output_tokens": out_tok,
+                "current_tokens": in_tok + out_tok,
+                "usage_status": usage_status,
+                "model": self.config.api.model,
+                "cached_tokens": retry_info.get("cached_tokens", 0),
+            })
+
+        # 1. 账户级熔断最高优先级：立即止损停线并闭合前端车道
+        if outcome.account_tripped:
+            reason_text = (outcome.account_trip_reason or "").strip() or "账户级永久错误（认证失败或余额不足）"
+            self._account_tripped = True
+            if not self._account_trip_reason:
+                self._account_trip_reason = reason_text
+            self.stop()
+            logger.error(f"批{ch_range}触发账户级熔断，已立即停止流水线: {reason_text}")
             await self._emit({
-                "chapter": block_id, "status": PipelineStatus.DONE,
-                "result": result_dict,
-                "progress": completed_count, "total": total, "elapsed": elapsed,
-                "range": ch_range, "block_size": len(block_chs or [block_id]),
-                "tokens": ch_tokens[0] + ch_tokens[1],
-                "input_tokens": ch_tokens[0], "output_tokens": ch_tokens[1],
+                "chapter": lead_ch,
+                "status": PipelineStatus.FAILED,
+                "results": merged_dicts,
+                "progress": completed_count,
+                "total": total,
+                "range": ch_range,
+                "block_size": len(chs),
+                "chapters_count": len(valid_chs),
+                "retries": retry_info.get("retries", 0),
+                "failed_tokens": retry_info.get("failed_tokens", 0),
+                "message": f"{prefix}{ch_range}触发账户级熔断",
+            })
+            await _emit_chapter_tokens()
+            return [], valid_chs
+
+        # 2. 用户请求停止：不写失败/跳过、不拆批，闭合车道后退出
+        err_text = str(retry_info.get("error") or "")
+        if outcome.stopped or self._stop_requested or err_text == "用户请求停止":
+            logger.info(f"批{ch_range}因停止中止，不写入失败标记")
+            await self._emit({
+                "chapter": lead_ch,
+                "status": PipelineStatus.FAILED,
+                "results": merged_dicts,
+                "progress": completed_count,
+                "total": total,
+                "range": ch_range,
+                "block_size": len(chs),
+                "chapters_count": len(valid_chs),
+                "retries": retry_info.get("retries", 0),
+                "failed_tokens": retry_info.get("failed_tokens", 0),
+                "message": f"{prefix}{ch_range}因停止中止",
+            })
+            if in_tok or out_tok or usage_status == "UNKNOWN":
+                await _emit_chapter_tokens()
+            return [], valid_chs
+
+        # 3. 整批全部成功
+        if not missing:
+            await self._emit({
+                "chapter": lead_ch,
+                "status": PipelineStatus.DONE,
+                "result": merged_dicts[-1] if merged_dicts else None,
+                "results": merged_dicts,
+                "progress": completed_count,
+                "total": total,
+                "elapsed": elapsed,
+                "range": ch_range,
+                "block_size": len(chs),
+                "chapters_count": len(valid_chs),
+                "tokens": in_tok + out_tok,
+                "input_tokens": in_tok,
+                "output_tokens": out_tok,
                 "retries": retry_info.get("retries", 0),
                 "failed_tokens": retry_info.get("failed_tokens", 0),
                 "usage_status": usage_status,
-                "message": f"{prefix}{ch_range}分析完成"
+                "message": f"{prefix}{ch_range}分析完成",
             })
-            # 广播后立即释放 raw_response：整段 LLM 原文在内存里只服务于这次广播，
-            # 继续持有会让长书内存随章节线性增长（万章级 = 数百 MB 死重）
-            if result is not None:
-                result.raw_response = ""
-        else:
-            if retry_info.get("moderation_skip"):
-                # 内容审核拦截跳过：单独状态（非失败），进度不计、不触发 block_done 失败
-                await self._emit({
-                    "chapter": block_id, "status": PipelineStatus.SKIPPED,
-                    "progress": completed_count, "total": total,
-                    "range": ch_range, "block_size": len(block_chs or [block_id]),
-                    "message": f"{prefix}{ch_range} 内容审核拦截，已跳过"
-                })
-                return False, completed_count
+            await _emit_chapter_tokens()
+            return [], valid_chs
+
+        # 4. 部分成功：保留已完成章，仅把缺失章组成小批追回
+        if len(chs) > 1 and len(valid_chs) > 0:
+            if outcome.truncated and on_shrink is not None:
+                on_shrink(max(1, len(valid_chs)))
             await self._emit({
-                "chapter": block_id, "status": PipelineStatus.FAILED,
-                "progress": completed_count, "total": total,
-                "range": ch_range, "block_size": len(block_chs or [block_id]),
+                "chapter": lead_ch,
+                "status": PipelineStatus.DONE,
+                "result": merged_dicts[-1],
+                "results": merged_dicts,
+                "progress": completed_count,
+                "total": total,
+                "elapsed": elapsed,
+                "range": ch_range,
+                "block_size": len(chs),
+                "chapters_count": len(valid_chs),
+                "tokens": in_tok + out_tok,
+                "input_tokens": in_tok,
+                "output_tokens": out_tok,
                 "retries": retry_info.get("retries", 0),
                 "failed_tokens": retry_info.get("failed_tokens", 0),
-                "message": f"{prefix}{ch_range}分析失败"
+                "usage_status": usage_status,
+                "message": f"{prefix}{ch_range}部分完成（{len(valid_chs)}/{len(chs)}章），缺失{missing}待补",
             })
+            await _emit_chapter_tokens()
+            return [missing], valid_chs
 
-        # token 统计：发送本块实际消耗（非累计值，避免 on_token_stats 重复累加）
-        # 累计值由 LLMClient.get_stats() 维护，前端可通过 /api/analysis/token_stats 获取
-        in_tok, out_tok = ch_tokens if isinstance(ch_tokens, tuple) and len(ch_tokens) == 2 else (0, 0)
-        await self._emit_tokens({
-            "category": "chapter",
-            "input_tokens": in_tok,
-            "output_tokens": out_tok,
-            "current_tokens": in_tok + out_tok,  # 兼容旧前端读取 current_tokens
-            # UNKNOWN = 没拿到 usage，上面的 0 只是哨兵，
-            # 不得被读成"本次确实消耗 0 token"
-            "usage_status": usage_status,
-            # 持久账本需要：模型名（费用牌价键）+ 本章缓存命中 delta（cache_read 价计费）
-            "model": self.config.api.model,
-            "cached_tokens": (retry_info or {}).get("cached_tokens", 0),
+        # 5. 全失败分类（审核 / 上下文超长 / 非法参数 / 致命故障）
+        verdict_dict = retry_info.get("verdict")
+        structured = ErrorVerdict.from_dict(verdict_dict) if isinstance(verdict_dict, dict) else None
+        text_verdict = classify_message(err_text) if structured is None else None
+
+        is_mod = (
+            is_moderation_error(err_text)
+            or is_moderation_message(err_text)
+            or (
+                structured is not None
+                and structured.cls in (VerdictErrorClass.MODERATION_INPUT, VerdictErrorClass.MODERATION_OUTPUT)
+            )
+            or (
+                text_verdict is not None
+                and text_verdict.cls in (ErrorClass.MODERATION_INPUT, ErrorClass.MODERATION_OUTPUT)
+            )
+        )
+        is_ctx_len = (
+            (structured is not None and structured.cls == VerdictErrorClass.CONTEXT_LENGTH)
+            or (text_verdict is not None and text_verdict.cls == ErrorClass.CONTEXT_LENGTH)
+        )
+        is_bad_req = (
+            (structured is not None and structured.cls == VerdictErrorClass.BAD_REQUEST)
+            or (text_verdict is not None and text_verdict.cls == ErrorClass.BAD_REQUEST)
+        )
+        is_timeout = (
+            (structured is not None and structured.cls == VerdictErrorClass.TIMEOUT)
+            or (text_verdict is not None and text_verdict.cls == ErrorClass.TIMEOUT)
+        )
+
+        fatal_val = None
+        if structured is not None:
+            if structured.is_permanent:
+                fatal_val = structured.cls.value
+        elif text_verdict is not None:
+            if (
+                text_verdict.cls is not ErrorClass.UNKNOWN
+                and text_verdict.is_permanent()
+                and text_verdict.cls not in (ErrorClass.MODERATION_INPUT, ErrorClass.MODERATION_OUTPUT)
+            ):
+                fatal_val = text_verdict.cls.value
+        if fatal_val in (
+            VerdictErrorClass.MODERATION_INPUT.value,
+            VerdictErrorClass.MODERATION_OUTPUT.value,
+        ):
+            fatal_val = None
+
+        # 5a. 多章整批零成果且因 审核 / 上下文超长 / 截断 / 超时 失败 → 二分拆小批隔离，不提前写失败/跳过标记
+        if len(chs) > 1 and (is_mod or is_ctx_len or outcome.truncated or is_timeout) and not is_bad_req:
+            mid = len(chs) // 2
+            followups = [chs[:mid], chs[mid:]]
+            if (outcome.truncated or is_timeout or is_ctx_len) and on_shrink is not None:
+                on_shrink(max(1, mid))
+            logger.warning(
+                f"{prefix}{ch_range}触发拆分重试（mod={is_mod}, ctx={is_ctx_len}, trunc={outcome.truncated}, timeout={is_timeout}）→ {followups}"
+            )
+            await self._emit({
+                "chapter": lead_ch,
+                "status": PipelineStatus.FAILED,
+                "results": [],
+                "progress": completed_count,
+                "total": total,
+                "range": ch_range,
+                "block_size": len(chs),
+                "chapters_count": 0,
+                "retries": retry_info.get("retries", 0),
+                "failed_tokens": retry_info.get("failed_tokens", 0),
+                "message": f"{prefix}{ch_range}已拆分为两小批重试",
+            })
+            await _emit_chapter_tokens()
+            return followups, []
+
+        # 5b. 多章整批不可拆失败：逐章记入 failed 供后续减半重装包补跑
+        if len(chs) > 1:
+            reason = "读取失败" if "读取失败" in err_text else "分析失败（LLM响应解析失败或重试耗尽）"
+            for ch in missing:
+                if fatal_val is not None:
+                    self._fatal_blocks[ch] = fatal_val
+                state.add_failed(ch, reason)
+            logger.warning(f"{prefix}批{ch_range}分析失败: {reason}，耗时{elapsed:.1f}s，tokens={outcome.tokens}")
+            await self._emit({
+                "chapter": lead_ch,
+                "status": PipelineStatus.FAILED,
+                "results": [],
+                "progress": completed_count,
+                "total": total,
+                "range": ch_range,
+                "block_size": len(chs),
+                "chapters_count": 0,
+                "retries": retry_info.get("retries", 0),
+                "failed_tokens": retry_info.get("failed_tokens", 0),
+                "message": f"{prefix}{ch_range}分析失败",
+            })
+            await _emit_chapter_tokens()
+            return [], []
+
+        # 6. 单章失败（已不可再拆）
+        ch = lead_ch
+        if self.config.analysis.skip_moderation_blocked and is_mod:
+            state.add_skipped(ch, "内容审核拦截")
+            logger.warning(f"第{ch}章内容审核拦截，跳过")
+            await self._emit({
+                "chapter": ch,
+                "status": PipelineStatus.SKIPPED,
+                "progress": completed_count,
+                "total": total,
+                "range": ch_range,
+                "block_size": 1,
+                "chapters_count": 0,
+                "message": f"{prefix}{ch_range} 内容审核拦截，已跳过",
+            })
+            if in_tok or out_tok:
+                await _emit_chapter_tokens()
+            return [], []
+
+        if fatal_val is not None:
+            self._fatal_blocks[ch] = fatal_val
+        reason = "读取失败" if "读取失败" in err_text else "分析失败（LLM响应解析失败或重试耗尽）"
+        state.add_failed(ch, reason)
+        logger.warning(f"第{ch}章分析失败: {reason}，耗时{elapsed:.1f}s，tokens={outcome.tokens}")
+        await self._emit({
+            "chapter": ch,
+            "status": PipelineStatus.FAILED,
+            "progress": completed_count,
+            "total": total,
+            "range": ch_range,
+            "block_size": 1,
+            "chapters_count": 0,
+            "retries": retry_info.get("retries", 0),
+            "failed_tokens": retry_info.get("failed_tokens", 0),
+            "message": f"{prefix}{ch_range}分析失败",
         })
-        return success, completed_count
+        await _emit_chapter_tokens()
+        return [], []
 
     async def _emit_rolling_tokens(self, tokens, model: str = "", cached_tokens: int = 0):
         """rolling 调用 token 统计（asyncio 内直接 emit，无需线程缓冲）"""
@@ -1221,10 +1539,16 @@ class AnalysisPipeline:
         # 与全链路其它 LLM 调用一致，走带温度退火 + 退避重试的 chat_with_retry，
         # 避免单次失败直接丢弃势头归档（归档是热点路径上的关键节点）。
         archive_max_tok = max(1, int(getattr(self.config.analysis, "rolling_archive_max_tokens", 100) or 100))
+        if is_thinking_enabled(self.config.api):
+            archive_max_tok = max(archive_max_tok, ROLLING_ARCHIVE_THINKING_MIN_TOKENS)
         llm_result = await rolling_client.chat_with_retry(
             messages, max_tokens=archive_max_tok
         )
-        await self._emit_rolling_tokens(llm_result.tokens)
+        await self._emit_rolling_tokens(
+            llm_result.tokens,
+            model=self.config.api.model,
+            cached_tokens=getattr(llm_result, "cached_tokens", 0) or 0,
+        )
         if llm_result.success and llm_result.content and llm_result.content.strip():
             milestone = llm_result.content.strip().strip('"').strip("'")
             if len(milestone) > 60:
@@ -1270,7 +1594,11 @@ class AnalysisPipeline:
         llm_result = await rolling_client.chat(
             messages, temperature=rolling_temp, max_tokens=rolling_max_tok
         )
-        await self._emit_rolling_tokens(llm_result.tokens)
+        await self._emit_rolling_tokens(
+            llm_result.tokens,
+            model=self.config.api.model,
+            cached_tokens=getattr(llm_result, "cached_tokens", 0) or 0,
+        )
 
         if llm_result.success and llm_result.content and llm_result.content.strip():
             raw = extract_json_from_text(llm_result.content)
@@ -1320,7 +1648,11 @@ class AnalysisPipeline:
             temperature=rolling_temp,
             max_tokens=rolling_max_tok
         )
-        await self._emit_rolling_tokens(llm_result.tokens)
+        await self._emit_rolling_tokens(
+            llm_result.tokens,
+            model=self.config.api.model,
+            cached_tokens=getattr(llm_result, "cached_tokens", 0) or 0,
+        )
 
         if llm_result.success and llm_result.content and llm_result.content.strip():
             raw = extract_json_from_text(llm_result.content)

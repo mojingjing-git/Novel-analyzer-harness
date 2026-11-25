@@ -153,18 +153,25 @@ def make_pipeline_callbacks(hub, item, stats, seen_characters):
                 elapsed=payload.get("elapsed"),
                 tokens=payload.get("tokens"),
             ))
-            # 记录每章统计（失败块同样计入：重试成本不可因失败而归零）
-            stats.record_chapter(payload)
-            # 持久账本（跨会话累计，与 AnalysisStats 的会话生命周期解耦）
-            ledger.add_chapter(payload)
-            ledger.schedule_save()
+            # 断点续跑补发历史章节事件不重复记入会话统计或持久账本
+            if not payload.get("restored"):
+                stats.record_chapter(payload)
+                ledger.add_chapter(payload)
+                ledger.schedule_save()
 
-            # discovery 提取（仅成功块，result 是 AnalysisResult dataclass dict）
-            if status == "done":
-                result = payload.get("result")
-                discovery = _extract_discovery(result, seen_characters)
-                if discovery:
-                    await hub.publish(discovery_event(**discovery))
+            # discovery 提取（仅新完成的成功批；遍历 results 逐章抽取，兼容单条 result）
+            if status == PipelineStatus.DONE and not payload.get("restored"):
+                results_batch = payload.get("results")
+                if isinstance(results_batch, list) and results_batch:
+                    for ch_result in results_batch:
+                        discovery = _extract_discovery(ch_result, seen_characters)
+                        if discovery:
+                            await hub.publish(discovery_event(**discovery))
+                else:
+                    result = payload.get("result")
+                    discovery = _extract_discovery(result, seen_characters)
+                    if discovery:
+                        await hub.publish(discovery_event(**discovery))
 
     async def on_token_stats(payload: dict) -> None:
         # 累积分类 token 统计（实现在 analysis_stats.AnalysisStats）

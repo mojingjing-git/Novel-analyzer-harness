@@ -10,9 +10,13 @@ import logging
 import shutil
 import time
 from pathlib import Path
-from typing import Optional, Dict, Any, Literal
+from types import SimpleNamespace
+from typing import Any, Dict, Literal, Optional, Sequence, Tuple, Union
 
-from ..config.settings import AppConfig, ConfigManager
+from ..common.chapter_spec import parse_chapter_spec
+from ..common.file_lock import BookFileLock, BookLockError
+from ..config.settings import AppConfig, ConfigManager, validate_settings_payload
+from ..core.file_processor import FileProcessor
 from ..core.llm_failure_logger import redact
 from ..core.pipeline import AnalysisPipeline
 from ..progress_hub import get_hub
@@ -22,6 +26,106 @@ from ..ws_events import WSState
 from .queue_manager import CONFIG_FILE, PROJECT_ROOT, QUEUE_STATE_FILE, QueueItem, QueueManager
 
 logger = logging.getLogger(__name__)
+
+_ALLOWED_API_OVERRIDES = frozenset({
+    "model", "temperature", "max_tokens", "reasoning_effort", "thinking_mode", "timeout",
+})
+_ALLOWED_ANALYSIS_OVERRIDES = frozenset({
+    "block_size", "concurrency", "max_content_chars",
+})
+
+
+def _apply_thinking_effort_override(cfg: AppConfig, effort_raw: str) -> str:
+    """统一将 ``reasoning_effort`` 覆盖写入 ``cfg.api``（同步刷新 ``thinking_mode``）。"""
+    effort = str(effort_raw or "").strip().lower()
+    valid_efforts = ("", "none", "low", "medium", "high", "xhigh", "max")
+    if effort not in valid_efforts:
+        raise ValueError(f"不支持的 reasoning_effort: {effort_raw!r}")
+    tm = dict(cfg.api.thinking_mode) if isinstance(cfg.api.thinking_mode, dict) else {}
+    for conflict_key in ("enable_thinking", "thinking", "reasoning"):
+        tm.pop(conflict_key, None)
+    if effort == "none":
+        cfg.api.reasoning_effort = ""
+        tm["reasoning_effort"] = "none"
+    elif effort == "":
+        cfg.api.reasoning_effort = ""
+        tm.pop("reasoning_effort", None)
+    else:
+        cfg.api.reasoning_effort = effort
+        tm["reasoning_effort"] = effort
+    cfg.api.thinking_mode = tm
+    return effort
+
+
+def _apply_rerun_overrides(
+    base_cfg: AppConfig,
+    overrides: Optional[Dict[str, Any]],
+) -> Tuple[AppConfig, Dict[str, Any]]:
+    """对克隆配置应用严格白名单过滤后的定点重跑临时覆盖参数（不写盘）。"""
+    run_cfg = AppConfig.from_dict(base_cfg.to_dict())
+    if not overrides:
+        return run_cfg, {}
+    if not isinstance(overrides, dict):
+        raise ValueError("overrides 必须为字典")
+
+    api_patch: Dict[str, Any] = {}
+    analysis_patch: Dict[str, Any] = {}
+    recorded: Dict[str, Any] = {}
+    effort_override: Optional[str] = None
+
+    for key, val in overrides.items():
+        if val is None:
+            continue
+        if key == "api" and isinstance(val, dict):
+            for k2, v2 in val.items():
+                if k2 not in _ALLOWED_API_OVERRIDES:
+                    raise ValueError(f"不允许通过重跑覆盖参数: api.{k2}")
+                if k2 == "reasoning_effort":
+                    effort_override = str(v2)
+                elif v2 is not None:
+                    api_patch[k2] = v2
+                    recorded[k2] = v2
+        elif key == "analysis" and isinstance(val, dict):
+            for k2, v2 in val.items():
+                if k2 not in _ALLOWED_ANALYSIS_OVERRIDES:
+                    raise ValueError(f"不允许通过重跑覆盖参数: analysis.{k2}")
+                if v2 is not None:
+                    analysis_patch[k2] = v2
+                    recorded[k2] = v2
+        elif key in _ALLOWED_API_OVERRIDES:
+            if key == "reasoning_effort":
+                effort_override = str(val)
+            else:
+                api_patch[key] = val
+                recorded[key] = val
+        elif key in _ALLOWED_ANALYSIS_OVERRIDES:
+            analysis_patch[key] = val
+            recorded[key] = val
+        else:
+            raise ValueError(f"不允许通过重跑覆盖参数: {key}")
+
+    validate_payload: Dict[str, Any] = {}
+    if api_patch:
+        validate_payload["api"] = api_patch
+    if analysis_patch:
+        validate_payload["analysis"] = analysis_patch
+    if validate_payload:
+        errs = validate_settings_payload(validate_payload)
+        if errs:
+            first_msg = errs[0].get("msg") or "覆盖参数校验失败"
+            raise ValueError(str(first_msg))
+        merged = run_cfg.to_dict()
+        if api_patch:
+            merged["api"].update(api_patch)
+        if analysis_patch:
+            merged["analysis"].update(analysis_patch)
+        run_cfg = AppConfig.from_dict(merged)
+
+    if effort_override is not None:
+        normalized = _apply_thinking_effort_override(run_cfg, effort_override)
+        recorded["reasoning_effort"] = normalized or "none"
+
+    return run_cfg, recorded
 
 
 class AnalysisService:
@@ -45,6 +149,8 @@ class AnalysisService:
         self._pipeline: Optional[AnalysisPipeline] = None
         self._stop_requested = False
         self._account_tripped_reason: str = ""
+        self._run_mode: str = "idle"
+        self._rerun_meta: Optional[Dict[str, Any]] = None
         # 一次分析会话的 token/耗时累计（分类统计/每章记录/重试成本/KV 命中），
         # 生命周期 = start 重置 → finally 冻结（实现见 analysis_stats.py）
         self.stats = AnalysisStats()
@@ -69,6 +175,8 @@ class AnalysisService:
         pipeline = getattr(self, "_pipeline", None)
         return {
             "running": self.is_running,
+            "mode": getattr(self, "_run_mode", "idle") if self.is_running else "idle",
+            "rerun": getattr(self, "_rerun_meta", None) if self.is_running else None,
             "queue": self.queue.get_progress(),
             "items": [item.to_dict() for item in self.queue.items],
             "workspace_dir": self.workspace_path.as_posix(),
@@ -81,17 +189,7 @@ class AnalysisService:
 
     def token_stats(self) -> Dict[str, Any]:
         """返回分类 token 统计 + 每章记录 + 总耗时 + KV 缓存命中数"""
-        # KV cache 命中：运行中读当前 analyzer（实时）；结束后用累计值
-        # getattr 兜底：部分单测用 __new__ 构造实例（无 __init__ 属性）
-        cached_tokens = self.stats.total_cached_tokens
-        pipeline = getattr(self, "_pipeline", None)
-        if pipeline is not None:
-            analyzer = getattr(pipeline, '_analyzer', None)
-            if analyzer is not None:
-                try:
-                    cached_tokens = analyzer.get_token_stats().get('cached_tokens', 0)
-                except Exception:
-                    cached_tokens = self.stats.total_cached_tokens
+        cached_tokens = getattr(self.stats, "total_cached_tokens", 0) or 0
         return self.stats.session_snapshot(running=self.is_running, cached_tokens=cached_tokens)
 
 
@@ -118,8 +216,8 @@ class AnalysisService:
         added = 0
         for item in found:
             item.block_size = max(1, self.config_manager.config.analysis.block_size)
-            done_blocks = self.queue.infer_progress(item)
-            item.completed_chapters = done_blocks
+            done_chapters = self.queue.infer_progress(item)
+            item.completed_chapters = done_chapters
             idx = self.queue.add_item(item)
             if idx == len(self.queue.items) - 1:
                 added += 1
@@ -136,8 +234,8 @@ class AnalysisService:
         added = 0
         for item in found:
             item.block_size = max(1, self.config_manager.config.analysis.block_size)
-            done_blocks = self.queue.infer_progress(item)
-            item.completed_chapters = done_blocks
+            done_chapters = self.queue.infer_progress(item)
+            item.completed_chapters = done_chapters
             idx = self.queue.add_item(item)
             if idx == len(self.queue.items) - 1:
                 added += 1
@@ -168,6 +266,8 @@ class AnalysisService:
             return False
         self._stop_requested = False
         self._account_tripped_reason = ""
+        self._run_mode = "queue"
+        self._rerun_meta = None
         # 重置"已见人物"集合，避免上一本书的人物污染新书首次登场判定
         # （AnalysisService 是进程级单例，__init__ 只跑一次）
         self._seen_characters = set()
@@ -175,6 +275,91 @@ class AnalysisService:
         self.stats.reset()
         self._runner_task = asyncio.create_task(self._run_queue())
         return True
+
+    def start_rerun(
+        self,
+        book_id: str,
+        chapters: Union[str, Sequence[int]],
+        *,
+        overrides: Optional[Dict[str, Any]] = None,
+        update_rolling: bool = False,
+    ) -> Dict[str, Any]:
+        """启动指定章节或区间的定点重跑（与全书队列/总结互斥并持 .book.lock）。"""
+        if self.is_running:
+            raise RuntimeError("analysis_running")
+        try:
+            from .summary_service import get_summary_service
+            if get_summary_service().is_running:
+                raise RuntimeError("summary_running")
+        except RuntimeError:
+            raise
+        except Exception:
+            logger.debug("无法读取总结运行状态", exc_info=True)
+
+        book_dir: Optional[Path] = None
+        for q_item in self.queue.items:
+            if q_item.name == book_id and q_item.workspace_dir.exists():
+                book_dir = q_item.workspace_dir
+                break
+        if book_dir is None:
+            from . import book_service
+            book_dir = book_service.get_book_path(book_id)
+            if book_dir is None:
+                book_service.refresh_books()
+                book_dir = book_service.get_book_path(book_id)
+        if book_dir is None or not book_dir.exists():
+            raise FileNotFoundError(f"书目不存在: {book_id}")
+
+        blocks_dir = book_dir / "blocks"
+        if not blocks_dir.is_dir():
+            raise ValueError(f"书目 {book_id} 缺少 blocks/ 正文目录，无法重跑")
+
+        available = FileProcessor(blocks_dir, self.config_manager.config.analysis.encoding_priority).scan_chapters()
+        if not available:
+            raise ValueError(f"书目 {book_id} 的 blocks/ 目录中未找到章节文件")
+        parsed_chapters = parse_chapter_spec(chapters, available_chapters=available)
+
+        base_cfg = self.config_manager.load()
+        run_cfg, recorded_overrides = _apply_rerun_overrides(base_cfg, overrides)
+        run_cfg.working_directory = str(book_dir)
+
+        lock = BookFileLock(book_dir / ".book.lock")
+        lock.acquire()
+        try:
+            self._stop_requested = False
+            self._account_tripped_reason = ""
+            self._seen_characters = set()
+            self.stats.reset()
+            self._run_mode = "rerun"
+            self._rerun_meta = {
+                "book_id": book_id,
+                "chapters": parsed_chapters,
+                "total": len(parsed_chapters),
+                "overrides": recorded_overrides,
+            }
+            self._runner_task = asyncio.create_task(
+                self._run_rerun(
+                    book_id=book_id,
+                    book_dir=book_dir,
+                    blocks_dir=blocks_dir,
+                    parsed_chapters=parsed_chapters,
+                    run_cfg=run_cfg,
+                    update_rolling=bool(update_rolling),
+                    lock=lock,
+                )
+            )
+        except Exception:
+            self._run_mode = "idle"
+            self._rerun_meta = None
+            lock.release()
+            raise
+
+        return {
+            "ok": True,
+            "book_id": book_id,
+            "chapters": parsed_chapters,
+            "total": len(parsed_chapters),
+        }
 
     def stop(self) -> bool:
         """请求停止：当前 pipeline 在下一检查点退出，队列不再推进"""
@@ -242,9 +427,94 @@ class AnalysisService:
                     await hub.state_change(WSState.DONE, "队列全部完成")
             self._pipeline = None
         finally:
+            self._run_mode = "idle"
+            self._rerun_meta = None
             # 冻结结束时刻：任务完成/被取消/异常后 is_running 即变 False，
             # 此时 token_stats 的 elapsed 必须停止增长
             self.stats.freeze()
+
+    async def _run_rerun(
+        self,
+        *,
+        book_id: str,
+        book_dir: Path,
+        blocks_dir: Path,
+        parsed_chapters: Sequence[int],
+        run_cfg: AppConfig,
+        update_rolling: bool,
+        lock: BookFileLock,
+    ) -> None:
+        hub = get_hub()
+        knowledge_file = book_dir / run_cfg.knowledge_file
+        ch_list = list(parsed_chapters)
+        ch_desc = f"第{ch_list[0]}章" if len(ch_list) == 1 else f"共{len(ch_list)}章({ch_list[0]}..{ch_list[-1]})"
+        proxy_item = SimpleNamespace(
+            name=book_id,
+            start_time=time.time(),
+            completed_chapters=0,
+        )
+        on_progress, on_token_stats = make_pipeline_callbacks(
+            hub=hub,
+            item=proxy_item,
+            stats=self.stats,
+            seen_characters=self._seen_characters,
+        )
+
+        try:
+            await hub.log(f"定点重跑 API 预检查中（《{book_id}》{ch_desc}）...")
+            if not await self.queue.check_api(run_cfg, persist_heal=False):
+                await hub.log("定点重跑 API 预检查失败，请检查模型或 API 配置", level="error")
+                await hub.state_change(WSState.IDLE, "API 预检查失败")
+                return
+
+            await hub.state_change(WSState.RUNNING, f"定点重跑: {book_id} ({ch_desc})")
+            await hub.log(f"开始定点重跑《{book_id}》{ch_desc}")
+
+            self._pipeline = AnalysisPipeline(
+                config=run_cfg,
+                directory=blocks_dir,
+                knowledge_file=knowledge_file,
+                target_chapters=ch_list,
+                force_rerun=True,
+                update_rolling=update_rolling,
+                on_progress=on_progress,
+                on_token_stats=on_token_stats,
+            )
+            result = await self._pipeline.run()
+
+            # 若该书在队列中，按磁盘现状重算进度（不覆盖为本次重跑章数）
+            for q_item in self.queue.items:
+                if q_item.name == book_id:
+                    q_item.completed_chapters = self.queue.infer_progress(q_item)
+                    self.save_queue()
+                    break
+
+            if result.get("account_tripped"):
+                safe_reason = redact(str(result.get("account_trip_reason") or "账户认证失败或余额不足"))
+                await hub.log(f"定点重跑检测到账户级永久错误（{safe_reason}），已中止", level="error")
+                await hub.state_change(WSState.STOPPED, f"账户熔断中止：{safe_reason}")
+            elif result.get("stopped") or self._stop_requested:
+                await hub.log(f"《{book_id}》定点重跑已停止（未重跑或失败章仍保留旧结果）", level="warn")
+                await hub.state_change(WSState.STOPPED, "定点重跑已停止")
+            elif result.get("failed_chapters"):
+                await hub.log(f"《{book_id}》定点重跑部分失败: {result['failed_chapters']}", level="warn")
+                await hub.state_change(WSState.DONE, f"定点重跑完成（失败{len(result['failed_chapters'])}章）")
+            else:
+                await hub.log(f"《{book_id}》定点重跑完成（共{result.get('total_analyzed', 0)}章，知识库已刷新）")
+                await hub.state_change(WSState.DONE, f"定点重跑完成: {book_id}")
+        except Exception as e:
+            logger.error(f"《{book_id}》定点重跑异常: {e}", exc_info=True)
+            await hub.log(f"《{book_id}》定点重跑异常: {e}", level="error")
+            await hub.state_change(WSState.STOPPED, f"定点重跑异常: {e}")
+        finally:
+            self._pipeline = None
+            self._run_mode = "idle"
+            self._rerun_meta = None
+            self.stats.freeze()
+            try:
+                lock.release()
+            except Exception:
+                pass
 
     async def _auto_summary_done_books(self, config: AppConfig) -> None:
         """队列中 status==done 的书逐本自动最终总结（延迟导入避免循环依赖：
@@ -315,54 +585,59 @@ class AnalysisService:
         )
 
         try:
-            result = await self._pipeline.run()
-            if result.get("account_tripped"):
-                raw_reason = str(result.get("account_trip_reason") or "账户认证失败或余额不足")
-                safe_reason = redact(raw_reason)
-                item.status = "pending"
-                item.error_message = f"账户熔断已停队：{safe_reason}"
-                self._account_tripped_reason = safe_reason
-                self._stop_requested = True
-                await hub.log(
-                    f"检测到账户级永久错误（{safe_reason}），已自动挂起分析队列，请检查 API Key 或余额后重试",
-                    level="error",
-                )
-            elif result.get("stopped"):
-                item.status = "pending"  # 停止的书保持可续跑
-                await hub.log(f"《{item.name}》分析已停止（可续跑）", level="warn")
-            elif result.get("failed_chapters"):
-                item.status = "done"  # 有失败块但整体完成
-                item.error_message = f"失败{len(result['failed_chapters'])}块"
-                await hub.log(
-                    f"《{item.name}》完成，但有失败块: {result['failed_chapters']}",
-                    level="warn")
-            elif result.get("skipped_chapters"):
-                item.status = "done"  # 有拦截跳过但整体完成
-                item.error_message = f"内容审核拦截{len(result['skipped_chapters'])}块"
-                await hub.log(
-                    f"《{item.name}》完成，{len(result['skipped_chapters'])}块被内容审核拦截跳过: "
-                    f"{result['skipped_chapters']}",
-                    level="warn")
-            else:
-                item.status = "done"
-                await hub.log(f"《{item.name}》分析完成（{result.get('total_analyzed', 0)}块）")
+            lock = BookFileLock(item.workspace_dir / ".book.lock")
+            lock.acquire()
+            try:
+                result = await self._pipeline.run()
+                if result.get("account_tripped"):
+                    raw_reason = str(result.get("account_trip_reason") or "账户认证失败或余额不足")
+                    safe_reason = redact(raw_reason)
+                    item.status = "pending"
+                    item.error_message = f"账户熔断已停队：{safe_reason}"
+                    self._account_tripped_reason = safe_reason
+                    self._stop_requested = True
+                    await hub.log(
+                        f"检测到账户级永久错误（{safe_reason}），已自动挂起分析队列，请检查 API Key 或余额后重试",
+                        level="error",
+                    )
+                elif result.get("stopped"):
+                    item.status = "pending"  # 停止的书保持可续跑
+                    await hub.log(f"《{item.name}》分析已停止（可续跑）", level="warn")
+                elif result.get("failed_chapters"):
+                    item.status = "done"  # 有失败章但整体完成
+                    item.error_message = f"失败{len(result['failed_chapters'])}章"
+                    await hub.log(
+                        f"《{item.name}》完成，但有失败章节: {result['failed_chapters']}",
+                        level="warn")
+                elif result.get("skipped_chapters"):
+                    item.status = "done"  # 有拦截跳过但整体完成
+                    item.error_message = f"内容审核拦截{len(result['skipped_chapters'])}章"
+                    await hub.log(
+                        f"《{item.name}》完成，{len(result['skipped_chapters'])}章被内容审核拦截跳过: "
+                        f"{result['skipped_chapters']}",
+                        level="warn")
+                else:
+                    item.status = "done"
+                    await hub.log(f"《{item.name}》分析完成（共{result.get('total_analyzed', 0)}章）")
+            finally:
+                item.end_time = time.time()
+                self._pipeline = None
+                self._persist_book_token_stats(item, stats_baseline)
+                lock.release()
+        except BookLockError as e:
+            logger.warning(f"《{item.name}》正被其他进程占用，跳过本项: {e}")
+            item.status = "pending"
+            item.error_message = "书目正在被其他进程占用"
+            item.end_time = time.time()
+            self._pipeline = None
+            await hub.log(f"《{item.name}》正在被其他进程占用，已跳过本次执行", level="warn")
         except Exception as e:
             logger.error(f"《{item.name}》分析异常: {e}", exc_info=True)
             item.status = "failed"
             item.error_message = str(e)
-            await hub.log(f"《{item.name}》分析异常: {e}", level="error")
-        finally:
             item.end_time = time.time()
-            # pipeline 置 None 前累计本书 KV 缓存命中数（结束后 token_stats 仍可见）
-            if self._pipeline is not None:
-                analyzer = getattr(self._pipeline, '_analyzer', None)
-                if analyzer is not None:
-                    try:
-                        self.stats.total_cached_tokens += analyzer.get_token_stats().get('cached_tokens', 0) or 0
-                    except Exception:
-                        pass
             self._pipeline = None
-            self._persist_book_token_stats(item, stats_baseline)
+            await hub.log(f"《{item.name}》分析异常: {e}", level="error")
 
         # 完成后自动归档（可选）
         if item.status == "done" and self.config_manager.config.analysis.auto_archive:

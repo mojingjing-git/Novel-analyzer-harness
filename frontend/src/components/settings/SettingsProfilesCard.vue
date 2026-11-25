@@ -183,7 +183,7 @@ defineExpose({
           </div>
 
           <div v-if="slot.summary" class="profile-chips mt-2.5">
-            <span class="profile-chip">块 {{ slot.summary.block_size }}章</span>
+            <span class="profile-chip">批 ≤{{ slot.summary.block_size }}章</span>
             <span class="profile-chip">并发 {{ slot.summary.concurrency }}/{{ slot.summary.summary_concurrency }}/{{ slot.summary.recheck_concurrency }}</span>
             <span class="profile-chip">总结批 {{ slot.summary.summary_batch_size }}章</span>
             <span class="profile-chip">复检池 {{ formatPoolChars(slot.summary.recheck_v3_pool_max_chars) }} ({{ slot.summary.recheck_v3_batch_size }}条)</span>
@@ -236,7 +236,7 @@ defineExpose({
                   模型: {{ slot.summary.model || '未填' }}<template v-if="slot.summary.base_url"> · {{ slot.summary.base_url }}</template>
                 </p>
                 <div class="profile-chips mt-2">
-                  <span class="profile-chip">块 {{ slot.summary.block_size }}章</span>
+                  <span class="profile-chip">批 ≤{{ slot.summary.block_size }}章</span>
                   <span class="profile-chip">并发 {{ slot.summary.concurrency }}</span>
                   <span class="profile-chip">总结批 {{ slot.summary.summary_batch_size }}</span>
                   <span class="profile-chip">复检 {{ (slot.summary.recheck_version || 'v3').toUpperCase() }}</span>

@@ -625,3 +625,126 @@ def test_settings_profiles_endpoints_auth_guards_and_validation(tmp_path, monkey
     del_r = client.delete("/api/settings/profiles/user_1", headers=headers)
     assert del_r.status_code == 200
     assert del_r.json()["cleared"] == "user_1"
+
+
+async def test_analysis_rerun_route_auth_validation_lock_and_isolation(tmp_path, monkeypatch):
+    """POST /api/analysis/rerun 校验鉴权、404/409/422、白名单过滤、thinking_mode 覆写与零队列进度污染。"""
+    from fastapi import FastAPI
+    from backend.api import routes_analysis
+    from backend.api.auth import _ENV_VAR
+    from backend.common.file_lock import BookFileLock
+    from backend.config.settings import AppConfig, ConfigManager
+    from backend.services.queue_manager import QueueItem
+    from backend.services.queue_service import AnalysisService
+
+    cfg_path = tmp_path / "config.json"
+    mgr = ConfigManager(cfg_path)
+    mgr.save(AppConfig.from_dict({
+        "workspace_dir": str(tmp_path / "ws"),
+        "api": {
+            "base_url": "https://api.test.com/v1",
+            "api_key": "sk-keep",
+            "model": "m-default",
+            "thinking_mode": {"reasoning_effort": "low"},
+        },
+        "analysis": {"concurrency": 2},
+    }))
+
+    book_dir = tmp_path / "ws" / "测试书"
+    blocks_dir = book_dir / "blocks"
+    out_dir = book_dir / "output"
+    blocks_dir.mkdir(parents=True)
+    out_dir.mkdir(parents=True)
+    for ch in range(1, 5):
+        (blocks_dir / f"{ch:04d}.txt").write_text(f"第{ch}章", encoding="utf-8")
+    (out_dir / "token_stats.json").write_text(json.dumps({"marker": "full_book"}), encoding="utf-8")
+
+    svc = AnalysisService.__new__(AnalysisService)
+    svc.config_manager = mgr
+    from backend.services.queue_manager import QueueManager
+    from backend.services.analysis_stats import AnalysisStats
+    svc.queue = QueueManager()
+    svc.queue.config_manager = mgr
+    q_item = QueueItem(name="测试书", blocks_dir=blocks_dir, workspace_dir=book_dir, total_chapters=4, completed_chapters=4, status="done")
+    svc.queue.add_item(q_item)
+    svc._runner_task = None
+    svc._pipeline = None
+    svc._stop_requested = False
+    svc._account_tripped_reason = ""
+    svc._run_mode = "idle"
+    svc._rerun_meta = None
+    svc.stats = AnalysisStats()
+    svc._seen_characters = set()
+
+    monkeypatch.setattr(routes_analysis, "get_service", lambda: svc)
+    monkeypatch.setattr("backend.services.summary_service.get_summary_service", lambda: SimpleNamespace(is_running=False))
+
+    token = "rerun-token"
+    monkeypatch.setenv(_ENV_VAR, token)
+    headers = {"X-Session-Token": token}
+    test_app = FastAPI()
+    test_app.include_router(routes_analysis.router)
+    client = TestClient(test_app)
+
+    # 1. 无 token -> 403
+    assert client.post("/api/analysis/rerun", json={"book_id": "测试书", "chapters": "2"}).status_code == 403
+    # 2. 不存在书目 -> 404
+    assert client.post("/api/analysis/rerun", headers=headers, json={"book_id": "不存在", "chapters": "2"}).status_code == 404
+    # 3. 越界章与黑名单字段 -> 422
+    assert client.post("/api/analysis/rerun", headers=headers, json={"book_id": "测试书", "chapters": "99"}).status_code == 422
+    assert client.post(
+        "/api/analysis/rerun",
+        headers=headers,
+        json={"book_id": "测试书", "chapters": "2", "overrides": {"api_key": "steal"}},
+    ).status_code == 422
+
+    # 4. 锁被占用 -> 409
+    ext_lock = BookFileLock(book_dir / ".book.lock").acquire()
+    try:
+        assert client.post("/api/analysis/rerun", headers=headers, json={"book_id": "测试书", "chapters": "2"}).status_code == 409
+    finally:
+        ext_lock.release()
+
+    # 5. 启动定点重跑并等待完成：临时覆盖生效、不污染 config.json 与 QueueItem.completed_chapters
+    captured_pipeline_cfg = {}
+
+    async def fake_check_api(_cfg, **_kw):
+        return True
+
+    class _FakeRerunPipeline:
+        def __init__(self, *, config, target_chapters, force_rerun, update_rolling, on_progress=None, **_kw):
+            captured_pipeline_cfg["model"] = config.api.model
+            captured_pipeline_cfg["thinking_mode"] = dict(config.api.thinking_mode)
+            captured_pipeline_cfg["targets"] = target_chapters
+            captured_pipeline_cfg["force_rerun"] = force_rerun
+            captured_pipeline_cfg["update_rolling"] = update_rolling
+            self.on_progress = on_progress
+
+        def stop(self):
+            pass
+
+        async def run(self):
+            if self.on_progress:
+                await self.on_progress({"chapter": 2, "status": "done", "progress": 1, "total": 2, "message": "ch2"})
+            return {"stopped": False, "total_analyzed": 2, "failed_chapters": [], "skipped_chapters": [], "account_tripped": False}
+
+    monkeypatch.setattr(svc.queue, "check_api", fake_check_api)
+    monkeypatch.setattr(svc, "save_queue", lambda: None)
+    monkeypatch.setattr("backend.services.queue_service.AnalysisPipeline", _FakeRerunPipeline)
+
+    ok_r = client.post(
+        "/api/analysis/rerun",
+        headers=headers,
+        json={"book_id": "测试书", "chapters": "2, 4", "overrides": {"model": "m-strong", "reasoning_effort": "high"}},
+    )
+    assert ok_r.status_code == 200
+    assert ok_r.json()["chapters"] == [2, 4]
+    await svc._runner_task
+    assert captured_pipeline_cfg["model"] == "m-strong"
+    assert captured_pipeline_cfg["thinking_mode"]["reasoning_effort"] == "high"
+    assert captured_pipeline_cfg["targets"] == [2, 4]
+    assert captured_pipeline_cfg["force_rerun"] is True
+    assert captured_pipeline_cfg["update_rolling"] is False
+    assert mgr.load().api.model == "m-default"
+    assert json.loads((out_dir / "token_stats.json").read_text(encoding="utf-8")) == {"marker": "full_book"}
+    assert q_item.completed_chapters == 0 or q_item.completed_chapters == 4

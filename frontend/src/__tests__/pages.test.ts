@@ -49,6 +49,7 @@ vi.mock('../api/client', () => ({
     getSessionTokenStats: vi.fn(),
     startAnalysis: vi.fn(),
     stopAnalysis: vi.fn(),
+    rerunChapters: vi.fn(),
     scanWorkspace: vi.fn(),
     removeQueueItem: vi.fn(),
     moveQueueItemUp: vi.fn(),
@@ -416,11 +417,13 @@ describe('QueuePage', () => {
   })
 
   it('按书名实时解析删除索引（防重排删错书）与点击车道块切换章节详情 Tab', async () => {
-    const bookA = mkItem({ name: '《A》', status: 'done' })
+    const bookA = mkItem({ name: '《A》', status: 'done', block_size: 8, completed_chapters: 3, total_chapters: 10 })
     const bookB = mkItem({ name: '《B》', status: 'done' })
     mockedApi.analysisStatus.mockResolvedValue(mkStatus({ items: [bookA, bookB] }))
     const wrapper = mount(QueuePage, { global: { directives: { tooltip: {} } } })
     await settle()
+    expect(wrapper.text()).toContain('3/10')
+    expect(wrapper.text()).not.toContain('24/10')
 
     const delBtns = wrapper.findAll('tbody button').filter((b) => b.text().trim() === '删除')
     await delBtns[1].trigger('click') // 点击《B》
@@ -1278,6 +1281,20 @@ describe('StatsPage 5-Tab Hub & /prompt Redirect', () => {
 
     // 默认在「账本概览」Tab：不挂载按书历史/Prompt 的 BookSelector
     expect(wrapper.findComponent({ name: 'BookSelector' }).exists()).toBe(false)
+
+    // 切至「本次会话」Tab：显示批次 range 并按 chapters_count 求和已记录章数
+    mockedApi.getTokenStats.mockResolvedValue({
+      categories: {},
+      chapter_stats: [{ chapter: 1, range: 'ch1-ch4', chapters_count: 4, elapsed: 2.0, input_tokens: 100, output_tokens: 50 }],
+      elapsed: 2.0,
+      running: false,
+    })
+    await vi.advanceTimersByTimeAsync(5000)
+    await wrapper.findAll('button[role="tab"]').find((b) => b.text().includes('本次会话'))!.trigger('click')
+    await settle()
+    await nextTick()
+    expect(wrapper.text()).toContain('ch1-ch4')
+    expect(wrapper.text()).toContain('共 4章')
 
     // 切至「实时日志」Tab
     await wrapper.findAll('button[role="tab"]').find((b) => b.text().includes('实时日志'))!.trigger('click')

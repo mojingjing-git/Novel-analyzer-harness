@@ -12,7 +12,15 @@ DEFAULT_MODEL = ""  # 空 = 未配置模型，需用户在设置页填写
 # 分析参数
 DEFAULT_MAX_ARC_LENGTH = 1500      # 主线最大字数（长上下文建议800-1500）
 DEFAULT_CONCURRENCY = 2            # 默认并行worker数
-DEFAULT_BLOCK_SIZE = 1             # 默认每块章数（1=单章一块）
+DEFAULT_BLOCK_SIZE = 1             # 默认单批最大章数（章/批）
+
+# 逐章槽位批量分析与滚动归档输出预算参数
+BATCH_OUTPUT_BUDGET_RATIO = 0.75
+BATCH_EST_OUT_TOKENS_PER_CHAPTER = 1350
+BATCH_EST_OUT_TOKENS_PER_CHAPTER_THINKING = 4800
+BATCH_EST_OUT_TOKENS_PER_CHAPTER_THINKING_MEDIUM = 6000
+BATCH_EST_OUT_TOKENS_PER_CHAPTER_THINKING_HIGH = 8000
+ROLLING_ARCHIVE_THINKING_MIN_TOKENS = 2048
 
 # Prompt构建参数（可配置）
 DEFAULT_MAX_ARCS_IN_PROMPT = 30    # prompt中最多携带的主线条数
@@ -320,7 +328,7 @@ DEFAULT_FORESHADOW_MIN_CONFIDENCE = "低"
 # 分层上限：importance=高 最多保留多少（-1=无上限）
 DEFAULT_MAX_FORESHADOW_CATALOG_HIGH = 500
 # 分层上限：importance=中 最多保留多少
-DEFAULT_MAX_FORESHADOW_CATALOG_MID = 200
+DEFAULT_MAX_FORESHADOW_CATALOG_MID = 400
 
 # per-book type→category 映射文件路径（相对于 book output_dir）。
 # 主线为 prompt 源头约束（LLM 直接输出 50 类），此映射仅作为旧书数据的被动兜底。

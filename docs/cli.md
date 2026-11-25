@@ -54,7 +54,7 @@ python -m backend.cli [全局选项] <命令> [子命令与参数]
 |---|---|---|
 | `books list` | 无 | 列出工作区与队列中已发现的全部书目及产物状态 |
 | `books status [BOOK]` | `[BOOK]` | 汇总章节数、分析块数、伏笔七栏统计、复检概况与 Token 统计 |
-| `books chapter [BOOK] CHAPTER` | `--view {text,analysis,both}` `--offset` `--limit` | 读取物理分章原文窗口（兼容补零文件名）及块级分析结果（兼容 `block_size > 1`） |
+| `books chapter [BOOK] CHAPTER` | `--view {text,analysis,both}` `--offset` `--limit` | 读取物理分章原文窗口（兼容补零文件名）及分析结果（兼容历史合块归档） |
 | `books search [BOOK] QUERY` | `--from-chapter` `--to-chapter` `--max-hits` `--radius` | 先按章号范围过滤，再对物理分章执行有界上下文窗口字面检索 |
 | `books characters [BOOK]` | `--name` `--offset` `--limit` | 透明更新指纹聚合缓存并返回角色摘要列表或指定角色卡详情 |
 | `books report [BOOK]` | `--offset` `--limit` `--style` | 读取 `final_summary_report.md`（支持字符分片）及可选风格画像 |
@@ -75,7 +75,7 @@ python -m backend.cli [全局选项] <命令> [子命令与参数]
 | 命令 | 核心参数 | 说明 |
 |---|---|---|
 | `split FILE` | `--name` `--workspace` `--pattern` `--mode` `--use-volume`/`--no-use-volume` `--min-words` `--merge-tiny` `--max-words` `--remove-ads` `--strip-whitespace` `--dry-run` `--preview-count` `--force` | 切分整本小说 TXT；`--dry-run` 仅预览不写盘；严格拦截书名路径穿越与越界目录 |
-| `analyze [BOOK]` | `--start` `--end` `--concurrency` `--block-size` `--model` | 运行逐章分析流水线并落盘 `output/token_stats.json` |
+| `analyze [BOOK]` | `--start` `--end` `--chapters` `--force` `--concurrency` `--block-size` `--model` `--reasoning-effort` `--temperature` `--update-rolling` | 运行逐章批量分析或 `--chapters SPEC` 定点章节重跑；定点重跑默认不刷新 `rolling_summary` 且保留既有全书 `token_stats.json` |
 | `summary [BOOK]` | `--start` `--end` `--batch-size` `--concurrency` `--recheck-version {v2,v3}` `--model` | 运行全书最终总结与四阶段报告生成并落盘 `output/summary_token_stats.json` |
 | `recheck [BOOK]` | `--version {v2,v3}` `--concurrency` `--max-calls` `--v2-batch-size` `--gray-u4`/`--no-gray-u4` `--mid-single-hop`/`--no-mid-single-hop` `--model` `--from-baseline` `--include-dormant` | 独立重跑 Stage 2 伏笔复检；保留既有 `batch_size_snapshot` 与 `human_override`，成功后清除陈旧 `stage2_recheck_state.json` |
 

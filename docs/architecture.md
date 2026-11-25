@@ -20,7 +20,7 @@
 │   │                             #   依赖健康探测（dep_health）、跨进程文件锁（file_lock）、
 │   │                             #   代理净化（proxy_env）等（12 个模块，只依赖标准库，禁止引用 core/services）
 │   ├── cli/                      # 无头命令行接口（7 个模块：runtime / cmd_books / cmd_ledger / cmd_pipeline / main / __main__ / __init__；复用 book_artifacts、file_lock、dep_health）
-│   ├── core/                     # 核心引擎（23 个模块）：分析流水线、LLM 客户端、知识库、风格提取等
+│   ├── core/                     # 核心引擎（24 个模块）：动态装包、分析流水线、LLM 客户端、知识库、风格提取等
 │   │                             #   （error_types / error_taxonomy / moderation 是 common 的兼容转发层）
 │   ├── services/                 # 16 个单文件模块 + final_summary/ 四层无环子包（8 个内部模块） + recheck_v3/ 四层无环子包（6 个内部模块）：编排层（书目产物读取 book_artifacts、队列、总结、切分、可视化、复检与裁决、用量账本…）
 │   ├── config/                   # constants.py（默认值与常量）/ paths.py（路径真源）/ schema.py（131 项元模型）/ settings.py / presets.py
@@ -60,30 +60,33 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-  Start(["启动"]) --> Scan["扫描工作区 + 切块"]
+  Start(["启动"]) --> Scan["扫描章节 + 读取字长"]
   Scan --> Resume{"断点续跑?"}
-  Resume -->|有| Skip["跳过已落盘块"]
-  Resume -->|无| Warmup
-  Skip --> Warmup["串行预热<br>前 N = 并发数 块"]
-  Warmup --> Concurrent["流式并发<br>Semaphore + as_completed"]
-  Concurrent --> Checkpoint{"每 N 批?"}
-  Checkpoint -->|是| Save["checkpoint 落盘"]
+  Resume -->|有| Skip["跳过已落盘单章"]
+  Resume -->|无| Pack["动态装包 pack_chapter_batches"]
+  Skip --> Pack
+  Pack --> Warmup["串行预热<br>前 N = 并发数 批"]
+  Warmup --> Concurrent["动态并发池<br>deque + asyncio.wait"]
+  Concurrent --> Outcomes{"部分成功 / 可拆错误?"}
+  Outcomes -->|是| Requeue["缺失追回 / 二分拆批重排"]
+  Outcomes -->|否| Checkpoint{"每 N 章?"}
+  Requeue --> Concurrent
+  Checkpoint -->|是| Save["checkpoint 落盘（单章文件）"]
   Checkpoint -->|否| Rolling
   Save --> Rolling["后台 rolling 任务"]
   Rolling --> Concurrent
-  Concurrent --> Retry{"失败块?"}
-  Retry -->|有, ≤3 轮| RetryRun["失败补跑"]
+  Concurrent --> Retry{"失败章节?"}
+  Retry -->|有, ≤3 轮| RetryRun["缩容重装包补跑"]
   Retry -->|无| Merge
   RetryRun --> Merge["知识库合并 + 持久化"]
   Merge --> End(["完成"])
 ```
 
-1. **切块**：按实际存在的章号切块，容错断号目录，块大小由 `analysis.block_size` 决定。
-2. **串行预热**：前 N = 并发数 块顺序分析，先建立初始知识库，保证后面的块读不到未来章节。
-3. **流式并发**：`asyncio.Semaphore` 限流 + `asyncio.as_completed` 并发，每 N 批 checkpoint 落盘；`MemoryState` 与 `KnowledgeBaseManager` 统一按 `kb_limits` 裁剪 7 个列表与 2 个角色字典（通过尾部热键重插与单调章号水位线防止乱序历史块覆写高章号状态）。
-4. **失败补跑**：最多 3 轮串行重试；致命错误类（认证、计费、上下文超限、参数错）不重试，账户级熔断触发后立即停止流水线，队列层（`queue_service.py`）保留当前书目 `pending` 并附脱敏错误理由、暂停后续队列与自动总结。
-5. **滚动总结**：后台独立任务，跨阈值触发，增量更新四层 JSON（时间轴 / 范式层 / 里程碑 /
-   因果链）与近期势头；历史补跑批附带防倒退提示词约束且同步受账户级熔断守卫。里程碑 FIFO 淘汰但锁定首条与每个范式层首条；近期势头满窗时触发 LLM 归档压缩。
+1. **动态装包（`batch_packer.py`）**：`pack_chapter_batches` 依据 `analysis.block_size`、正文字符上限 `analysis.max_content_chars` 及基于推理开关估算的模型输出预算（`api.max_tokens * 0.75`）动态组批；单章超限时独立成批。请求内每章使用 `=== [ID=数字] 开始/结束 ===` 边界，LLM 返回逐章独立槽位数组后由 `parse_batch_response` 拆分落盘为单章 `chapter_{c}_result.json`（`block_size=1`、`source_chapters=[c]`）。
+2. **串行预热与动态并发**：前 `N = concurrency` 批顺序分析以建立初始知识库；剩余批次进入 `deque` 与 `asyncio.wait(FIRST_COMPLETED)` 动态池并发执行，`NovelAnalyzer` 针对各章原文逐章完成伏笔锚点校验与线索标记。
+3. **截断抢救、拆分隔离与断点解耦**：流式或非流式触发 `length` / `max_tokens` 时通过 `stop_on_truncation` 短路重试链，再由 `salvage_json_array_objects` 抢救已闭合前缀章节；多章零产出批遇到审核拦截、上下文超限或截断时二分拆分重排隔离，部分成功批保留已落盘章节并仅追回缺失章节。断点恢复仅识别单章结果并忽略历史合块产物，调整 `analysis.block_size` 后已有进度完整复用。
+4. **失败补跑与账户级熔断**：最多执行 `failed_block_retry_rounds` 轮重试，每轮将单批章数上限减半重新装包；致命错误类跳过重试，账户级熔断触发后立即中止流水线并由队列层保持书目 `pending` 且暂停自动后续任务。
+5. **滚动总结**：后台独立任务跨阈值触发，开启推理思考时势头归档自动抬升最小输出 Token 下限，增量更新四层 JSON 与近期势头。里程碑按 FIFO 淘汰且锁定首条与各范式层首条，历史补跑批附带防倒退提示词约束。
 
 ## LLM 客户端（`backend/core/llm_client.py`）
 
@@ -165,7 +168,7 @@ schema 版本号随分类表一起管理。`FORESHADOW_CATEGORY_TEXT` 是前端�
 ### 总表流水线
 
 收集 → 分类 → 三维过滤（重要度 / 置信度达到等级阈值，分类在保留集内）→ 语义去重
-（关键词倒排 + 相似度）→ 综合排序 → 分层截断（高重要度 500 条 / 中 200 条）。
+（关键词倒排 + 相似度）→ 综合排序 → 分层截断（高重要度默认 500 条 / 中默认 400 条）。
 
 重要度与置信度阈值是**中文等级字符串**（`高` / `中` / `低`），不是数值。
 
@@ -189,7 +192,7 @@ flowchart LR
 | 阶段 | 内容 | 调用量 | 断点 |
 |---|---|---|---|
 | 1/4 | 每批两次调用：Markdown 卷摘要 + JSON 回收判定 | `ceil(块数 / summary_batch_size)` × 2 | 卷摘要校验通过（拦截拒答与缺正文回复）后落盘，断点加载同步校验；调和失败只补调和；全批完成落 `stage1_ledger_baseline.json` 干净账本基线 |
-| 2/4 | 全书伏笔复检 | 默认 V3 共享证据池单阶段引擎（受 `recheck_max_calls` 预算约束）；可选切换 V2 引擎或启用灰区 U4、支线单跳开关 | 完整 `COMPLETED` 落 `stage2_recheck_state.json`（指纹含引擎开关），重跑跳过已核对轮次；中断保留进程内账本 |
+| 2/4 | 全书伏笔复检 | 默认 V3 共享证据池单阶段引擎（通过 `infer_result_block_size` 从磁盘产物推断粒度，受 `recheck_max_calls` 预算约束）；可选切换 V2 引擎或启用灰区 U4、支线单跳开关 | 完整 `COMPLETED` 落 `stage2_recheck_state.json`（指纹含产物粒度与引擎开关，不因修改 `analysis.block_size` 失效），重跑跳过已核对轮次；中断保留进程内账本 |
 | 3/4 | 风格分析：统计指标 + LLM 8 维语义 | 1 | 有效结果落 `style_profile.json`（按正文集合与模型指纹失效） |
 | 4/4 | 汇总成最终报告（Markdown 结构化表格 + 内化文风叙事）并并发提取全书语义图谱 `story_atlas.json` | 1 + 2（图谱） | 报告直落盘；图谱按 `char_atlas_fp` / `world_atlas_fp` 双子指纹独立缓存，异常降级不阻塞主报告 |
 
@@ -216,7 +219,7 @@ flowchart LR
 
 ## 断点续跑
 
-- **章节分析**：每 N 批落盘，重跑跳过已完成块。
+- **章节分析**：每 N 章增量落盘，重跑按单章结果文件跳过已完成章，与配置批大小完全解耦。
 - **最终总结**：卷摘要与调和结果独立落盘；中断后只补缺的调和；复检阶段每批落盘账本，
   已回收的伏笔不重复付费。
 

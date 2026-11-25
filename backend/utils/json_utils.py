@@ -11,7 +11,7 @@ import re
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -313,6 +313,143 @@ def parse_json_robust(text: str):
         pass
 
     return None, first_error or "JSON解析失败（未知原因）"
+
+
+def _strip_markdown_fence(text: str) -> str:
+    """剥离外层 markdown 代码块标记（兼容流式/max_tokens 截断未闭合尾标签）。"""
+    s = (text or "").strip()
+    if not s:
+        return ""
+    fence_pos = s.find("```")
+    if fence_pos >= 0 and (
+        s[:fence_pos].strip() == ""
+        or (s.find("{") < 0 or fence_pos < s.find("{"))
+    ):
+        s = s[fence_pos + 3 :]
+        nl = s.find("\n")
+        if nl >= 0 and s[:nl].strip().lower() in ("", "json", "json5"):
+            s = s[nl + 1 :]
+    if s.rstrip().endswith("```"):
+        s = s.rstrip()[:-3]
+    return s.strip()
+
+
+def salvage_json_array_objects(text: str, array_key: str = "chapters") -> List[dict]:
+    """从 `"chapters": [...]` 或顶层 `[...]` 中抢救所有已完整闭合的对象，丢弃未闭合尾元素。
+
+    严格使用字符串/转义感知的括号深度状态机：只有当顶层数组元素 `{...}` 自身括号
+    深度归 0 时才单独解析（`json.loads` 优先，失败再按已闭合片段走 `parse_json_robust`）。
+    绝不把被 `max_tokens` 截断的半截尾章交给 `json_repair` 修补，避免半成品落盘。
+    """
+    cleaned = _strip_markdown_fence(text)
+    if not cleaned:
+        return []
+
+    n = len(cleaned)
+    array_start = -1
+    first_brace = cleaned.find("{")
+    first_bracket = cleaned.find("[")
+    if first_bracket >= 0 and (first_brace < 0 or first_bracket < first_brace):
+        array_start = first_bracket
+    else:
+        in_string = False
+        escape = False
+        depth = 0
+        i = 0
+        while i < n:
+            c = cleaned[i]
+            if escape:
+                escape = False
+                i += 1
+                continue
+            if c == "\\":
+                if in_string:
+                    escape = True
+                i += 1
+                continue
+            if c == '"':
+                if not in_string:
+                    j = i + 1
+                    esc2 = False
+                    while j < n:
+                        cj = cleaned[j]
+                        if esc2:
+                            esc2 = False
+                        elif cj == "\\":
+                            esc2 = True
+                        elif cj == '"':
+                            break
+                        j += 1
+                    key_str = cleaned[i + 1 : j]
+                    in_string = True
+                    if depth == 1 and key_str == array_key:
+                        k = j + 1
+                        while k < n and cleaned[k] in " \t\r\n":
+                            k += 1
+                        if k < n and cleaned[k] == ":":
+                            k += 1
+                            while k < n and cleaned[k] in " \t\r\n":
+                                k += 1
+                            if k < n and cleaned[k] == "[":
+                                array_start = k
+                                break
+                else:
+                    in_string = False
+                i += 1
+                continue
+            if not in_string:
+                if c in "{[":
+                    depth += 1
+                elif c in "}]":
+                    depth = max(0, depth - 1)
+            i += 1
+
+    if array_start < 0:
+        return []
+
+    objs: List[dict] = []
+    in_string = False
+    escape = False
+    obj_depth = 0
+    obj_start = -1
+    for i in range(array_start + 1, n):
+        c = cleaned[i]
+        if escape:
+            escape = False
+            continue
+        if c == "\\":
+            if in_string:
+                escape = True
+            continue
+        if c == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if c == "{":
+            if obj_depth == 0:
+                obj_start = i
+            obj_depth += 1
+        elif c == "}":
+            if obj_depth > 0:
+                obj_depth -= 1
+                if obj_depth == 0 and obj_start >= 0:
+                    frag = cleaned[obj_start : i + 1]
+                    parsed = None
+                    try:
+                        candidate = json.loads(frag)
+                        if isinstance(candidate, dict):
+                            parsed = candidate
+                    except json.JSONDecodeError:
+                        candidate, _err = parse_json_robust(frag)
+                        if isinstance(candidate, dict):
+                            parsed = candidate
+                    if parsed is not None:
+                        objs.append(parsed)
+                    obj_start = -1
+        elif c == "]" and obj_depth == 0:
+            break
+    return objs
 
 
 def safe_save_json(data: Any, file_path: Path, ensure_ascii: bool = False) -> bool:

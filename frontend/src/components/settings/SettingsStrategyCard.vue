@@ -14,7 +14,7 @@ defineProps<{
     <h3 class="font-semibold pb-2" style="border-bottom: 1px solid var(--win-stroke); letter-spacing: -0.01em">运行与流程策略</h3>
     <div class="sf-num-grid">
       <div class="sf-num-row">
-        <label v-tooltip="tooltips.block_size">块大小 (章/块):</label>
+        <label v-tooltip="tooltips.block_size">批大小 (章/批):</label>
         <input v-model.number="config.analysis.block_size" :class="errCls('block_size')" type="number" min="1" max="200" class="glass-input sf-num-input" />
       </div>
       <div class="sf-num-row">

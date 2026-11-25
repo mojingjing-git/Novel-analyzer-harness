@@ -15,6 +15,7 @@ from backend.core.llm_stream import (
     StreamChunk,
     estimate_token_count,
     parse_anthropic_response,
+    parse_anthropic_stream_event,
     parse_openai_stream_event,
 )
 from backend.core.stream_progress import make_stream_progress_callback
@@ -322,3 +323,157 @@ async def test_t4_retry_boundary_lowest_transport_sdk_retries_strictly_disabled(
     res429 = await client.chat_single([{"role": "user", "content": "hi"}])
     assert res429.success is False
     assert send_count_429 == 1, f"429 限流触发了包装层或 SDK 隐式重试，计数={send_count_429}"
+
+
+async def test_finish_reason_stop_on_truncation_and_usage_isolation():
+    """验证双协议 finish_reason/stop_reason 提取、截断短路、空截断不误判审核与跨尝试用量隔离。"""
+    # 1. MagicMock 守卫：未显式赋字符串的 finish_reason/stop_reason 不得污染结果
+    mock_ev = MagicMock()
+    mock_ev.choices = [MagicMock(delta=MagicMock(content="你好", reasoning_content=""))]
+    chunk = parse_openai_stream_event(mock_ev)
+    assert chunk is not None and chunk.finish_reason == ""
+
+    ev_fr = MagicMock()
+    ev_fr.choices = [MagicMock(delta=None, finish_reason="length")]
+    fin_chunk = parse_openai_stream_event(ev_fr)
+    assert fin_chunk is not None and fin_chunk.type == "finish" and fin_chunk.finish_reason == "length"
+
+    ant_ev = MagicMock(
+        type="message_delta",
+        delta=MagicMock(stop_reason="max_tokens"),
+        usage=MagicMock(output_tokens=120),
+    )
+    ant_chunk = parse_anthropic_stream_event(ant_ev)
+    assert ant_chunk is not None and ant_chunk.finish_reason == "max_tokens"
+
+    # 2. 非流式 OpenAI：空内容 + finish_reason="length" 不得误标 [内容审核拦截]，且保留 token 与 KNOWN
+    oa_client = LLMClient(make_config(streaming_enabled=False, temperature_max_retries=2, backoff_max_retries=1))
+    oa_client._sleep = AsyncMock()
+    oa_resp = MagicMock()
+    oa_resp.usage = MagicMock(prompt_tokens=80, completion_tokens=500, total_tokens=580, prompt_cache_hit_tokens=0)
+    oa_resp.choices = [MagicMock(finish_reason="length", message=MagicMock(content="", reasoning_content="思考耗尽"))]
+    oa_client.client.chat.completions.create = AsyncMock(return_value=oa_resp)
+
+    res_oa = await oa_client.chat_with_retry(
+        [{"role": "user", "content": "hi"}],
+        stop_on_truncation=True,
+    )
+    assert res_oa.success is False
+    assert res_oa.finish_reason == "length"
+    assert res_oa.tokens == (80, 500)
+    assert res_oa.usage_status == UsageStatus.KNOWN
+    assert "[内容审核拦截]" not in res_oa.error
+    assert res_oa.call_stats["attempts"] == 1  # stop_on_truncation=True 立即短路不重试
+
+    # 3. 非流式 Anthropic：stop_reason="max_tokens" 同样短路且不误判审核
+    ant_client = LLMClient(make_config(provider="anthropic", streaming_enabled=False, temperature_max_retries=2))
+    ant_client._sleep = AsyncMock()
+    ant_resp = MagicMock()
+    ant_resp.content = [MagicMock(type="thinking", thinking="思考超长")]
+    ant_resp.usage = MagicMock(input_tokens=60, output_tokens=300, cache_read_input_tokens=0)
+    ant_resp.stop_reason = "max_tokens"
+    ant_client.anthropic.messages.create = AsyncMock(return_value=ant_resp)
+
+    res_ant = await ant_client.chat_with_retry(
+        [{"role": "user", "content": "hi"}],
+        stop_on_truncation=True,
+    )
+    assert res_ant.success is False
+    assert res_ant.finish_reason == "max_tokens"
+    assert res_ant.tokens == (60, 300)
+    assert "[内容审核拦截]" not in res_ant.error
+    assert res_ant.call_stats["attempts"] == 1
+
+    # 4. 流式校验截断短路 + 跨尝试用量不复用（P1-6）
+    st_client = LLMClient(make_config(streaming_enabled=True, temperature_max_retries=2, backoff_max_retries=0))
+    st_client._sleep = AsyncMock()
+
+    async def trunc_stream(*_args, **_kwargs):
+        yield StreamChunk(type="content", text='{"chapters":[]')
+        yield StreamChunk(type="finish", finish_reason="length", is_final=True)
+        yield StreamChunk(type="usage", usage_prompt_tokens=40, usage_completion_tokens=90, is_final=True)
+
+    st_client.chat_stream = trunc_stream
+    res_st = await st_client.chat_stream_with_retry(
+        [{"role": "user", "content": "hi"}],
+        validate_response=lambda _c: (False, "未闭合"),
+        stop_on_truncation=True,
+    )
+    assert res_st.success is True  # 流本身返回内容（finish_reason="length"）并经短路直接交付给上层抢救
+    assert res_st.finish_reason == "length"
+    assert res_st.call_stats["attempts"] == 1
+
+    # P1-6: 第1次返回不合规内容(40+20=60 tok)，第2次流式异常失败（0 tok）：
+    # total failed_tokens 只记一次 60，不能把第1次的 60 复用给第2次算成 120
+    attempt_idx = [0]
+
+    async def two_attempt_stream(*_args, **_kwargs):
+        attempt_idx[0] += 1
+        if attempt_idx[0] == 1:
+            yield StreamChunk(type="content", text="bad-format")
+            yield StreamChunk(type="usage", usage_prompt_tokens=40, usage_completion_tokens=20, is_final=True)
+        else:
+            yield StreamChunk(type="error", error="network drop")
+
+    st2 = LLMClient(make_config(streaming_enabled=True, temperature_max_retries=2, backoff_max_retries=0))
+    st2._sleep = AsyncMock()
+    st2.chat_stream = two_attempt_stream
+    res_p16 = await st2.chat_stream_with_retry(
+        [{"role": "user", "content": "hi"}],
+        validate_response=lambda _c: (False, "格式错"),
+    )
+    assert res_p16.success is False
+    assert res_p16.call_stats["failed_tokens"] == 60
+
+
+async def test_anthropic_cache_control_dict_ptd_and_stop_on_timeout():
+    """验证长系统提示词带 Anthropic cache_control、dict prompt_tokens_details 提取与 stop_on_timeout。"""
+    from types import SimpleNamespace
+    from backend.common.error_taxonomy import ErrorClass, classify_exception
+    from backend.core.llm_stream import parse_openai_stream_event
+
+    # 1. classify_exception 识别 TimeoutError / APITimeoutError，且非永久性
+    verdict = classify_exception(TimeoutError("read timed out"))
+    assert verdict is not None and verdict.cls is ErrorClass.TIMEOUT
+
+    # 2. Anthropic system cache_control（<1024 纯字符串，>=1024 ephemeral block）
+    c_anthro = LLMClient(make_config(api_key="sk-ant-test", base_url="https://api.anthropic.com/v1", model="claude-sonnet-4-5"))
+    short_payload = c_anthro._build_anthropic_payload(
+        [{"role": "system", "content": "短前缀"}, {"role": "user", "content": "hi"}],
+        temperature=0.1,
+        max_tokens=1024,
+    )
+    assert isinstance(short_payload["system"], str)
+    long_sys = "提示词" * 500
+    long_payload = c_anthro._build_anthropic_payload(
+        [{"role": "system", "content": long_sys}, {"role": "user", "content": "hi"}],
+        temperature=0.1,
+        max_tokens=1024,
+    )
+    assert isinstance(long_payload["system"], list)
+    assert long_payload["system"][0]["cache_control"] == {"type": "ephemeral"}
+
+    # 3. dict 形态 prompt_tokens_details 提取（非流式 & 流式）
+    ev = SimpleNamespace(
+        choices=[],
+        usage=SimpleNamespace(prompt_tokens=100, completion_tokens=20, prompt_tokens_details={"cached_tokens": 64}),
+    )
+    chunk = parse_openai_stream_event(ev)
+    assert chunk is not None and chunk.usage_cached_tokens == 64
+
+    # 4. stop_on_timeout=True 首轮超时即返回且 verdict.cls == TIMEOUT（不触发重试睡）
+    c_to = LLMClient(make_config(temperature_max_retries=3, backoff_max_retries=2))
+    c_to._sleep = AsyncMock()
+    calls = 0
+
+    async def fake_chat(*_a, **_kw):
+        nonlocal calls
+        calls += 1
+        return LLMResult(False, "", "请求超时 (timeout=300s): TimeoutError", None, verdict=verdict)
+
+    c_to.chat = fake_chat
+    out_to = await c_to.chat_with_retry([{"role": "user", "content": "x"}], stop_on_timeout=True)
+    assert calls == 1
+    assert out_to.success is False
+    assert out_to.verdict is not None and out_to.verdict.cls.value == "timeout"
+    assert out_to.verdict.is_permanent is False

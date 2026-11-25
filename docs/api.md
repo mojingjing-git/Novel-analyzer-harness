@@ -20,7 +20,8 @@
 |---|---|---|
 | `/api/analysis/start` | POST | 启动队列分析 |
 | `/api/analysis/stop` | POST | 优雅停止当前分析 |
-| `/api/analysis/status` | GET | 分析状态：运行中 / 队列 / 在途块 |
+| `/api/analysis/rerun` | POST | 定点重跑指定章节或区间（支持临时模型/思考档/温度/批大小覆盖；持 `.book.lock`，需 `X-Session-Token`） |
+| `/api/analysis/status` | GET | 分析状态：运行中 / 运行模式 `mode`（`idle`/`queue`/`rerun`）/ 队列 / 在途批 |
 | `/api/analysis/token_stats` | GET | 分类 token 统计与 KV 缓存命中 |
 | `/api/analysis/token_stats/session` | GET | 本次会话累计（分析侧 + 总结侧） |
 | `/api/analysis/usage` | GET | 跨进程持久化全局用量账本与费用估算 |
@@ -134,7 +135,7 @@
 
 | 端点 | 方法 | 说明 |
 |---|---|---|
-| `/api/prompt/preview` | POST | 按真实配置拼装某块的 system / user 提示词并返回（`max_chars` 可截断） |
+| `/api/prompt/preview` | POST | 按真实配置与动态装包策略拼装批次 system / user 提示词并返回（`params` 含 `batch_chapters`，`max_chars` 可截断） |
 
 ## WebSocket
 
@@ -159,9 +160,9 @@
 | type | payload 字段 |
 |---|---|
 | `log` | `level`（info / warn / error）、`text`、`source`（business / python）、`category` |
-| `progress` | `current`、`total`、`eta` |
-| `block_start` | `chapter`、`range`、`progress`、`total`、`ts` |
-| `block_done` | `chapter`、`ok`、`range`、`elapsed?`、`tokens?` |
+| `progress` | `current`、`total`（均以真实单章数量计量）、`eta` |
+| `block_start` | `chapter`、`range`（批次章范围）、`progress`、`total`、`ts` |
+| `block_done` | `chapter`、`ok`、`range`（批次章范围）、`elapsed?`、`tokens?` |
 | `discovery` | `events`、`foreshadows[]`、`characters[]`、`unresolved[]` |
 | `token_stats` | `category`、`input_tokens`、`output_tokens`、`current_tokens?`、`source?` |
 | `token_delta` | `context`、`session_id`、`unit_idx`、`delta`、`timestamp` |

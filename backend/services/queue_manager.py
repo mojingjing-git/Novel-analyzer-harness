@@ -19,6 +19,7 @@ from typing import List, Optional, Dict, Any
 from ..config.paths import get_runtime_dir
 from ..config.settings import AppConfig, ConfigManager
 from ..core.llm_client import LLMClient
+from ..models.analysis_result import is_single_chapter_result_dict
 from ..utils.json_utils import safe_save_json
 
 logger = logging.getLogger(__name__)
@@ -135,9 +136,7 @@ class QueueManager:
                     if item.total_chapters > 0:
                         existing.total_chapters = item.total_chapters
                     existing.completed_chapters = item.completed_chapters
-                    bs = max(1, existing.block_size)
-                    total_blocks = (existing.total_chapters + bs - 1) // bs
-                    if existing.status == "done" and existing.completed_chapters < total_blocks:
+                    if existing.status == "done" and existing.completed_chapters < existing.total_chapters:
                         existing.status = "pending"
                         existing.error_message = ""
                 logger.info(f"队列跳过重复: {item.name} (blocks={item.blocks_dir})")
@@ -214,13 +213,10 @@ class QueueManager:
     def get_progress(self) -> Dict[str, Any]:
         completed_items = sum(1 for item in self._items if item.status == "done")
         current = self.get_current()
-        # 单位统一为「块」：completed_chapters 是已完成的「块」数，total_chapters 是「章」数
-        # （等于 blocks 目录下 N.txt 文件个数）。REST 兜底进度条必须与 WS 路径同单位，
-        # 因此 total 也要换算成块数 ceil(章 / block_size)，否则把「块/章」混算后百分比严重失真。
+        # 单位统一为「章」：completed_chapters 与 total_chapters 均按单章结果计量，与批大小解耦
         if current:
-            bs = max(1, current.block_size)
             current_progress = current.completed_chapters
-            current_total = (current.total_chapters + bs - 1) // bs
+            current_total = current.total_chapters
         else:
             current_progress = 0
             current_total = 0
@@ -281,7 +277,7 @@ class QueueManager:
         txt_files = [f for f in item.blocks_dir.glob("*.txt") if re.match(r"^\d+\.txt$", f.name)]
         return len(txt_files) >= 1
 
-    async def check_api(self, config: AppConfig) -> bool:
+    async def check_api(self, config: AppConfig, *, persist_heal: bool = True) -> bool:
         """轻量 API 预检查：优先用 /models 健康检查端点（不消耗对话 token、不污染日志），
         仅在 /models 不可用或返回空时回退到一次极短 chat 探针。
         原生协议两种探针均失败时，再以翻转 provider 各探一次（聚合网关常以
@@ -332,13 +328,14 @@ class QueueManager:
                 # 否则自动总结/手动总结经 config_manager.load() 重读磁盘时，
                 # 纠正值丢失。探针已验证该值可用，落盘安全；
                 # save 内置 env-key 不回写保护，不会泄露密钥。
-                try:
-                    cm = getattr(self, "config_manager", None)
-                    if cm is not None:
-                        cm.config.api.provider = "openai"
-                        cm.save()
-                except Exception as e:
-                    logger.warning(f"provider 纠正值持久化失败（本次运行仍生效）: {e}")
+                if persist_heal:
+                    try:
+                        cm = getattr(self, "config_manager", None)
+                        if cm is not None:
+                            cm.config.api.provider = "openai"
+                            cm.save()
+                    except Exception as e:
+                        logger.warning(f"provider 纠正值持久化失败（本次运行仍生效）: {e}")
                 logger.warning(
                     "检测到 OpenAI 兼容网关以 claude-* 模型提供服务：已就地纠正 "
                     "provider=openai 并写入配置持久化，"
@@ -390,37 +387,29 @@ class QueueManager:
             logger.error(f"队列状态恢复失败: {e}")
 
     def infer_progress(self, item: QueueItem) -> int:
-        """扫描 output 目录推断已完成块数，校验 block_size 与块章节集合"""
+        """扫描 output 目录推断已完成的单章数量（与配置 block_size 解耦）"""
         output_dir = item.workspace_dir / "output"
         if not output_dir.exists():
             return 0
-        expected_map: Dict[int, List[int]] = {}
+        valid_chs = set()
         if item.blocks_dir and item.blocks_dir.is_dir():
-            chs = sorted(
+            valid_chs = {
                 int(f.stem)
                 for f in item.blocks_dir.glob("*.txt")
                 if re.match(r"^\d+\.txt$", f.name)
-            )
-            bs = max(1, item.block_size)
-            expected_map = {chs[i]: chs[i : i + bs] for i in range(0, len(chs), bs)}
+            }
         valid_count = 0
-        for f in output_dir.glob("*_result.json"):
+        for f in output_dir.glob("chapter_*_result.json"):
+            m = re.match(r"chapter_(\d+)_result\.json", f.name)
+            if not m:
+                continue
+            ch_num = int(m.group(1))
+            if valid_chs and ch_num not in valid_chs:
+                continue
             try:
                 data = json.loads(f.read_text(encoding="utf-8"))
-                if data.get("block_size", 0) != item.block_size:
-                    continue
-                if expected_map:
-                    m = re.match(r"chapter_(\d+)_result\.json", f.name)
-                    ch_num = int(m.group(1)) if m else int(data.get("chapter_number") or 0)
-                    if ch_num not in expected_map:
-                        continue
-                    src_chs = [
-                        int(x) for x in (data.get("source_chapters") or [])
-                        if isinstance(x, int) or (isinstance(x, str) and x.strip().isdigit())
-                    ]
-                    if src_chs and src_chs != expected_map[ch_num]:
-                        continue
-                valid_count += 1
+                if is_single_chapter_result_dict(data, ch_num):
+                    valid_count += 1
             except Exception:
                 continue
         return valid_count

@@ -6,20 +6,12 @@ const props = defineProps<{
   total: number
   eta?: string
   label?: string
-  blockSize?: number  // 用于换算章节进度
+  blockSize?: number
 }>()
 
 const percent = computed(() => {
   if (!props.total || props.total <= 0) return 0
   return Math.min(100, Math.round((props.current / props.total) * 100))
-})
-
-const chapterInfo = computed(() => {
-  if (!props.blockSize || props.blockSize <= 1) return null
-  return {
-    current: props.current * props.blockSize,
-    total: props.total * props.blockSize,
-  }
 })
 </script>
 
@@ -28,9 +20,6 @@ const chapterInfo = computed(() => {
     <div class="flex justify-between text-xs" style="color: var(--win-text-secondary)">
       <span>
         {{ label || '进度' }}: {{ current }}/{{ total }}
-        <span v-if="chapterInfo" style="color: var(--win-accent); margin-left: 6px">
-          ({{ chapterInfo.current }}/{{ chapterInfo.total }} 章)
-        </span>
       </span>
       <span v-if="eta">预计剩余: {{ eta }}</span>
     </div>

@@ -110,7 +110,7 @@
     "foreshadow_min_importance": "中",
     "foreshadow_min_confidence": "低",
     "max_foreshadow_catalog_high": 500,
-    "max_foreshadow_catalog_mid": 200,
+    "max_foreshadow_catalog_mid": 400,
     "batch_summary_min_words": 2000,
     "final_report_min_words": 5000,
     "volume_compress_threshold": 80000,

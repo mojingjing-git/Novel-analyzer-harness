@@ -4,7 +4,7 @@
 
 ## 产出
 
-- `dist/novel-analyzer.exe` — 约 **26 MB** 单文件（Python runtime + 依赖 + 前端 dist + 配置模板）
+- `dist/novel-analyzer.exe` — 约 **32 MB** 单文件（Python runtime + 依赖 + 前端 dist + 配置模板）
 
 ## 前置条件
 

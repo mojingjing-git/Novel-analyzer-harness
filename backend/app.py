@@ -145,7 +145,7 @@ def create_app() -> FastAPI:
         except Exception as e:
             logger.warning(f"用量账本退出刷盘失败: {e}")
 
-    app = FastAPI(title="Novel Analyzer Web", version="0.2.0", lifespan=lifespan)
+    app = FastAPI(title="Novel Analyzer Web", version="0.3.0", lifespan=lifespan)
 
     # 开发期前端跑在 vite dev server（不同端口），需要 CORS
     app.add_middleware(

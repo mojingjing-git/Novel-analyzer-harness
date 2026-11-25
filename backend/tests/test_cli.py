@@ -705,12 +705,15 @@ def test_analyze_progress_token_stats_breaker_and_secret_redaction(
     book_dir = _seed_book(rt, "分析测试书", with_results=False, with_ledger=False, with_verdicts=False, with_report=False)
 
     mode = {"behavior": "ok"}
+    captured_calls: List[Dict[str, Any]] = []
 
     class _FakePipeline:
-        def __init__(self, config, directory, knowledge_file, start_chapter=1, end_chapter=None, on_progress=None, on_token_stats=None):
+        def __init__(self, config, directory, knowledge_file, start_chapter=1, end_chapter=None, on_progress=None, on_token_stats=None, **kwargs):
             assert config.working_directory == str(book_dir)
             self.on_progress = on_progress
             self.on_token_stats = on_token_stats
+            self.extra_kwargs = kwargs
+            captured_calls.append({"config": config, "kwargs": kwargs})
 
         def stop(self) -> None:
             pass
@@ -783,6 +786,26 @@ def test_analyze_progress_token_stats_breaker_and_secret_redaction(
     assert secret_key not in p_sec["error"]["message"]
     assert "u:p@" not in p_sec["error"]["message"]
     assert "***" in p_sec["error"]["message"]
+
+    # 4) --chapters 定点重跑 + 思考档覆盖 + 保留既有全书 token_stats.json 不被 1 章记录覆盖
+    mode["behavior"] = "ok"
+    full_stats_marker = {"type": "analysis", "book_id": "分析测试书", "categories": {"chapter": {"input_tokens": 99999}}}
+    (book_dir / "output" / "token_stats.json").write_text(json.dumps(full_stats_marker), encoding="utf-8")
+    captured_calls.clear()
+    c_re, p_re, _ = _run_json(
+        capsys,
+        ["--json", "--runtime-dir", str(rt), "analyze", "分析测试书", "--chapters", "1", "--reasoning-effort", "none", "--temperature", "0.2"],
+    )
+    assert c_re == EXIT_OK
+    assert captured_calls[-1]["kwargs"]["target_chapters"] == [1]
+    assert captured_calls[-1]["kwargs"]["force_rerun"] is True
+    assert captured_calls[-1]["config"].api.thinking_mode.get("reasoning_effort") == "none"
+    assert captured_calls[-1]["config"].api.temperature == 0.2
+    assert json.loads((book_dir / "output" / "token_stats.json").read_text(encoding="utf-8")) == full_stats_marker
+
+    # --chapters 与 --start 互斥
+    c_bad, _, _ = _run_json(capsys, ["--json", "--runtime-dir", str(rt), "analyze", "分析测试书", "--chapters", "1", "--start", "1"])
+    assert c_bad == EXIT_USAGE
 
 
 def test_summary_and_standalone_recheck(

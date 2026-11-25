@@ -28,7 +28,7 @@ export const tooltips: Record<string, string> = {
   recheck_v3_gray_u4: 'V3 灰区终审（默认关闭）：开启后对多跳、非高置信或争议伏笔追加一轮 U4 终审，token 消耗约增加 33%',
   recheck_v3_mid_single_hop: 'V3 支线单跳省钱模式（默认关闭）：开启后中重要度支线伏笔缩窗至 3 个且跳过二三跳（高重要度主线仍保留 5 窗 3 跳），约再省 15%–25% token',
   // 运行与流程策略
-  block_size: '每"块"包含的章节数。\n块越大单次请求 context 越长、token 消耗越大，但 KB 增量更稳定',
+  block_size: '单批最多打包发送给 LLM 的章节上限（动态受 max_content_chars 与 max_tokens 输出预算约束）。\n模型返回逐章独立槽位并在本地拆成单章结果文件，中途改大或改小均无缝断点续跑。',
   summary_batch_size: '总结阶段的批次大小；每批含 N 卷',
   auto_archive: '分析完成后自动把工作区搬到「分析结果/」归档目录',
   auto_summary: '队列全部完成后自动启动最终总结',

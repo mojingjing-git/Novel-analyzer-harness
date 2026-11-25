@@ -1,8 +1,7 @@
 """
 内存状态容器（asyncio 版）
-持有所有 AnalysisResult 和增量维护的 KnowledgeBase，避免重复磁盘IO
-（threading.Lock → asyncio.Lock，涉锁方法改为 async；
-flush/restore 逻辑与磁盘格式零改动，block_size 续跑校验保留）
+持有所有 AnalysisResult 和增量维护的 KnowledgeBase，避免重复磁盘IO。
+磁盘统一以单章文件 chapter_N_result.json（block_size=1）持久化，恢复时与配置 block_size 解耦。
 """
 
 import asyncio
@@ -13,7 +12,7 @@ import threading
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
-from ..models.analysis_result import AnalysisResult
+from ..models.analysis_result import AnalysisResult, is_single_chapter_result_dict
 from ..models.knowledge import KnowledgeBase
 from ..config.constants import (
     MAX_COMPRESSED_ARCS, MAX_RECENT_SUMMARIES,
@@ -51,12 +50,29 @@ class MemoryState:
         # 增量 KB 已合并的最大章号：并发完成乱序时，仅章号 >= 此值的合并更新
         # timeline/story_timeline/recent_summaries（防低章号结果倒灌覆盖"当前进度"）
         self._kb_last_chapter: int = 0
+        self._kb_dirty: bool = False
         # 角色状态 / 关系单调水位表（只增不减）：仅允许 >= 水位章号的结果覆写对应键，
         # 即使该角色从 dict 中被容量裁剪淘汰，水位记录仍保留以防低章号迟到结果回灌复活。
         self._char_state_chapter: Dict[str, int] = {}
         self._char_rel_chapter: Dict[str, int] = {}
         # 知识库限制（来自配置，默认回退到常量）
         self._kb_limits = kb_limits or {}
+
+    def _rebuild_kb_unlocked(self) -> None:
+        """基于当前 sorted(self.results) 从头重建内存 KB 及去重水位（需在 _snapshot_lock 内调用）。"""
+        self._char_state_chapter.clear()
+        self._char_rel_chapter.clear()
+        self._kb_last_chapter = 0
+        self._snapshot_cache_limit = None
+        self._snapshot_cache_kb = None
+        self.kb = KnowledgeBase()
+        self._seen_facts.clear()
+        self._seen_world.clear()
+        self._seen_themes.clear()
+        self._seen_arcs.clear()
+        for ch in sorted(self.results.keys()):
+            self._merge_one(self.results[ch])
+        self._kb_dirty = False
 
     async def add_result(self, result: AnalysisResult) -> None:
         """存储结果并增量更新 KB（协程安全）
@@ -66,20 +82,30 @@ class MemoryState:
         线程正持锁做 to_dict，事件循环最多等它做完（有界短暂），远好于偶发
         RuntimeError 导致静默丢块。锁序恒为 threading→asyncio，无死锁环。"""
         with self._snapshot_lock:
+            is_overwrite = result.chapter_number in self.results
             self.results[result.chapter_number] = result
+            # 覆盖重跑的结果必须移出 _flushed_chapters，否则 flush_to_disk 会静默跳过
+            self._flushed_chapters.discard(result.chapter_number)
             # 成功落盘的结果清除该章失败标记：重跑成功的章节不应再被永久报告为失败
             self._failed_chapters.pop(result.chapter_number, None)
             # 同理清除陈旧 skipped 标记：否则下次 flush 会把已成功章节的
             # 审核拦截标记重新写回磁盘（与上方 failed 清理对称）
             self._skipped_chapters.pop(result.chapter_number, None)
             async with self._kb_lock:
-                self._merge_one(result)
-                # 子集缓存失效策略：仅当新结果的章号落在已缓存
-                # limit 区间内才失效（该结果无法被"按章号区间增量扩展"覆盖）；
-                # 区间外的新结果（正常顺序分析）可直接增量扩展，避免每块全量重建 KB。
-                if (self._snapshot_cache_limit is not None
-                        and result.chapter_number <= self._snapshot_cache_limit):
+                if is_overwrite:
+                    self._kb_dirty = True
                     self._snapshot_cache_limit = None
+                    self._snapshot_cache_kb = None
+                else:
+                    if not self._kb_dirty:
+                        self._merge_one(result)
+                    # 子集缓存失效策略：仅当新结果的章号落在已缓存
+                    # limit 区间内才失效（该结果无法被"按章号区间增量扩展"覆盖）；
+                    # 区间外的新结果（正常顺序分析）可直接增量扩展，避免每块全量重建 KB。
+                    if (self._snapshot_cache_limit is not None
+                            and result.chapter_number <= self._snapshot_cache_limit):
+                        self._snapshot_cache_limit = None
+                        self._snapshot_cache_kb = None
 
     def add_failed(self, chapter_number: int, error: str) -> None:
         """记录失败章节"""
@@ -108,19 +134,28 @@ class MemoryState:
         必须与 add_result 的写侧互斥，否则 to_dict 深遍历期间 results/kb 被
         并发修改会抛 "dictionary changed size during iteration"。"""
         with self._snapshot_lock:
+            if chapter_limit is not None and chapter_limit <= 0:
+                return KnowledgeBase()
             keys = list(self.results.keys())
             if chapter_limit is None or not keys or chapter_limit >= max(keys):
-                return self._apply_rolling_to_snapshot(KnowledgeBase.from_dict(self.kb.to_dict()))
+                if self._kb_dirty:
+                    self._rebuild_kb_unlocked()
+                return self._apply_rolling_to_snapshot(
+                    KnowledgeBase.from_dict(self.kb.to_dict()),
+                    chapter_limit=chapter_limit,
+                )
 
             cached_limit = self._snapshot_cache_limit
 
             # 命中：请求与缓存 limit 精确相等
-            if cached_limit is not None and chapter_limit == cached_limit:
+            if cached_limit is not None and chapter_limit == cached_limit and self._snapshot_cache_kb is not None:
                 return self._apply_rolling_to_snapshot(
-                    KnowledgeBase.from_dict(self._snapshot_cache_kb.to_dict()))
+                    KnowledgeBase.from_dict(self._snapshot_cache_kb.to_dict()),
+                    chapter_limit=chapter_limit,
+                )
 
             # 命中：请求 limit 大于缓存 limit → 增量扩展（O(新增章节数)，非全量重建）
-            if cached_limit is not None and chapter_limit > cached_limit:
+            if cached_limit is not None and chapter_limit > cached_limit and self._snapshot_cache_kb is not None:
                 new_results = sorted(
                     (r for ch, r in self.results.items() if cached_limit < ch <= chapter_limit),
                     key=lambda r: r.chapter_number,
@@ -130,7 +165,10 @@ class MemoryState:
                     self._extend_kb(kb, new_results)
                 self._snapshot_cache_limit = chapter_limit
                 self._snapshot_cache_kb = kb
-                return self._apply_rolling_to_snapshot(KnowledgeBase.from_dict(kb.to_dict()))
+                return self._apply_rolling_to_snapshot(
+                    KnowledgeBase.from_dict(kb.to_dict()),
+                    chapter_limit=chapter_limit,
+                )
 
             # 未命中：请求 limit 小于缓存 limit（或首次构建）→ 从子集重建，
             # 保证不包含任何 > chapter_limit 的未来章节
@@ -142,20 +180,29 @@ class MemoryState:
             if cached_limit is None or chapter_limit > cached_limit:
                 self._snapshot_cache_limit = chapter_limit
                 self._snapshot_cache_kb = kb
-            return self._apply_rolling_to_snapshot(KnowledgeBase.from_dict(kb.to_dict()))
+            return self._apply_rolling_to_snapshot(
+                KnowledgeBase.from_dict(kb.to_dict()),
+                chapter_limit=chapter_limit,
+            )
 
-    def _apply_rolling_to_snapshot(self, kb: KnowledgeBase) -> KnowledgeBase:
+    def _apply_rolling_to_snapshot(
+        self,
+        kb: KnowledgeBase,
+        *,
+        chapter_limit: Optional[int] = None,
+    ) -> KnowledgeBase:
         """把滚动总结数据注入快照副本（只改传入副本，绝不写回 self.kb / 缓存对象）。
 
-        rolling_structured 由 knowledge_base.build_temp_knowledge 注入导出/预览路径，
-        分析主链路 get_kb_snapshot 的快照里恒为空 {} —— 后台 rolling 任务产出的
-        主线概要对 prompt 零生效。
-        说明：dict.get 在 GIL 下原子，最坏读到略旧的一版 rolling，可接受；
-        不取 _rolling_lock 是因为那是 asyncio.Lock，本方法为同步上下文。
+        历史章定点重跑时若 rolling_summary 已推进到更大章号（``last_updated_chapter > chapter_limit``），
+        则省略 ``rolling_structured`` 以防止后续章节剧情剧透给早期章节。
         """
-        rs = self.rolling.get("rolling_structured") if isinstance(self.rolling, dict) else None
-        if isinstance(rs, dict):
-            kb.rolling_structured = rs
+        if isinstance(self.rolling, dict):
+            rolling_last = int(self.rolling.get("last_updated_chapter") or 0)
+            if chapter_limit is not None and rolling_last > chapter_limit:
+                return kb
+            rs = self.rolling.get("rolling_structured")
+            if isinstance(rs, dict):
+                kb.rolling_structured = rs
         return kb
 
     async def flush_to_disk(self, output_dir: Path) -> int:
@@ -207,6 +254,9 @@ class MemoryState:
         # 写入失败章节标记（快照迭代：循环体内 await 让出，流式 worker 可能并发 add_failed
         # 插入新键导致 "dictionary changed size during iteration" 中断整个任务）
         for ch, error in list(self._failed_chapters.items()):
+            # 若磁盘/内存已保留有效旧结果（如定点重跑失败但保留原章），不写陈旧 _failed.json 污染状态
+            if ch in self.results:
+                continue
             failed_path = output_dir / f"chapter_{ch}_failed.json"
             try:
                 await asyncio.to_thread(
@@ -218,6 +268,8 @@ class MemoryState:
         # 写入 skipped 标记（审核拦截块）：持久化后重启续跑不再对同一批块
         # 重新支付完整 LLM 重试链费用
         for ch, reason in list(self._skipped_chapters.items()):
+            if ch in self.results:
+                continue
             skipped_path = output_dir / f"chapter_{ch}_skipped.json"
             try:
                 await asyncio.to_thread(
@@ -242,70 +294,58 @@ class MemoryState:
     async def restore_from_disk(
         self,
         output_dir: Path,
-        block_size: Optional[int] = None,
-        expected_blocks: Optional[Dict[int, List[int]]] = None,
+        valid_chapters: Optional[Set[int]] = None,
     ) -> int:
-        """从 output_dir 恢复结果到内存（阻塞 IO 走线程池，避免事件循环卡顿）"""
+        """从 output_dir 恢复单章结果到内存（阻塞 IO 走线程池，与配置 block_size 解耦）。"""
         return await asyncio.to_thread(
-            self._restore_from_disk_sync, output_dir, block_size, expected_blocks
+            self._restore_from_disk_sync, output_dir, valid_chapters
         )
 
     def _restore_from_disk_sync(
         self,
         output_dir: Path,
-        block_size: Optional[int],
-        expected_blocks: Optional[Dict[int, List[int]]] = None,
+        valid_chapters: Optional[Set[int]] = None,
     ) -> int:
-        """同步恢复实现（原 restore_from_disk 主体：纯文件 IO，无 await）"""
+        """同步恢复实现：仅恢复标准单章结果（block_size=1），忽略旧版合块文件。"""
         import glob as glob_mod
         pattern = str(output_dir / "chapter_*_result.json")
         files = sorted(glob_mod.glob(pattern))
 
         restored = 0
+        legacy_skipped = 0
         for filepath_str in files:
             filepath = Path(filepath_str)
-            if block_size is not None and not self._validate_block_size(filepath, block_size):
-                continue
-
             m = re.match(r'chapter_(\d+)_result\.json', filepath.name)
             if not m:
                 continue
             ch_num = int(m.group(1))
+            if valid_chapters is not None and ch_num not in valid_chapters:
+                continue
 
             try:
                 with open(filepath, 'r', encoding='utf-8') as f:
                     data = json.load(f)
+                if not is_single_chapter_result_dict(data, ch_num):
+                    legacy_skipped += 1
+                    continue
                 result = AnalysisResult.from_dict(data)
-                if expected_blocks is not None and ch_num in expected_blocks:
-                    if result.source_chapters and result.source_chapters != list(expected_blocks[ch_num]):
-                        logger.info(
-                            f"块 {ch_num} 包含章节已变化 ({result.source_chapters} -> {expected_blocks[ch_num]})，需重新分析"
-                        )
-                        continue
+                result.chapter_number = ch_num
+                result.block_size = 1
+                result.source_chapters = [ch_num]
                 self.results[ch_num] = result
                 self._flushed_chapters.add(ch_num)
                 restored += 1
             except Exception as e:
                 logger.warning(f"恢复 {filepath.name} 失败: {e}")
 
+        if legacy_skipped > 0:
+            logger.warning(
+                "检测到 %d 个旧版合块结果文件（block_size>1），已跳过恢复并将按逐章协议重新分析",
+                legacy_skipped,
+            )
+
         # 恢复后重建 KB
-        # 注意：本函数在 pipeline 启动期经 to_thread 调用，此时尚无并发 worker，
-        # 不存在与 add_result/merge 的竞争，故不取 asyncio 锁（asyncio.Lock 不支持
-        # 线程内同步使用；若未来并发调用需改为线程安全方案）
-        self._char_state_chapter.clear()
-        self._char_rel_chapter.clear()
-        self._kb_last_chapter = 0
-        self._snapshot_cache_limit = None
-        self._snapshot_cache_kb = None
-        if restored > 0:
-            sorted_results = [self.results[ch] for ch in sorted(self.results.keys())]
-            self.kb = KnowledgeBase()
-            self._seen_facts.clear()
-            self._seen_world.clear()
-            self._seen_themes.clear()
-            self._seen_arcs.clear()
-            for r in sorted_results:
-                self._merge_one(r)
+        self._rebuild_kb_unlocked()
 
         # 恢复滚动摘要
         rolling_path = output_dir / ROLLING_FILE_NAME
@@ -332,27 +372,30 @@ class MemoryState:
             except Exception:
                 pass
 
-        # 恢复 skipped 标记：已有成功结果的章节跳过陈旧标记
+        # 恢复 skipped 标记：已有成功结果或目录存在旧版合块文件时跳过陈旧标记，防止旧整块拦截误跳过单章
         skipped_pattern = str(output_dir / "chapter_*_skipped.json")
-        for fp in sorted(glob_mod.glob(skipped_pattern)):
-            try:
-                with open(fp, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                if isinstance(data, dict) and "chapter_number" in data:
-                    ch_num = data["chapter_number"]
-                    if ch_num in restored_chapters:
-                        continue
-                    self._skipped_chapters[ch_num] = data.get("reason", "")
-            except Exception:
-                pass
+        if legacy_skipped > 0:
+            logger.warning("目录含旧版合块文件，已跳过加载历史 skipped 标记以确保逐章重新判敏")
+        else:
+            for fp in sorted(glob_mod.glob(skipped_pattern)):
+                try:
+                    with open(fp, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    if isinstance(data, dict) and "chapter_number" in data:
+                        ch_num = data["chapter_number"]
+                        if ch_num in restored_chapters:
+                            continue
+                        self._skipped_chapters[ch_num] = data.get("reason", "")
+                except Exception:
+                    pass
 
         return restored
 
-    def should_checkpoint(self, batch_idx: int) -> bool:
-        """判断是否应触发 checkpoint"""
+    def should_checkpoint(self, chapters_since_checkpoint: int) -> bool:
+        """累计未落盘章数达到 checkpoint_interval 时触发落盘。"""
         if self._checkpoint_interval <= 0:
             return False
-        return (batch_idx + 1) % self._checkpoint_interval == 0
+        return chapters_since_checkpoint >= self._checkpoint_interval
 
     def _merge_one(self, result: AnalysisResult) -> None:
         """增量合并一个结果到 self.kb（须在 _kb_lock 内调用）"""
@@ -499,21 +542,3 @@ class MemoryState:
 
         self._trim_kb(kb)
         return kb
-
-    @staticmethod
-    def _validate_block_size(filepath: Path, expected_block_size: int) -> bool:
-        """校验文件中的 block_size 是否匹配预期"""
-        try:
-            with open(filepath, 'r', encoding='utf-8') as f:
-                head = f.read(500)
-            m = re.search(r'"block_size"\s*:\s*(\d+)', head)
-            if m is None:
-                # 头部窗口未命中（新 schema 字段可能将 block_size 推后），回退完整解析
-                with open(filepath, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                if not isinstance(data, dict) or 'block_size' not in data:
-                    return True  # 旧格式无此字段，视为兼容
-                return int(data['block_size']) == expected_block_size
-            return int(m.group(1)) == expected_block_size
-        except Exception:
-            return False

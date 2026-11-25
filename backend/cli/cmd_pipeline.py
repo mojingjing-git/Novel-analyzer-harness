@@ -185,9 +185,12 @@ def handle_split(ctx: CliContext, args: argparse.Namespace) -> Dict[str, Any]:
 
 def handle_analyze(ctx: CliContext, args: argparse.Namespace) -> Dict[str, Any]:
     """运行章节分析流水线（持书目文件锁，产出 token_stats.json）。"""
+    from backend.common.chapter_spec import parse_chapter_spec
     from backend.common.file_lock import BookFileLock, BookLockError
+    from backend.core.file_processor import FileProcessor
     from backend.core.pipeline import AnalysisPipeline
     from backend.services.analysis_stats import AnalysisStats
+    from backend.services.queue_service import _apply_thinking_effort_override
     from backend.utils.json_utils import safe_save_json
     from backend.ws_events import PipelineStatus
 
@@ -207,10 +210,38 @@ def handle_analyze(ctx: CliContext, args: argparse.Namespace) -> Dict[str, Any]:
         run_cfg.analysis.block_size = max(1, int(args.block_size))
     if getattr(args, "model", None):
         run_cfg.api.model = str(args.model).strip()
+    if getattr(args, "reasoning_effort", None) is not None:
+        try:
+            _apply_thinking_effort_override(run_cfg, str(args.reasoning_effort))
+        except ValueError as exc:
+            raise CliError(EXIT_USAGE, "invalid_reasoning_effort", str(exc)) from exc
+    if getattr(args, "temperature", None) is not None:
+        temp_val = float(args.temperature)
+        if temp_val < 0 or temp_val > 2:
+            raise CliError(EXIT_USAGE, "invalid_temperature", "temperature 须在 0..2 之间")
+        run_cfg.api.temperature = temp_val
 
-    start_ch = max(1, int(getattr(args, "start", None) or 1))
-    end_ch_raw = getattr(args, "end", None)
-    end_ch = int(end_ch_raw) if end_ch_raw is not None else None
+    chapters_spec = getattr(args, "chapters", None)
+    start_arg = getattr(args, "start", None)
+    end_arg = getattr(args, "end", None)
+    if chapters_spec and (start_arg is not None or end_arg is not None):
+        raise CliError(EXIT_USAGE, "invalid_range", "--chapters 不能与 --start / --end 同时使用")
+
+    target_chapters: Optional[List[int]] = None
+    if chapters_spec:
+        available = FileProcessor(blocks_dir, run_cfg.analysis.encoding_priority).scan_chapters()
+        if not available:
+            raise CliError(EXIT_NOT_FOUND, "chapters_not_found", f"书目 {book_id} 的 blocks/ 目录为空")
+        try:
+            target_chapters = parse_chapter_spec(str(chapters_spec), available_chapters=available)
+        except ValueError as exc:
+            raise CliError(EXIT_USAGE, "invalid_chapters", str(exc)) from exc
+
+    force_rerun = bool(getattr(args, "force", False) or (target_chapters is not None))
+    update_rolling = getattr(args, "update_rolling", None)
+
+    start_ch = max(1, int(start_arg or 1))
+    end_ch = int(end_arg) if end_arg is not None else None
     if end_ch is not None and end_ch < start_ch:
         raise CliError(EXIT_USAGE, "invalid_range", "end 不能小于 start")
 
@@ -225,7 +256,7 @@ def handle_analyze(ctx: CliContext, args: argparse.Namespace) -> Dict[str, Any]:
         if status in (PipelineStatus.DONE, PipelineStatus.FAILED, PipelineStatus.SKIPPED):
             stats.record_chapter(payload)
         if ctx.progress_jsonl:
-            compact = {k: v for k, v in payload.items() if k != "result"}
+            compact = {k: v for k, v in payload.items() if k not in ("result", "results")}
             emit_progress_jsonl({"event": "progress", **compact})
 
     async def _on_token_stats(payload: Dict[str, Any]) -> None:
@@ -236,6 +267,14 @@ def handle_analyze(ctx: CliContext, args: argparse.Namespace) -> Dict[str, Any]:
     kf_raw = str(getattr(run_cfg, "knowledge_file", "") or "").strip() or "knowledge.json"
     knowledge_path = Path(kf_raw) if Path(kf_raw).is_absolute() else (book_dir / kf_raw)
 
+    pipeline_kwargs: Dict[str, Any] = {}
+    if target_chapters is not None:
+        pipeline_kwargs["target_chapters"] = target_chapters
+    if force_rerun:
+        pipeline_kwargs["force_rerun"] = True
+    if update_rolling is not None:
+        pipeline_kwargs["update_rolling"] = bool(update_rolling)
+
     pipeline = AnalysisPipeline(
         config=run_cfg,
         directory=blocks_dir,
@@ -244,6 +283,7 @@ def handle_analyze(ctx: CliContext, args: argparse.Namespace) -> Dict[str, Any]:
         end_chapter=end_ch,
         on_progress=_on_progress,
         on_token_stats=_on_token_stats,
+        **pipeline_kwargs,
     )
 
     try:
@@ -257,8 +297,10 @@ def handle_analyze(ctx: CliContext, args: argparse.Namespace) -> Dict[str, Any]:
         SimpleNamespace(name=book_id, start_time=t_start, end_time=t_end),
         baseline,
     )
-    if stats.chapter_stats or stats.token_stats:
-        safe_save_json(consumption, output_dir / "token_stats.json", ensure_ascii=False)
+    token_stats_file = output_dir / "token_stats.json"
+    preserve_full_stats = (target_chapters is not None) and token_stats_file.exists()
+    if (stats.chapter_stats or stats.token_stats) and not preserve_full_stats:
+        safe_save_json(consumption, token_stats_file, ensure_ascii=False)
 
     if isinstance(result, dict) and result.get("account_tripped"):
         reason = str(result.get("account_trip_reason") or "账户级熔断已触发")
@@ -273,7 +315,7 @@ def handle_analyze(ctx: CliContext, args: argparse.Namespace) -> Dict[str, Any]:
     }
     analyzed = result.get("total_analyzed", 0) if isinstance(result, dict) else 0
     failed = len(result.get("failed_chapters", [])) if isinstance(result, dict) else 0
-    emit_output(ctx, data, f"分析完成: book={book_id}, 成功={analyzed} 块, 失败={failed} 块")
+    emit_output(ctx, data, f"分析完成: book={book_id}, 成功={analyzed} 章, 失败={failed} 章")
     return data
 
 

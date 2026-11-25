@@ -202,9 +202,24 @@ def _register_pipeline_and_config_parsers(subparsers: argparse._SubParsersAction
     p_analyze.add_argument("book", nargs="?", default=None, help="书名或书目录路径")
     p_analyze.add_argument("--start", type=int, default=None, help="起始章节号")
     p_analyze.add_argument("--end", type=int, default=None, help="结束章节号")
+    p_analyze.add_argument("--chapters", default=None, help="定点重跑章节或区间，例如 40 或 37-40,55（自动强制覆盖并保持全书统计）")
+    p_analyze.add_argument("--force", action="store_true", help="忽略既有单章结果，强制重跑指定范围")
     p_analyze.add_argument("--concurrency", type=int, default=None, help="覆盖并发数")
-    p_analyze.add_argument("--block-size", type=int, default=None, help="覆盖每次分析合并章数")
+    p_analyze.add_argument("--block-size", type=int, default=None, help="覆盖每批最大章数（章/批）")
     p_analyze.add_argument("--model", default=None, help="覆盖主分析模型")
+    p_analyze.add_argument(
+        "--reasoning-effort",
+        choices=("none", "low", "medium", "high", "xhigh", "max"),
+        default=None,
+        help="覆盖思考深度档位（none/low/medium/high/xhigh/max）",
+    )
+    p_analyze.add_argument("--temperature", type=float, default=None, help="覆盖采样温度")
+    p_analyze.add_argument(
+        "--update-rolling",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="定点重跑时是否同步更新 rolling_summary.json（默认关闭）",
+    )
     p_analyze.set_defaults(handler=handle_analyze)
 
     p_summary = subparsers.add_parser("summary", parents=[common], help="运行全书最终总结与伏笔审计")

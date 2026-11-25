@@ -44,6 +44,7 @@ class StreamChunk:
     is_thinking: bool = False
     error: str = ""
     verdict: Optional[ErrorVerdict] = None
+    finish_reason: str = ""
 
 
 def estimate_token_count(text: str) -> int:
@@ -78,6 +79,7 @@ class StreamResult:
     # 失败时的完整判定契约（cls/confidence/action/scope/retry_after 俱全），
     # 由 chat_stream 在异常现场判定后随结果外传；成功恒为 None（与 LLMResult 口径一致）。
     verdict: Optional[ErrorVerdict] = None
+    finish_reason: str = ""
 
 
 def parse_anthropic_response(response) -> Tuple[str, int, int, int]:
@@ -110,8 +112,13 @@ def parse_openai_stream_event(event) -> Optional[StreamChunk]:
             cached = 0
             ptd = getattr(u, "prompt_tokens_details", None)
             if ptd is not None:
-                cached = getattr(ptd, "cached_tokens", 0) or 0
-            cached = cached or getattr(u, "prompt_cache_hit_tokens", 0) or 0
+                raw_cached = ptd.get("cached_tokens") if isinstance(ptd, dict) else getattr(ptd, "cached_tokens", None)
+                if isinstance(raw_cached, (int, float)) and not isinstance(raw_cached, bool):
+                    cached = int(raw_cached)
+            if not cached:
+                raw_hit = getattr(u, "prompt_cache_hit_tokens", 0) or 0
+                if isinstance(raw_hit, (int, float)) and not isinstance(raw_hit, bool):
+                    cached = int(raw_hit)
             return StreamChunk(
                 type="usage",
                 usage_prompt_tokens=u.prompt_tokens or 0,
@@ -122,8 +129,12 @@ def parse_openai_stream_event(event) -> Optional[StreamChunk]:
         return None
 
     choice = event.choices[0]
+    raw_fr = getattr(choice, "finish_reason", None)
+    fr = raw_fr if isinstance(raw_fr, str) else ""
     delta = getattr(choice, "delta", None)
     if not delta:
+        if fr:
+            return StreamChunk(type="finish", finish_reason=fr, is_final=True)
         return None
 
     raw_text = getattr(delta, "content", "")
@@ -151,9 +162,16 @@ def parse_openai_stream_event(event) -> Optional[StreamChunk]:
             reasoning = raw_r
 
     if reasoning:
-        return StreamChunk(type="reasoning", reasoning_text=reasoning, is_thinking=True)
+        return StreamChunk(
+            type="reasoning",
+            reasoning_text=reasoning,
+            is_thinking=True,
+            finish_reason=fr,
+        )
     if text:
-        return StreamChunk(type="content", text=text, is_thinking=False)
+        return StreamChunk(type="content", text=text, is_thinking=False, finish_reason=fr)
+    if fr:
+        return StreamChunk(type="finish", finish_reason=fr, is_final=True)
     return None
 
 
@@ -163,7 +181,7 @@ def parse_anthropic_stream_event(event) -> Optional[StreamChunk]:
     事件类型：
     - content_block_delta(type=text)：内容 chunk
     - content_block_delta(type=thinking)：思考链 chunk
-    - message_delta.usage：增量 usage（每 chunk 都有）
+    - message_delta.usage：增量 usage（每 chunk 都有）及 stop_reason
     """
     etype = getattr(event, "type", "")
     if etype == "content_block_delta":
@@ -176,11 +194,17 @@ def parse_anthropic_stream_event(event) -> Optional[StreamChunk]:
         if dtype == "thinking":
             return StreamChunk(type="reasoning", reasoning_text=getattr(delta, "thinking", "") or "", is_thinking=True)
     elif etype == "message_delta":
+        delta = getattr(event, "delta", None)
+        raw_sr = getattr(delta, "stop_reason", None) if delta else None
+        fr = raw_sr if isinstance(raw_sr, str) else ""
         usage = getattr(event, "usage", None)
         if usage:
             return StreamChunk(
                 type="usage",
                 usage_completion_tokens=getattr(usage, "output_tokens", 0) or 0,
+                finish_reason=fr,
                 is_final=False,
             )
+        if fr:
+            return StreamChunk(type="finish", finish_reason=fr, is_final=True)
     return None

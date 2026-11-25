@@ -81,9 +81,14 @@ _MODERATION_CLASSES = (ErrorClass.MODERATION_INPUT, ErrorClass.MODERATION_OUTPUT
 # stop 类错误的用户可读提示
 _STOP_HINTS = {
     ErrorClass.BILLING: "（API 余额不足，请充值后重试）",
-    ErrorClass.CONTEXT_LENGTH: "（本章块超模型上下文，建议调小 analysis.block_size）",
+    ErrorClass.CONTEXT_LENGTH: "（本批文本超模型上下文，建议调小 analysis.block_size 或 analysis.max_content_chars）",
     ErrorClass.BAD_REQUEST: "（请求参数错误，请检查模型名/参数配置）",
 }
+
+
+def _is_truncated_finish_reason(reason: str) -> bool:
+    """判断模型是否因达到输出长度上限而被截断。"""
+    return str(reason or "").strip().lower() in ("length", "max_tokens")
 # stop 类错误在 FailureLogger 里的 error_type（AUTH 沿用原有 RetryNeeded 流程）
 _STOP_ERROR_TYPES = {
     ErrorClass.BILLING: "BillingBlocked",
@@ -568,7 +573,17 @@ class LLMClient:
             "messages": merged,
         }
         if system_parts:
-            payload["system"] = "\n\n".join(system_parts)
+            sys_text = "\n\n".join(system_parts)
+            if len(sys_text) >= 1024:
+                payload["system"] = [
+                    {
+                        "type": "text",
+                        "text": sys_text,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ]
+            else:
+                payload["system"] = sys_text
         # 思考控制：Anthropic 认 thinking: {"type": "enabled"/"disabled", "budget_tokens": N}。
         # 只放行 thinking 键——残留的 enable_thinking 等 OpenAI 系字段会被 SDK 原样透传导致 API 400
         if self.config.thinking_mode:
@@ -675,18 +690,32 @@ class LLMClient:
                 content, prompt_tokens, completion_tokens, cached_tokens = parse_anthropic_response(response)
                 # total 口径对齐 OpenAI usage.total_tokens（OpenAI 的 total 含缓存命中部分）
                 total_tokens = prompt_tokens + completion_tokens + cached_tokens
+                raw_sr = getattr(response, "stop_reason", None)
+                finish_reason = raw_sr if isinstance(raw_sr, str) else ""
+                # usage 缺失时 parse_anthropic_response 返回 0/0，那是"未知"而不是"零消耗"
+                tokens = ((prompt_tokens, completion_tokens)
+                          if getattr(response, "usage", None) is not None else None)
+                with self._stats_lock:
+                    self._total_tokens += total_tokens
+                    self._cached_tokens += cached_tokens
                 if not content:
+                    if _is_truncated_finish_reason(finish_reason):
+                        error_msg = "输出达到 max_tokens 上限（思考链耗尽输出预算）"
+                        logger.warning(error_msg)
+                        return LLMResult(
+                            success=False, content="", error=error_msg, tokens=tokens,
+                            cached_tokens=cached_tokens if tokens is not None else 0,
+                            usage_status=(UsageStatus.KNOWN if tokens is not None
+                                          else UsageStatus.UNKNOWN),
+                            finish_reason=finish_reason,
+                        )
                     error_msg = "API返回空内容（可能触发内容过滤）"
                     # stop_reason=refusal（Anthropic 安全拒绝）或含审核关键词 → 按拦截处理
-                    stop_reason = getattr(response, "stop_reason", None) or ""
-                    if stop_reason == "refusal" or is_moderation_message(str(stop_reason)):
+                    if finish_reason == "refusal" or is_moderation_message(finish_reason):
                         error_msg = mark_moderation(error_msg)
                         logger.warning("检测到内容审核拦截（空内容/refusal），将重试1次后跳过该章节")
                     logger.warning(error_msg)
                     return _fail_result(error_msg, classify_message(error_msg))
-                with self._stats_lock:
-                    self._total_tokens += total_tokens
-                    self._cached_tokens += cached_tokens
                 original_len = len(content)
                 stripped = self._strip_thinking(content)
                 if stripped:
@@ -695,14 +724,12 @@ class LLMClient:
                         logger.debug(f"已移除思考链: {original_len} -> {len(content)} 字符")
                 cache_hint = f"，缓存命中{cached_tokens}" if cached_tokens else ""
                 logger.info(f"API请求成功，使用{total_tokens} tokens (输入{prompt_tokens}+输出{completion_tokens}{cache_hint})")
-                # usage 缺失时 parse_anthropic_response 返回 0/0，那是"未知"而不是"零消耗"
-                tokens = ((prompt_tokens, completion_tokens)
-                          if getattr(response, "usage", None) is not None else None)
                 return LLMResult(
                     success=True, content=content, error="", tokens=tokens,
                     cached_tokens=cached_tokens if tokens is not None else 0,
                     usage_status=(UsageStatus.KNOWN if tokens is not None
                                   else UsageStatus.UNKNOWN),
+                    finish_reason=finish_reason,
                 )
 
             prompt_tokens = 0
@@ -718,9 +745,14 @@ class LLMClient:
                 # DeepSeek: usage.prompt_cache_hit_tokens
                 # 智谱/Qwen: 部分版本在 prompt_tokens_details
                 ptd = getattr(response.usage, "prompt_tokens_details", None)
-                if ptd is not None and getattr(ptd, "cached_tokens", None):
-                    cached_tokens = ptd.cached_tokens
-                cached_tokens = cached_tokens or getattr(response.usage, "prompt_cache_hit_tokens", 0) or 0
+                if ptd is not None:
+                    raw_cached = ptd.get("cached_tokens") if isinstance(ptd, dict) else getattr(ptd, "cached_tokens", None)
+                    if isinstance(raw_cached, (int, float)) and not isinstance(raw_cached, bool):
+                        cached_tokens = int(raw_cached)
+                if not cached_tokens:
+                    raw_hit = getattr(response.usage, "prompt_cache_hit_tokens", 0) or 0
+                    if isinstance(raw_hit, (int, float)) and not isinstance(raw_hit, bool):
+                        cached_tokens = int(raw_hit)
                 with self._stats_lock:
                     self._cached_tokens += cached_tokens
 
@@ -731,7 +763,10 @@ class LLMClient:
                 logger.warning("检测到内容审核拦截（空choices），将重试1次后跳过该章节")
                 return _fail_result(error_msg, classify_message(error_msg))
 
-            message = response.choices[0].message
+            choice0 = response.choices[0]
+            raw_fr = getattr(choice0, "finish_reason", None)
+            finish_reason = raw_fr if isinstance(raw_fr, str) else ""
+            message = choice0.message
             content = message.content or ""
             # mimo-v2.5 等推理模型：思考过程在 reasoning_content，直接丢弃
             reasoning = getattr(message, 'reasoning_content', None)
@@ -753,11 +788,22 @@ class LLMClient:
 
             tokens = ((prompt_tokens, completion_tokens)
                       if response.usage is not None else None)
+            if not content.strip() and _is_truncated_finish_reason(finish_reason):
+                error_msg = "输出达到 max_tokens 上限（思考链耗尽输出预算）"
+                logger.warning(error_msg)
+                return LLMResult(
+                    success=False, content="", error=error_msg, tokens=tokens,
+                    cached_tokens=cached_tokens if tokens is not None else 0,
+                    usage_status=(UsageStatus.KNOWN if tokens is not None
+                                  else UsageStatus.UNKNOWN),
+                    finish_reason=finish_reason,
+                )
             return LLMResult(
                 success=True, content=content, error="", tokens=tokens,
                 cached_tokens=cached_tokens if tokens is not None else 0,
                 usage_status=(UsageStatus.KNOWN if tokens is not None
                               else UsageStatus.UNKNOWN),
+                finish_reason=finish_reason,
             )
 
         except asyncio.TimeoutError:
@@ -978,8 +1024,10 @@ class LLMClient:
                         chunk = parse_anthropic_stream_event(event)
                         if chunk:
                             yield chunk
-                    # 收尾：补一个 usage chunk
+                    # 收尾：补一个 usage chunk（携带 stop_reason）
                     snap = stream.current_message_snapshot
+                    raw_sr = getattr(snap, "stop_reason", None) if snap else None
+                    snap_fr = raw_sr if isinstance(raw_sr, str) else ""
                     if snap and getattr(snap, "usage", None):
                         u = snap.usage
                         yield StreamChunk(
@@ -988,7 +1036,10 @@ class LLMClient:
                             usage_completion_tokens=getattr(u, "output_tokens", 0) or 0,
                             usage_cached_tokens=getattr(u, "cache_read_input_tokens", 0) or 0,
                             is_final=True,
+                            finish_reason=snap_fr,
                         )
+                    elif snap_fr:
+                        yield StreamChunk(type="finish", finish_reason=snap_fr, is_final=True)
             else:
                 # OpenAI 流式：先尝试带 stream_options，不支持则降级
                 stream = None
@@ -1357,6 +1408,9 @@ class LLMClient:
         validate_response: Optional[Callable] = None,
         retry_messages_builder: Optional[Callable] = None,
         on_progress: Optional[Callable[[StreamChunk], Awaitable[None]]] = None,
+        *,
+        stop_on_truncation: bool = False,
+        stop_on_timeout: bool = False,
     ) -> StreamResult:
         """流式重试包装：行为契约与 chat_with_retry 完全一致
         （温度退火 → 指数退避；429 Retry-After；审核短路；认证即停；FailureLogger；统计累加）。
@@ -1365,7 +1419,7 @@ class LLMClient:
         本方法只提供流式特有的三件事：
 
         - 单次尝试：_run_stream_attempt（chunk 消费 / 取消检测 / partial content 保留）；
-        - 成功路径：思考链剥离 → token 记账 → 空响应嗅探 → 同步/异步双兼容验证
+        - 成功路径：思考链剥离 → token 记账 → 截断止损 → 空响应嗅探 → 同步/异步双兼容验证
           （_call_validate_response）；
         - 结果构造：_build_stream_result（StreamResult 口径 + 熔断记账收敛点）。
         """
@@ -1378,6 +1432,7 @@ class LLMClient:
         accumulated_output_tokens = 0  # 累计值
         final_content = ""  # 保留 partial content
         final_reasoning = ""
+        final_finish_reason = ""
         last_usage: Optional[StreamChunk] = None
         last_verdict: Optional[ClassVerdict] = None  # 最近一次决断结论（失败结果携带它）
 
@@ -1392,7 +1447,7 @@ class LLMClient:
 
         def _build_stream_result(success, content, error, prompt_tok, comp_tok,
                           cached_tokens=0, reasoning_chars=0, verdict=None,
-                          total_attempts=0):
+                          total_attempts=0, finish_reason: str = ""):
             # verdict 是本次决断用的 ClassVerdict（决策层形态），出口统一转成 ErrorVerdict
             # （跨层传输形态）；成功结果恒为 None，与 LLMResult 口径一致。
             result = StreamResult(
@@ -1401,18 +1456,19 @@ class LLMClient:
                 cached_tokens=cached_tokens, reasoning_chars=reasoning_chars,
                 call_stats={"attempts": total_attempts, "failed_tokens": call_failed_tokens},
                 verdict=None if success else _as_error_verdict(verdict, error),
+                finish_reason=finish_reason or "",
             )
             # 熔断记账收敛点（流式）：本漏斗的每个出口都经此构造；
             # 非流式路径由 chat() 逐次尝试自记，两处不可重复
             self._breaker_observe(success, result.verdict, error)
             return result
 
-        def _record_validation_failure(validation_error, temp, total_attempts):
+        def _record_validation_failure(validation_error, temp, total_attempts, attempt_tokens):
             nonlocal call_failed_tokens
-            if last_consumed_tokens[0] > 0 or last_consumed_tokens[1] > 0:
+            if attempt_tokens[0] > 0 or attempt_tokens[1] > 0:
                 with self._stats_lock:
-                    self._failed_tokens += last_consumed_tokens[0] + last_consumed_tokens[1]
-                call_failed_tokens += last_consumed_tokens[0] + last_consumed_tokens[1]
+                    self._failed_tokens += attempt_tokens[0] + attempt_tokens[1]
+                call_failed_tokens += attempt_tokens[0] + attempt_tokens[1]
             _get_failure_logger().record_failure(
                 attempt_num=total_attempts,
                 max_retries=self.config.temperature_max_retries + self.config.backoff_max_retries,
@@ -1424,20 +1480,22 @@ class LLMClient:
             )
 
         async def _run_stream_attempt(temp):
-            """单次流式 attempt：返回 (status, content, reasoning, usage, err, verdict)。
-
-            status ∈ {"ok", "error", "cancelled"}；
-            verdict 是错误块自带的 ErrorVerdict（chat_stream 在异常现场算好后挂在 chunk 上），
-            正常结束为 None——结论随块流转。"""
+            """单次流式 attempt：返回 (status, content, reasoning, usage, tokens, err, verdict, finish_reason)。"""
             nonlocal accumulated_output_tokens, last_consumed_tokens
-            nonlocal final_content, final_reasoning, last_usage
+            nonlocal final_content, final_reasoning, final_finish_reason, last_usage
             attempt_content = ""
             attempt_reasoning = ""
             attempt_error = ""
             attempt_verdict = None
+            attempt_usage: Optional[StreamChunk] = None
+            attempt_tokens: Tuple[int, int] = (0, 0)
+            attempt_finish_reason = ""
+            last_consumed_tokens = (0, 0)
             accumulated_output_tokens = 0  # 单次 attempt 独立统计，重试不污染初值
             try:
                 async for chunk in self.chat_stream(messages, temperature=temp, max_tokens=max_tokens):
+                    if getattr(chunk, "finish_reason", ""):
+                        attempt_finish_reason = chunk.finish_reason
                     if chunk.type == "content":
                         attempt_content += chunk.text
                         accumulated_output_tokens += estimate_token_count(chunk.text)
@@ -1445,14 +1503,16 @@ class LLMClient:
                         attempt_reasoning += chunk.reasoning_text
                         accumulated_output_tokens += estimate_token_count(chunk.reasoning_text)
                     elif chunk.type == "usage":
+                        attempt_usage = chunk
                         last_usage = chunk
-                        last_consumed_tokens = (chunk.usage_prompt_tokens, chunk.usage_completion_tokens)
+                        attempt_tokens = (chunk.usage_prompt_tokens, chunk.usage_completion_tokens)
+                        last_consumed_tokens = attempt_tokens
                     elif chunk.type == "error":
                         attempt_error = chunk.error
                         attempt_verdict = chunk.verdict
                         break
-                    # on_progress 传累计值（保持 type="content" 兼容现有白名单契约，用 is_thinking 携带推理状态）
-                    if on_progress:
+                    # on_progress 传累计值（跳过控制类 finish chunk）
+                    if on_progress and chunk.type != "finish":
                         await on_progress(StreamChunk(
                             type="content",
                             estimated_total_tokens=accumulated_output_tokens,
@@ -1460,38 +1520,49 @@ class LLMClient:
                             is_thinking=bool(chunk.type == "reasoning" or getattr(chunk, "is_thinking", False)),
                         ))
             except asyncio.CancelledError:
-                return ("cancelled", attempt_content, attempt_reasoning, last_usage,
-                        "用户请求停止", None)
+                return ("cancelled", attempt_content, attempt_reasoning, attempt_usage, attempt_tokens,
+                        "用户请求停止", None, attempt_finish_reason)
             finally:
-                # 同步 attempt_content → final_content
-                # 失败路径（认证/审核/退避耗尽）依赖 final_content 作为残缺 JSON 兜底
-                # 保留最新 attempt 的 partial（含 reasoning）以便重试失败后增量补全
                 final_content = attempt_content
                 final_reasoning = attempt_reasoning
+                final_finish_reason = attempt_finish_reason
 
             if attempt_error:
-                return ("error", attempt_content, attempt_reasoning, last_usage,
-                        attempt_error, attempt_verdict)
-            return ("ok", attempt_content, attempt_reasoning, last_usage, "", None)
+                return ("error", attempt_content, attempt_reasoning, attempt_usage, attempt_tokens,
+                        attempt_error, attempt_verdict, attempt_finish_reason)
+            return ("ok", attempt_content, attempt_reasoning, attempt_usage, attempt_tokens,
+                    "", None, attempt_finish_reason)
 
         async def try_once(temp, attempt, total_attempts, phase, wait_time=None):
             """单次流式尝试 + 成功路径处理；错误/验证失败交还骨架控制流。"""
             nonlocal messages, call_failed_tokens
-            status, content, reasoning, usage, err, chunk_verdict = \
+            status, content, reasoning, usage, attempt_tokens, err, chunk_verdict, finish_reason = \
                 await _run_stream_attempt(temp)
 
             if status == "cancelled":
                 return _AttemptOutcome("done", result=_build_stream_result(
                     False, content, err, 0, 0, reasoning_chars=len(reasoning),
-                    total_attempts=total_attempts))
+                    total_attempts=total_attempts, finish_reason=finish_reason))
 
             if status == "error":
                 logger.warning(f"❌ 尝试失败: {err}" if phase == "temperature"
                                else f"❌ 重试失败: {err}")
-                if last_consumed_tokens[0] > 0 or last_consumed_tokens[1] > 0:
+                if attempt_tokens[0] > 0 or attempt_tokens[1] > 0:
                     with self._stats_lock:
-                        self._failed_tokens += last_consumed_tokens[0] + last_consumed_tokens[1]
-                    call_failed_tokens += last_consumed_tokens[0] + last_consumed_tokens[1]
+                        self._failed_tokens += attempt_tokens[0] + attempt_tokens[1]
+                    call_failed_tokens += attempt_tokens[0] + attempt_tokens[1]
+                if stop_on_timeout:
+                    eff_verdict = chunk_verdict or classify_message(err)
+                    if eff_verdict is not None and eff_verdict.cls is ErrorClass.TIMEOUT:
+                        logger.warning("多章批流式请求超时，跳过批内重试交由上层立即缩批")
+                        return _AttemptOutcome("done", result=_build_stream_result(
+                            False, content, err,
+                            attempt_tokens[0], attempt_tokens[1],
+                            reasoning_chars=len(reasoning),
+                            verdict=eff_verdict,
+                            total_attempts=total_attempts,
+                            finish_reason=finish_reason,
+                        ))
                 return _AttemptOutcome("error", error=err, verdict=chunk_verdict)
 
             # status == "ok"：剥离思考链 + 累计成功 token
@@ -1499,17 +1570,44 @@ class LLMClient:
             if stripped:
                 content = stripped
 
-            if last_consumed_tokens[0] > 0 or last_consumed_tokens[1] > 0:
+            if attempt_tokens[0] > 0 or attempt_tokens[1] > 0:
                 with self._stats_lock:
-                    self._total_tokens += last_consumed_tokens[0] + last_consumed_tokens[1]
+                    self._total_tokens += attempt_tokens[0] + attempt_tokens[1]
                     if usage:
                         self._cached_tokens += usage.usage_cached_tokens
 
-            # 空响应检测（moderation 嗅探）：温度层登记 EmptyResponse 并冷却，退避层直接重试
+            # 截断止损：必须在空内容检查与响应验证之前拦截，避免同批重烧；
+            # 正文非空时交由上层抢救前缀，正文为空时按截断失败止损返回。
+            if stop_on_truncation and _is_truncated_finish_reason(finish_reason):
+                if content.strip():
+                    logger.warning("流式响应因达到长度上限截断 (%s)，按截断止损返回供上层抢救", finish_reason)
+                    return _AttemptOutcome("done", result=_build_stream_result(
+                        True, content, "",
+                        attempt_tokens[0], attempt_tokens[1],
+                        cached_tokens=usage.usage_cached_tokens if usage else 0,
+                        reasoning_chars=len(reasoning),
+                        total_attempts=total_attempts,
+                        finish_reason=finish_reason,
+                    ))
+                err_msg = "输出达到 max_tokens 上限（思考链耗尽输出预算）"
+                logger.warning("流式响应因达到长度上限截断且正文为空 (%s)，按截断失败止损返回", finish_reason)
+                return _AttemptOutcome("done", result=_build_stream_result(
+                    False, content, err_msg,
+                    attempt_tokens[0], attempt_tokens[1],
+                    cached_tokens=usage.usage_cached_tokens if usage else 0,
+                    reasoning_chars=len(reasoning),
+                    total_attempts=total_attempts,
+                    finish_reason=finish_reason,
+                ))
+
+            # 空响应检测（moderation 嗅探）：截断空响应不标审核
             if not content.strip():
-                error_msg = "API返回空内容（可能触发内容过滤）"
-                if usage and (is_moderation_message(str(usage)) or is_moderation_error(error_msg)):
-                    error_msg = mark_moderation(error_msg)
+                if _is_truncated_finish_reason(finish_reason):
+                    error_msg = "输出达到 max_tokens 上限（思考链耗尽输出预算）"
+                else:
+                    error_msg = "API返回空内容（可能触发内容过滤）"
+                    if usage and (is_moderation_message(str(usage)) or is_moderation_error(error_msg)):
+                        error_msg = mark_moderation(error_msg)
                 logger.warning(error_msg)
                 if phase == "temperature":
                     _get_failure_logger().record_failure(
@@ -1530,7 +1628,7 @@ class LLMClient:
                     logger.warning(f"❌ 响应验证失败: {validation_error}")
                     if retry_messages_builder:
                         messages = retry_messages_builder(validation_error, messages)
-                    _record_validation_failure(validation_error, temp, total_attempts)
+                    _record_validation_failure(validation_error, temp, total_attempts, attempt_tokens)
                     if phase == "temperature" and attempt < self.config.temperature_max_retries - 1:
                         temp_wait = max(0, int(getattr(self.config, "temp_retry_wait_base", 3))) * (attempt + 1)
                         await self._sleep(temp_wait)
@@ -1539,20 +1637,21 @@ class LLMClient:
 
             # 成功
             logger.info(f"✅ API请求成功（第{total_attempts}次尝试）")
-            logger.info(f"使用Tokens: {last_consumed_tokens}")
+            logger.info(f"使用Tokens: {attempt_tokens}")
             logger.info("=" * 60)
             return _AttemptOutcome("done", result=_build_stream_result(
                 True, content, "",
-                last_consumed_tokens[0], last_consumed_tokens[1],
+                attempt_tokens[0], attempt_tokens[1],
                 cached_tokens=usage.usage_cached_tokens if usage else 0,
                 reasoning_chars=len(reasoning),
                 total_attempts=total_attempts,
+                finish_reason=finish_reason,
             ))
 
         async def on_stop(total_attempts):
             return _build_stream_result(False, final_content, "用户请求停止",
                                  last_consumed_tokens[0], last_consumed_tokens[1],
-                                 total_attempts=total_attempts)
+                                 total_attempts=total_attempts, finish_reason=final_finish_reason)
 
         async def on_decided(decision):
             nonlocal last_verdict
@@ -1561,7 +1660,8 @@ class LLMClient:
         async def on_decision_stop(decision, total_attempts):
             return _build_stream_result(False, final_content, decision.error,
                                  last_consumed_tokens[0], last_consumed_tokens[1],
-                                 verdict=decision.verdict, total_attempts=total_attempts)
+                                 verdict=decision.verdict, total_attempts=total_attempts,
+                                 finish_reason=final_finish_reason)
 
         async def on_moderation_short_circuit(short_error, total_attempts, final_temp):
             _get_failure_logger().record_failure(
@@ -1574,7 +1674,7 @@ class LLMClient:
             return _build_stream_result(False, final_content, short_error,
                                  last_consumed_tokens[0], last_consumed_tokens[1],
                                  verdict=last_verdict or classify_message(short_error),
-                                 total_attempts=total_attempts)
+                                 total_attempts=total_attempts, finish_reason=final_finish_reason)
 
         async def on_final_failure(last_error, total_attempts, backoff_rounds):
             final_msg = (f"所有重试均失败（温度退火{self.config.temperature_max_retries}次 + "
@@ -1589,7 +1689,7 @@ class LLMClient:
             return _build_stream_result(False, final_content, final_msg,
                                  last_consumed_tokens[0], last_consumed_tokens[1],
                                  verdict=last_verdict or classify_message(last_error),
-                                 total_attempts=total_attempts)
+                                 total_attempts=total_attempts, finish_reason=final_finish_reason)
 
         hooks = SimpleNamespace(
             on_stop=on_stop, on_decided=on_decided, on_decision_stop=on_decision_stop,
@@ -1626,6 +1726,8 @@ class LLMClient:
         on_progress: Optional[Callable[[StreamChunk], Awaitable[None]]] = None,
         *,
         disable_retries: bool = False,
+        stop_on_truncation: bool = False,
+        stop_on_timeout: bool = False,
     ) -> LLMResult:
         """根据 self.config.streaming_enabled 自动选 chat_with_retry / chat_stream_with_retry
 
@@ -1646,6 +1748,8 @@ class LLMClient:
                 validate_response=validate_response,
                 retry_messages_builder=retry_messages_builder,
                 on_progress=on_progress,
+                stop_on_truncation=stop_on_truncation,
+                stop_on_timeout=stop_on_timeout,
             )
             # 流式 usage 缺失时 StreamResult 是 0/0；两个都为 0 视为"没拿到 usage"
             raw_tokens = (result.prompt_tokens, result.completion_tokens)
@@ -1661,12 +1765,15 @@ class LLMClient:
                 call_stats=result.call_stats,
                 verdict=result.verdict,
                 attempts=int(result.call_stats.get("attempts", 0) or 0),
+                finish_reason=getattr(result, "finish_reason", "") or "",
             )
         # 非流式：on_progress 被忽略（保持接口一致）
         return await self.chat_with_retry(
             messages, max_tokens=max_tokens,
             validate_response=validate_response,
             retry_messages_builder=retry_messages_builder,
+            stop_on_truncation=stop_on_truncation,
+            stop_on_timeout=stop_on_timeout,
         )
 
     @staticmethod
@@ -1704,6 +1811,7 @@ class LLMClient:
         verdict: Optional["ErrorVerdict | ClassVerdict"] = None,
         prior_tokens: Optional[Tuple[int, int]] = None,
         cached_tokens: int = 0,
+        finish_reason: str = "",
     ) -> LLMResult:
         """构造非流式调用结果对象。
 
@@ -1726,6 +1834,7 @@ class LLMClient:
             verdict=None if success else _as_error_verdict(verdict, error),
             attempts=total_attempts,
             prior_known_tokens=prior_tokens,
+            finish_reason=finish_reason or "",
         )
 
     async def chat_with_retry(
@@ -1733,7 +1842,10 @@ class LLMClient:
         messages: List[dict],
         max_tokens: Optional[int] = None,
         validate_response: Optional[Callable[[str], Tuple[bool, str]]] = None,
-        retry_messages_builder: Optional[Callable[[str, List[dict]], List[dict]]] = None
+        retry_messages_builder: Optional[Callable[[str, List[dict]], List[dict]]] = None,
+        *,
+        stop_on_truncation: bool = False,
+        stop_on_timeout: bool = False,
     ) -> LLMResult:
         """非流式重试包装（温度退火 → 指数退避），返回 LLMResult 对象。
 
@@ -1777,6 +1889,27 @@ class LLMClient:
             content = result.content
             tokens = result.tokens
             attempt_tokens = tokens
+            finish_reason = getattr(result, "finish_reason", "") or ""
+
+            if stop_on_truncation and _is_truncated_finish_reason(finish_reason):
+                if content and content.strip():
+                    logger.warning("非流式响应因达到长度上限截断 (%s)，按截断止损返回供上层抢救", finish_reason)
+                    return _AttemptOutcome("done", result=self._build_result(
+                        True, content, "", tokens,
+                        total_attempts=total_attempts, failed_tokens=call_failed_tokens,
+                        prior_tokens=prior_known_tokens,
+                        cached_tokens=getattr(result, "cached_tokens", 0) or 0,
+                        finish_reason=finish_reason,
+                    ))
+                err_msg = result.error or "输出达到 max_tokens 上限（思考链耗尽输出预算）"
+                logger.warning("非流式响应因达到长度上限截断且正文为空 (%s)，按截断失败止损返回", finish_reason)
+                return _AttemptOutcome("done", result=self._build_result(
+                    False, content or "", err_msg, tokens,
+                    total_attempts=total_attempts, failed_tokens=call_failed_tokens,
+                    prior_tokens=prior_known_tokens,
+                    cached_tokens=getattr(result, "cached_tokens", 0) or 0,
+                    finish_reason=finish_reason,
+                ))
 
             if result.success:
                 if validate_response:
@@ -1830,6 +1963,7 @@ class LLMClient:
                     total_attempts=total_attempts, failed_tokens=call_failed_tokens,
                     prior_tokens=prior_known_tokens,
                     cached_tokens=getattr(result, "cached_tokens", 0) or 0,
+                    finish_reason=finish_reason,
                 ))
 
             error = result.error
@@ -1842,6 +1976,16 @@ class LLMClient:
                 if phase == "temperature":
                     prior_known_tokens = _add_tokens(prior_known_tokens, attempt_tokens)
                 last_consumed_tokens = attempt_tokens
+            if stop_on_timeout:
+                eff_verdict = result.verdict or classify_message(error)
+                if eff_verdict is not None and eff_verdict.cls is ErrorClass.TIMEOUT:
+                    logger.warning("多章批请求超时，跳过批内重试交由上层立即缩批")
+                    return _AttemptOutcome("done", result=self._build_result(
+                        False, content or "", error, attempt_tokens,
+                        total_attempts=total_attempts, failed_tokens=call_failed_tokens,
+                        prior_tokens=prior_known_tokens,
+                        verdict=eff_verdict,
+                    ))
             return _AttemptOutcome("error", error=error, verdict=result.verdict)
 
         async def on_stop(total_attempts):

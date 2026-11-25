@@ -122,8 +122,8 @@ class AnalysisResult:
     updated_knowledge: UpdatedKnowledge = field(default_factory=UpdatedKnowledge)
     long_context_insights: LongContextInsights = field(default_factory=LongContextInsights)
     raw_response: str = ""
-    block_size: int = 1  # 该结果对应的块大小（N章合并），用于断点续跑时检测 block_size 变更
-    source_chapters: List[int] = field(default_factory=list)  # 本块实际合并的源文件章号列表（空列表表示旧格式未记录）
+    block_size: int = 1  # 落盘粒度标识（现行逐章格式固定为 1；保留字段以兼容读取旧归档多章合并文件）
+    source_chapters: List[int] = field(default_factory=list)  # 本结果对应源章号列表（现行逐章格式固定为 [chapter_number]；兼容旧归档多章列表）
 
     def to_dict(self) -> dict:
         """转换为字典（用于JSON序列化）；spatial_relationships 的 from_ 键映射回 from"""
@@ -163,7 +163,7 @@ class AnalysisResult:
         """从字典创建（用于JSON反序列化）；旧格式无 locations/spatial_relationships 时默认空列表"""
         # 处理嵌套对象
         core_events = []
-        for e in data.get('core_events', []):
+        for e in data.get('core_events', None) or []:
             if not isinstance(e, dict):
                 continue
             # normalize characters 字段，确保为字符串
@@ -175,7 +175,7 @@ class AnalysisResult:
                 e['characters'] = ", ".join(str(x or '') for x in chars)
             core_events.append(CoreEvent(id=e.get("id", 0), event=str(e.get("event", "")), characters=str(e.get("characters", "")), function=str(e.get("function", "")), importance=_norm_importance(e.get("importance"))))
         character_arcs = []
-        for a in data.get('character_arcs', []):
+        for a in data.get('character_arcs', None) or []:
             if isinstance(a, dict):
                 try:
                     # normalize characters-like fields if they are lists
@@ -185,7 +185,7 @@ class AnalysisResult:
                     character_arcs.append(CharacterArc(name=str(a.get("name", "")), surface_action=str(a.get("surface_action", "")), inner_motivation=str(a.get("inner_motivation", "")), change_delta=str(a.get("change_delta", "")), driver=str(a.get("driver", ""))))
                 except Exception:
                     continue
-        foreshadowing_raw = data.get('foreshadowing', [])
+        foreshadowing_raw = data.get('foreshadowing', None) or []
         foreshadowing = []
         # 兼容LLM输出中可能缺失字段的情况，尽量用默认值构造 Foreshadowing
         for f in foreshadowing_raw:
@@ -290,7 +290,7 @@ class AnalysisResult:
             character_arcs=character_arcs,
             foreshadowing=foreshadowing,
             anchor_stats=dict(data.get('anchor_stats') or {"total": 0, "located": 0, "missing": 0}),
-            plot_holes=cls._normalize_string_list(data.get('plot_holes', ["无明显逻辑漏洞"])),
+            plot_holes=cls._normalize_string_list(data.get('plot_holes', None) or ["无明显逻辑漏洞"]),
             locations=locations,
             spatial_relationships=spatial_relationships,
             cross_block=cross_block,
@@ -303,6 +303,28 @@ class AnalysisResult:
                 if isinstance(x, int) or (isinstance(x, str) and x.strip().isdigit())
             ],
         )
+
+
+def is_single_chapter_result_dict(data: Any, ch_num: int) -> bool:
+    """判断磁盘反序列化后的章节结果是否为当前逐章规范产物（block_size=1 且仅含本章）。"""
+    if not isinstance(data, dict):
+        return False
+    raw_bs = data.get("block_size")
+    if raw_bs is not None:
+        try:
+            if int(raw_bs) != 1:
+                return False
+        except (TypeError, ValueError):
+            return False
+    src_raw = data.get("source_chapters")
+    if src_raw:
+        src_ints = [
+            int(x) for x in src_raw
+            if isinstance(x, int) or (isinstance(x, str) and x.strip().isdigit())
+        ]
+        if src_ints and src_ints != [int(ch_num)]:
+            return False
+    return True
 
 
 def _clean_for_json(obj: Any) -> Any:

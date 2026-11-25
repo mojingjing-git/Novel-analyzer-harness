@@ -1372,3 +1372,27 @@ def test_recheck_v3_options_tuning_and_u1_cache_invalidation(tmp_path: Path) -> 
         ),
     ))
     assert split_calls == 2
+
+    # 修改章节摘要 digest / 线索题干也必须使 U1 缓存指纹失效（定点重跑场景）
+    it_edited = _make_item(
+        "fs_opt_1",
+        desc="青铜钥匙的真实用途（重跑更新）",
+        question="青铜钥匙与古井密室的关系？",
+        anchor_quote="沈砚在古井旁拾得半枚青铜钥匙。",
+        anchor_chapter=1,
+        entity_key="青铜钥匙",
+    )
+    asyncio.run(run_recheck_v3(
+        [it_edited],
+        chapters=chapters,
+        call_model=_model,
+        output_dir=tmp_path,
+        display_labels=labels,
+        options=V3RecheckOptions(
+            max_hops=1,
+            pre_lookback_units=2,
+            pool_max_chars=4000,
+            u1_split_batch_size=2,
+        ),
+    ))
+    assert split_calls == 3

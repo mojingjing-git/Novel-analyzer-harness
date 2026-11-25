@@ -348,7 +348,7 @@ _TEXT_PATTERNS: Dict[ErrorClass, List[str]] = {
         r"\bssl\b", r"getaddrinfo", r"连接失败", r"网络(错误|异常|中断)",
     ],
     ErrorClass.TIMEOUT: [
-        r"硬超时", r"\btime ?out\b", r"timed out", r"请求超时", r"api 无响应",
+        r"硬超时", r"time ?out(?:error)?", r"timed out", r"readtimeout", r"connecttimeout", r"请求超时", r"api 无响应",
     ],
 }
 _TEXT_RES: Dict[ErrorClass, re.Pattern] = {
@@ -400,6 +400,11 @@ def classify_exception(e) -> Optional[ClassVerdict]:
 
     返回的结论 confidence=structured，action 取 RETRY_POLICY（可以是 stop）——
     这是全系统唯一能产出"永久停止"的通道。"""
+    import asyncio as _asyncio
+
+    if isinstance(e, (TimeoutError, _asyncio.TimeoutError)) or "timeout" in type(e).__name__.lower():
+        return ClassVerdict(ErrorClass.TIMEOUT, CONF_STRUCTURED)
+
     codes: List[str] = []
     for attr in ("code", "type"):  # openai-python 从 body 解析的一等属性；anthropic e.type
         c = _norm(getattr(e, attr, None))

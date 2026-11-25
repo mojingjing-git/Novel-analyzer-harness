@@ -244,5 +244,5 @@ SUPPORTED。结论——证据顺序会影响判定，结论对证据排列敏�
 
 ## 其他门禁数据
 
-- 全仓聚合测试（`python scripts/run_tests.py`）：后端 14 个领域测试文件 + 前端 5 个 Vitest 测试文件，详见 [testing.md](./testing.md)。
+- 全仓聚合测试（`python scripts/run_tests.py`）：后端 15 个领域测试文件 + 前端 5 个 Vitest 测试文件，详见 [testing.md](./testing.md)。
 - 锚点命中：真实语料 96.7%–100%。

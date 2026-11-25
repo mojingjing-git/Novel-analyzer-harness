@@ -40,9 +40,13 @@ class AnalysisStats:
         self.end_time = None
 
     def record_chapter(self, payload: dict) -> None:
-        """记录每章统计（含重试成本），供 /api/analysis/token_stats 展示"""
+        """记录批次/章节统计（含重试成本与批覆盖章数），供 /api/analysis/token_stats 展示"""
+        raw_cnt = payload.get("chapters_count")
+        chapters_count = int(raw_cnt) if raw_cnt is not None else 1
         self.chapter_stats.append({
             "chapter": payload.get("chapter", 0),
+            "range": str(payload.get("range") or ""),
+            "chapters_count": chapters_count,
             "status": payload.get("status", "done"),
             "elapsed": payload.get("elapsed", 0),
             "input_tokens": payload.get("input_tokens", 0),
@@ -56,12 +60,18 @@ class AnalysisStats:
     def accumulate_token_stats(self, payload: dict) -> None:
         """按分类累加 token。直接使用 input_tokens/output_tokens（不用 or 回退
         current_tokens：input_tokens=0 是合法值，or 会错误回退到 input+output 之和）。
-        model 随事件透传（last-write）：落盘 token_stats.json 的费用牌价键。"""
+        同步累加 cached_tokens 至分类与全书总计；model 随事件透传（last-write）。"""
         cat = payload.get("category", "unknown")
         if cat not in self.token_stats:
-            self.token_stats[cat] = {"input_tokens": 0, "output_tokens": 0}
+            self.token_stats[cat] = {"input_tokens": 0, "output_tokens": 0, "cached_tokens": 0}
+        elif "cached_tokens" not in self.token_stats[cat]:
+            self.token_stats[cat]["cached_tokens"] = 0
         self.token_stats[cat]["input_tokens"] += payload.get("input_tokens", 0) or 0
         self.token_stats[cat]["output_tokens"] += payload.get("output_tokens", 0) or 0
+        raw_cached = payload.get("cached_tokens", 0)
+        cached = int(raw_cached) if isinstance(raw_cached, (int, float)) and not isinstance(raw_cached, bool) else 0
+        self.token_stats[cat]["cached_tokens"] += cached
+        self.total_cached_tokens += cached
         model = (payload.get("model") or "").strip()
         if model:
             self.token_stats[cat]["model"] = model
@@ -105,10 +115,11 @@ class AnalysisStats:
         """本书消耗 = 会话累计 - 本书开始前基线（output/token_stats.json 的 payload）"""
         categories = {}
         for cat, v in self.token_stats.items():
-            before = baseline["categories"].get(cat, {"input_tokens": 0, "output_tokens": 0})
+            before = baseline["categories"].get(cat, {"input_tokens": 0, "output_tokens": 0, "cached_tokens": 0})
             entry = {
-                "input_tokens": v["input_tokens"] - before["input_tokens"],
-                "output_tokens": v["output_tokens"] - before["output_tokens"],
+                "input_tokens": v["input_tokens"] - before.get("input_tokens", 0),
+                "output_tokens": v["output_tokens"] - before.get("output_tokens", 0),
+                "cached_tokens": v.get("cached_tokens", 0) - before.get("cached_tokens", 0),
             }
             # 模型名直通（落盘侧费用牌价键；基线快照 dict(v) 已包含，无需参与差值）
             if v.get("model"):

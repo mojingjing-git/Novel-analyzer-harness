@@ -4,13 +4,13 @@
 （SYSTEM_PROMPT 含 locations / spatial_relationships 输出要求）
 """
 
-from typing import List
+from typing import List, Sequence, Tuple
 from ..config.constants import DEFAULT_MAX_ARC_LENGTH, FORESHADOW_CATEGORY_DEFS
 from ..models.knowledge import KnowledgeBase
 
 SYSTEM_PROMPT = """# Role: 小说结构分析师
 
-你正在逐章分析一部长篇小说。你会收到当前章节的全文，以及从前面各章积累下来的知识库上下文。
+你正在逐章分析一部长篇小说。你会收到本次请求中的一章或多章原文（每章均以 `=== [ID=数字] 开始 ===` 和 `=== [ID=数字] 结束 ===` 标出边界），以及从前面各章积累下来的知识库上下文。
 
 ## 知识库上下文解读
 
@@ -44,7 +44,9 @@ SYSTEM_PROMPT = """# Role: 小说结构分析师
 8. long_context_insights 只输出 thematic_elements、pattern、foreshadowing_network、pacing 四个字段。不要输出 character_states、character_relationships、verified_facts、relationship_evolution、long_term_arcs、active_foreshadowing、resolved_foreshadowing。
 9. `locations` 记录本章明确出现或首次提及的地点：`name` 用原文地名；`parent` 填其所属的上级地点（如"主峰"的 parent 是"青云门"），无上级或不明确时填 `""`；`type` 填地点类型（城市/宗门/秘境/国家/建筑等）；`description` 一句话描述。只记录有情节意义的地点，不要罗列一笔带过的泛称。
 10. `spatial_relationships` 记录本章明确陈述的地点间空间关系（如"A 在 B 以北"、"C 距 D 三百里"），`from`/`to` 必须是 locations 中出现过或前文已知的地名，`relation` 用原文表述。没有明确空间信息时填空数组。
-11. `importance` 标注该事件/伏笔对全书主线的重要程度：`高`（推动主线、决定人物命运、全书关键转折）、`中`（影响当前情节线、推进支线）、`低`（局部细节、氛围渲染、日常过渡）。每章 core_events 中 `高` 不超过 2 条。
+11. `importance` 标注该事件/伏笔对全书主线的重要程度：`高`（推动主线、决定人物命运、全书关键转折）、`中`（影响当前情节线、推进支线）、`低`（局部细节、氛围渲染、日常过渡）。每章 `core_events` 中 `高` 不超过 2 条；单章 `foreshadowing` 中 `高` 原则上不超过 1 条，多数日常或过渡章可为 0 条 `高`（仅全书核心谜团、人物身世与命运转折标 `高`，单卷或局部冲突悬念标 `中`）。
+12. **逐章交卷（硬性约束）**：必须按顺序为 `[本批待分析 ID 列表]` 中的每一个 ID 在 `chapters` 数组中产出独立对象；严禁合并多章，严禁省略过渡章。每个对象的 `chapter` 字段必须严格填写 `=== [ID=数字] 开始 ===` 中方括号内的整数 ID，不要改写成正文标题里的“第几章/第几回”。
+13. **独立配额、批内闭环与同章取证**：规则 11 中的单章重要度上限（`core_events` `高` ≤ 2、`foreshadowing` `高` ≤ 1）针对 `chapters` 中的每一章独立计算，各章互不挤占；同一批次内后几章已经明确揭晓答案的短期悬念跳过不记为伏笔；每章下的 `anchor_quote` 必须逐字摘自该 ID 边界内的正文，禁止跨章引用。
 
 ## 伏笔分类约束（重要）
 
@@ -55,22 +57,27 @@ SYSTEM_PROMPT = """# Role: 小说结构分析师
 ## Output Schema (纯JSON，无markdown包裹)
 
 {
-  "core_events": [{"id": 1, "event": "事件", "characters": "角色", "function": "作用", "importance": "高|中|低"}],
-  "character_arcs": [{"name": "角色", "surface_action": "表面行为", "inner_motivation": "深层动机", "change_delta": "变化量", "driver": "触发事件"}],
-  "foreshadowing": [{"clue": "本章出现了什么原文细节", "question": "这个细节留下了什么尚待交代的具体事项（含明确疑问：谁/是否/为何/如何/下落/结果）", "answer_criteria": "后文出现什么内容才足以关闭这个事项（写结果类型，不要把某个具体结局写成唯一答案）", "type": "伏笔分类表中的类别", "implication": "它暗示了什么尚待交代的事（不要预测未来剧情）", "confidence": "高|中|低", "importance": "高|中|低", "anchor_quote": "本章正文里逐字照抄的一句（≥6字，原样含标点）", "motif_key": "2-6字稳定母题词"}],
-  "plot_holes": ["逻辑漏洞"],
-  "locations": [{"name": "地点名", "parent": "上级地点或空", "type": "地点类型", "description": "一句话描述"}],
-  "spatial_relationships": [{"from": "地点A", "to": "地点B", "relation": "空间关系描述"}],
-  "cross_block": {
-    "summary": "本章摘要",
-    "unresolved_questions": ["遗留疑点"],
-    "new_leads": ["新线索"],
-    "contextual_link": "与哪章哪事件呼应（必须具体引用章号）"
-  },
-  "updated_knowledge": {
-    "timeline": "本章时间点（具体年月）",
-    "world_building": ["新增世界观元素"]
-  },
+  "chapters": [
+    {
+      "chapter": 11,
+      "core_events": [{"id": 1, "event": "事件", "characters": "角色", "function": "作用", "importance": "高|中|低"}],
+      "character_arcs": [{"name": "角色", "surface_action": "表面行为", "inner_motivation": "深层动机", "change_delta": "变化量", "driver": "触发事件"}],
+      "foreshadowing": [{"clue": "本章出现了什么原文细节", "question": "这个细节留下了什么尚待交代的具体事项（含明确疑问：谁/是否/为何/如何/下落/结果）", "answer_criteria": "后文出现什么内容才足以关闭这个事项（写结果类型，不要把某个具体结局写成唯一答案）", "type": "伏笔分类表中的类别", "implication": "它暗示了什么尚待交代的事（不要预测未来剧情）", "confidence": "高|中|低", "importance": "高|中|低", "anchor_quote": "该章边界内逐字照抄的一句（≥6字，原样含标点）", "motif_key": "2-6字稳定母题词"}],
+      "plot_holes": ["逻辑漏洞"],
+      "locations": [{"name": "地点名", "parent": "上级地点或空", "type": "地点类型", "description": "一句话描述"}],
+      "spatial_relationships": [{"from": "地点A", "to": "地点B", "relation": "空间关系描述"}],
+      "cross_block": {
+        "summary": "该章摘要",
+        "unresolved_questions": ["遗留疑点"],
+        "new_leads": ["新线索"],
+        "contextual_link": "与哪章哪事件呼应（必须具体引用章号）"
+      },
+      "updated_knowledge": {
+        "timeline": "本章时间点（具体年月）",
+        "world_building": ["新增世界观元素"]
+      }
+    }
+  ],
   "long_context_insights": {
     "thematic_elements": ["主题1", "主题2", "主题3"],
     "pattern": "跨章重复出现的叙事模式（一句话）",
@@ -127,48 +134,27 @@ class PromptBuilder:
         self.max_content_chars = max_content_chars
         self.rolling_max_momentum = max(1, int(rolling_max_momentum or 15))
 
-    def build_messages(
-        self,
-        chapter_content: str,
-        chapter_number: int,
-        knowledge_base: KnowledgeBase
-    ) -> List[dict]:
-        """
-        构建完整的消息列表
-
-        Args:
-            chapter_content: 当前章节内容
-            chapter_number: 章节号
-            knowledge_base: 当前知识库状态
-
-        Returns:
-            OpenAI格式的messages列表
-        """
-        # 构建完整故事历史
+    def _build_kb_sections(self, knowledge_base: KnowledgeBase) -> tuple[str, str]:
+        """构建系统前缀与用户上下文公共区块（KV Cache 友好排序）。"""
         history_parts = []
-        # 第一层：结构化滚动总结（优先）或旧格式降级
         rendered_rolling = self._render_structured_rolling(
             knowledge_base.rolling_structured,
             max_momentum=self.rolling_max_momentum,
         )
         if rendered_rolling:
             history_parts.append(rendered_rolling)
-        # 第二层：近期逐章 timeline（保持原逻辑）
         if knowledge_base.compressed_arcs:
             history_parts.append("—— 近期逐章记录 ——")
             history_parts.extend(str(item) for item in knowledge_base.compressed_arcs[-self.max_arcs:])
         full_history = "\n\n".join(history_parts) if history_parts else "（暂无历史主线，这是故事的开始）"
 
-        # 构建前情摘要
         if knowledge_base.recent_summaries:
             contextual_summary = "\n".join(knowledge_base.recent_summaries[-self.max_summaries:])
         else:
             contextual_summary = "（无前情摘要）"
 
-        # 时间线
         timeline = knowledge_base.story_timeline[:self.timeline_truncate]
 
-        # 角色当前状态
         char_states = knowledge_base.character_states
         if char_states:
             items = list(char_states.items())[-self.max_character_states:]
@@ -176,21 +162,18 @@ class PromptBuilder:
         else:
             char_state_text = "（暂无角色状态）"
 
-        # 世界观元素
         world = knowledge_base.world_building
         if world:
             world_text = "\n".join(f"- {w}" for w in world[-self.max_world_items:])
         else:
             world_text = "（暂无世界观元素）"
 
-        # 伏笔网络
         foreshadow = knowledge_base.foreshadowing_network
         if foreshadow:
             foreshadow_text = "\n".join(foreshadow[-self.max_foreshadow_entries:])
         else:
             foreshadow_text = "（暂无伏笔网络）"
 
-        # 角色关系（注入 prompt）
         relationships = knowledge_base.character_relationships
         if relationships:
             rel_items = list(relationships.items())[-self.max_relationships:]
@@ -198,45 +181,30 @@ class PromptBuilder:
         else:
             rel_text = "（暂无角色关系）"
 
-        # 已验证事实（注入 prompt）
         facts = knowledge_base.verified_facts
         if facts:
             fact_text = "\n".join(f"- {f}" for f in facts[-self.max_verified_facts:])
         else:
             fact_text = "（暂无已验证事实）"
 
-        # 主题元素（注入 prompt）
         themes = knowledge_base.thematic_elements
         if themes:
             theme_text = "\n".join(f"- {t}" for t in themes[-self.max_themes:])
         else:
             theme_text = "（暂无主题元素）"
 
-        # KV cache 友好排序：变化频率低的块放前面（prefix 稳定，提高远端 prompt cache 命中），
-        # 变化频率高的块（故事历史每章追加、章节正文每章全变）放后面。
-        # 同时把累积去重、极少变化的 [已知世界观] / [主题元素] 挪进 system，
-        # 与固定的 SYSTEM_PROMPT 合并成稳定前缀。
         system_prompt = f"""{SYSTEM_PROMPT}
 
 [伏笔分类表]
-{FORESHADOW_CATEGORY_TEXT}
+{FORESHADOW_CATEGORY_TEXT}"""
 
-[已知世界观]
+        user_context = f"""[已知世界观]
 {world_text}
 
 [主题元素]
-{theme_text}"""
+{theme_text}
 
-        # 尾部保序截断——开头丢弃量显式告知模型，避免其困惑叙事断裂
-        content_text = chapter_content
-        if len(content_text) > self.max_content_chars:
-            dropped = len(content_text) - self.max_content_chars
-            content_text = (
-                f"【注意】原文过长，已截去开头约 {dropped} 字，以下为保留的后段：\n"
-                + content_text[-self.max_content_chars:]
-            )
-
-        user_prompt = f"""[当前时间线]
+[当前时间线]
 {timeline}
 
 [角色当前状态]
@@ -255,19 +223,58 @@ class PromptBuilder:
 {foreshadow_text}
 
 [完整故事历史]
-{full_history}
+{full_history}"""
+        return system_prompt, user_context
 
-[当前分析文本 - 第{chapter_number}章]
-{content_text}
+    def build_batch_messages(
+        self,
+        chapter_items: Sequence[Tuple[int, str]],
+        knowledge_base: KnowledgeBase,
+    ) -> List[dict]:
+        """构建逐章独立槽位批量分析的消息列表（1..N 章共用同一份 SYSTEM_PROMPT）。"""
+        system_prompt, user_context = self._build_kb_sections(knowledge_base)
+        items = list(chapter_items or [])
+        single_mode = len(items) == 1
 
-请对上述章节进行深度分析，严格按照JSON格式输出分析结果。"""
+        chapter_sections: List[str] = []
+        id_list: List[int] = []
+        for ch_id, raw_text in items:
+            cid = int(ch_id)
+            id_list.append(cid)
+            content_text = raw_text or ""
+            # 仅在单章批超限时尾部保序截断，避免多章批把靠后章节直接截丢。
+            if single_mode and len(content_text) > self.max_content_chars:
+                dropped = len(content_text) - self.max_content_chars
+                content_text = (
+                    f"【注意】原文过长，已截去开头约 {dropped} 字，以下为保留的后段：\n"
+                    + content_text[-self.max_content_chars:]
+                )
+            chapter_sections.append(
+                f"=== [ID={cid}] 开始 ===\n{content_text}\n=== [ID={cid}] 结束 ==="
+            )
 
-        messages = [
+        body_block = "\n\n".join(chapter_sections)
+        user_prompt = f"""{user_context}
+
+[本批待分析 ID 列表]：共 {len(id_list)} 章，物理 ID 分别为 {id_list}
+
+{body_block}
+
+请按输入 ID 顺序对上述全部章节逐章进行深度分析，严格按照 JSON 格式输出 chapters 数组与 long_context_insights。"""
+
+        return [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
+            {"role": "user", "content": user_prompt},
         ]
 
-        return messages
+    def build_messages(
+        self,
+        chapter_content: str,
+        chapter_number: int,
+        knowledge_base: KnowledgeBase
+    ) -> List[dict]:
+        """构建单章分析消息（内部委托统一批量构建器）。"""
+        return self.build_batch_messages([(chapter_number, chapter_content)], knowledge_base)
 
     @staticmethod
     def _render_structured_rolling(structured_data: dict, max_momentum: int = 15) -> str:
